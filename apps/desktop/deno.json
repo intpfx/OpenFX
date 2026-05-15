@@ -1,0 +1,5 @@
+{
+  "imports": {
+    "perry/ui": "./src/perry-ui-stub.ts"
+  }
+}
