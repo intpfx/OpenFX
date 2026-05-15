@@ -20,7 +20,8 @@
       "DOM",
       "DOM.Iterable",
       "ESNext",
-      "deno.ns"
+      "deno.ns",
+      "deno.unstable"
     ]
   }
 }

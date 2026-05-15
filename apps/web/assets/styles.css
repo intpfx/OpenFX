@@ -85,8 +85,24 @@ a {
   color: #c7d4e4;
 }
 
+.card-wide {
+  grid-column: 1 / -1;
+}
+
 .mono {
   font-family: "SFMono-Regular", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.code-block {
+  overflow-x: auto;
+  border-radius: 14px;
+  padding: 16px;
+  background: rgba(3, 8, 16, 0.9);
+  border: 1px solid rgba(140, 166, 255, 0.12);
+  color: #d9e5ff;
+  font-family: "SFMono-Regular", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .counter {
