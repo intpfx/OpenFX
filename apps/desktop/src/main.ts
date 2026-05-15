@@ -23,8 +23,8 @@ import { execSync } from "node:child_process";
 
 import {
   buildDownipServerTemplate,
-  buildProxyTemplate,
   buildIpv6ReportPayload,
+  buildProxyTemplate,
   computeUpdateUrl,
   createRuntimeHealth,
   isGlobalUnicastIpv6,
@@ -89,17 +89,17 @@ const sanitizeConfig = (candidate: Partial<DesktopSyncConfig>): DesktopSyncConfi
   const endpointKey = typeof candidate.endpointKey === "string"
     ? candidate.endpointKey
     : DEFAULT_CONFIG.endpointKey;
-  const endpointPort = typeof candidate.endpointPort === "number"
-        && Number.isFinite(candidate.endpointPort)
-      ? candidate.endpointPort
-      : DEFAULT_CONFIG.endpointPort;
+  const endpointPort = typeof candidate.endpointPort === "number" &&
+      Number.isFinite(candidate.endpointPort)
+    ? candidate.endpointPort
+    : DEFAULT_CONFIG.endpointPort;
   const autoSyncEnabled = typeof candidate.autoSyncEnabled === "boolean"
     ? candidate.autoSyncEnabled
     : DEFAULT_CONFIG.autoSyncEnabled;
-  const intervalSeconds = typeof candidate.intervalSeconds === "number"
-        && Number.isFinite(candidate.intervalSeconds)
-      ? candidate.intervalSeconds
-      : DEFAULT_CONFIG.intervalSeconds;
+  const intervalSeconds = typeof candidate.intervalSeconds === "number" &&
+      Number.isFinite(candidate.intervalSeconds)
+    ? candidate.intervalSeconds
+    : DEFAULT_CONFIG.intervalSeconds;
   const preferredIpv6 = typeof candidate.preferredIpv6 === "string"
     ? candidate.preferredIpv6
     : DEFAULT_CONFIG.preferredIpv6;
@@ -109,7 +109,8 @@ const sanitizeConfig = (candidate: Partial<DesktopSyncConfig>): DesktopSyncConfi
     endpointKey: endpointKey.trim() || DEFAULT_CONFIG.endpointKey,
     endpointPort: parsePortOrNull(String(endpointPort)) ?? DEFAULT_CONFIG.endpointPort,
     autoSyncEnabled,
-    intervalSeconds: parsePositiveIntegerOrNull(String(intervalSeconds)) ?? DEFAULT_CONFIG.intervalSeconds,
+    intervalSeconds: parsePositiveIntegerOrNull(String(intervalSeconds)) ??
+      DEFAULT_CONFIG.intervalSeconds,
     preferredIpv6: preferredIpv6.trim(),
   };
 };
@@ -140,7 +141,10 @@ const refreshDetectedIpv6 = async (): Promise<string[]> => {
   return addresses;
 };
 
-const chooseIpv6Candidate = (preferredInput: string, addresses: readonly string[]): string => {
+const chooseIpv6Candidate = (
+  preferredInput: string,
+  addresses: readonly string[],
+): string => {
   const normalizedPreferred = normalizeIpv6(preferredInput);
   if (normalizedPreferred && isProbablyIpv6(normalizedPreferred)) {
     return normalizedPreferred;
@@ -163,7 +167,10 @@ const syncAutoTimer = (nextConfig: DesktopSyncConfig): void => {
   }, nextConfig.intervalSeconds * 1000);
 };
 
-const applyConfig = (nextConfig: DesktopSyncConfig, options?: { persist?: boolean }): void => {
+const applyConfig = (
+  nextConfig: DesktopSyncConfig,
+  options?: { persist?: boolean },
+): void => {
   const sanitized = sanitizeConfig(nextConfig);
   config.set(sanitized);
   syncFieldStates(sanitized);
@@ -185,21 +192,26 @@ const restorePersistedConfig = (): void => {
 
     const restored = sanitizeConfig(JSON.parse(rawValue) as Partial<DesktopSyncConfig>);
     applyConfig(restored, { persist: false });
-    syncStatus.set(restored.autoSyncEnabled
-      ? `已恢复自动同步配置：每 ${restored.intervalSeconds} 秒执行一次。`
-      : "已恢复本地配置，自动同步当前关闭。");
+    syncStatus.set(
+      restored.autoSyncEnabled
+        ? `已恢复自动同步配置：每 ${restored.intervalSeconds} 秒执行一次。`
+        : "已恢复本地配置，自动同步当前关闭。",
+    );
   } catch (error) {
     syncStatus.set(`读取本地配置失败：${String(error)}`);
     syncAutoTimer(config.value);
   }
 };
 
-const serverUrlField = TextField("服务端 URL（https://example.com）", (value: string) => {
-  applyConfig({
-    ...config.value,
-    serverBaseUrl: value,
-  });
-});
+const serverUrlField = TextField(
+  "服务端 URL（https://example.com）",
+  (value: string) => {
+    applyConfig({
+      ...config.value,
+      serverBaseUrl: value,
+    });
+  },
+);
 stateBindTextfield(serverUrlFieldState, serverUrlField);
 
 const endpointKeyField = TextField("endpoint key（如 home）", (value: string) => {
@@ -293,7 +305,9 @@ const detectIpv6 = async (): Promise<void> => {
 
     syncStatus.set(
       addresses.length > 0
-        ? `检测完成，共发现 ${addresses.length} 个 IPv6；优先推荐 ${preferred || addresses[0]}`
+        ? `检测完成，共发现 ${addresses.length} 个 IPv6；优先推荐 ${
+          preferred || addresses[0]
+        }`
         : "未检测到可用 IPv6，请确认当前网络环境支持 IPv6。",
     );
   } catch (error) {
@@ -312,7 +326,11 @@ const runSyncCycle = async (trigger: "manual" | "auto"): Promise<void> => {
   }
 
   isBusy.set(true);
-  syncStatus.set(trigger === "auto" ? "自动同步：正在检测并上传 IPv6…" : "手动同步：正在检测并上传 IPv6…");
+  syncStatus.set(
+    trigger === "auto"
+      ? "自动同步：正在检测并上传 IPv6…"
+      : "手动同步：正在检测并上传 IPv6…",
+  );
 
   try {
     const addresses = await refreshDetectedIpv6();
@@ -332,20 +350,26 @@ const runSyncCycle = async (trigger: "manual" | "auto"): Promise<void> => {
       applyConfig(effectiveConfig);
     }
 
-  const validation = validateDownipSyncConfig({
-    serverBaseUrl: effectiveConfig.serverBaseUrl,
-    endpointKey: effectiveConfig.endpointKey,
-    endpointPort: effectiveConfig.endpointPort,
-    ipv6: candidateIpv6,
-  });
+    const validation = validateDownipSyncConfig({
+      serverBaseUrl: effectiveConfig.serverBaseUrl,
+      endpointKey: effectiveConfig.endpointKey,
+      endpointPort: effectiveConfig.endpointPort,
+      ipv6: candidateIpv6,
+    });
 
-  if (validation) {
-    lastUploadResult.set(validation);
-      syncStatus.set(trigger === "auto" ? "自动同步失败：配置校验未通过。" : "手动同步失败：配置校验未通过。");
+    if (validation) {
+      lastUploadResult.set(validation);
+      syncStatus.set(
+        trigger === "auto"
+          ? "自动同步失败：配置校验未通过。"
+          : "手动同步失败：配置校验未通过。",
+      );
       return;
-  }
+    }
 
-    lastUploadResult.set(trigger === "auto" ? "自动同步：正在上传 IPv6…" : "手动同步：正在上传 IPv6…");
+    lastUploadResult.set(
+      trigger === "auto" ? "自动同步：正在上传 IPv6…" : "手动同步：正在上传 IPv6…",
+    );
 
     const response = await fetch(computeUpdateUrl(effectiveConfig.serverBaseUrl), {
       method: "POST",
@@ -364,12 +388,18 @@ const runSyncCycle = async (trigger: "manual" | "auto"): Promise<void> => {
     const text = await response.text().catch(() => "");
     lastUploadResult.set(
       response.ok
-        ? `上传成功：${response.status} ${response.statusText}${text ? ` / ${text}` : ""}`
-        : `上传失败：${response.status} ${response.statusText}${text ? ` / ${text}` : ""}`,
+        ? `上传成功：${response.status} ${response.statusText}${
+          text ? ` / ${text}` : ""
+        }`
+        : `上传失败：${response.status} ${response.statusText}${
+          text ? ` / ${text}` : ""
+        }`,
     );
-    syncStatus.set(response.ok
-      ? `${trigger === "auto" ? "自动" : "手动"}同步完成：已上传 ${candidateIpv6}`
-      : `${trigger === "auto" ? "自动" : "手动"}同步失败：服务端返回异常。`);
+    syncStatus.set(
+      response.ok
+        ? `${trigger === "auto" ? "自动" : "手动"}同步完成：已上传 ${candidateIpv6}`
+        : `${trigger === "auto" ? "自动" : "手动"}同步失败：服务端返回异常。`,
+    );
   } catch (error) {
     lastUploadResult.set(`上传异常：${String(error)}`);
     syncStatus.set(`${trigger === "auto" ? "自动" : "手动"}同步异常：${String(error)}`);
@@ -406,7 +436,10 @@ const copyDeployGuide = (): void => {
 };
 
 const syncSection = Section("桌面端：IPv6 客户端同步");
-widgetAddChild(syncSection, Text("该区域集成客户端能力；服务端逻辑不会直接打进桌面二进制。"));
+widgetAddChild(
+  syncSection,
+  Text("该区域集成客户端能力；服务端逻辑不会直接打进桌面二进制。"),
+);
 widgetAddChild(syncSection, autoSyncToggle);
 widgetAddChild(syncSection, serverUrlField);
 widgetAddChild(syncSection, endpointKeyField);
@@ -415,7 +448,10 @@ widgetAddChild(syncSection, intervalField);
 widgetAddChild(syncSection, ipv6Field);
 
 const serverSection = Section("服务端：复制部署产物");
-widgetAddChild(serverSection, Text("proxy.ts 与 crondownip.ts 当前以可复制脚本形式提供，方便部署到服务端。"));
+widgetAddChild(
+  serverSection,
+  Text("proxy.ts 与 crondownip.ts 当前以可复制脚本形式提供，方便部署到服务端。"),
+);
 widgetAddChild(serverSection, Button("复制 crondownip 服务端脚本", copyDownipServer));
 widgetAddChild(serverSection, Button("复制 proxy 服务端脚本", copyProxyServer));
 widgetAddChild(serverSection, Button("复制部署说明", copyDeployGuide));
@@ -441,20 +477,30 @@ App({
         void postIpv6Report();
       }),
     ]),
-    Text(`自动同步: ${config.value.autoSyncEnabled ? `开启 / ${config.value.intervalSeconds} 秒` : "关闭"}`),
+    Text(
+      `自动同步: ${
+        config.value.autoSyncEnabled
+          ? `开启 / ${config.value.intervalSeconds} 秒`
+          : "关闭"
+      }`,
+    ),
     Text(`忙碌状态: ${isBusy.value ? "处理中" : "空闲"}`),
     Text(`同步状态: ${syncStatus.value}`),
     Text(
-      `已检测 IPv6: ${detectedIpv6.value.length > 0 ? detectedIpv6.value.join(", ") : "暂无"}`,
+      `已检测 IPv6: ${
+        detectedIpv6.value.length > 0 ? detectedIpv6.value.join(", ") : "暂无"
+      }`,
     ),
     Text(
       `当前首选 IPv6: ${config.value.preferredIpv6 || "未设置"}`,
     ),
-    Text(`当前候选是否公网 IPv6: ${
-      config.value.preferredIpv6 && isProbablyIpv6(config.value.preferredIpv6)
-        ? (isGlobalUnicastIpv6(config.value.preferredIpv6) ? "是" : "否")
-        : "未知"
-    }`),
+    Text(
+      `当前候选是否公网 IPv6: ${
+        config.value.preferredIpv6 && isProbablyIpv6(config.value.preferredIpv6)
+          ? (isGlobalUnicastIpv6(config.value.preferredIpv6) ? "是" : "否")
+          : "未知"
+      }`,
+    ),
     Text(`最近上传结果: ${lastUploadResult.value}`),
     Divider(),
     serverSection,

@@ -16,6 +16,7 @@ export default function Counter() {
         onClick={() => {
           counter.value = decrementCounter(counter.value);
         }}
+        aria-label="减少计数"
       >
         -
       </button>
@@ -25,6 +26,7 @@ export default function Counter() {
         onClick={() => {
           counter.value = incrementCounter(counter.value);
         }}
+        aria-label="增加计数"
       >
         +
       </button>

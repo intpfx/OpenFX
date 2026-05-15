@@ -1,7 +1,8 @@
 const escapeString = (value: string): string =>
   value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
 
-export const buildDownipServerTemplate = (): string => `// downip-server.ts
+export const buildDownipServerTemplate = (): string =>
+  `// downip-server.ts
 // 使用 Deno 运行：deno run -A downip-server.ts
 
 type RouteValue = {
@@ -218,7 +219,8 @@ if (import.meta.main) {
 export const buildProxyTemplate = (
   host = "192.168.31.53:3000",
   port = 8464,
-): string => `// proxy.ts
+): string =>
+  `// proxy.ts
 // 使用 Deno 运行：deno run -A proxy.ts
 
 const HOST = "${escapeString(host)}";

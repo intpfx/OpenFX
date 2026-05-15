@@ -1,8 +1,8 @@
 # OpenFX Web
 
-This app is the Deno-native web surface for OpenFX.
+这是 OpenFX 的 Deno 原生 Web 端。
 
-## Commands
+## 常用命令
 
 ```bash
 deno task --config apps/web/deno.json dev
@@ -10,19 +10,19 @@ deno task --config apps/web/deno.json build
 deno task --config apps/web/deno.json preview
 ```
 
-## Deployment target
+## 部署目标
 
-The intended deployment target is Deno Deploy.
+默认部署目标是 Deno Deploy。
 
-## Server-side features now hosted in `apps/web`
+## 已托管在 `apps/web` 中的服务端能力
 
-- DownIP update endpoint: `POST /update`
-- DownIP mapping query endpoint: `GET /update`
-- DownIP redirect endpoint: `GET /:key/*`
-- Optional proxy endpoint: `GET|POST|PUT|PATCH|DELETE /api/proxy/*`
+- DownIP 更新接口：`POST /update`
+- DownIP 映射查询接口：`GET /update`
+- DownIP 重定向接口：`GET /:key/*`
+- 可选代理接口：`GET|POST|PUT|PATCH|DELETE /api/proxy/*`
 
-### Environment variables
+### 环境变量
 
-- `DOWNIP_REDIRECT_SCHEME` — redirect scheme, default `http`
-- `DOWNIP_REDIRECT_PORT` — optional global redirect port override
-- `OPENFX_PROXY_UPSTREAM` — enables the optional proxy route when set
+- `DOWNIP_REDIRECT_SCHEME` — 重定向协议，默认 `http`
+- `DOWNIP_REDIRECT_PORT` — 可选的全局重定向端口覆盖值
+- `OPENFX_PROXY_UPSTREAM` — 设置后启用可选代理路由

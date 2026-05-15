@@ -22,7 +22,9 @@ const normalizeProxyUpstream = (value: string): string => {
 };
 
 export const getProxyUpstream = (): string | null => {
-  const normalized = normalizeProxyUpstream(Deno.env.get("OPENFX_PROXY_UPSTREAM") ?? "");
+  const normalized = normalizeProxyUpstream(
+    Deno.env.get("OPENFX_PROXY_UPSTREAM") ?? "",
+  );
   return normalized || null;
 };
 
@@ -36,7 +38,10 @@ export const buildProxyTargetUrl = (req: Request, restPath?: string): URL | null
 
   const target = new URL(upstream);
   const incoming = new URL(req.url);
-  target.pathname = `${target.pathname.replace(/\/+$/, "")}/${restPath ?? ""}`.replace(/\/+/g, "/");
+  target.pathname = `${target.pathname.replace(/\/+$/, "")}/${restPath ?? ""}`.replace(
+    /\/+/g,
+    "/",
+  );
   target.search = incoming.search;
   return target;
 };
@@ -62,7 +67,10 @@ const rewriteResponseHeaders = (res: Response, domain: string): Headers => {
   return headers;
 };
 
-export const proxyRequest = async (req: Request, restPath?: string): Promise<Response> => {
+export const proxyRequest = async (
+  req: Request,
+  restPath?: string,
+): Promise<Response> => {
   if (req.method === "OPTIONS") {
     return new Response(null, {
       status: 204,

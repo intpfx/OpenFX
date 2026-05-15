@@ -13,3 +13,4 @@ node_modules/
 apps/web/_fresh/
 apps/web/.vite/
 apps/web/node_modules/
+temp/

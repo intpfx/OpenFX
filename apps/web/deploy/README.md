@@ -3,7 +3,8 @@
 `temp/` 中原始的服务端逻辑现在已经迁移到 `apps/web`：
 
 - `temp/crondownip.ts` → Web 路由 `POST /update`、`GET /update`、`GET /:key/*`
-- `temp/proxy.ts` → 可选 Web 路由 `/api/proxy/*`（仅在配置 `OPENFX_PROXY_UPSTREAM` 后启用）
+- `temp/proxy.ts` → 可选 Web 路由 `/api/proxy/*`（仅在配置 `OPENFX_PROXY_UPSTREAM`
+  后启用）
 
 ## Deno Deploy deployment notes
 

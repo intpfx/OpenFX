@@ -45,7 +45,10 @@ and public readability.
 
 - `README.md` is the main entrypoint for humans.
 - The roadmap lives inside `README.md` as the default human-editable roadmap entrypoint.
-- Architectural decisions also live inside `README.md` as the default human-readable record.
+- Architectural decisions also live inside `README.md` as the default human-readable
+  record.
+- Human-facing product copy should default to Simplified Chinese unless a task
+  explicitly requires another language.
 
 ## Knowledge Freshness
 

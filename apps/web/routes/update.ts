@@ -3,7 +3,10 @@ import { getDownipStore, handleDownipUpdateRequest } from "@/utils/downip.ts";
 
 export const handlers = define.handlers({
   async GET(_ctx) {
-    return await handleDownipUpdateRequest(new Request(_ctx.req.url, { method: "GET" }), await getDownipStore());
+    return await handleDownipUpdateRequest(
+      new Request(_ctx.req.url, { method: "GET" }),
+      await getDownipStore(),
+    );
   },
   async POST(ctx) {
     return await handleDownipUpdateRequest(ctx.req, await getDownipStore());

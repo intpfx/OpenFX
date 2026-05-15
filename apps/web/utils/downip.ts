@@ -31,7 +31,9 @@ const withCors = (headers: Headers): Headers => {
 const jsonResponse = (body: unknown, status = 200): Response => {
   return new Response(JSON.stringify(body), {
     status,
-    headers: withCors(new Headers({ "content-type": "application/json; charset=utf-8" })),
+    headers: withCors(
+      new Headers({ "content-type": "application/json; charset=utf-8" }),
+    ),
   });
 };
 
@@ -178,7 +180,12 @@ export const handleDownipUpdateRequest = async (
     stored[key] = routeValue;
   }
 
-  return jsonResponse({ ok: true, stored, rejected, count: Object.keys(stored).length });
+  return jsonResponse({
+    ok: true,
+    stored,
+    rejected,
+    count: Object.keys(stored).length,
+  });
 };
 
 export const handleDownipRedirectRequest = async (
@@ -207,10 +214,15 @@ export const handleDownipRedirectRequest = async (
   const url = new URL(req.url);
   const redirectConfig = getRedirectConfig();
   const effectivePort = String(route.port || "").trim() || redirectConfig.port;
-  const target = buildRedirectUrl(route.ipv6, params.rest ? `/${params.rest}` : "/", url.search, {
-    scheme: redirectConfig.scheme,
-    port: effectivePort,
-  });
+  const target = buildRedirectUrl(
+    route.ipv6,
+    params.rest ? `/${params.rest}` : "/",
+    url.search,
+    {
+      scheme: redirectConfig.scheme,
+      port: effectivePort,
+    },
+  );
 
   return Response.redirect(target, 302);
 };

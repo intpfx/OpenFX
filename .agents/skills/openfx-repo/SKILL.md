@@ -47,3 +47,5 @@ refresh it before changing stack conventions.
 - write tests for shared logic changes
 - avoid hidden framework coupling in `packages/core`
 - keep examples and starter code easy for contributors to understand
+- default human-facing product copy and web UI text to Simplified Chinese unless
+  explicitly requested otherwise
