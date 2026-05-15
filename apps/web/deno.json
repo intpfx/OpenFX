@@ -1,0 +1,26 @@
+{
+  "tasks": {
+    "dev": "deno run -A npm:vite",
+    "build": "deno run -A npm:vite build",
+    "preview": "deno serve -A _fresh/server.js",
+    "test": "deno test --allow-env tests"
+  },
+  "imports": {
+    "fresh": "jsr:@fresh/core@^2.1.17",
+    "@fresh/plugin-vite": "jsr:@fresh/plugin-vite@^1.1.2",
+    "preact": "npm:preact@^10.26.9",
+    "@preact/signals": "npm:@preact/signals@^2.5.1",
+    "@std/expect": "jsr:@std/expect@^1.0.17",
+    "@/": "./"
+  },
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact",
+    "lib": [
+      "DOM",
+      "DOM.Iterable",
+      "ESNext",
+      "deno.ns"
+    ]
+  }
+}
