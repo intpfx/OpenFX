@@ -1,5 +1,6 @@
 {
   "imports": {
+    "perry/system": "./src/perry-system-stub.ts",
     "perry/ui": "./src/perry-ui-stub.ts"
   }
 }

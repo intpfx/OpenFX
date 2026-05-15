@@ -3,6 +3,8 @@ export interface PerryState<T> {
   set(nextValue: T): void;
 }
 
+type Widget = unknown;
+
 export const State = <T>(initialValue: T): PerryState<T> => ({
   value: initialValue,
   set(nextValue) {
@@ -17,10 +19,60 @@ export const Button = (label: string, onClick: () => void) => ({
   onClick,
 });
 
+export const TextField = (
+  placeholder: string,
+  onChange: (value: string) => void,
+) => ({
+  placeholder,
+  onChange,
+});
+
+export const Toggle = (
+  label: string,
+  onChange: (value: boolean) => void,
+) => ({
+  label,
+  onChange,
+});
+
+export const Divider = () => ({ type: "divider" });
+
+export const Spacer = () => ({ type: "spacer" });
+
+export const HStack = (spacing: number, children: unknown[]) => ({
+  spacing,
+  children,
+  axis: "horizontal",
+});
+
 export const VStack = (spacing: number, children: unknown[]) => ({
   spacing,
   children,
+  axis: "vertical",
 });
+
+export const Section = (title: string) => ({
+  title,
+  children: [] as Widget[],
+});
+
+export const widgetAddChild = (
+  section: { children: Widget[] },
+  child: Widget,
+): void => {
+  section.children.push(child);
+};
+
+export const clipboardWrite = (_text: string): void => {
+  // Deno/LSP stub only.
+};
+
+export const stateBindTextfield = <T>(
+  _state: PerryState<T>,
+  _field: unknown,
+): void => {
+  // Deno/LSP stub only.
+};
 
 export const App = (_config: {
   title: string;
