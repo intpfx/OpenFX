@@ -22,6 +22,6 @@ jobs:
       - name: Lint
         run: deno lint .
       - name: Test
-        run: deno test packages/core/tests apps/web/tests
+        run: deno task test
       - name: Build web app
         run: deno task --config apps/web/deno.json build
