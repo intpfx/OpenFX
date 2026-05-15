@@ -25,7 +25,7 @@ This skill governs repository-local conventions for:
 - Shared tests: Deno test runner
 
 Do not replace these defaults casually. If a change is needed, add or update an ADR in
-`docs/decisions/`.
+`README.md`.
 
 ## External knowledge policy
 

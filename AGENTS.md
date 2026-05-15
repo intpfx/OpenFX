@@ -27,7 +27,7 @@ and public readability.
 
 ## Preferred Workflow
 
-1. Read `README.md` and `docs/ROADMAP.md` before making structural changes.
+1. Read `README.md` before making structural changes.
 2. Read `.agents/skills/openfx-repo/SKILL.md` before making stack-level or
    agent-behavior changes.
 3. Update docs together with behavior changes.
@@ -44,8 +44,8 @@ and public readability.
 ## Documentation Rules
 
 - `README.md` is the main entrypoint for humans.
-- `docs/ROADMAP.md` is intentionally editable by humans to steer project direction.
-- Architectural decisions go in `docs/decisions/`.
+- The roadmap lives inside `README.md` as the default human-editable roadmap entrypoint.
+- Architectural decisions also live inside `README.md` as the default human-readable record.
 
 ## Knowledge Freshness
 
