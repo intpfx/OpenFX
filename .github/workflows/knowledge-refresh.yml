@@ -1,0 +1,28 @@
+name: knowledge-refresh
+
+on:
+  schedule:
+    - cron: "0 2 * * 1"
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: vx.x
+      - name: Refresh knowledge index
+        run: deno task knowledge:refresh
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: "chore: refresh knowledge index"
+          title: "chore: refresh knowledge index"
+          body: |
+            Automated refresh of the repository knowledge index.
+          branch: chore/knowledge-refresh

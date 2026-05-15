@@ -1,0 +1,27 @@
+[
+  {
+    "name": "Perry Documentation",
+    "url": "https://docs.perryts.com/",
+    "kind": "desktop-toolchain"
+  },
+  {
+    "name": "Fresh Documentation",
+    "url": "https://fresh.deno.dev/docs",
+    "kind": "web-framework"
+  },
+  {
+    "name": "Deno Documentation",
+    "url": "https://docs.deno.com/",
+    "kind": "runtime"
+  },
+  {
+    "name": "Deno Deploy Documentation",
+    "url": "https://docs.deno.com/deploy/",
+    "kind": "deployment"
+  },
+  {
+    "name": "Vite Documentation",
+    "url": "https://vite.dev/guide/",
+    "kind": "web-tooling"
+  }
+]

@@ -1,0 +1,15 @@
+.DS_Store
+.sisyphus/
+.perry-cache/
+.env
+.env.*
+!.env.example
+.idea/
+.vscode/
+coverage/
+dist/
+tmp/
+node_modules/
+apps/web/_fresh/
+apps/web/.vite/
+apps/web/node_modules/

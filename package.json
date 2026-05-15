@@ -1,0 +1,7 @@
+{
+  "name": "openfx",
+  "private": true,
+  "version": "0.1.0",
+  "description": "OpenFX monorepo for Perry desktop and Fresh web applications.",
+  "license": "Apache-2.0"
+}
