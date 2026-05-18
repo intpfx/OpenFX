@@ -1,13 +1,23 @@
 # OpenFX Knowledge Index
 
-_Generated baseline. Refresh with `deno task knowledge:refresh`._
+_This file is generated from `knowledge/sources.json`. Refresh with `deno task knowledge:refresh`._
 
-Last refreshed: 2026-05-15T00:00:00.000Z
+Last refreshed: 2026-05-18T03:22:19.266Z
 
 ## Sources
 
-- Perry Documentation — https://docs.perryts.com/
-- Fresh Documentation — https://fresh.deno.dev/docs
-- Deno Documentation — https://docs.deno.com/
-- Deno Deploy Documentation — https://docs.deno.com/deploy/
-- Vite Documentation — https://vite.dev/guide/
+- **Perry Documentation** (desktop-toolchain)
+  - URL: https://docs.perryts.com/
+  - Observed title: Introduction - Perry Documentation
+- **Fresh Documentation** (web-framework)
+  - URL: https://fresh.deno.dev/docs
+  - Observed title: Introduction | Fresh docs
+- **Deno Documentation** (runtime)
+  - URL: https://docs.deno.com/
+  - Observed title: Welcome to Deno
+- **Deno Deploy Documentation** (deployment)
+  - URL: https://docs.deno.com/deploy/
+  - Observed title: About Deno Deploy
+- **Vite Documentation** (web-tooling)
+  - URL: https://vite.dev/guide/
+  - Observed title: Getting Started | Vite
