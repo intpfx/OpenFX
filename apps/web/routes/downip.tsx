@@ -55,7 +55,7 @@ export default function DownIPPage() {
         <article class="card card-wide">
           <h2>可选代理能力</h2>
           <p>
-            原先 `temp/proxy.ts` 的能力没有默认常驻开放，而是作为可选 Web 代理路由
+            历史上的 `http-relay.ts` 能力没有默认常驻开放，而是作为可选 Web 代理路由
             提供：<span class="mono">/api/proxy/*</span>
           </p>
           <p class="mono">

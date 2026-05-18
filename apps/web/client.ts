@@ -1,1 +1,1 @@
-import "./assets/styles.css";
+// styles.css removed — homepage.css handles all styling

@@ -11,14 +11,11 @@ This skill governs repository-local conventions for:
 - `packages/core`
 - repository docs and agent guidance
 
-## Core rules
+## Principles
 
-1. Put reusable business logic in `packages/core` as pure functions.
-2. Keep `apps/*` focused on runtime integration, UI wiring, and side effects.
-3. Prefer small, explicit data shapes over hidden mutable state.
-4. Update documentation when changing architecture, tooling, or contribution norms.
+Follow [README.md §开发原则](README.md) and [AGENTS.md](AGENTS.md).
 
-## Tooling choices
+## Tooling
 
 - Desktop: Perry
 - Web: Fresh + Deno + Vite
@@ -27,19 +24,9 @@ This skill governs repository-local conventions for:
 Do not replace these defaults casually. If a change is needed, add or update an ADR in
 `README.md`.
 
-## External knowledge policy
+## Reference Documentation
 
-Use `knowledge/index.generated.md` as the repo-local cache of current official
-references.
-
-Primary sources are declared in `knowledge/sources.json` and refreshed by:
-
-```bash
-deno task knowledge:refresh
-```
-
-If the relevant knowledge is older than 14 days or clearly stale relative to the task,
-refresh it before changing stack conventions.
+See [AGENTS.md §External References](AGENTS.md) for official documentation links.
 
 ## When writing code
 

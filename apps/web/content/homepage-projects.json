@@ -1,0 +1,38 @@
+{
+  "layout": {
+    "gridTemplateColumns": "1.1fr 0.9fr"
+  },
+  "columns": [
+    {
+      "id": "network-ops",
+      "offsetRem": 0.8,
+      "cards": [
+        {
+          "id": "ipv6-sync-suite",
+          "type": "project",
+          "variant": "lg",
+          "hidden": true,
+          "name": "IPv6 Sync Suite",
+          "description": "把桌面端的定时 IPv6 上报、Web 端的映射更新和按 key 重定向串成同一条可部署业务链路。",
+          "tech": ["Perry", "Fresh", "IPv6"],
+          "sourcePath": "apps/desktop/src/main.ts + apps/web/routes/update.ts + apps/web/routes/[key]/[...rest].ts"
+        }
+      ]
+    },
+    {
+      "id": "relay",
+      "offsetRem": 2.6,
+      "cards": [
+        {
+          "id": "relay-proxy-gateway",
+          "type": "project",
+          "hidden": true,
+          "name": "Relay Gateway",
+          "description": "按需启用的 HTTP 中继业务，把上游站点挂到 Fresh 路由下并统一做请求头与响应头改写。",
+          "tech": ["Proxy", "CORS", "Upstream"],
+          "sourcePath": "apps/web/routes/api/proxy/[...path].ts + apps/web/utils/proxy.ts"
+        }
+      ]
+    }
+  ]
+}

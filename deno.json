@@ -11,8 +11,8 @@
     "check": "deno fmt --check . && deno lint . && deno test --allow-env packages/core/tests apps/web/tests",
     "web:dev": "deno task --config apps/web/deno.json dev",
     "web:build": "deno task --config apps/web/deno.json build",
-    "web:preview": "deno task --config apps/web/deno.json preview",
-    "knowledge:refresh": "deno run -A scripts/refresh-knowledge.ts"
+    "web:preview": "deno task --config apps/web/deno.json preview"
+
   },
   "fmt": {
     "lineWidth": 88,
