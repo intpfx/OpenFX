@@ -21,6 +21,8 @@ jobs:
         run: deno fmt --check .
       - name: Lint
         run: deno lint .
+      - name: Deno-only guard
+        run: deno task guard:deno-only
       - name: Test
         run: deno task test
       - name: Build web app

@@ -1,13 +1,23 @@
 {
   "tasks": {
-    "dev": "cd ../.. && pnpm exec concurrently -k -n web,server -c blue,green \"pnpm exec vp dev --config apps/web/vite.config.ts\" \"cd apps/web && pnpm exec nitro dev\"",
-    "build": "cd ../.. && pnpm exec vp build --config apps/web/vite.config.ts && cd apps/web && NITRO_PRESET=deno_deploy pnpm exec nitro build",
+    "dev": "cd ../.. && deno run --config deno.json --lock deno.lock --frozen -A npm:concurrently@9.2.1 -k -n web,server -c blue,green \"deno run --config deno.json --lock deno.lock --frozen -A npm:vite-plus@0.1.21/vp dev --config apps/web/vite.config.ts\" \"cd apps/web && deno run --config deno.json --lock ../../deno.lock --frozen -A npm:nitropack@2.13.4 dev\"",
+    "build": "cd ../.. && deno run --config deno.json --lock deno.lock --frozen -A npm:vite-plus@0.1.21/vp build --config apps/web/vite.config.ts && cd apps/web && NITRO_PRESET=deno_deploy deno run --config deno.json --lock ../../deno.lock --frozen -A npm:nitropack@2.13.4 build",
     "preview": "deno task build && deno run -A .output/server/index.ts",
     "test": "deno test --allow-env tests"
   },
   "imports": {
     "@std/expect": "jsr:@std/expect@^1.0.17",
-    "@/": "./"
+    "@/": "./",
+    "@vitejs/plugin-react": "npm:@vitejs/plugin-react@^5.1.4",
+    "animejs": "npm:animejs@^4.4.1",
+    "gsap": "npm:gsap@^3.15.0",
+    "h3": "npm:h3@^1.15.11",
+    "nitropack": "npm:nitropack@^2.13.4",
+    "nitropack/": "npm:nitropack@^2.13.4/",
+    "react": "npm:react@^19.1.0",
+    "react-dom": "npm:react-dom@^19.1.0",
+    "react-dom/": "npm:react-dom@^19.1.0/",
+    "vite-plus": "npm:vite-plus@^0.1.21"
   },
   "compilerOptions": {
     "jsx": "react-jsx",

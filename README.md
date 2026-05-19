@@ -59,9 +59,10 @@ packages/
 ### 前置依赖
 
 - [Deno](https://deno.com/)
-- [pnpm](https://pnpm.io/)
 - [Perry](https://docs.perryts.com/)
 - 如果你希望通过终端发布或管理仓库，还需要安装 [GitHub CLI](https://cli.github.com/)
+
+Web 端依赖现在统一由 Deno 和 `deno.lock` 管理，不再需要单独安装 `pnpm`。
 
 ### 启动 Web 应用
 
@@ -92,6 +93,9 @@ perry compile apps/desktop/src/main.ts -o dist/openfx-desktop
 ```bash
 deno task check
 ```
+
+这条校验现在还会执行 Deno-only guard，防止 `pnpm-lock.yaml`、`pnpm`
+构建命令或带依赖字段的 `package.json` 被重新引回仓库。
 
 ## 路线图
 

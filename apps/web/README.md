@@ -2,6 +2,8 @@
 
 这是 OpenFX 的 VitePlus + React + Nitro Web 端。
 
+Web 端依赖统一由 Deno 和仓库根目录的 `deno.lock` 管理，不再依赖 `pnpm`。
+
 ## 常用命令
 
 ```bash
