@@ -130,7 +130,10 @@ textarea {
   border-radius: var(--radius);
   background: var(--surface);
   padding: 1.25rem;
-  transition: border-color 0.3s, transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s;
+  transition:
+    border-color 0.3s,
+    transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.3s;
 }
 
 .project-card:hover {
@@ -545,7 +548,11 @@ textarea {
   border: 1px solid var(--border);
   border-radius: 14px;
   background:
-    linear-gradient(180deg, oklch(0.99 0.002 250 / 0.96), oklch(0.965 0.004 250 / 0.94)),
+    linear-gradient(
+      180deg,
+      oklch(0.99 0.002 250 / 0.96),
+      oklch(0.965 0.004 250 / 0.94)
+    ),
     var(--surface);
   box-shadow: 0 20px 48px oklch(0 0 0 / 0.05);
 }

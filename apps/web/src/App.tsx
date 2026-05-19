@@ -1,11 +1,11 @@
-import { animate, scrambleText, type JSAnimation } from "animejs";
+import { animate, type JSAnimation, scrambleText } from "animejs";
 import gsap from "gsap";
 import { type MutableRefObject, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   HOMEPAGE_PROJECTS,
-  listHiddenHomepageProjects,
   type HomepageProjectCard,
+  listHiddenHomepageProjects,
 } from "../homepage-projects";
 
 type UnlockRule = {
@@ -102,32 +102,46 @@ function buildUnlockButtonText(session: ActiveUnlockSession | null) {
   return `${session.label} · ${formatRemainingTime(session.expiresAt)}`;
 }
 
+function getBrowserLocationPathname() {
+  return globalThis.location?.pathname ?? "/";
+}
+
+function dispatchPopstate() {
+  globalThis.dispatchEvent?.(new PopStateEvent("popstate"));
+}
+
 function usePathname() {
-  const [pathname, setPathname] = useState(window.location.pathname);
+  const [pathname, setPathname] = useState(getBrowserLocationPathname);
 
   useEffect(() => {
-    const update = () => setPathname(window.location.pathname);
-    window.addEventListener("popstate", update);
-    return () => window.removeEventListener("popstate", update);
+    const update = () => setPathname(getBrowserLocationPathname());
+    globalThis.addEventListener?.("popstate", update);
+    return () => globalThis.removeEventListener?.("popstate", update);
   }, []);
 
   return pathname;
 }
 
 function navigate(pathname: string) {
-  if (window.location.pathname === pathname) {
+  if (getBrowserLocationPathname() === pathname) {
     return;
   }
 
-  window.history.pushState({}, "", pathname);
-  window.dispatchEvent(new PopStateEvent("popstate"));
+  globalThis.history?.pushState({}, "", pathname);
+  dispatchPopstate();
 }
 
 function BrandWord(props: { onToggle: () => void }) {
   return (
     <div className="brand-zone">
       <div className="brand-shell">
-        <button className="brand-word" id="brandWord" type="button" onClick={props.onToggle} aria-label="Toggle brand">
+        <button
+          className="brand-word"
+          id="brandWord"
+          type="button"
+          onClick={props.onToggle}
+          aria-label="Toggle brand"
+        >
           <div aria-hidden="true" className="glitch-ghost" id="brandGhostR" />
           <div aria-hidden="true" className="glitch-ghost" id="brandGhostB" />
           <span className="brand-text" id="brandText" />
@@ -153,7 +167,9 @@ function ProjectCard(props: {
       <div className="pc-name">{props.project.name}</div>
       <div className="pc-desc">{props.project.description}</div>
       <div className="pc-tech">
-        {props.project.tech.map((item) => <span key={`${props.project.id}-${item}`}>{item}</span>)}
+        {props.project.tech.map((item) => (
+          <span key={`${props.project.id}-${item}`}>{item}</span>
+        ))}
       </div>
       <div className="pc-source">source · {props.project.sourcePath}</div>
     </div>
@@ -193,7 +209,9 @@ function Homepage() {
     () => new Set(activeUnlock?.projectIds ?? []),
     [activeUnlock],
   );
-  const activeUnlockSummary = activeUnlock ? formatRemainingTime(activeUnlock.expiresAt) : "";
+  const activeUnlockSummary = activeUnlock
+    ? formatRemainingTime(activeUnlock.expiresAt)
+    : "";
 
   function isAccentChar(word: string, ch: string) {
     return (word === "FENGXIAO" && ch === "O") ||
@@ -353,7 +371,14 @@ function Homepage() {
     gsap.killTweensOf(shellNode);
 
     if (nextOpen) {
-      const targetWidth = Math.ceil(Math.max(fieldNode.scrollWidth, fieldNode.clientWidth, fieldNode.getBoundingClientRect().width, 320));
+      const targetWidth = Math.ceil(
+        Math.max(
+          fieldNode.scrollWidth,
+          fieldNode.clientWidth,
+          fieldNode.getBoundingClientRect().width,
+          320,
+        ),
+      );
       gsap.set(shellNode, {
         display: "flex",
         width: 0,
@@ -379,7 +404,10 @@ function Homepage() {
       return;
     }
 
-    const currentWidth = Math.ceil(shellNode.getBoundingClientRect().width || fieldNode.getBoundingClientRect().width || 320);
+    const currentWidth = Math.ceil(
+      shellNode.getBoundingClientRect().width ||
+        fieldNode.getBoundingClientRect().width || 320,
+    );
     gsap.set(shellNode, {
       display: "flex",
       width: currentWidth,
@@ -457,7 +485,9 @@ function Homepage() {
         body: JSON.stringify({ key }),
       });
       const rawPayload = await response.text();
-      const payload = rawPayload ? JSON.parse(rawPayload) as Record<string, unknown> : {};
+      const payload = rawPayload
+        ? JSON.parse(rawPayload) as Record<string, unknown>
+        : {};
 
       if (!response.ok) {
         const error = typeof payload.error === "string" ? payload.error : "";
@@ -481,8 +511,12 @@ function Homepage() {
       const session: ActiveUnlockSession = {
         key: typeof payload.key === "string" ? payload.key : key,
         label: typeof payload.label === "string" ? payload.label : "Unlocked projects",
-        expiresAt: typeof payload.expiresAt === "string" ? payload.expiresAt : new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-        projectIds: Array.isArray(payload.projectIds) ? payload.projectIds as string[] : [],
+        expiresAt: typeof payload.expiresAt === "string"
+          ? payload.expiresAt
+          : new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        projectIds: Array.isArray(payload.projectIds)
+          ? payload.projectIds as string[]
+          : [],
       };
       localStorage.setItem(STORAGE_KEYS.activeUnlock, JSON.stringify(session));
       setActiveUnlock(session);
@@ -502,14 +536,16 @@ function Homepage() {
     }
 
     const name = messageName.trim() || "Anonymous";
-    const messages = JSON.parse(localStorage.getItem("fx_msgs") || "[]") as Array<Record<string, string>>;
+    const messages = JSON.parse(localStorage.getItem("fx_msgs") || "[]") as Array<
+      Record<string, string>
+    >;
     messages.push({ name, content, time: new Date().toISOString() });
     localStorage.setItem("fx_msgs", JSON.stringify(messages));
     setShowMessage(false);
     setMessageName("");
     setMessageContent("");
     setMessageButtonText("SENT");
-    window.setTimeout(() => setMessageButtonText("MESSAGE"), 1800);
+    globalThis.setTimeout(() => setMessageButtonText("MESSAGE"), 1800);
   }
 
   useEffect(() => {
@@ -554,7 +590,7 @@ function Homepage() {
       return;
     }
 
-    const intervalId = window.setInterval(() => {
+    const intervalId = globalThis.setInterval(() => {
       setUnlockClock(Date.now());
     }, 30_000);
 
@@ -599,7 +635,7 @@ function Homepage() {
       return;
     }
 
-    statusClearTimeoutRef.current = window.setTimeout(() => {
+    statusClearTimeoutRef.current = globalThis.setTimeout(() => {
       statusClearTimeoutRef.current = null;
       setStatus("");
     }, 4200);
@@ -624,7 +660,9 @@ function Homepage() {
           <div
             className="project-column"
             key={column.id}
-            style={column.offsetRem ? { paddingTop: `${column.offsetRem}rem` } : undefined}
+            style={column.offsetRem
+              ? { paddingTop: `${column.offsetRem}rem` }
+              : undefined}
           >
             {column.cards.map((card) => (
               <ProjectCard
@@ -637,9 +675,19 @@ function Homepage() {
         ))}
       </div>
 
-      <div className={`control-cluster${uiBrand === "OpenFX" && showUnlock ? " unlock-editing" : ""}`}>
+      <div
+        className={`control-cluster${
+          uiBrand === "OpenFX" && showUnlock ? " unlock-editing" : ""
+        }`}
+      >
         <div className="control-status">
-          <span className="inline-unlock-hint" data-active={status ? "true" : "false"} id="unlockHint" ref={statusHintRef} aria-live="polite" />
+          <span
+            className="inline-unlock-hint"
+            data-active={status ? "true" : "false"}
+            id="unlockHint"
+            ref={statusHintRef}
+            aria-live="polite"
+          />
         </div>
 
         <div className="control-actions">
@@ -657,23 +705,51 @@ function Homepage() {
               setShowMessage(true);
             }}
           >
-            <span className="ctrl-btn-label" id="homepagePrimaryControlLabel" ref={primaryControlLabelRef} />
+            <span
+              className="ctrl-btn-label"
+              id="homepagePrimaryControlLabel"
+              ref={primaryControlLabelRef}
+            />
           </button>
 
-          <div className="inline-unlock-shell" id="inlineUnlockShell" ref={unlockShellRef} aria-hidden={showUnlock ? "false" : "true"}>
+          <div
+            className="inline-unlock-shell"
+            id="inlineUnlockShell"
+            ref={unlockShellRef}
+            aria-hidden={showUnlock ? "false" : "true"}
+          >
             <div className="inline-unlock-field" ref={unlockFieldRef}>
               {activeUnlock
                 ? (
                   <>
-                    <div className="inline-unlock-session" role="status" aria-live="polite">
+                    <div
+                      className="inline-unlock-session"
+                      role="status"
+                      aria-live="polite"
+                    >
                       <strong>{activeUnlock.label}</strong>
                       <span>{activeUnlockSummary}</span>
                     </div>
                     <div className="inline-unlock-actions">
-                      <button className="inline-unlock-action inline-unlock-confirm" id="unlockConfirmButton" type="button" onClick={() => clearActiveUnlock({ message: "Unlock cleared", closeShell: true })}>
+                      <button
+                        className="inline-unlock-action inline-unlock-confirm"
+                        id="unlockConfirmButton"
+                        type="button"
+                        onClick={() =>
+                          clearActiveUnlock({
+                            message: "Unlock cleared",
+                            closeShell: true,
+                          })}
+                      >
                         Exit
                       </button>
-                      <button className="inline-unlock-action inline-unlock-cancel" id="unlockCancelButton" type="button" onClick={() => closeInlineUnlock(true)} aria-label="Close unlock actions">
+                      <button
+                        className="inline-unlock-action inline-unlock-cancel"
+                        id="unlockCancelButton"
+                        type="button"
+                        onClick={() => closeInlineUnlock(true)}
+                        aria-label="Close unlock actions"
+                      >
                         ×
                       </button>
                     </div>
@@ -702,10 +778,21 @@ function Homepage() {
                       }}
                     />
                     <div className="inline-unlock-actions">
-                      <button className="inline-unlock-action inline-unlock-confirm" id="unlockConfirmButton" type="button" onClick={() => void handleUnlock()}>
+                      <button
+                        className="inline-unlock-action inline-unlock-confirm"
+                        id="unlockConfirmButton"
+                        type="button"
+                        onClick={() => void handleUnlock()}
+                      >
                         OK
                       </button>
-                      <button className="inline-unlock-action inline-unlock-cancel" id="unlockCancelButton" type="button" onClick={() => closeInlineUnlock(true)} aria-label="Cancel unlock">
+                      <button
+                        className="inline-unlock-action inline-unlock-cancel"
+                        id="unlockCancelButton"
+                        type="button"
+                        onClick={() => closeInlineUnlock(true)}
+                        aria-label="Cancel unlock"
+                      >
                         ×
                       </button>
                     </div>
@@ -745,10 +832,18 @@ function Homepage() {
                 placeholder="Collaboration, feedback, or just say hi..."
               />
               <div className="modal-actions">
-                <button className="btn-ghost" type="button" onClick={() => setShowMessage(false)}>
+                <button
+                  className="btn-ghost"
+                  type="button"
+                  onClick={() => setShowMessage(false)}
+                >
                   Cancel
                 </button>
-                <button className="btn-primary" type="button" onClick={handleSendMessage}>
+                <button
+                  className="btn-primary"
+                  type="button"
+                  onClick={handleSendMessage}
+                >
                   Send
                 </button>
               </div>
@@ -763,12 +858,16 @@ function Homepage() {
 function DownipPage() {
   return (
     <div className="content-shell">
-      <button className="back-link" onClick={() => navigate("/")} type="button">返回首页</button>
+      <button className="back-link" onClick={() => navigate("/")} type="button">
+        返回首页
+      </button>
 
       <section className="hero-card">
         <p className="eyebrow">核心能力</p>
         <h1>DownIP</h1>
-        <p className="lede">IPv6 动态映射服务。客户端向 /update 上报，服务端按 key 执行重定向。</p>
+        <p className="lede">
+          IPv6 动态映射服务。客户端向 /update 上报，服务端按 key 执行重定向。
+        </p>
       </section>
 
       <section className="info-grid">
@@ -798,11 +897,17 @@ function DownipPage() {
 type AdminStatusTone = "neutral" | "success" | "error";
 
 function AdminPage() {
-  const [adminKey, setAdminKey] = useState(() => localStorage.getItem(STORAGE_KEYS.adminKey) ?? "");
+  const [adminKey, setAdminKey] = useState(() =>
+    localStorage.getItem(STORAGE_KEYS.adminKey) ?? ""
+  );
   const [rules, setRules] = useState<UnlockRule[]>([]);
   const [status, setStatus] = useState("请输入管理密钥后加载规则");
   const [statusTone, setStatusTone] = useState<AdminStatusTone>("neutral");
-  const [form, setForm] = useState({ label: "", expiresAt: createDefaultExpiryInput(), projectIds: [] as string[] });
+  const [form, setForm] = useState({
+    label: "",
+    expiresAt: createDefaultExpiryInput(),
+    projectIds: [] as string[],
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
@@ -816,7 +921,10 @@ function AdminPage() {
     [rules],
   );
   const selectedProjectNames = useMemo(
-    () => form.projectIds.map((projectId) => hiddenProjectLookup.get(projectId) ?? projectId),
+    () =>
+      form.projectIds.map((projectId) =>
+        hiddenProjectLookup.get(projectId) ?? projectId
+      ),
     [form.projectIds, hiddenProjectLookup],
   );
   const activeRuleCount = useMemo(
@@ -849,7 +957,9 @@ function AdminPage() {
       }
 
       const nextRules = Array.isArray(payload.rules)
-        ? [...payload.rules as UnlockRule[]].sort((left, right) => Date.parse(left.expiresAt) - Date.parse(right.expiresAt))
+        ? [...payload.rules as UnlockRule[]].sort((left, right) =>
+          Date.parse(left.expiresAt) - Date.parse(right.expiresAt)
+        )
         : [];
 
       localStorage.setItem(STORAGE_KEYS.adminKey, key);
@@ -888,7 +998,10 @@ function AdminPage() {
 
       setForm({ label: "", expiresAt: createDefaultExpiryInput(), projectIds: [] });
       await loadRules();
-      reportStatus(`规则 ${payload.rule?.label ?? "已保存"}，密钥 ${payload.rule?.key ?? ""}`, "success");
+      reportStatus(
+        `规则 ${payload.rule?.label ?? "已保存"}，密钥 ${payload.rule?.key ?? ""}`,
+        "success",
+      );
     } finally {
       setIsSaving(false);
     }
@@ -904,10 +1017,13 @@ function AdminPage() {
     setDeletingKey(key);
 
     try {
-      const response = await fetch(`/api/admin/unlocks?key=${encodeURIComponent(key)}`, {
-        method: "DELETE",
-        headers: { "x-openfx-admin-key": providedKey },
-      });
+      const response = await fetch(
+        `/api/admin/unlocks?key=${encodeURIComponent(key)}`,
+        {
+          method: "DELETE",
+          headers: { "x-openfx-admin-key": providedKey },
+        },
+      );
       const payload = await response.json();
       if (!response.ok) {
         reportStatus(payload.error ?? "删除失败", "error");
@@ -923,13 +1039,21 @@ function AdminPage() {
 
   return (
     <div className="content-shell admin-shell">
-      <button className="back-link admin-back-link" onClick={() => navigate("/")} type="button">返回首页</button>
+      <button
+        className="back-link admin-back-link"
+        onClick={() => navigate("/")}
+        type="button"
+      >
+        返回首页
+      </button>
 
       <section className="admin-hero-panel">
         <div className="admin-hero-copy">
           <p className="eyebrow">unlock console</p>
           <h1>后台规则控制台</h1>
-          <p className="lede">管理密钥严格区分大小写。先验证身份，再批量维护 unlock 规则和业务暴露范围。</p>
+          <p className="lede">
+            管理密钥严格区分大小写。先验证身份，再批量维护 unlock 规则和业务暴露范围。
+          </p>
           <div className="admin-hero-tags">
             <span>Case-sensitive key</span>
             <span>{hiddenProjects.length} 个隐藏项目</span>
@@ -977,12 +1101,18 @@ function AdminPage() {
                 value={adminKey}
                 onChange={(event) => setAdminKey(event.target.value)}
               />
-              <button disabled={isLoading} type="button" onClick={() => void loadRules()}>
+              <button
+                disabled={isLoading}
+                type="button"
+                onClick={() => void loadRules()}
+              >
                 {isLoading ? "加载中..." : "加载规则"}
               </button>
             </div>
 
-            <p className="admin-panel-note">本地开发默认密钥为严格区分大小写的 <strong>TEST</strong>。</p>
+            <p className="admin-panel-note">
+              本地开发默认密钥为严格区分大小写的 <strong>TEST</strong>。
+            </p>
           </article>
 
           <article className="admin-panel admin-editor-panel">
@@ -991,7 +1121,9 @@ function AdminPage() {
                 <p className="admin-panel-kicker">step 02</p>
                 <h2>创建规则</h2>
               </div>
-              <span className="admin-panel-meta">选中 {form.projectIds.length} / {hiddenProjects.length}</span>
+              <span className="admin-panel-meta">
+                选中 {form.projectIds.length} / {hiddenProjects.length}
+              </span>
             </div>
 
             <form className="admin-form admin-rule-form" onSubmit={saveRule}>
@@ -1001,7 +1133,8 @@ function AdminPage() {
                   <input
                     placeholder="给团队看的规则名"
                     value={form.label}
-                    onChange={(event) => setForm((current) => ({ ...current, label: event.target.value }))}
+                    onChange={(event) =>
+                      setForm((current) => ({ ...current, label: event.target.value }))}
                   />
                 </label>
                 <label className="admin-field">
@@ -1010,7 +1143,11 @@ function AdminPage() {
                     min={new Date().toISOString().slice(0, 16)}
                     type="datetime-local"
                     value={form.expiresAt}
-                    onChange={(event) => setForm((current) => ({ ...current, expiresAt: event.target.value }))}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        expiresAt: event.target.value,
+                      }))}
                   />
                 </label>
                 <div className="admin-field admin-field-wide admin-inline-note">
@@ -1025,12 +1162,16 @@ function AdminPage() {
                     <h3>暴露范围</h3>
                     <p>只选择这条规则真正需要解锁的隐藏项目。</p>
                   </div>
-                  <span className="admin-selection-count">已选 {form.projectIds.length} 项</span>
+                  <span className="admin-selection-count">
+                    已选 {form.projectIds.length} 项
+                  </span>
                 </div>
 
                 <div className="admin-selected-strip" aria-live="polite">
                   {selectedProjectNames.length > 0
-                    ? selectedProjectNames.map((name) => <span className="admin-project-chip" key={name}>{name}</span>)
+                    ? selectedProjectNames.map((name) => (
+                      <span className="admin-project-chip" key={name}>{name}</span>
+                    ))
                     : <span className="admin-empty-inline">尚未选择项目</span>}
                 </div>
 
@@ -1038,7 +1179,10 @@ function AdminPage() {
                   {hiddenProjects.map((project) => {
                     const checked = form.projectIds.includes(project.id);
                     return (
-                      <label className={`admin-project-option${checked ? " selected" : ""}`} key={project.id}>
+                      <label
+                        className={`admin-project-option${checked ? " selected" : ""}`}
+                        key={project.id}
+                      >
                         <input
                           type="checkbox"
                           checked={checked}
@@ -1047,7 +1191,9 @@ function AdminPage() {
                               ...current,
                               projectIds: event.target.checked
                                 ? [...current.projectIds, project.id]
-                                : current.projectIds.filter((item) => item !== project.id),
+                                : current.projectIds.filter((item) =>
+                                  item !== project.id
+                                ),
                             }));
                           }}
                         />
@@ -1061,7 +1207,9 @@ function AdminPage() {
 
               <div className="admin-form-footer">
                 <p>保存后会立即生成唯一密钥。首页激活后会按过期时间自动失效。</p>
-                <button disabled={isSaving} type="submit">{isSaving ? "保存中..." : "生成并保存规则"}</button>
+                <button disabled={isSaving} type="submit">
+                  {isSaving ? "保存中..." : "生成并保存规则"}
+                </button>
               </div>
             </form>
           </article>
@@ -1073,7 +1221,9 @@ function AdminPage() {
               <p className="admin-panel-kicker">step 03</p>
               <h2>已生效规则</h2>
             </div>
-            <span className="admin-panel-meta">{rules.length === 0 ? "空列表" : `${rules.length} 条记录`}</span>
+            <span className="admin-panel-meta">
+              {rules.length === 0 ? "空列表" : `${rules.length} 条记录`}
+            </span>
           </div>
 
           <div className="rule-list admin-rule-list">
@@ -1094,22 +1244,33 @@ function AdminPage() {
                     <button
                       disabled={deletingKey === rule.key}
                       type="button"
-                      onClick={() => void removeRule(rule.key)}
+                      onClick={() =>
+                        void removeRule(rule.key)}
                     >
                       {deletingKey === rule.key ? "删除中..." : "删除"}
                     </button>
                   </div>
 
                   <div className="admin-rule-meta-row">
-                    <span className={`admin-status-pill ${isExpired(rule.expiresAt) ? "error" : "success"}`}>
-                      {isExpired(rule.expiresAt) ? "已过期" : formatRemainingTime(rule.expiresAt)}
+                    <span
+                      className={`admin-status-pill ${
+                        isExpired(rule.expiresAt) ? "error" : "success"
+                      }`}
+                    >
+                      {isExpired(rule.expiresAt)
+                        ? "已过期"
+                        : formatRemainingTime(rule.expiresAt)}
                     </span>
-                    <span className="admin-rule-expiry">截止 {new Date(rule.expiresAt).toLocaleString()}</span>
+                    <span className="admin-rule-expiry">
+                      截止 {new Date(rule.expiresAt).toLocaleString()}
+                    </span>
                   </div>
 
                   <div className="admin-rule-projects">
                     {rule.projectIds.map((projectId) => (
-                      <span key={`${rule.key}-${projectId}`}>{hiddenProjectLookup.get(projectId) ?? projectId}</span>
+                      <span key={`${rule.key}-${projectId}`}>
+                        {hiddenProjectLookup.get(projectId) ?? projectId}
+                      </span>
                     ))}
                   </div>
                 </div>

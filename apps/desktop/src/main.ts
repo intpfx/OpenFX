@@ -450,9 +450,14 @@ widgetAddChild(syncSection, ipv6Field);
 const serverSection = Section("服务端：复制部署产物");
 widgetAddChild(
   serverSection,
-  Text("http-relay.ts 与 mapping-gateway.ts 当前以可复制脚本形式提供，方便部署到服务端。"),
+  Text(
+    "http-relay.ts 与 mapping-gateway.ts 当前以可复制脚本形式提供，方便部署到服务端。",
+  ),
 );
-widgetAddChild(serverSection, Button("复制 mapping-gateway 服务端脚本", copyDownipServer));
+widgetAddChild(
+  serverSection,
+  Button("复制 mapping-gateway 服务端脚本", copyDownipServer),
+);
 widgetAddChild(serverSection, Button("复制 http-relay 服务端脚本", copyProxyServer));
 widgetAddChild(serverSection, Button("复制部署说明", copyDeployGuide));
 
@@ -466,7 +471,9 @@ App({
     Text("OpenFX Desktop / DownIP 控制台"),
     Text(`Runtime: ${health.surface}`),
     Text(`Status: ${health.status}`),
-    Text("桌面端历史 CLI 同步脚本已迁移到 apps/desktop/tools；服务端能力改为复制部署。"),
+    Text(
+      "桌面端历史 CLI 同步脚本已迁移到 apps/desktop/tools；服务端能力改为复制部署。",
+    ),
     Divider(),
     syncSection,
     HStack(8, [

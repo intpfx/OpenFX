@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import process from "node:process";
 
 const indexCandidates = [
   join(process.cwd(), "public", "index.html"),

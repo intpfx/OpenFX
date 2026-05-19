@@ -1,3 +1,4 @@
+import process from "node:process";
 import { fileURLToPath, URL } from "node:url";
 
 import { defineNitroConfig } from "nitropack/config";

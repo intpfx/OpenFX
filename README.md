@@ -3,7 +3,8 @@
 OpenFX 是一个公开的 TypeScript monorepo，当前承载两个开源产品：
 
 - 一个由 **Perry** 编译为单个原生二进制、便于分发的**桌面应用**
-- 一个基于 **VitePlus** + **React** + **Nitro** 构建、适合部署到 **Deno Deploy** 的**Web 应用**
+- 一个基于 **VitePlus** + **React** + **Nitro** 构建、适合部署到 **Deno Deploy** 的**Web
+  应用**
 
 这个仓库有意围绕以下目标进行设计：**快速迭代**、**纯函数优先的领域逻辑**，以及**人类与
 Agent 协作开发**。
@@ -21,14 +22,13 @@ Perry 最符合桌面端需求，因为它可以直接将 TypeScript
 
 ### Web 端选择 VitePlus + React + Nitro
 
-Web 端当前采用 VitePlus + React 负责前端开发体验与交互界面，Nitro 负责服务端路由与
-Deno Deploy 输出。这个组合保留了快速前端迭代能力，同时继续满足 Deno Deploy 的部署
-约束。
+Web 端当前采用 VitePlus + React 负责前端开发体验与交互界面，Nitro 负责服务端路由与 Deno
+Deploy 输出。这个组合保留了快速前端迭代能力，同时继续满足 Deno Deploy 的部署 约束。
 
 ### 为什么是 VitePlus 而不是旧 Fresh 工作流
 
-此前的 Fresh 基线在热更新和新版本工具链兼容性上已经成为约束。当前方案直接采用
-VitePlus 作为前端构建入口，减少中间兼容层，让 Web 端能够跟随更现代的 Vite 生态。
+此前的 Fresh 基线在热更新和新版本工具链兼容性上已经成为约束。当前方案直接采用 VitePlus
+作为前端构建入口，减少中间兼容层，让 Web 端能够跟随更现代的 Vite 生态。
 
 ## 仓库结构
 

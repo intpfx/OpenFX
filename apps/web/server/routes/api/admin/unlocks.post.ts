@@ -36,7 +36,9 @@ export const saveAdminUnlockRuleHandler = async (req: Request): Promise<Response
     projectIds: Array.isArray(input.projectIds)
       ? input.projectIds.map((value) => String(value))
       : [],
-    expiresAt: Number.isNaN(parsedExpiresAt) ? rawExpiresAt : new Date(parsedExpiresAt).toISOString(),
+    expiresAt: Number.isNaN(parsedExpiresAt)
+      ? rawExpiresAt
+      : new Date(parsedExpiresAt).toISOString(),
   };
 
   const error = validateUnlockRule(normalized);

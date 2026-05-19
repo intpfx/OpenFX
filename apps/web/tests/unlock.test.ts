@@ -6,45 +6,66 @@ import { deleteUnlockRule, saveUnlockRule } from "../utils/unlocks.ts";
 import { unlockHandler } from "../server/routes/api/unlock.post.ts";
 
 Deno.test("unlock handler rejects requests without a key", async () => {
-  const response = await unlockHandler(new Request("http://localhost/api/unlock", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ key: "" }),
-  }));
+  const response = await unlockHandler(
+    new Request("http://localhost/api/unlock", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key: "" }),
+    }),
+  );
 
   expect(response.status).toBe(400);
-  await expect(response.json()).resolves.toMatchObject({ ok: false, error: "missing_key" });
+  await expect(response.json()).resolves.toMatchObject({
+    ok: false,
+    error: "missing_key",
+  });
 });
 
 Deno.test("unlock handler routes TEST key to admin mode locally", async () => {
-  const response = await unlockHandler(new Request("http://localhost/api/unlock", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ key: "TEST" }),
-  }));
+  const response = await unlockHandler(
+    new Request("http://localhost/api/unlock", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key: "TEST" }),
+    }),
+  );
 
   expect(response.status).toBe(200);
-  await expect(response.json()).resolves.toMatchObject({ ok: true, mode: "admin", redirect: "/admin" });
+  await expect(response.json()).resolves.toMatchObject({
+    ok: true,
+    mode: "admin",
+    redirect: "/admin",
+  });
 });
 
 Deno.test("unlock handler rejects wrong-cased admin key locally", async () => {
-  const response = await unlockHandler(new Request("http://localhost/api/unlock", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ key: "test" }),
-  }));
+  const response = await unlockHandler(
+    new Request("http://localhost/api/unlock", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key: "test" }),
+    }),
+  );
 
   expect(response.status).toBe(404);
-  await expect(response.json()).resolves.toMatchObject({ ok: false, error: "invalid_key" });
+  await expect(response.json()).resolves.toMatchObject({
+    ok: false,
+    error: "invalid_key",
+  });
 });
 
 Deno.test("admin unlock list rejects wrong-cased admin key locally", async () => {
-  const response = await listAdminUnlockRulesHandler(new Request("http://localhost/api/admin/unlocks", {
-    headers: { "x-openfx-admin-key": "test" },
-  }));
+  const response = await listAdminUnlockRulesHandler(
+    new Request("http://localhost/api/admin/unlocks", {
+      headers: { "x-openfx-admin-key": "test" },
+    }),
+  );
 
   expect(response.status).toBe(401);
-  await expect(response.json()).resolves.toMatchObject({ ok: false, error: "unauthorized" });
+  await expect(response.json()).resolves.toMatchObject({
+    ok: false,
+    error: "unauthorized",
+  });
 });
 
 Deno.test("unlock handler returns configured project ids for a saved rule", async () => {
@@ -59,11 +80,13 @@ Deno.test("unlock handler returns configured project ids for a saved rule", asyn
   });
 
   try {
-    const response = await unlockHandler(new Request("http://localhost/api/unlock", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ key }),
-    }));
+    const response = await unlockHandler(
+      new Request("http://localhost/api/unlock", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ key }),
+      }),
+    );
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
@@ -90,37 +113,47 @@ Deno.test("unlock handler rejects expired rules", async () => {
   });
 
   try {
-    const response = await unlockHandler(new Request("http://localhost/api/unlock", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ key }),
-    }));
+    const response = await unlockHandler(
+      new Request("http://localhost/api/unlock", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ key }),
+      }),
+    );
 
     expect(response.status).toBe(404);
-    await expect(response.json()).resolves.toMatchObject({ ok: false, error: "invalid_key" });
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      error: "invalid_key",
+    });
   } finally {
     await deleteUnlockRule(key);
   }
 });
 
 Deno.test("admin unlock save generates a five-character key", async () => {
-  const response = await saveAdminUnlockRuleHandler(new Request("http://localhost/api/admin/unlocks", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-openfx-admin-key": "TEST",
-    },
-    body: JSON.stringify({
-      label: "Generated rule",
-      projectIds: ["hidden-1"],
-      expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+  const response = await saveAdminUnlockRuleHandler(
+    new Request("http://localhost/api/admin/unlocks", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-openfx-admin-key": "TEST",
+      },
+      body: JSON.stringify({
+        label: "Generated rule",
+        projectIds: ["hidden-1"],
+        expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+      }),
     }),
-  }));
+  );
 
   expect(response.status).toBe(200);
 
   const payload = await response.json();
-  expect(payload).toMatchObject({ ok: true, rule: { label: "Generated rule", projectIds: ["hidden-1"] } });
+  expect(payload).toMatchObject({
+    ok: true,
+    rule: { label: "Generated rule", projectIds: ["hidden-1"] },
+  });
   expect(payload.rule.key).toMatch(/^[A-Z0-9]{5}$/);
 
   await deleteUnlockRule(payload.rule.key);

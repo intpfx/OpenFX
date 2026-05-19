@@ -12,7 +12,6 @@
     "web:dev": "deno task --config apps/web/deno.json dev",
     "web:build": "deno task --config apps/web/deno.json build",
     "web:preview": "deno task --config apps/web/deno.json preview"
-
   },
   "fmt": {
     "lineWidth": 88,

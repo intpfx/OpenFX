@@ -1,3 +1,4 @@
+import process from "node:process";
 import { fileURLToPath, URL } from "node:url";
 
 import react from "@vitejs/plugin-react";

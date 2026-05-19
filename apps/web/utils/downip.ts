@@ -113,14 +113,15 @@ export const createMemoryDownipStore = (
   const storage = new Map<string, RouteValue>(Object.entries(initial ?? {}));
 
   return {
-    async list(): Promise<Mapping> {
-      return Object.fromEntries(storage.entries());
+    list(): Promise<Mapping> {
+      return Promise.resolve(Object.fromEntries(storage.entries()));
     },
-    async get(key: string): Promise<RouteValue | null> {
-      return storage.get(key) ?? null;
+    get(key: string): Promise<RouteValue | null> {
+      return Promise.resolve(storage.get(key) ?? null);
     },
-    async set(key: string, value: RouteValue): Promise<void> {
+    set(key: string, value: RouteValue): Promise<void> {
       storage.set(key, value);
+      return Promise.resolve();
     },
   };
 };

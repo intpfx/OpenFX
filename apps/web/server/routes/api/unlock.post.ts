@@ -1,6 +1,10 @@
 import { defineEventHandler } from "h3";
 
-import { getUnlockRule, isAdminUnlockKey, isUnlockRuleExpired } from "@/utils/unlocks.ts";
+import {
+  getUnlockRule,
+  isAdminUnlockKey,
+  isUnlockRuleExpired,
+} from "@/utils/unlocks.ts";
 import { createWebRequest } from "../../utils/request.ts";
 
 export const unlockHandler = async (req: Request): Promise<Response> => {

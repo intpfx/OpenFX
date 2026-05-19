@@ -70,7 +70,10 @@ export const validateUnlockRule = (rule: UnlockRule): string | null => {
   return null;
 };
 
-export const isUnlockRuleExpired = (rule: Pick<UnlockRule, "expiresAt">, now = Date.now()): boolean => {
+export const isUnlockRuleExpired = (
+  rule: Pick<UnlockRule, "expiresAt">,
+  now = Date.now(),
+): boolean => {
   return Date.parse(rule.expiresAt) <= now;
 };
 
@@ -97,7 +100,9 @@ export const generateUniqueUnlockKey = async (length = 5): Promise<string> => {
 export const listUnlockRules = async (): Promise<UnlockRule[]> => {
   const kv = await getKv();
   if (kv === null) {
-    return [...memoryRules.values()].sort((left, right) => left.key.localeCompare(right.key));
+    return [...memoryRules.values()].sort((left, right) =>
+      left.key.localeCompare(right.key)
+    );
   }
 
   const rules: UnlockRule[] = [];

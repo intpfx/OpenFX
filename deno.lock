@@ -1,6 +1,7 @@
 {
   "version": "5",
   "specifiers": {
+    "jsr:@std/assert@*": "1.0.19",
     "jsr:@std/assert@^1.0.19": "1.0.19",
     "jsr:@std/expect@^1.0.17": "1.0.19",
     "jsr:@std/internal@^1.0.12": "1.0.13",
@@ -30,7 +31,7 @@
     "@std/expect@1.0.19": {
       "integrity": "25271785688c7ff902fa54875d6aa4001f552c5578f7f0fefb5b5aac1fc2ed8a",
       "dependencies": [
-        "jsr:@std/assert",
+        "jsr:@std/assert@^1.0.19",
         "jsr:@std/internal@^1.0.13",
         "jsr:@std/path"
       ]

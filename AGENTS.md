@@ -26,8 +26,9 @@ Follow the development principles in [README.md §开发原则](README.md).
 
 - **Desktop**: Perry-first. Do not introduce Electron, Tauri, or Node-only runtime
   assumptions.
-- **Web**: VitePlus + React on the client, Nitro on the server, Deno Deploy as the deploy
-  target. Keep shared web logic runtime-safe across Nitro dev (Node) and Deno deploy output.
+- **Web**: VitePlus + React on the client, Nitro on the server, Deno Deploy as the
+  deploy target. Keep shared web logic runtime-safe across Nitro dev (Node) and Deno
+  deploy output.
 - **Tooling**: Prefer Deno-native tasks and built-ins where practical.
 
 ## External References
