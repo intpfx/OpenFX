@@ -1,22 +1,16 @@
 {
   "tasks": {
-    "dev": "deno run -A npm:vite@7.3.1",
-    "build": "deno run -A npm:vite@7.3.1 build",
-    "preview": "deno serve -A _fresh/server.js",
+    "dev": "cd ../.. && pnpm exec concurrently -k -n web,server -c blue,green \"pnpm exec vp dev --config apps/web/vite.config.ts\" \"cd apps/web && pnpm exec nitro dev\"",
+    "build": "cd ../.. && pnpm exec vp build --config apps/web/vite.config.ts && cd apps/web && NITRO_PRESET=deno_deploy pnpm exec nitro build",
+    "preview": "deno task build && deno run -A .output/server/index.ts",
     "test": "deno test --allow-env tests"
   },
   "imports": {
-    "fresh": "jsr:@fresh/core@^2.1.17",
-    "@fresh/plugin-vite": "jsr:@fresh/plugin-vite@^1.1.2",
-    "preact": "npm:preact@^10.26.9",
-    "@preact/signals": "npm:@preact/signals@^2.5.1",
-    "animejs": "npm:animejs@^4.4.1",
     "@std/expect": "jsr:@std/expect@^1.0.17",
     "@/": "./"
   },
   "compilerOptions": {
     "jsx": "react-jsx",
-    "jsxImportSource": "preact",
     "lib": [
       "DOM",
       "DOM.Iterable",

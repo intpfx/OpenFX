@@ -5,7 +5,7 @@
 OpenFX is a public monorepo with two first-party products:
 
 - `apps/desktop`: a Perry-compiled native desktop application.
-- `apps/web`: a Fresh application running on Deno and deployable to Deno Deploy.
+- `apps/web`: a VitePlus + React + Nitro application that targets Deno Deploy.
 
 Agents working in this repo must optimize for long-term maintainability, testability,
 and public readability.
@@ -26,8 +26,8 @@ Follow the development principles in [README.md §开发原则](README.md).
 
 - **Desktop**: Perry-first. Do not introduce Electron, Tauri, or Node-only runtime
   assumptions.
-- **Web**: Fresh + Deno + Vite plugin. Do not replace the runtime with Node-specific
-  frameworks.
+- **Web**: VitePlus + React on the client, Nitro on the server, Deno Deploy as the deploy
+  target. Keep shared web logic runtime-safe across Nitro dev (Node) and Deno deploy output.
 - **Tooling**: Prefer Deno-native tasks and built-ins where practical.
 
 ## External References
@@ -35,10 +35,11 @@ Follow the development principles in [README.md §开发原则](README.md).
 Consult official documentation before making stack-level assumptions:
 
 - [Perry](https://docs.perryts.com/)
-- [Fresh](https://fresh.deno.dev/docs)
+- [VitePlus](https://viteplus.dev/guide/)
+- [Nitro](https://nitro.build/guide)
 - [Deno](https://docs.deno.com/)
 - [Deno Deploy](https://docs.deno.com/deploy/)
-- [Vite](https://vite.dev/guide/)
+- [React](https://react.dev/)
 
 ## Documentation Rules
 

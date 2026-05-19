@@ -7,13 +7,26 @@ export type UnlockRule = {
   key: string;
   label: string;
   projectIds: string[];
-  hint?: string;
+  expiresAt: string;
 };
+
+const GENERATED_KEY_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 let kvPromise: Promise<Deno.Kv | null> | null = null;
 
+const getEnvString = (name: string): string => {
+  if (typeof Deno !== "undefined") {
+    return (Deno.env.get(name) ?? "").trim();
+  }
+
+  const processEnv = (globalThis as typeof globalThis & {
+    process?: { env?: Record<string, string | undefined> };
+  }).process?.env;
+  return (processEnv?.[name] ?? "").trim();
+};
+
 const getKv = async (): Promise<Deno.Kv | null> => {
-  if (typeof Deno.openKv !== "function") {
+  if (typeof Deno === "undefined" || typeof Deno.openKv !== "function") {
     return null;
   }
 
@@ -24,12 +37,12 @@ const getKv = async (): Promise<Deno.Kv | null> => {
 };
 
 export const getAdminUnlockKey = (): string => {
-  const configured = (Deno.env.get("OPENFX_ADMIN_KEY") ?? "").trim();
+  const configured = getEnvString("OPENFX_ADMIN_KEY");
   if (configured) {
     return configured;
   }
 
-  return Deno.env.get("DENO_DEPLOYMENT_ID") ? "" : "TEST";
+  return getEnvString("DENO_DEPLOYMENT_ID") ? "" : "TEST";
 };
 
 export const validateUnlockRule = (rule: UnlockRule): string | null => {
@@ -45,7 +58,40 @@ export const validateUnlockRule = (rule: UnlockRule): string | null => {
     return "至少选择一个业务";
   }
 
+  const expiresAt = Date.parse(rule.expiresAt);
+  if (Number.isNaN(expiresAt)) {
+    return "过期时间格式无效";
+  }
+
+  if (expiresAt <= Date.now()) {
+    return "过期时间必须晚于当前时间";
+  }
+
   return null;
+};
+
+export const isUnlockRuleExpired = (rule: Pick<UnlockRule, "expiresAt">, now = Date.now()): boolean => {
+  return Date.parse(rule.expiresAt) <= now;
+};
+
+export const generateUnlockKey = (length = 5): string => {
+  const bytes = crypto.getRandomValues(new Uint8Array(length));
+  let output = "";
+  for (const byte of bytes) {
+    output += GENERATED_KEY_ALPHABET[byte % GENERATED_KEY_ALPHABET.length];
+  }
+  return output;
+};
+
+export const generateUniqueUnlockKey = async (length = 5): Promise<string> => {
+  for (let attempt = 0; attempt < 32; attempt += 1) {
+    const candidate = generateUnlockKey(length);
+    if ((await getUnlockRule(candidate)) === null) {
+      return candidate;
+    }
+  }
+
+  throw new Error("failed_to_generate_unique_unlock_key");
 };
 
 export const listUnlockRules = async (): Promise<UnlockRule[]> => {
@@ -97,5 +143,5 @@ export const deleteUnlockRule = async (key: string): Promise<void> => {
 
 export const isAdminUnlockKey = (key: string): boolean => {
   const adminKey = getAdminUnlockKey();
-  return !!adminKey && key === adminKey;
+  return !!adminKey && key.trim() === adminKey;
 };

@@ -20,6 +20,7 @@ export interface DownipStore {
 const ROUTE_PREFIX = ["routes"] as const;
 
 let storePromise: Promise<DownipStore> | null = null;
+let memoryStore: DownipStore | null = null;
 
 const withCors = (headers: Headers): Headers => {
   headers.set("access-control-allow-origin", "*");
@@ -42,7 +43,14 @@ export const emptyOptionsResponse = (): Response => {
 };
 
 const getEnvString = (name: string): string => {
-  return (Deno.env.get(name) ?? "").trim();
+  if (typeof Deno !== "undefined") {
+    return (Deno.env.get(name) ?? "").trim();
+  }
+
+  const processEnv = (globalThis as typeof globalThis & {
+    process?: { env?: Record<string, string | undefined> };
+  }).process?.env;
+  return (processEnv?.[name] ?? "").trim();
 };
 
 export const getRedirectConfig = (): { scheme: string; port?: string } => {
@@ -65,6 +73,12 @@ export const buildRedirectUrl = (
 
 export const getDownipStore = async (): Promise<DownipStore> => {
   if (storePromise !== null) {
+    return await storePromise;
+  }
+
+  if (typeof Deno === "undefined" || typeof Deno.openKv !== "function") {
+    memoryStore ??= createMemoryDownipStore();
+    storePromise = Promise.resolve(memoryStore);
     return await storePromise;
   }
 

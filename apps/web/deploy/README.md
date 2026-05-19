@@ -8,7 +8,8 @@
 
 ## Deno Deploy deployment notes
 
-- 代码入口仍是 `apps/web/main.ts`
+- 服务端构建入口是 `apps/web/nitro.config.ts`
+- 客户端构建入口是 `apps/web/index.html`
 - 需要在 Deno Deploy 中把应用指向本仓库，并以 `apps/web` 为 Web 应用目录
 - 如果需要持久化 DownIP 映射，请为应用关联 Deno KV
 - 如果需要代理功能，请设置环境变量 `OPENFX_PROXY_UPSTREAM`

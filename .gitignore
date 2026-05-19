@@ -11,5 +11,8 @@ dist/
 tmp/
 node_modules/
 apps/web/_fresh/
+apps/web/.client-dist/
+apps/web/.nitro/
+apps/web/.output/
 apps/web/.vite/
 apps/web/node_modules/

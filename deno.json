@@ -32,6 +32,8 @@
   "exclude": [
     "dist",
     "apps/web/_fresh",
+    "apps/web/.client-dist",
+    "apps/web/.output",
     ".sisyphus"
   ],
   "imports": {

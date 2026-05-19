@@ -1,6 +1,6 @@
 # OpenFX Web
 
-这是 OpenFX 的 Deno 原生 Web 端。
+这是 OpenFX 的 VitePlus + React + Nitro Web 端。
 
 ## 常用命令
 
@@ -12,7 +12,7 @@ deno task --config apps/web/deno.json preview
 
 ## 部署目标
 
-默认部署目标是 Deno Deploy。
+默认部署目标是 Deno Deploy，由 Nitro 输出服务端入口并由 VitePlus 构建 SPA 客户端。
 
 ## 已托管在 `apps/web` 中的服务端能力
 

@@ -3,7 +3,7 @@
 OpenFX 是一个公开的 TypeScript monorepo，当前承载两个开源产品：
 
 - 一个由 **Perry** 编译为单个原生二进制、便于分发的**桌面应用**
-- 一个基于 **Deno** + **Fresh** 构建、适合部署到 **Deno Deploy** 的**Web 应用**
+- 一个基于 **VitePlus** + **React** + **Nitro** 构建、适合部署到 **Deno Deploy** 的**Web 应用**
 
 这个仓库有意围绕以下目标进行设计：**快速迭代**、**纯函数优先的领域逻辑**，以及**人类与
 Agent 协作开发**。
@@ -19,22 +19,23 @@ Agent 协作开发**。
 Perry 最符合桌面端需求，因为它可以直接将 TypeScript
 编译为单个原生可执行文件，而不是额外打包浏览器运行时。
 
-### Web 端选择 Fresh + Deno
+### Web 端选择 VitePlus + React + Nitro
 
-Fresh 是构建 Deno 原生 Web 应用最自然的选择。它与 Deno Deploy 配合良好，服务端 /
-运行时模型简洁，并且只在真正需要交互的地方启用 islands。
+Web 端当前采用 VitePlus + React 负责前端开发体验与交互界面，Nitro 负责服务端路由与
+Deno Deploy 输出。这个组合保留了快速前端迭代能力，同时继续满足 Deno Deploy 的部署
+约束。
 
-### 选择 Vite 而不是 Vite+
+### 为什么是 VitePlus 而不是旧 Fresh 工作流
 
-Vite+ 很有潜力，但仓库的初始基线优先选择当前更成熟、官方文档更完善的方案。Fresh
-已经明确提供基于 Vite 的工作流，因此 Vite 是风险更低的公开项目起点。
+此前的 Fresh 基线在热更新和新版本工具链兼容性上已经成为约束。当前方案直接采用
+VitePlus 作为前端构建入口，减少中间兼容层，让 Web 端能够跟随更现代的 Vite 生态。
 
 ## 仓库结构
 
 ```text
 apps/
   desktop/   Perry 原生桌面应用
-  web/       Fresh + Deno Web 应用
+  web/       VitePlus + React + Nitro Web 应用
 packages/
   core/      共享的纯领域逻辑与测试
 .agents/
@@ -58,6 +59,7 @@ packages/
 ### 前置依赖
 
 - [Deno](https://deno.com/)
+- [pnpm](https://pnpm.io/)
 - [Perry](https://docs.perryts.com/)
 - 如果你希望通过终端发布或管理仓库，还需要安装 [GitHub CLI](https://cli.github.com/)
 
@@ -71,6 +73,12 @@ deno task web:dev
 
 ```bash
 deno task web:build
+```
+
+构建产物预览：
+
+```bash
+deno task --config apps/web/deno.json preview
 ```
 
 ### 构建桌面应用
@@ -130,8 +138,7 @@ deno task check
 OpenFX 以 TypeScript monorepo 方式启动，采用：
 
 - **Perry** 作为桌面应用方案
-- **Fresh + Deno** 作为 Web 应用方案
-- **Vite** 作为 Web 开发 / 构建工具链
+- **VitePlus + React + Nitro** 作为 Web 应用方案
 - **Apache-2.0** 作为仓库开源协议
 
 #### 背景
@@ -150,14 +157,16 @@ OpenFX 以 TypeScript monorepo 方式启动，采用：
 Perry 直接满足“桌面应用输出为单个原生可执行文件”的核心诉求，同时保持实现语言统一为
 TypeScript。
 
-##### 为什么是 Fresh + Deno
+##### 为什么是 VitePlus + React + Nitro
 
-Fresh 是构建 Deno 原生应用最直接的框架选择，并且天然贴合 Deno Deploy 的部署目标。
+Web 端需要更直接的前端热更新体验，同时仍然输出到 Deno Deploy。VitePlus + React 负责
+前端开发和构建，Nitro 负责服务端路由与 `deno_deploy` 目标输出，两者组合更贴合当前仓
+库的迭代需求。
 
-##### 为什么选 Vite 而不是 Vite+
+##### 为什么放弃旧 Fresh 工作流
 
-Vite+ 虽然值得关注，但公开仓库的初始基线应优先选择 Fresh
-当前官方文档明确支持、生态更稳妥的方案。
+此前的 Fresh 工作流已经成为升级 Vite 与修复本地热更新的阻碍。直接切换到 VitePlus +
+React + Nitro 后，开发、构建和部署链路都更清晰。
 
 ##### 为什么是 Apache-2.0 而不是 MIT
 
