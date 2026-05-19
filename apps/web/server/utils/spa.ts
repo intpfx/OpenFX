@@ -4,7 +4,9 @@ import process from "node:process";
 
 const indexCandidates = [
   join(process.cwd(), "public", "index.html"),
+  join(process.cwd(), ".output", "public", "index.html"),
   join(process.cwd(), ".client-dist", "index.html"),
+  join(process.cwd(), "apps", "web", ".output", "public", "index.html"),
   join(process.cwd(), "apps", "web", ".client-dist", "index.html"),
 ];
 

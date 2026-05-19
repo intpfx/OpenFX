@@ -9,6 +9,7 @@ const nitroDevPort = Number(process.env.OPENFX_NITRO_DEV_PORT ?? "3000");
 
 export default defineNitroConfig({
   srcDir: fileURLToPath(new URL("./server", import.meta.url)),
+  serveStatic: "inline",
   devServer: {
     port: nitroDevPort,
   },
