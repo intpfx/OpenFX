@@ -1,21 +1,23 @@
+type KvKeyPart = Deno.KvKeyPart;
+
 // ScopedKv 类 — 自动给所有 key 加 domain 前缀
 export class ScopedKv {
-  constructor(private kv: Deno.Kv, private scope: string[]) {}
+  constructor(private kv: Deno.Kv, private scope: KvKeyPart[]) {}
 
-  async get<T>(key: unknown[]): Promise<T | null> {
+  async get<T>(key: KvKeyPart[]): Promise<T | null> {
     const result = await this.kv.get<T>([...this.scope, ...key]);
     return result.value ?? null;
   }
 
-  async set(key: unknown[], value: unknown): Promise<void> {
+  async set(key: KvKeyPart[], value: unknown): Promise<void> {
     await this.kv.set([...this.scope, ...key], value);
   }
 
-  async delete(key: unknown[]): Promise<void> {
+  async delete(key: KvKeyPart[]): Promise<void> {
     await this.kv.delete([...this.scope, ...key]);
   }
 
-  async list<T>(prefix: unknown[]): Promise<Deno.KvEntry<T>[]> {
+  async list<T>(prefix: KvKeyPart[]): Promise<Deno.KvEntry<T>[]> {
     const entries: Deno.KvEntry<T>[] = [];
     const iter = this.kv.list<T>({ prefix: [...this.scope, ...prefix] });
     for await (const entry of iter) {
