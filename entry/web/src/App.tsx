@@ -696,17 +696,17 @@ function Homepage() {
               key={card.id}
               project={card}
               revealed={!card.hidden || visibleProjectIds.has(card.id)}
-              onClick={
-                card.id === "how-much-this"
-                  ? () => {
-                      if (document.startViewTransition) {
-                        document.startViewTransition(() => flushSync(() => setShowHowMuch(true)));
-                      } else {
-                        setShowHowMuch(true);
-                      }
-                    }
-                  : undefined
-              }
+              onClick={card.id === "how-much-this"
+                ? () => {
+                  if (document.startViewTransition) {
+                    document.startViewTransition(() =>
+                      flushSync(() => setShowHowMuch(true))
+                    );
+                  } else {
+                    setShowHowMuch(true);
+                  }
+                }
+                : undefined}
             />
           ))}
         </div>
@@ -728,12 +728,14 @@ function Homepage() {
               revealed={!card.hidden || visibleProjectIds.has(card.id)}
               onClick={card.id === "how-much-this"
                 ? () => {
-                    if (document.startViewTransition) {
-                      document.startViewTransition(() => flushSync(() => setShowHowMuch(true)));
-                    } else {
-                      setShowHowMuch(true);
-                    }
+                  if (document.startViewTransition) {
+                    document.startViewTransition(() =>
+                      flushSync(() => setShowHowMuch(true))
+                    );
+                  } else {
+                    setShowHowMuch(true);
                   }
+                }
                 : undefined}
             />
           ))}
@@ -741,13 +743,17 @@ function Homepage() {
 
         {/* 面板叠加层 */}
         {showHowMuch && (
-          <HowMuchPanel onClose={() => {
-            if (document.startViewTransition) {
-              document.startViewTransition(() => flushSync(() => setShowHowMuch(false)));
-            } else {
-              setShowHowMuch(false);
-            }
-          }} />
+          <HowMuchPanel
+            onClose={() => {
+              if (document.startViewTransition) {
+                document.startViewTransition(() =>
+                  flushSync(() => setShowHowMuch(false))
+                );
+              } else {
+                setShowHowMuch(false);
+              }
+            }}
+          />
         )}
       </div>
 
@@ -768,14 +774,18 @@ function Homepage() {
 
         <div className="control-actions">
           <button
-            className={`ctrl-btn${uiBrand === "OpenFX" && !showHowMuch ? " primary" : ""}`}
+            className={`ctrl-btn${
+              uiBrand === "OpenFX" && !showHowMuch ? " primary" : ""
+            }`}
             id="homepagePrimaryControl"
             ref={primaryControlRef}
             type="button"
             onClick={() => {
               if (showHowMuch) {
                 if (document.startViewTransition) {
-                  document.startViewTransition(() => flushSync(() => setShowHowMuch(false)));
+                  document.startViewTransition(() =>
+                    flushSync(() => setShowHowMuch(false))
+                  );
                 } else {
                   setShowHowMuch(false);
                 }
