@@ -11,7 +11,7 @@ const allowedPackageJsonKeys = new Set([
 
 const configFiles = [
   "deno.json",
-  "apps/web/deno.json",
+  "entry/web/deno.json",
   ".github/workflows/ci.yml",
 ];
 

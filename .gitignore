@@ -16,3 +16,11 @@ apps/web/.nitro/
 apps/web/.output/
 apps/web/.vite/
 apps/web/node_modules/
+entry/web/_fresh/
+entry/web/.client-dist/
+entry/web/.nitro/
+entry/web/.output/
+entry/web/.vite/
+entry/web/node_modules/
+graphify-out/
+package-lock.json

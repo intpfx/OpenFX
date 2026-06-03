@@ -1,18 +1,18 @@
 {
   "nodeModulesDir": "auto",
   "workspace": [
-    "./apps/web",
-    "./packages/core"
+    "./entry/web",
+    "./domains/e"
   ],
   "tasks": {
     "fmt": "deno fmt .",
     "lint": "deno lint .",
     "guard:deno-only": "deno run -A ./tools/guard-deno-only.ts",
-    "test": "deno test --allow-env packages/core/tests apps/web/tests",
-    "check": "deno fmt --check . && deno lint . && deno task guard:deno-only && deno test --allow-env packages/core/tests apps/web/tests",
-    "web:dev": "deno task --config apps/web/deno.json dev",
-    "web:build": "deno task --config apps/web/deno.json build",
-    "web:preview": "deno task --config apps/web/deno.json preview"
+    "test": "deno test --allow-env domains/e/tests domains/downip/tests entry/web/tests",
+    "check": "deno fmt --check . && deno lint . && deno task guard:deno-only && deno test --allow-env domains/e/tests domains/downip/tests entry/web/tests",
+    "web:dev": "deno task --config entry/web/deno.json dev",
+    "web:build": "deno task --config entry/web/deno.json build",
+    "web:preview": "deno task --config entry/web/deno.json preview"
   },
   "fmt": {
     "lineWidth": 88,
@@ -31,14 +31,11 @@
   },
   "exclude": [
     "dist",
-    "apps/web/_fresh",
-    "apps/web/.client-dist",
-    "apps/web/.output",
     ".sisyphus"
   ],
   "imports": {
     "@std/assert": "jsr:@std/assert@^1.0.19",
-    "@/": "./apps/web/",
+    "@std/expect": "jsr:@std/expect@^1.0.17",
     "@vitejs/plugin-react": "npm:@vitejs/plugin-react@^5.1.4",
     "animejs": "npm:animejs@^4.4.1",
     "gsap": "npm:gsap@^3.15.0",

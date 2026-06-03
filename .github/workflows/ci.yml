@@ -26,4 +26,24 @@ jobs:
       - name: Test
         run: deno task test
       - name: Build web app
-        run: deno task --config apps/web/deno.json build
+        run: deno task --config entry/web/deno.json build
+
+  deploy:
+    needs: deno-checks
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: vx.x
+      - name: Build
+        run: deno task --config entry/web/deno.json build
+      - name: Deploy to Deno Deploy
+        uses: denoland/deployctl@v1
+        with:
+          entrypoint: server/index.ts
+          root: entry/web/.output

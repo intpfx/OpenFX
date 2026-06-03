@@ -1,0 +1,37 @@
+{
+  "agentDecision": {
+    "kind": "complete",
+    "result": "done"
+  },
+  "turnRecord": {
+    "id": "turn-1",
+    "agentId": "agent-1",
+    "sessionId": "session-1",
+    "taskId": null,
+    "startedAt": 1000,
+    "endedAt": 1001,
+    "inputMessageIds": ["message-1"],
+    "promptDigest": "digest",
+    "decision": {
+      "kind": "complete",
+      "result": "done"
+    },
+    "events": [],
+    "eventEngineRecords": [],
+    "toolExecutions": [],
+    "boundaryRequests": [],
+    "proposedActions": [],
+    "appliedActions": [],
+    "modelRoutes": [],
+    "finalState": "completed"
+  },
+  "workspaceResource": {
+    "uri": "file:///workspace/brief.md",
+    "mediaType": "text/markdown",
+    "digest": "digest",
+    "content": "# Brief",
+    "summary": "# Brief",
+    "anchors": [],
+    "redaction": "none"
+  }
+}
