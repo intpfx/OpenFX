@@ -45,5 +45,6 @@ jobs:
       - name: Deploy to Deno Deploy
         uses: denoland/deployctl@v1
         with:
+          project: openfx
           entrypoint: server/index.ts
           root: entry/web/.output
