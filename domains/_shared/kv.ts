@@ -42,7 +42,7 @@ export const getKv = async (): Promise<Deno.Kv> => {
   throw new Error("Deno.Kv not available in this environment");
 };
 
-export const createScopedKv = (domain: string): ScopedKv | null => {
+export const createScopedKv = (_domain: string): ScopedKv | null => {
   // Returns null when Deno.Kv is unavailable — caller must handle
   return null; // placeholder, real instance created after getKv()
 };

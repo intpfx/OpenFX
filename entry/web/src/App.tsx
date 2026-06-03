@@ -1349,7 +1349,7 @@ function loadScript(src: string): Promise<void> {
   });
 }
 
-function HowMuchPanel({ onClose }: { onClose: () => void }) {
+function HowMuchPanel({ onClose: _onClose }: { onClose: () => void }) {
   const [loaded, setLoaded] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
 
