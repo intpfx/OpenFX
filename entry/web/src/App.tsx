@@ -1169,11 +1169,12 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
 type AdminStatusTone = "neutral" | "success" | "error";
 
 function AdminPage(props: { embedded?: boolean } = {}) {
-  const [adminKey, setAdminKey] = useState(() =>
-    localStorage.getItem(STORAGE_KEYS.adminKey) ?? ""
+  const [adminKey] = useState(() =>
+    localStorage.getItem(STORAGE_KEYS.adminKey) ??
+      (globalThis.location?.hostname === "localhost" ? "TEST" : "")
   );
   const [rules, setRules] = useState<UnlockRule[]>([]);
-  const [status, setStatus] = useState("请输入管理密钥后加载数据");
+  const [status, setStatus] = useState("管理数据准备就绪");
   const [statusTone, setStatusTone] = useState<AdminStatusTone>("neutral");
   const [form, setForm] = useState({
     label: "",
@@ -1194,6 +1195,8 @@ function AdminPage(props: { embedded?: boolean } = {}) {
     port: 3000,
   }));
   const [kvEntries, setKvEntries] = useState<AdminKvEntry[]>([]);
+  const [kvSearch, setKvSearch] = useState("");
+  const [selectedKvKey, setSelectedKvKey] = useState("");
   const [isKvLoading, setIsKvLoading] = useState(false);
   const [isKvSaving, setIsKvSaving] = useState(false);
   const [deletingKvKey, setDeletingKvKey] = useState<string | null>(null);
@@ -1202,10 +1205,6 @@ function AdminPage(props: { embedded?: boolean } = {}) {
     () => new Map(hiddenProjects.map((project) => [project.id, project.name])),
     [],
   );
-  const coveredProjectCount = useMemo(
-    () => new Set(rules.flatMap((rule) => rule.projectIds)).size,
-    [rules],
-  );
   const selectedProjectNames = useMemo(
     () =>
       form.projectIds.map((projectId) =>
@@ -1213,11 +1212,32 @@ function AdminPage(props: { embedded?: boolean } = {}) {
       ),
     [form.projectIds, hiddenProjectLookup],
   );
-  const activeRuleCount = useMemo(
-    () => rules.filter((rule) => !isExpired(rule.expiresAt)).length,
-    [rules],
+  const filteredKvEntries = useMemo(() => {
+    const query = kvSearch.trim().toLowerCase();
+    if (!query) return kvEntries;
+
+    return kvEntries.filter((entry) =>
+      formatJson(entry.key).toLowerCase().includes(query) ||
+      getKvDomainLabel(entry).toLowerCase().includes(query)
+    );
+  }, [kvEntries, kvSearch]);
+  const kvGroups = useMemo(
+    () => groupKvEntriesByDomain(filteredKvEntries),
+    [filteredKvEntries],
   );
-  const kvGroups = useMemo(() => groupKvEntriesByDomain(kvEntries), [kvEntries]);
+  const selectedKvEntry = useMemo(() => {
+    return kvEntries.find((entry) => formatJson(entry.key) === selectedKvKey) ??
+      kvEntries[0] ?? null;
+  }, [kvEntries, selectedKvKey]);
+  const selectedKvKeyParts = useMemo(() => {
+    if (selectedKvEntry) return selectedKvEntry.key;
+
+    try {
+      return parseKvKeyInput(kvKeyInput);
+    } catch {
+      return [] as JsonKvKeyPart[];
+    }
+  }, [kvKeyInput, selectedKvEntry]);
 
   function reportStatus(message: string, tone: AdminStatusTone) {
     setStatus(message);
@@ -1361,8 +1381,17 @@ function AdminPage(props: { embedded?: boolean } = {}) {
       const entries = Array.isArray(payload.entries)
         ? payload.entries as AdminKvEntry[]
         : [];
+      const nextSelectedEntry = entries.find((entry) =>
+        formatJson(entry.key) === selectedKvKey
+      ) ??
+        entries[0] ?? null;
       localStorage.setItem(STORAGE_KEYS.adminKey, key);
       setKvEntries(entries);
+      setSelectedKvKey(nextSelectedEntry ? formatJson(nextSelectedEntry.key) : "");
+      if (nextSelectedEntry) {
+        setKvKeyInput(formatJson(nextSelectedEntry.key));
+        setKvValueInput(formatJson(nextSelectedEntry.value));
+      }
       reportStatus(`已读取 ${entries.length} 条 KV 记录`, "success");
     } finally {
       setIsKvLoading(false);
@@ -1443,6 +1472,7 @@ function AdminPage(props: { embedded?: boolean } = {}) {
   }
 
   function editKvEntry(entry: AdminKvEntry) {
+    setSelectedKvKey(formatJson(entry.key));
     setKvKeyInput(formatJson(entry.key));
     setKvValueInput(formatJson(entry.value));
     reportStatus("KV 记录已回填到编辑区", "neutral");
@@ -1469,79 +1499,38 @@ function AdminPage(props: { embedded?: boolean } = {}) {
         </button>
       )}
 
-      <section className="admin-hero-panel">
-        <div className="admin-hero-copy">
-          <p className="eyebrow">unlock console</p>
-          <h1>后台规则控制台</h1>
-          <p className="lede">
-            管理密钥严格区分大小写。先验证身份，再批量维护 unlock 规则和业务暴露范围。
-          </p>
-          <div className="admin-hero-tags">
-            <span>Case-sensitive key</span>
-            <span>{hiddenProjects.length} 个隐藏项目</span>
-            <span>{activeRuleCount} 条规则处于有效期</span>
+      <details className="admin-panel admin-rules-panel">
+        <summary className="admin-rules-summary">
+          <div>
+            <p className="admin-panel-kicker">unlock rules</p>
+            <h2>规则管理</h2>
           </div>
-        </div>
+          <div className="admin-panel-actions">
+            <span className="admin-panel-meta">
+              {rules.length} 条规则 / 选中 {form.projectIds.length} 项
+            </span>
+            <span className={`admin-status-badge tone-${statusTone}`}>
+              {status}
+            </span>
+            <button
+              disabled={isLoading}
+              type="button"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                void loadRules();
+              }}
+            >
+              {isLoading ? "刷新中" : "刷新"}
+            </button>
+          </div>
+        </summary>
 
-        <div className="admin-stat-grid">
-          <article className="admin-stat-card">
-            <span className="admin-stat-label">Rules</span>
-            <strong>{rules.length}</strong>
-            <p>当前持久化的 unlock 条目</p>
-          </article>
-          <article className="admin-stat-card">
-            <span className="admin-stat-label">Coverage</span>
-            <strong>{coveredProjectCount}</strong>
-            <p>已被规则覆盖的隐藏项目数</p>
-          </article>
-          <article className="admin-stat-card">
-            <span className="admin-stat-label">Draft</span>
-            <strong>{form.projectIds.length}</strong>
-            <p>当前草稿已选择的项目数</p>
-          </article>
-        </div>
-      </section>
-
-      <section className="admin-workbench">
-        <div className="admin-stack">
-          <article className="admin-panel admin-auth-panel">
+        <div className="admin-rule-composer">
+          <div className="admin-rule-create-pane">
             <div className="admin-panel-head">
               <div>
-                <p className="admin-panel-kicker">step 01</p>
-                <h2>身份验证</h2>
-              </div>
-              <span className={`admin-status-badge tone-${statusTone}`}>{status}</span>
-            </div>
-
-            <div className="admin-auth-row">
-              <input
-                autoCapitalize="off"
-                autoComplete="off"
-                placeholder="输入管理密钥"
-                spellCheck={false}
-                type="password"
-                value={adminKey}
-                onChange={(event) =>
-                  setAdminKey(event.target.value)}
-              />
-              <button
-                disabled={isLoading}
-                type="button"
-                onClick={() => void loadRules()}
-              >
-                {isLoading ? "加载中..." : "加载规则"}
-              </button>
-            </div>
-
-            <p className="admin-panel-note">
-              本地开发默认密钥为严格区分大小写的 <strong>TEST</strong>。
-            </p>
-          </article>
-
-          <article className="admin-panel admin-editor-panel">
-            <div className="admin-panel-head">
-              <div>
-                <p className="admin-panel-kicker">step 02</p>
+                <p className="admin-panel-kicker">create</p>
                 <h2>创建规则</h2>
               </div>
               <span className="admin-panel-meta">
@@ -1557,7 +1546,10 @@ function AdminPage(props: { embedded?: boolean } = {}) {
                     placeholder="给团队看的规则名"
                     value={form.label}
                     onChange={(event) =>
-                      setForm((current) => ({ ...current, label: event.target.value }))}
+                      setForm((current) => ({
+                        ...current,
+                        label: event.target.value,
+                      }))}
                   />
                 </label>
                 <label className="admin-field">
@@ -1635,218 +1627,232 @@ function AdminPage(props: { embedded?: boolean } = {}) {
                 </button>
               </div>
             </form>
-          </article>
+          </div>
+
+          <div className="admin-rule-list-pane">
+            <div className="admin-panel-head">
+              <div>
+                <p className="admin-panel-kicker">active</p>
+                <h2>已生效规则</h2>
+              </div>
+              <span className="admin-panel-meta">
+                {rules.length === 0 ? "空列表" : `${rules.length} 条记录`}
+              </span>
+            </div>
+
+            <div className="rule-list admin-rule-list">
+              {rules.length === 0
+                ? (
+                  <div className="admin-empty-state">
+                    <strong>暂无规则</strong>
+                    <p>展开规则管理后，可以创建第一条 unlock 规则。</p>
+                  </div>
+                )
+                : rules.map((rule) => (
+                  <div className="rule-item admin-rule-card" key={rule.key}>
+                    <div className="admin-rule-card-head">
+                      <div>
+                        <strong>{rule.label}</strong>
+                        <p className="admin-rule-key">{rule.key}</p>
+                      </div>
+                      <button
+                        disabled={deletingKey === rule.key}
+                        type="button"
+                        onClick={() =>
+                          void removeRule(rule.key)}
+                      >
+                        {deletingKey === rule.key ? "删除中..." : "删除"}
+                      </button>
+                    </div>
+
+                    <div className="admin-rule-meta-row">
+                      <span
+                        className={`admin-status-pill ${
+                          isExpired(rule.expiresAt) ? "error" : "success"
+                        }`}
+                      >
+                        {isExpired(rule.expiresAt)
+                          ? "已过期"
+                          : formatRemainingTime(rule.expiresAt)}
+                      </span>
+                      <span className="admin-rule-expiry">
+                        截止 {new Date(rule.expiresAt).toLocaleString()}
+                      </span>
+                    </div>
+
+                    <div className="admin-rule-projects">
+                      {rule.projectIds.map((projectId) => (
+                        <span key={`${rule.key}-${projectId}`}>
+                          {hiddenProjectLookup.get(projectId) ?? projectId}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <section className="admin-panel admin-kv-console-panel">
+        <div className="admin-kv-console-head">
+          <div>
+            <p className="admin-panel-kicker">deno kv</p>
+            <h2>数据库</h2>
+          </div>
+          <span>
+            {kvEntries.length === 0 ? "空列表" : `${kvEntries.length} 条记录`}
+          </span>
         </div>
 
-        <article className="admin-panel admin-list-panel">
-          <div className="admin-panel-head">
-            <div>
-              <p className="admin-panel-kicker">step 03</p>
-              <h2>已生效规则</h2>
+        <div className="admin-kv-workbench">
+          <div className="admin-kv-browser-panel">
+            <div className="admin-kv-browser-head">
+              <div>
+                <p className="admin-panel-kicker">browser</p>
+                <h2>Key</h2>
+              </div>
+              <span>{filteredKvEntries.length} / {kvEntries.length}</span>
             </div>
-            <span className="admin-panel-meta">
-              {rules.length === 0 ? "空列表" : `${rules.length} 条记录`}
-            </span>
-          </div>
 
-          <div className="rule-list admin-rule-list">
-            {rules.length === 0
-              ? (
-                <div className="admin-empty-state">
-                  <strong>暂无规则</strong>
-                  <p>先完成身份验证，然后在左侧创建第一条 unlock 规则。</p>
-                </div>
-              )
-              : rules.map((rule) => (
-                <div className="rule-item admin-rule-card" key={rule.key}>
-                  <div className="admin-rule-card-head">
-                    <div>
-                      <strong>{rule.label}</strong>
-                      <p className="admin-rule-key">{rule.key}</p>
-                    </div>
-                    <button
-                      disabled={deletingKey === rule.key}
-                      type="button"
-                      onClick={() =>
-                        void removeRule(rule.key)}
-                    >
-                      {deletingKey === rule.key ? "删除中..." : "删除"}
-                    </button>
-                  </div>
-
-                  <div className="admin-rule-meta-row">
-                    <span
-                      className={`admin-status-pill ${
-                        isExpired(rule.expiresAt) ? "error" : "success"
-                      }`}
-                    >
-                      {isExpired(rule.expiresAt)
-                        ? "已过期"
-                        : formatRemainingTime(rule.expiresAt)}
-                    </span>
-                    <span className="admin-rule-expiry">
-                      截止 {new Date(rule.expiresAt).toLocaleString()}
-                    </span>
-                  </div>
-
-                  <div className="admin-rule-projects">
-                    {rule.projectIds.map((projectId) => (
-                      <span key={`${rule.key}-${projectId}`}>
-                        {hiddenProjectLookup.get(projectId) ?? projectId}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ))}
-          </div>
-        </article>
-      </section>
-
-      <section className="admin-kv-workbench">
-        <article className="admin-panel admin-kv-editor-panel">
-          <div className="admin-panel-head">
-            <div>
-              <p className="admin-panel-kicker">deno kv</p>
-              <h2>数据库记录</h2>
+            <div className="admin-kv-filter-row">
+              <input
+                aria-label="搜索 KV key"
+                placeholder="搜索 key 或 domain"
+                type="search"
+                value={kvSearch}
+                onChange={(event) =>
+                  setKvSearch(event.target.value)}
+              />
+              <button
+                disabled={isKvLoading}
+                type="button"
+                onClick={() => void loadKvEntries()}
+              >
+                {isKvLoading ? "刷新中" : "刷新"}
+              </button>
             </div>
-            <span className="admin-panel-meta">
-              {kvEntries.length === 0 ? "等待读取" : `${kvEntries.length} 条记录`}
-            </span>
-          </div>
 
-          <div className="admin-kv-toolbar">
-            <label className="admin-field">
-              <span>Prefix filter</span>
+            <details className="admin-kv-prefix-filter">
+              <summary>Prefix filter</summary>
               <textarea
                 className="admin-kv-input"
                 spellCheck={false}
                 value={kvPrefixInput}
                 onChange={(event) => setKvPrefixInput(event.target.value)}
               />
-            </label>
-            <button
-              className="admin-primary-action"
-              disabled={isKvLoading}
-              type="button"
-              onClick={() => void loadKvEntries()}
-            >
-              {isKvLoading ? "读取中..." : "刷新 KV"}
-            </button>
-          </div>
+            </details>
 
-          <form className="admin-form admin-kv-form" onSubmit={saveKvEntry}>
-            <label className="admin-field">
-              <span>Key</span>
-              <textarea
-                className="admin-kv-input"
-                spellCheck={false}
-                value={kvKeyInput}
-                onChange={(event) => setKvKeyInput(event.target.value)}
-              />
-            </label>
-            <label className="admin-field">
-              <span>Value</span>
-              <textarea
-                className="admin-kv-input admin-kv-value-input"
-                spellCheck={false}
-                value={kvValueInput}
-                onChange={(event) => setKvValueInput(event.target.value)}
-              />
-            </label>
-            <div className="admin-form-footer">
-              <p>
-                Prefix 留空数组 <code>[]</code>{" "}
-                时读取全部。Key 使用完整 Deno KV key，保存会覆盖同 key 的旧值。
-              </p>
-              <button disabled={isKvSaving} type="submit">
-                {isKvSaving ? "保存中..." : "保存 KV"}
-              </button>
-            </div>
-          </form>
-        </article>
-
-        <article className="admin-panel admin-kv-list-panel">
-          <div className="admin-panel-head">
-            <div>
-              <p className="admin-panel-kicker">records</p>
-              <h2>按 domain 分组</h2>
-            </div>
-            <span className="admin-panel-meta">
-              {kvGroups.length === 0 ? "空列表" : `${kvGroups.length} 组`}
-            </span>
-          </div>
-
-          <div className="admin-kv-groups">
-            {kvGroups.length === 0
-              ? (
-                <div className="admin-empty-state">
-                  <strong>暂无 KV 记录</strong>
-                  <p>
-                    默认读取全部 KV；如果没有出现数据，请检查 admin key 或运行时 KV
-                    状态。
-                  </p>
-                </div>
-              )
-              : kvGroups.map((group) => (
-                <div className="admin-kv-domain-group" key={group.id}>
-                  <div className="admin-kv-domain-head">
-                    <strong>{group.label}</strong>
-                    <span>{group.entries.length} 条</span>
+            <div className="admin-kv-key-list" role="listbox" aria-label="KV keys">
+              {kvGroups.length === 0
+                ? (
+                  <div className="admin-empty-state">
+                    <strong>暂无 KV 记录</strong>
+                    <p>输入 admin key 后刷新，或调整 prefix filter。</p>
                   </div>
-                  <div className="admin-kv-table-wrap">
-                    <table className="admin-kv-table">
-                      <thead>
-                        <tr>
-                          <th>Key</th>
-                          <th>Value</th>
-                          <th>Version</th>
-                          <th>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {group.entries.map((entry) => {
-                          const encodedKey = formatJson(entry.key);
-                          return (
-                            <tr key={encodedKey}>
-                              <td>
-                                <code>{formatJson(entry.key)}</code>
-                              </td>
-                              <td>
-                                <pre>{formatJson(entry.value)}</pre>
-                              </td>
-                              <td>
-                                <span className="admin-kv-version">
-                                  {entry.versionstamp}
-                                </span>
-                              </td>
-                              <td>
-                                <div className="admin-kv-table-actions">
-                                  <button
-                                    type="button"
-                                    onClick={() => editKvEntry(entry)}
-                                  >
-                                    编辑
-                                  </button>
-                                  <button
-                                    disabled={deletingKvKey === encodedKey}
-                                    type="button"
-                                    onClick={() =>
-                                      void removeKvEntry(entry.key)}
-                                  >
-                                    {deletingKvKey === encodedKey ? "删除中" : "删除"}
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                )
+                : kvGroups.map((group) => (
+                  <div className="admin-kv-key-group" key={group.id}>
+                    <div className="admin-kv-key-group-head">
+                      <span>{group.label}</span>
+                      <em>{group.entries.length}</em>
+                    </div>
+                    {group.entries.map((entry) => {
+                      const encodedKey = formatJson(entry.key);
+                      const active = encodedKey === formatJson(selectedKvEntry?.key);
+                      return (
+                        <button
+                          className={`admin-kv-key-row${active ? " active" : ""}`}
+                          key={encodedKey}
+                          role="option"
+                          aria-selected={active}
+                          type="button"
+                          onClick={() => editKvEntry(entry)}
+                        >
+                          <code>{entry.key.join(" / ")}</code>
+                          <span>{typeof entry.value}</span>
+                        </button>
+                      );
+                    })}
                   </div>
-                </div>
-              ))}
+                ))}
+            </div>
           </div>
-        </article>
+
+          <div className="admin-kv-detail-panel">
+            <form className="admin-kv-detail-form" onSubmit={saveKvEntry}>
+              <div className="admin-kv-detail-head">
+                <div>
+                  <p className="admin-panel-kicker">value</p>
+                  <h2>
+                    {selectedKvEntry ? getKvDomainLabel(selectedKvEntry) : "新记录"}
+                  </h2>
+                </div>
+                <div className="admin-kv-detail-actions">
+                  <button type="button" onClick={() => void loadKvEntries()}>
+                    刷新
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      try {
+                        setKvValueInput(formatJson(JSON.parse(kvValueInput)));
+                      } catch {
+                        reportStatus("Value 不是合法 JSON，无法格式化", "error");
+                      }
+                    }}
+                  >
+                    格式化
+                  </button>
+                  <button
+                    disabled={!selectedKvEntry || deletingKvKey === selectedKvKey}
+                    type="button"
+                    onClick={() =>
+                      selectedKvEntry && void removeKvEntry(selectedKvEntry.key)}
+                  >
+                    {deletingKvKey === selectedKvKey ? "删除中" : "删除"}
+                  </button>
+                  <button disabled={isKvSaving} type="submit">
+                    {isKvSaving ? "保存中" : "保存"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="admin-kv-breadcrumbs" aria-label="当前 KV key">
+                {selectedKvKeyParts.length > 0
+                  ? selectedKvKeyParts.map((part, index) => (
+                    <span key={`${String(part)}-${index}`}>{String(part)}</span>
+                  ))
+                  : <span>未选择 key</span>}
+              </div>
+
+              <label className="admin-field admin-kv-key-editor">
+                <span>Full key</span>
+                <textarea
+                  className="admin-kv-input"
+                  spellCheck={false}
+                  value={kvKeyInput}
+                  onChange={(event) => setKvKeyInput(event.target.value)}
+                />
+              </label>
+
+              <div className="admin-kv-meta-row">
+                <span>Versionstamp</span>
+                <code>{selectedKvEntry?.versionstamp ?? "new"}</code>
+              </div>
+
+              <label className="admin-field admin-kv-json-editor">
+                <span>Formatted JSON value</span>
+                <textarea
+                  className="admin-kv-json-textarea"
+                  spellCheck={false}
+                  value={kvValueInput}
+                  onChange={(event) => setKvValueInput(event.target.value)}
+                />
+              </label>
+            </form>
+          </div>
+        </div>
       </section>
     </div>
   );
