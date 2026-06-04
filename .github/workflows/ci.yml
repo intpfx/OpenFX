@@ -7,6 +7,9 @@ on:
       - master
   pull_request:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   deno-checks:
     runs-on: ubuntu-latest
@@ -27,24 +30,3 @@ jobs:
         run: deno task test
       - name: Build web app
         run: deno task --config entry/web/deno.json build
-
-  deploy:
-    needs: deno-checks
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: denoland/setup-deno@v2
-        with:
-          deno-version: vx.x
-      - name: Build
-        run: deno task --config entry/web/deno.json build
-      - name: Deploy to Deno Deploy
-        uses: denoland/deployctl@v1
-        with:
-          project: openfx
-          entrypoint: server/index.ts
-          root: entry/web/.output
