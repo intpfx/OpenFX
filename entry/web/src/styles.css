@@ -381,12 +381,14 @@ textarea {
 }
 
 .inline-unlock-action,
+.proxy-footer-back,
 .proxy-footer-submit,
 .btn-primary,
 .btn-ghost,
 .admin-auth-row button,
 .admin-form button,
 .admin-kv-card-actions button,
+.admin-kv-table-actions button,
 .rule-item button {
   border: 0;
   border-left: 1px solid var(--border);
@@ -433,6 +435,14 @@ textarea {
 .proxy-footer-submit {
   flex: 0 0 auto;
   color: var(--accent);
+}
+
+.proxy-footer-back {
+  flex: 0 0 auto;
+  border-left: 0;
+  border-right: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 0.92rem;
 }
 
 .inline-unlock-cancel {
@@ -559,6 +569,11 @@ textarea {
 .admin-shell {
   display: grid;
   gap: 1.5rem;
+}
+
+.admin-shell.embedded {
+  max-width: none;
+  margin: 0;
 }
 
 .admin-back-link {
@@ -1026,6 +1041,114 @@ textarea {
   font-size: 0.7rem;
 }
 
+.admin-kv-groups {
+  display: grid;
+  gap: 1rem;
+}
+
+.admin-kv-domain-group {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.admin-kv-domain-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.35rem 0.1rem;
+}
+
+.admin-kv-domain-head strong {
+  color: var(--accent);
+  text-transform: uppercase;
+}
+
+.admin-kv-domain-head span,
+.admin-kv-version {
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+}
+
+.admin-kv-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: oklch(0.995 0.002 250 / 0.96);
+}
+
+.admin-kv-table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.admin-kv-table th,
+.admin-kv-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 0.7rem 0.75rem;
+  vertical-align: top;
+  text-align: left;
+}
+
+.admin-kv-table th {
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.admin-kv-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.admin-kv-table th:nth-child(1),
+.admin-kv-table td:nth-child(1) {
+  width: 30%;
+}
+
+.admin-kv-table th:nth-child(2),
+.admin-kv-table td:nth-child(2) {
+  width: 40%;
+}
+
+.admin-kv-table th:nth-child(3),
+.admin-kv-table td:nth-child(3) {
+  width: 16%;
+}
+
+.admin-kv-table th:nth-child(4),
+.admin-kv-table td:nth-child(4) {
+  width: 14%;
+}
+
+.admin-kv-table code,
+.admin-kv-table pre {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font-family: ui-monospace, "SFMono-Regular", SFMono-Regular, Menlo, monospace;
+  font-size: 0.68rem;
+}
+
+.admin-kv-table pre {
+  max-height: 8rem;
+  overflow: auto;
+}
+
+.admin-kv-table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.admin-kv-table-actions button {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
 .mono,
 .code-block {
   font-family: ui-monospace, "SFMono-Regular", SFMono-Regular, Menlo, monospace;
@@ -1232,6 +1355,14 @@ textarea {
 
 .domain-panel[data-panel-id="relay-proxy-gateway"] {
   view-transition-name: card-proxy;
+}
+
+.domain-panel[data-panel-id="admin-console"] {
+  grid-template-rows: 1fr;
+}
+
+.admin-domain-panel {
+  padding: 1rem;
 }
 
 .proxy-browser-panel {

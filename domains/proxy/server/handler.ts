@@ -101,6 +101,8 @@ const rewriteResponseHeaders = (res: Response, domain: string): Headers => {
   }
 
   headers.delete("x-frame-options");
+  headers.delete("content-security-policy");
+  headers.delete("content-security-policy-report-only");
   return headers;
 };
 

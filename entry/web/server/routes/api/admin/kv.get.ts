@@ -42,8 +42,8 @@ export const listAdminKvHandler = async (req: Request): Promise<Response> => {
   try {
     prefix = parseJsonArray(url.searchParams.get("prefix") ?? "[]", []);
     limit = Math.min(
-      Math.max(Number(url.searchParams.get("limit") ?? 100), 1),
-      500,
+      Math.max(Number(url.searchParams.get("limit") ?? 1000), 1),
+      1000,
     );
   } catch {
     return Response.json({ ok: false, error: "invalid_query" }, { status: 400 });

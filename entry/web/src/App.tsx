@@ -34,7 +34,11 @@ type ActiveUnlockSession = {
   expiresAt: string;
 };
 
-type ActiveDomainPanel = "ipv6-sync-suite" | "how-much-this" | "relay-proxy-gateway";
+type ActiveDomainPanel =
+  | "admin-console"
+  | "ipv6-sync-suite"
+  | "how-much-this"
+  | "relay-proxy-gateway";
 
 type DownipRouteValue = {
   ipv6: string;
@@ -49,6 +53,12 @@ type AdminKvEntry = {
   key: JsonKvKeyPart[];
   value: unknown;
   versionstamp: string;
+};
+
+type AdminKvGroup = {
+  id: string;
+  label: string;
+  entries: AdminKvEntry[];
 };
 
 const hiddenProjects = listHiddenHomepageProjects();
@@ -98,6 +108,37 @@ function parseKvPrefixInput(value: string) {
   }
 
   return parsed as JsonKvKeyPart[];
+}
+
+function getKvDomainLabel(entry: AdminKvEntry) {
+  if (entry.key[0] === "domains" && typeof entry.key[1] === "string") {
+    return entry.key[1];
+  }
+
+  if (entry.key[0] === "homepage-unlocks") {
+    return "unlock";
+  }
+
+  return "system";
+}
+
+function groupKvEntriesByDomain(entries: AdminKvEntry[]): AdminKvGroup[] {
+  const groups = new Map<string, AdminKvEntry[]>();
+
+  for (const entry of entries) {
+    const label = getKvDomainLabel(entry);
+    groups.set(label, [...(groups.get(label) ?? []), entry]);
+  }
+
+  return [...groups.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([label, groupEntries]) => ({
+      id: label,
+      label,
+      entries: groupEntries.sort((left, right) =>
+        formatJson(left.key).localeCompare(formatJson(right.key))
+      ),
+    }));
 }
 
 function parseActiveUnlock(rawValue: string | null): ActiveUnlockSession | null {
@@ -271,7 +312,7 @@ function getProjectCardClick(
   return undefined;
 }
 
-function Homepage() {
+function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
   const currentBrandRef = useRef<BrandName>("OpenFX");
   const brandAnimationRef = useRef<JSAnimation | null>(null);
   const primaryControlAnimationRef = useRef<JSAnimation | null>(null);
@@ -291,7 +332,9 @@ function Homepage() {
   const [uiBrand, setUiBrand] = useState<BrandName>("OpenFX");
   const [showUnlock, setShowUnlock] = useState(false);
   const [showMessage, setShowMessage] = useState(false);
-  const [activePanel, setActivePanel] = useState<ActiveDomainPanel | null>(null);
+  const [activePanel, setActivePanel] = useState<ActiveDomainPanel | null>(
+    props.initialPanel ?? null,
+  );
   const [proxyInput, setProxyInput] = useState("");
   const [proxyFrameUrl, setProxyFrameUrl] = useState("");
   const [messageName, setMessageName] = useState("");
@@ -606,7 +649,7 @@ function Homepage() {
         localStorage.setItem(STORAGE_KEYS.adminKey, key);
         setStatus("Admin access granted");
         closeInlineUnlock();
-        navigate(typeof payload.redirect === "string" ? payload.redirect : "/admin");
+        openProjectPanel("admin-console");
         return;
       }
 
@@ -664,12 +707,24 @@ function Homepage() {
   }
 
   function closeProjectPanel() {
+    const shouldResetAdminRoute = activePanel === "admin-console" &&
+      globalThis.location?.pathname === "/admin";
     if (document.startViewTransition) {
-      document.startViewTransition(() => flushSync(() => setActivePanel(null)));
+      document.startViewTransition(() =>
+        flushSync(() => {
+          setActivePanel(null);
+          if (shouldResetAdminRoute) {
+            navigate("/");
+          }
+        })
+      );
       return;
     }
 
     setActivePanel(null);
+    if (shouldResetAdminRoute) {
+      navigate("/");
+    }
   }
 
   function buildProxyFrameUrl(input: string) {
@@ -756,6 +811,12 @@ function Homepage() {
       clearInterval(intervalId);
     };
   }, [activeUnlock]);
+
+  useEffect(() => {
+    if (props.initialPanel) {
+      setActivePanel(props.initialPanel);
+    }
+  }, [props.initialPanel]);
 
   useEffect(() => {
     if (uiBrand !== "OpenFX" && showUnlock) {
@@ -860,6 +921,16 @@ function Homepage() {
         </div>
 
         {/* 面板叠加层 */}
+        {activePanel === "admin-console"
+          ? (
+            <div
+              className="domain-panel admin-domain-panel"
+              data-panel-id="admin-console"
+            >
+              <AdminPage embedded />
+            </div>
+          )
+          : null}
         {activePanel === "how-much-this" ? <HowMuchPanel /> : null}
         {activePanel === "ipv6-sync-suite"
           ? <DownipPanel accessKey={currentAccessKey} />
@@ -888,6 +959,14 @@ function Homepage() {
           {activePanel === "relay-proxy-gateway"
             ? (
               <form className="proxy-footer-form" onSubmit={submitProxyUrl}>
+                <button
+                  aria-label="返回项目卡片"
+                  className="proxy-footer-back"
+                  type="button"
+                  onClick={closeProjectPanel}
+                >
+                  ←
+                </button>
                 <input
                   aria-label="Proxy URL"
                   className="proxy-footer-input"
@@ -1089,12 +1168,12 @@ function Homepage() {
 
 type AdminStatusTone = "neutral" | "success" | "error";
 
-function AdminPage() {
+function AdminPage(props: { embedded?: boolean } = {}) {
   const [adminKey, setAdminKey] = useState(() =>
     localStorage.getItem(STORAGE_KEYS.adminKey) ?? ""
   );
   const [rules, setRules] = useState<UnlockRule[]>([]);
-  const [status, setStatus] = useState("请输入管理密钥后加载规则");
+  const [status, setStatus] = useState("请输入管理密钥后加载数据");
   const [statusTone, setStatusTone] = useState<AdminStatusTone>("neutral");
   const [form, setForm] = useState({
     label: "",
@@ -1104,9 +1183,7 @@ function AdminPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
-  const [kvPrefixInput, setKvPrefixInput] = useState(
-    formatJson(["domains", "downip"]),
-  );
+  const [kvPrefixInput, setKvPrefixInput] = useState(formatJson([]));
   const [kvKeyInput, setKvKeyInput] = useState(formatJson([
     "domains",
     "downip",
@@ -1140,6 +1217,7 @@ function AdminPage() {
     () => rules.filter((rule) => !isExpired(rule.expiresAt)).length,
     [rules],
   );
+  const kvGroups = useMemo(() => groupKvEntriesByDomain(kvEntries), [kvEntries]);
 
   function reportStatus(message: string, tone: AdminStatusTone) {
     setStatus(message);
@@ -1269,7 +1347,7 @@ function AdminPage() {
     try {
       const params = new URLSearchParams({
         prefix: formatJson(prefix),
-        limit: "100",
+        limit: "1000",
       });
       const response = await fetch(`/api/admin/kv?${params.toString()}`, {
         headers: { "x-openfx-admin-key": key },
@@ -1370,15 +1448,26 @@ function AdminPage() {
     reportStatus("KV 记录已回填到编辑区", "neutral");
   }
 
+  useEffect(() => {
+    if (!adminKey.trim()) {
+      return;
+    }
+
+    void loadRules();
+    void loadKvEntries();
+  }, []);
+
   return (
-    <div className="content-shell admin-shell">
-      <button
-        className="back-link admin-back-link"
-        onClick={() => navigate("/")}
-        type="button"
-      >
-        返回首页
-      </button>
+    <div className={`content-shell admin-shell${props.embedded ? " embedded" : ""}`}>
+      {props.embedded ? null : (
+        <button
+          className="back-link admin-back-link"
+          onClick={() => navigate("/")}
+          type="button"
+        >
+          返回首页
+        </button>
+      )}
 
       <section className="admin-hero-panel">
         <div className="admin-hero-copy">
@@ -1432,7 +1521,8 @@ function AdminPage() {
                 spellCheck={false}
                 type="password"
                 value={adminKey}
-                onChange={(event) => setAdminKey(event.target.value)}
+                onChange={(event) =>
+                  setAdminKey(event.target.value)}
               />
               <button
                 disabled={isLoading}
@@ -1619,12 +1709,14 @@ function AdminPage() {
               <p className="admin-panel-kicker">deno kv</p>
               <h2>数据库记录</h2>
             </div>
-            <span className="admin-panel-meta">完整 key CRUD</span>
+            <span className="admin-panel-meta">
+              {kvEntries.length === 0 ? "等待读取" : `${kvEntries.length} 条记录`}
+            </span>
           </div>
 
           <div className="admin-kv-toolbar">
             <label className="admin-field">
-              <span>Prefix</span>
+              <span>Prefix filter</span>
               <textarea
                 className="admin-kv-input"
                 spellCheck={false}
@@ -1638,7 +1730,7 @@ function AdminPage() {
               type="button"
               onClick={() => void loadKvEntries()}
             >
-              {isKvLoading ? "读取中..." : "读取记录"}
+              {isKvLoading ? "读取中..." : "刷新 KV"}
             </button>
           </div>
 
@@ -1663,8 +1755,8 @@ function AdminPage() {
             </label>
             <div className="admin-form-footer">
               <p>
-                Key 使用完整 Deno KV key，例如
-                <code>["domains","downip","home"]</code>。保存会覆盖同 key 的旧值。
+                Prefix 留空数组 <code>[]</code>{" "}
+                时读取全部。Key 使用完整 Deno KV key，保存会覆盖同 key 的旧值。
               </p>
               <button disabled={isKvSaving} type="submit">
                 {isKvSaving ? "保存中..." : "保存 KV"}
@@ -1677,49 +1769,82 @@ function AdminPage() {
           <div className="admin-panel-head">
             <div>
               <p className="admin-panel-kicker">records</p>
-              <h2>读取结果</h2>
+              <h2>按 domain 分组</h2>
             </div>
             <span className="admin-panel-meta">
-              {kvEntries.length === 0 ? "空列表" : `${kvEntries.length} 条记录`}
+              {kvGroups.length === 0 ? "空列表" : `${kvGroups.length} 组`}
             </span>
           </div>
 
-          <div className="admin-kv-list">
-            {kvEntries.length === 0
+          <div className="admin-kv-groups">
+            {kvGroups.length === 0
               ? (
                 <div className="admin-empty-state">
                   <strong>暂无 KV 记录</strong>
-                  <p>输入 prefix 后读取，或先在左侧保存一条记录。</p>
+                  <p>
+                    默认读取全部 KV；如果没有出现数据，请检查 admin key 或运行时 KV
+                    状态。
+                  </p>
                 </div>
               )
-              : kvEntries.map((entry) => {
-                const encodedKey = formatJson(entry.key);
-                return (
-                  <div className="admin-kv-card" key={encodedKey}>
-                    <div className="admin-kv-card-head">
-                      <div>
-                        <strong>{entry.key.join(" / ")}</strong>
-                        <p>{entry.versionstamp}</p>
-                      </div>
-                      <div className="admin-kv-card-actions">
-                        <button type="button" onClick={() => editKvEntry(entry)}>
-                          编辑
-                        </button>
-                        <button
-                          disabled={deletingKvKey === encodedKey}
-                          type="button"
-                          onClick={() => void removeKvEntry(entry.key)}
-                        >
-                          {deletingKvKey === encodedKey ? "删除中..." : "删除"}
-                        </button>
-                      </div>
-                    </div>
-                    <pre className="code-block admin-kv-code">
-                      {formatJson(entry.value)}
-                    </pre>
+              : kvGroups.map((group) => (
+                <div className="admin-kv-domain-group" key={group.id}>
+                  <div className="admin-kv-domain-head">
+                    <strong>{group.label}</strong>
+                    <span>{group.entries.length} 条</span>
                   </div>
-                );
-              })}
+                  <div className="admin-kv-table-wrap">
+                    <table className="admin-kv-table">
+                      <thead>
+                        <tr>
+                          <th>Key</th>
+                          <th>Value</th>
+                          <th>Version</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {group.entries.map((entry) => {
+                          const encodedKey = formatJson(entry.key);
+                          return (
+                            <tr key={encodedKey}>
+                              <td>
+                                <code>{formatJson(entry.key)}</code>
+                              </td>
+                              <td>
+                                <pre>{formatJson(entry.value)}</pre>
+                              </td>
+                              <td>
+                                <span className="admin-kv-version">
+                                  {entry.versionstamp}
+                                </span>
+                              </td>
+                              <td>
+                                <div className="admin-kv-table-actions">
+                                  <button
+                                    type="button"
+                                    onClick={() => editKvEntry(entry)}
+                                  >
+                                    编辑
+                                  </button>
+                                  <button
+                                    disabled={deletingKvKey === encodedKey}
+                                    type="button"
+                                    onClick={() =>
+                                      void removeKvEntry(entry.key)}
+                                  >
+                                    {deletingKvKey === encodedKey ? "删除中" : "删除"}
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))}
           </div>
         </article>
       </section>
@@ -1956,7 +2081,11 @@ function HowMuchPanel() {
 export function App() {
   const pathname = usePathname();
 
-  if (pathname !== "/downip" && pathname !== "/admin") {
+  if (pathname === "/admin") {
+    return <Homepage initialPanel="admin-console" />;
+  }
+
+  if (pathname !== "/downip") {
     return <Homepage />;
   }
 
@@ -1964,7 +2093,6 @@ export function App() {
     <div className="app-frame">
       <main>
         {pathname === "/downip" ? <DownipPage /> : null}
-        {pathname === "/admin" ? <AdminPage /> : null}
       </main>
     </div>
   );

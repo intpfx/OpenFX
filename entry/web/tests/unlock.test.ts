@@ -7,6 +7,7 @@ import { unlockHandler } from "../server/routes/api/unlock.post.ts";
 import { checkProjectAccess } from "../server/utils/access.ts";
 import { handleProtectedDownipUpdateRequest } from "../server/routes/update.post.ts";
 import { handleProxyRequest } from "../server/routes/api/proxy/[...path].ts";
+import { handleRootProxyRequest } from "../server/routes/api/proxy.ts";
 
 Deno.test("unlock handler rejects requests without a key", async () => {
   const response = await unlockHandler(
@@ -251,4 +252,19 @@ Deno.test("protected proxy route follows visible-card public access policy", asy
     ok: false,
     error: "proxy_not_configured",
   });
+});
+
+Deno.test("root proxy route accepts full URL query under visible-card policy", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (() => Promise.resolve(new Response("ok"))) as typeof fetch;
+
+  try {
+    const response = await handleRootProxyRequest(
+      new Request("http://localhost/api/proxy?url=https%3A%2F%2Fexample.com%2F"),
+    );
+
+    expect(response.status).toBe(200);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
