@@ -1,10 +1,19 @@
 import { defineEventHandler, getRouterParam } from "h3";
 
 import { proxyRequest } from "../../../../../../domains/proxy/server/handler.ts";
+import { requireProjectAccess } from "../../../utils/access.ts";
 import { createWebRequest } from "../../../utils/request.ts";
 
-const handleProxyRequest = async (req: Request, path?: string): Promise<Response> => {
+export const handleProxyRequest = async (
+  req: Request,
+  path?: string,
+): Promise<Response> => {
   try {
+    if (req.method !== "OPTIONS") {
+      const denied = await requireProjectAccess(req, "relay-proxy-gateway");
+      if (denied) return denied;
+    }
+
     return await proxyRequest(req, path);
   } catch (error) {
     return Response.json({ ok: false, error: String(error) }, {

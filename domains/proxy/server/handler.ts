@@ -30,7 +30,44 @@ export const getProxyUpstream = (): string | null => {
 
 export const isProxyEnabled = (): boolean => getProxyUpstream() !== null;
 
+const getExplicitProxyTarget = (req: Request): URL | null => {
+  const incoming = new URL(req.url);
+  const value = incoming.searchParams.get("url")?.trim();
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const target = new URL(value);
+    return target.protocol === "http:" || target.protocol === "https:" ? target : null;
+  } catch {
+    const upstream = getProxyUpstream();
+    if (!upstream) {
+      return null;
+    }
+
+    const target = new URL(upstream);
+    const relative = new URL(
+      value.startsWith("/") ? value : `/${value}`,
+      "http://openfx.local",
+    );
+    target.pathname = `${target.pathname.replace(/\/+$/, "")}${relative.pathname}`
+      .replace(
+        /\/+/g,
+        "/",
+      );
+    target.search = relative.search;
+    target.hash = relative.hash;
+    return target;
+  }
+};
+
 export const buildProxyTargetUrl = (req: Request, restPath?: string): URL | null => {
+  const explicitTarget = getExplicitProxyTarget(req);
+  if (explicitTarget) {
+    return explicitTarget;
+  }
+
   const upstream = getProxyUpstream();
   if (!upstream) {
     return null;

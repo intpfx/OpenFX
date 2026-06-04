@@ -15,7 +15,7 @@
           "name": "IPv6 Sync Suite",
           "description": "把桌面端的定时 IPv6 上报、Web 端的映射更新和按 key 重定向串成同一条可部署业务链路。",
           "tech": ["Perry", "Nitro", "IPv6"],
-          "sourcePath": "apps/desktop/src/main.ts + apps/web/server/routes/update.post.ts + apps/web/server/routes/[key]/[...rest].ts"
+          "sourcePath": "domains/downip/ + entry/desktop/tools/desktop-sync-agent.ts"
         }
       ]
     },
@@ -38,7 +38,7 @@
           "name": "Relay Gateway",
           "description": "按需启用的 HTTP 中继业务，把上游站点挂到 Nitro 路由下并统一做请求头与响应头改写。",
           "tech": ["Proxy", "CORS", "Upstream"],
-          "sourcePath": "apps/web/server/routes/api/proxy/[...path].ts + apps/web/utils/proxy.ts"
+          "sourcePath": "domains/proxy/server/handler.ts + entry/web/server/routes/api/proxy/[...path].ts"
         }
       ]
     }

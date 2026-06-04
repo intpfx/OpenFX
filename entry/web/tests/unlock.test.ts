@@ -4,6 +4,9 @@ import { saveAdminUnlockRuleHandler } from "../server/routes/api/admin/unlocks.p
 import { listAdminUnlockRulesHandler } from "../server/routes/api/admin/unlocks.get.ts";
 import { deleteUnlockRule, saveUnlockRule } from "../server/admin/unlocks.ts";
 import { unlockHandler } from "../server/routes/api/unlock.post.ts";
+import { checkProjectAccess } from "../server/utils/access.ts";
+import { handleProtectedDownipUpdateRequest } from "../server/routes/update.post.ts";
+import { handleProxyRequest } from "../server/routes/api/proxy/[...path].ts";
 
 Deno.test("unlock handler rejects requests without a key", async () => {
   const response = await unlockHandler(
@@ -157,4 +160,95 @@ Deno.test("admin unlock save generates a five-character key", async () => {
   expect(payload.rule.key).toMatch(/^[A-Z0-9]{5}$/);
 
   await deleteUnlockRule(payload.rule.key);
+});
+
+Deno.test("project access accepts admin key", async () => {
+  const result = await checkProjectAccess(
+    new Request("http://localhost/update", {
+      headers: { "x-openfx-admin-key": "TEST" },
+    }),
+    "ipv6-sync-suite",
+    { public: false },
+  );
+
+  expect(result).toMatchObject({ ok: true, mode: "admin" });
+});
+
+Deno.test("project access accepts unlock key scoped to the project", async () => {
+  const key = `spec-${crypto.randomUUID().slice(0, 8)}`;
+
+  await saveUnlockRule({
+    key,
+    label: "DownIP access",
+    projectIds: ["ipv6-sync-suite"],
+    expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+  });
+
+  try {
+    const result = await checkProjectAccess(
+      new Request("http://localhost/update", {
+        headers: { "x-openfx-unlock-key": key },
+      }),
+      "ipv6-sync-suite",
+      { public: false },
+    );
+
+    expect(result).toMatchObject({ ok: true, mode: "unlock" });
+  } finally {
+    await deleteUnlockRule(key);
+  }
+});
+
+Deno.test("project access rejects unlock key outside project scope", async () => {
+  const key = `spec-${crypto.randomUUID().slice(0, 8)}`;
+
+  await saveUnlockRule({
+    key,
+    label: "Proxy access",
+    projectIds: ["relay-proxy-gateway"],
+    expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+  });
+
+  try {
+    const result = await checkProjectAccess(
+      new Request(`http://localhost/update?unlock_key=${key}`),
+      "ipv6-sync-suite",
+      { public: false },
+    );
+
+    expect(result).toMatchObject({ ok: false, error: "project_not_allowed" });
+  } finally {
+    await deleteUnlockRule(key);
+  }
+});
+
+Deno.test("protected DownIP update route follows visible-card public access policy", async () => {
+  const response = await handleProtectedDownipUpdateRequest(
+    new Request("http://localhost/update", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        home: { ipv6: "2001:db8::1", port: 3000 },
+      }),
+    }),
+  );
+
+  expect(response.status).toBe(200);
+  await expect(response.json()).resolves.toMatchObject({
+    ok: true,
+    count: 1,
+  });
+});
+
+Deno.test("protected proxy route follows visible-card public access policy", async () => {
+  const response = await handleProxyRequest(
+    new Request("http://localhost/api/proxy/anything"),
+    "anything",
+  );
+
+  expect(response.status).toBe(503);
+  await expect(response.json()).resolves.toMatchObject({
+    ok: false,
+    error: "proxy_not_configured",
+  });
 });

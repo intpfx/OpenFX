@@ -1,10 +1,19 @@
 import { animate, type JSAnimation, scrambleText } from "animejs";
 import gsap from "gsap";
-import { type MutableRefObject, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type FormEvent,
+  type MutableRefObject,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { flushSync } from "react-dom";
 
 import { DownipPage } from "../../../domains/downip/frontend/DownipPage.tsx";
 
+import { DOMAIN_CONTENT_PUBLIC } from "../domain-access.ts";
 import {
   HOMEPAGE_PROJECTS,
   type HomepageProjectCard,
@@ -25,6 +34,23 @@ type ActiveUnlockSession = {
   expiresAt: string;
 };
 
+type ActiveDomainPanel = "ipv6-sync-suite" | "how-much-this" | "relay-proxy-gateway";
+
+type DownipRouteValue = {
+  ipv6: string;
+  port: number;
+};
+
+type DownipMapping = Record<string, DownipRouteValue>;
+
+type JsonKvKeyPart = string | number | boolean;
+
+type AdminKvEntry = {
+  key: JsonKvKeyPart[];
+  value: unknown;
+  versionstamp: string;
+};
+
 const hiddenProjects = listHiddenHomepageProjects();
 
 type BrandName = "FENGXIAO" | "OpenFX";
@@ -38,6 +64,40 @@ function createDefaultExpiryInput() {
   const value = new Date(Date.now() + 24 * 60 * 60 * 1000);
   const timezoneOffset = value.getTimezoneOffset() * 60_000;
   return new Date(value.getTime() - timezoneOffset).toISOString().slice(0, 16);
+}
+
+function formatJson(value: unknown) {
+  return JSON.stringify(value, null, 2);
+}
+
+function parseKvKeyInput(value: string) {
+  const parsed = JSON.parse(value) as unknown;
+  if (
+    !Array.isArray(parsed) || parsed.length === 0 ||
+    !parsed.every((part) =>
+      typeof part === "string" || typeof part === "number" ||
+      typeof part === "boolean"
+    )
+  ) {
+    throw new Error("invalid_key");
+  }
+
+  return parsed as JsonKvKeyPart[];
+}
+
+function parseKvPrefixInput(value: string) {
+  const parsed = JSON.parse(value) as unknown;
+  if (
+    !Array.isArray(parsed) ||
+    !parsed.every((part) =>
+      typeof part === "string" || typeof part === "number" ||
+      typeof part === "boolean"
+    )
+  ) {
+    throw new Error("invalid_prefix");
+  }
+
+  return parsed as JsonKvKeyPart[];
 }
 
 function parseActiveUnlock(rawValue: string | null): ActiveUnlockSession | null {
@@ -194,6 +254,23 @@ function ProjectCard(props: {
     </div>
   );
 }
+
+function getProjectCardClick(
+  card: HomepageProjectCard,
+  controls: {
+    openPanel: (panel: ActiveDomainPanel) => void;
+  },
+): (() => void) | undefined {
+  if (
+    card.id === "how-much-this" || card.id === "ipv6-sync-suite" ||
+    card.id === "relay-proxy-gateway"
+  ) {
+    return () => controls.openPanel(card.id);
+  }
+
+  return undefined;
+}
+
 function Homepage() {
   const currentBrandRef = useRef<BrandName>("OpenFX");
   const brandAnimationRef = useRef<JSAnimation | null>(null);
@@ -214,7 +291,9 @@ function Homepage() {
   const [uiBrand, setUiBrand] = useState<BrandName>("OpenFX");
   const [showUnlock, setShowUnlock] = useState(false);
   const [showMessage, setShowMessage] = useState(false);
-  const [showHowMuch, setShowHowMuch] = useState(false);
+  const [activePanel, setActivePanel] = useState<ActiveDomainPanel | null>(null);
+  const [proxyInput, setProxyInput] = useState("");
+  const [proxyFrameUrl, setProxyFrameUrl] = useState("");
   const [messageName, setMessageName] = useState("");
   const [messageContent, setMessageContent] = useState("");
   const [messageButtonText, setMessageButtonText] = useState("MESSAGE");
@@ -229,9 +308,12 @@ function Homepage() {
     () => new Set(activeUnlock?.projectIds ?? []),
     [activeUnlock],
   );
+  const isPanelOpen = activePanel !== null;
   const activeUnlockSummary = activeUnlock
     ? formatRemainingTime(activeUnlock.expiresAt)
     : "";
+  const currentAccessKey = activeUnlock?.key ??
+    localStorage.getItem(STORAGE_KEYS.adminKey)?.trim() ?? "";
 
   function isAccentChar(word: string, ch: string) {
     return (word === "FENGXIAO" && ch === "O") ||
@@ -568,6 +650,62 @@ function Homepage() {
     globalThis.setTimeout(() => setMessageButtonText("MESSAGE"), 1800);
   }
 
+  function isProjectRevealed(card: HomepageProjectCard) {
+    return DOMAIN_CONTENT_PUBLIC || !card.hidden || visibleProjectIds.has(card.id);
+  }
+
+  function openProjectPanel(panel: ActiveDomainPanel) {
+    if (document.startViewTransition) {
+      document.startViewTransition(() => flushSync(() => setActivePanel(panel)));
+      return;
+    }
+
+    setActivePanel(panel);
+  }
+
+  function closeProjectPanel() {
+    if (document.startViewTransition) {
+      document.startViewTransition(() => flushSync(() => setActivePanel(null)));
+      return;
+    }
+
+    setActivePanel(null);
+  }
+
+  function buildProxyFrameUrl(input: string) {
+    const value = input.trim();
+    if (!value) return "";
+
+    const params = new URLSearchParams();
+    try {
+      const parsed = new URL(value);
+      params.set("url", parsed.toString());
+    } catch {
+      const path = value.startsWith("/") ? value : `/${value}`;
+      params.set("url", path);
+    }
+
+    const accessKey = activeUnlock?.key ??
+      localStorage.getItem(STORAGE_KEYS.adminKey)?.trim() ?? "";
+    if (accessKey) {
+      params.set("unlock_key", accessKey);
+    }
+
+    return `/api/proxy?${params.toString()}`;
+  }
+
+  function submitProxyUrl(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const nextUrl = buildProxyFrameUrl(proxyInput);
+    if (!nextUrl) {
+      setStatus("Enter a proxy path or URL");
+      return;
+    }
+
+    setProxyFrameUrl(nextUrl);
+    setStatus("Proxy view opened");
+  }
+
   useEffect(() => {
     const textNode = document.getElementById("brandText");
     const wordNode = document.getElementById("brandWord");
@@ -673,7 +811,7 @@ function Homepage() {
       <BrandWord onToggle={toggleBrand} />
 
       <div
-        className={`projects-zone${showHowMuch ? " panel-active" : ""}`}
+        className={`projects-zone${isPanelOpen ? " panel-active" : ""}`}
         style={{
           gridTemplateColumns: HOMEPAGE_PROJECTS.layout.gridTemplateColumns,
           position: "relative",
@@ -687,26 +825,16 @@ function Homepage() {
             ...(HOMEPAGE_PROJECTS.columns[0].offsetRem
               ? { paddingTop: `${HOMEPAGE_PROJECTS.columns[0].offsetRem}rem` }
               : undefined),
-            opacity: showHowMuch ? 0 : 1,
-            pointerEvents: showHowMuch ? "none" : undefined,
+            opacity: isPanelOpen ? 0 : 1,
+            pointerEvents: isPanelOpen ? "none" : undefined,
           }}
         >
           {HOMEPAGE_PROJECTS.columns[0].cards.map((card) => (
             <ProjectCard
               key={card.id}
               project={card}
-              revealed={!card.hidden || visibleProjectIds.has(card.id)}
-              onClick={card.id === "how-much-this"
-                ? () => {
-                  if (document.startViewTransition) {
-                    document.startViewTransition(() =>
-                      flushSync(() => setShowHowMuch(true))
-                    );
-                  } else {
-                    setShowHowMuch(true);
-                  }
-                }
-                : undefined}
+              revealed={isProjectRevealed(card)}
+              onClick={getProjectCardClick(card, { openPanel: openProjectPanel })}
             />
           ))}
         </div>
@@ -717,44 +845,28 @@ function Homepage() {
             ...(HOMEPAGE_PROJECTS.columns[1].offsetRem
               ? { paddingTop: `${HOMEPAGE_PROJECTS.columns[1].offsetRem}rem` }
               : undefined),
-            opacity: showHowMuch ? 0 : 1,
-            pointerEvents: showHowMuch ? "none" : undefined,
+            opacity: isPanelOpen ? 0 : 1,
+            pointerEvents: isPanelOpen ? "none" : undefined,
           }}
         >
           {HOMEPAGE_PROJECTS.columns[1].cards.map((card) => (
             <ProjectCard
               key={card.id}
               project={card}
-              revealed={!card.hidden || visibleProjectIds.has(card.id)}
-              onClick={card.id === "how-much-this"
-                ? () => {
-                  if (document.startViewTransition) {
-                    document.startViewTransition(() =>
-                      flushSync(() => setShowHowMuch(true))
-                    );
-                  } else {
-                    setShowHowMuch(true);
-                  }
-                }
-                : undefined}
+              revealed={isProjectRevealed(card)}
+              onClick={getProjectCardClick(card, { openPanel: openProjectPanel })}
             />
           ))}
         </div>
 
         {/* 面板叠加层 */}
-        {showHowMuch && (
-          <HowMuchPanel
-            onClose={() => {
-              if (document.startViewTransition) {
-                document.startViewTransition(() =>
-                  flushSync(() => setShowHowMuch(false))
-                );
-              } else {
-                setShowHowMuch(false);
-              }
-            }}
-          />
-        )}
+        {activePanel === "how-much-this" ? <HowMuchPanel /> : null}
+        {activePanel === "ipv6-sync-suite"
+          ? <DownipPanel accessKey={currentAccessKey} />
+          : null}
+        {activePanel === "relay-proxy-gateway"
+          ? <ProxyPanel frameUrl={proxyFrameUrl} />
+          : null}
       </div>
 
       <div
@@ -773,22 +885,46 @@ function Homepage() {
         </div>
 
         <div className="control-actions">
+          {activePanel === "relay-proxy-gateway"
+            ? (
+              <form className="proxy-footer-form" onSubmit={submitProxyUrl}>
+                <input
+                  aria-label="Proxy URL"
+                  className="proxy-footer-input"
+                  placeholder="https://example.com/path"
+                  type="text"
+                  value={proxyInput}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setProxyInput(value);
+                    if (!value.trim()) {
+                      setProxyFrameUrl("");
+                    }
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      closeProjectPanel();
+                    }
+                  }}
+                />
+                <button className="proxy-footer-submit" type="submit">OPEN</button>
+              </form>
+            )
+            : null}
           <button
             className={`ctrl-btn${
-              uiBrand === "OpenFX" && !showHowMuch ? " primary" : ""
+              uiBrand === "OpenFX" && !isPanelOpen ? " primary" : ""
             }`}
             id="homepagePrimaryControl"
             ref={primaryControlRef}
             type="button"
+            style={{
+              display: activePanel === "relay-proxy-gateway" ? "none" : undefined,
+            }}
             onClick={() => {
-              if (showHowMuch) {
-                if (document.startViewTransition) {
-                  document.startViewTransition(() =>
-                    flushSync(() => setShowHowMuch(false))
-                  );
-                } else {
-                  setShowHowMuch(false);
-                }
+              if (isPanelOpen) {
+                closeProjectPanel();
                 return;
               }
               if (uiBrand === "OpenFX") {
@@ -803,9 +939,9 @@ function Homepage() {
               className="ctrl-btn-label"
               id="homepagePrimaryControlLabel"
               ref={primaryControlLabelRef}
-              style={{ display: showHowMuch ? "none" : undefined }}
+              style={{ display: isPanelOpen ? "none" : undefined }}
             />
-            {showHowMuch && <span className="ctrl-btn-back-text">← 返回</span>}
+            {isPanelOpen && <span className="ctrl-btn-back-text">← 返回</span>}
           </button>
 
           <div
@@ -968,6 +1104,22 @@ function AdminPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
+  const [kvPrefixInput, setKvPrefixInput] = useState(
+    formatJson(["domains", "downip"]),
+  );
+  const [kvKeyInput, setKvKeyInput] = useState(formatJson([
+    "domains",
+    "downip",
+    "home",
+  ]));
+  const [kvValueInput, setKvValueInput] = useState(formatJson({
+    ipv6: "2001:db8::1",
+    port: 3000,
+  }));
+  const [kvEntries, setKvEntries] = useState<AdminKvEntry[]>([]);
+  const [isKvLoading, setIsKvLoading] = useState(false);
+  const [isKvSaving, setIsKvSaving] = useState(false);
+  const [deletingKvKey, setDeletingKvKey] = useState<string | null>(null);
 
   const hiddenProjectLookup = useMemo(
     () => new Map(hiddenProjects.map((project) => [project.id, project.name])),
@@ -1027,7 +1179,7 @@ function AdminPage() {
     }
   }
 
-  async function saveRule(event: React.FormEvent<HTMLFormElement>) {
+  async function saveRule(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const key = adminKey.trim();
@@ -1092,6 +1244,130 @@ function AdminPage() {
     } finally {
       setDeletingKey(null);
     }
+  }
+
+  async function loadKvEntries() {
+    const key = adminKey.trim();
+    if (!key) {
+      reportStatus("请先输入管理密钥再读取 KV", "error");
+      return;
+    }
+
+    let prefix: JsonKvKeyPart[];
+    try {
+      prefix = parseKvPrefixInput(kvPrefixInput);
+    } catch {
+      reportStatus(
+        "KV prefix 必须是 JSON 数组，元素仅支持 string/number/boolean",
+        "error",
+      );
+      return;
+    }
+
+    setIsKvLoading(true);
+
+    try {
+      const params = new URLSearchParams({
+        prefix: formatJson(prefix),
+        limit: "100",
+      });
+      const response = await fetch(`/api/admin/kv?${params.toString()}`, {
+        headers: { "x-openfx-admin-key": key },
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        reportStatus(payload.error ?? "KV 读取失败", "error");
+        return;
+      }
+
+      const entries = Array.isArray(payload.entries)
+        ? payload.entries as AdminKvEntry[]
+        : [];
+      localStorage.setItem(STORAGE_KEYS.adminKey, key);
+      setKvEntries(entries);
+      reportStatus(`已读取 ${entries.length} 条 KV 记录`, "success");
+    } finally {
+      setIsKvLoading(false);
+    }
+  }
+
+  async function saveKvEntry(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const key = adminKey.trim();
+    if (!key) {
+      reportStatus("请先输入管理密钥再写入 KV", "error");
+      return;
+    }
+
+    let kvKey: JsonKvKeyPart[];
+    let kvValue: unknown;
+    try {
+      kvKey = parseKvKeyInput(kvKeyInput);
+      kvValue = JSON.parse(kvValueInput) as unknown;
+    } catch {
+      reportStatus("KV key/value 必须是合法 JSON；key 需要非空数组", "error");
+      return;
+    }
+
+    setIsKvSaving(true);
+
+    try {
+      const response = await fetch("/api/admin/kv", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-openfx-admin-key": key,
+        },
+        body: JSON.stringify({ key: kvKey, value: kvValue }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        reportStatus(payload.error ?? "KV 保存失败", "error");
+        return;
+      }
+
+      localStorage.setItem(STORAGE_KEYS.adminKey, key);
+      await loadKvEntries();
+      reportStatus(`KV ${formatJson(kvKey)} 已保存`, "success");
+    } finally {
+      setIsKvSaving(false);
+    }
+  }
+
+  async function removeKvEntry(key: JsonKvKeyPart[]) {
+    const providedKey = adminKey.trim();
+    if (!providedKey) {
+      reportStatus("请先输入管理密钥再删除 KV", "error");
+      return;
+    }
+
+    const encodedKey = formatJson(key);
+    setDeletingKvKey(encodedKey);
+
+    try {
+      const params = new URLSearchParams({ key: encodedKey });
+      const response = await fetch(`/api/admin/kv?${params.toString()}`, {
+        method: "DELETE",
+        headers: { "x-openfx-admin-key": providedKey },
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        reportStatus(payload.error ?? "KV 删除失败", "error");
+        return;
+      }
+
+      await loadKvEntries();
+      reportStatus(`KV ${encodedKey} 已删除`, "success");
+    } finally {
+      setDeletingKvKey(null);
+    }
+  }
+
+  function editKvEntry(entry: AdminKvEntry) {
+    setKvKeyInput(formatJson(entry.key));
+    setKvValueInput(formatJson(entry.value));
+    reportStatus("KV 记录已回填到编辑区", "neutral");
   }
 
   return (
@@ -1335,6 +1611,118 @@ function AdminPage() {
           </div>
         </article>
       </section>
+
+      <section className="admin-kv-workbench">
+        <article className="admin-panel admin-kv-editor-panel">
+          <div className="admin-panel-head">
+            <div>
+              <p className="admin-panel-kicker">deno kv</p>
+              <h2>数据库记录</h2>
+            </div>
+            <span className="admin-panel-meta">完整 key CRUD</span>
+          </div>
+
+          <div className="admin-kv-toolbar">
+            <label className="admin-field">
+              <span>Prefix</span>
+              <textarea
+                className="admin-kv-input"
+                spellCheck={false}
+                value={kvPrefixInput}
+                onChange={(event) => setKvPrefixInput(event.target.value)}
+              />
+            </label>
+            <button
+              className="admin-primary-action"
+              disabled={isKvLoading}
+              type="button"
+              onClick={() => void loadKvEntries()}
+            >
+              {isKvLoading ? "读取中..." : "读取记录"}
+            </button>
+          </div>
+
+          <form className="admin-form admin-kv-form" onSubmit={saveKvEntry}>
+            <label className="admin-field">
+              <span>Key</span>
+              <textarea
+                className="admin-kv-input"
+                spellCheck={false}
+                value={kvKeyInput}
+                onChange={(event) => setKvKeyInput(event.target.value)}
+              />
+            </label>
+            <label className="admin-field">
+              <span>Value</span>
+              <textarea
+                className="admin-kv-input admin-kv-value-input"
+                spellCheck={false}
+                value={kvValueInput}
+                onChange={(event) => setKvValueInput(event.target.value)}
+              />
+            </label>
+            <div className="admin-form-footer">
+              <p>
+                Key 使用完整 Deno KV key，例如
+                <code>["domains","downip","home"]</code>。保存会覆盖同 key 的旧值。
+              </p>
+              <button disabled={isKvSaving} type="submit">
+                {isKvSaving ? "保存中..." : "保存 KV"}
+              </button>
+            </div>
+          </form>
+        </article>
+
+        <article className="admin-panel admin-kv-list-panel">
+          <div className="admin-panel-head">
+            <div>
+              <p className="admin-panel-kicker">records</p>
+              <h2>读取结果</h2>
+            </div>
+            <span className="admin-panel-meta">
+              {kvEntries.length === 0 ? "空列表" : `${kvEntries.length} 条记录`}
+            </span>
+          </div>
+
+          <div className="admin-kv-list">
+            {kvEntries.length === 0
+              ? (
+                <div className="admin-empty-state">
+                  <strong>暂无 KV 记录</strong>
+                  <p>输入 prefix 后读取，或先在左侧保存一条记录。</p>
+                </div>
+              )
+              : kvEntries.map((entry) => {
+                const encodedKey = formatJson(entry.key);
+                return (
+                  <div className="admin-kv-card" key={encodedKey}>
+                    <div className="admin-kv-card-head">
+                      <div>
+                        <strong>{entry.key.join(" / ")}</strong>
+                        <p>{entry.versionstamp}</p>
+                      </div>
+                      <div className="admin-kv-card-actions">
+                        <button type="button" onClick={() => editKvEntry(entry)}>
+                          编辑
+                        </button>
+                        <button
+                          disabled={deletingKvKey === encodedKey}
+                          type="button"
+                          onClick={() => void removeKvEntry(entry.key)}
+                        >
+                          {deletingKvKey === encodedKey ? "删除中..." : "删除"}
+                        </button>
+                      </div>
+                    </div>
+                    <pre className="code-block admin-kv-code">
+                      {formatJson(entry.value)}
+                    </pre>
+                  </div>
+                );
+              })}
+          </div>
+        </article>
+      </section>
     </div>
   );
 }
@@ -1349,7 +1737,192 @@ function loadScript(src: string): Promise<void> {
   });
 }
 
-function HowMuchPanel({ onClose: _onClose }: { onClose: () => void }) {
+function PanelShell(props: {
+  panelId: ActiveDomainPanel;
+  eyebrow: string;
+  title: string;
+  lede: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="domain-panel" data-panel-id={props.panelId}>
+      <section className="domain-panel-hero">
+        <p className="eyebrow">{props.eyebrow}</p>
+        <h1>{props.title}</h1>
+        <p>{props.lede}</p>
+      </section>
+      <div className="domain-panel-grid">
+        {props.children}
+      </div>
+    </div>
+  );
+}
+
+function DownipPanel(props: { accessKey: string }) {
+  const [mapping, setMapping] = useState<DownipMapping>({});
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
+  const mappingEntries = Object.entries(mapping).sort(([left], [right]) =>
+    left.localeCompare(right)
+  );
+
+  useEffect(() => {
+    let disposed = false;
+
+    async function loadMapping() {
+      setIsLoading(true);
+      setError("");
+
+      try {
+        const params = new URLSearchParams();
+        if (props.accessKey) {
+          params.set("unlock_key", props.accessKey);
+        }
+        const query = params.toString();
+        const response = await fetch(`/update${query ? `?${query}` : ""}`);
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.error ?? "mapping_load_failed");
+        }
+
+        if (!disposed) {
+          setMapping((payload.mapping ?? {}) as DownipMapping);
+        }
+      } catch {
+        if (!disposed) {
+          setError("当前映射读取失败");
+        }
+      } finally {
+        if (!disposed) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    void loadMapping();
+
+    return () => {
+      disposed = true;
+    };
+  }, [props.accessKey]);
+
+  return (
+    <PanelShell
+      panelId="ipv6-sync-suite"
+      eyebrow="network domain"
+      title="IPv6 Sync Suite"
+      lede="把桌面端定时 IPv6 上报、服务端映射写入和按 key 重定向串成一条可部署链路。"
+    >
+      <article className="domain-panel-section">
+        <h2>接口</h2>
+        <ul>
+          <li>
+            <code>POST /update</code> 写入 key 到 IPv6 的映射。
+          </li>
+          <li>
+            <code>GET /update</code> 读取当前映射。
+          </li>
+          <li>
+            <code>GET /:key/*</code> 按 key 重定向到目标 IPv6 服务。
+          </li>
+        </ul>
+      </article>
+      <article className="domain-panel-section">
+        <h2>上报示例</h2>
+        <pre className="code-block">
+          {JSON.stringify({ home: { ipv6: "2001:db8::1", port: 3000 } }, null, 2)}
+        </pre>
+      </article>
+      <article className="domain-panel-section downip-live-section">
+        <div className="downip-live-head">
+          <h2>当前接收值</h2>
+          <span>{isLoading ? "读取中" : `${mappingEntries.length} 项`}</span>
+        </div>
+        {error
+          ? <p className="downip-live-error">{error}</p>
+          : isLoading
+          ? <p className="downip-live-muted">正在读取服务端当前映射...</p>
+          : mappingEntries.length === 0
+          ? <p className="downip-live-muted">还没有收到任何 IPv6 上报。</p>
+          : (
+            <div className="downip-live-table">
+              {mappingEntries.map(([key, value]) => (
+                <div className="downip-live-row" key={key}>
+                  <strong>{key}</strong>
+                  <code>{value.ipv6}</code>
+                  <span>{value.port}</span>
+                </div>
+              ))}
+            </div>
+          )}
+      </article>
+      <article className="domain-panel-section">
+        <h2>访问边界</h2>
+        <p>
+          页面说明公开展示；<code>/update</code> 的读写接口需要 admin key 或包含
+          <code>ipv6-sync-suite</code> 的 unlock key。
+        </p>
+      </article>
+    </PanelShell>
+  );
+}
+
+function ProxyPanel(props: { frameUrl: string }) {
+  if (props.frameUrl) {
+    return (
+      <div
+        className="domain-panel proxy-browser-panel"
+        data-panel-id="relay-proxy-gateway"
+      >
+        <iframe
+          className="proxy-browser-frame"
+          src={props.frameUrl}
+          title="Relay Gateway preview"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <PanelShell
+      panelId="relay-proxy-gateway"
+      eyebrow="relay domain"
+      title="Relay Gateway"
+      lede="按需启用的 HTTP 中继业务，把上游站点挂到 Nitro 路由下，并统一处理请求头、响应头和 CORS。"
+    >
+      <article className="domain-panel-section">
+        <h2>启用方式</h2>
+        <p>
+          部署环境设置 <code>OPENFX_PROXY_UPSTREAM</code> 后，
+          <code>/api/proxy/*</code> 会转发到对应上游。
+        </p>
+      </article>
+      <article className="domain-panel-section">
+        <h2>行为</h2>
+        <ul>
+          <li>
+            未配置上游时返回 <code>proxy_not_configured</code>。
+          </li>
+          <li>
+            自动重写 <code>origin</code> 与 <code>referer</code>。
+          </li>
+          <li>
+            响应会添加 CORS 头，并移除 <code>x-frame-options</code>。
+          </li>
+        </ul>
+      </article>
+      <article className="domain-panel-section">
+        <h2>访问边界</h2>
+        <p>
+          <code>OPTIONS</code> 预检公开；其他代理请求需要 admin key 或包含
+          <code>relay-proxy-gateway</code> 的 unlock key。
+        </p>
+      </article>
+    </PanelShell>
+  );
+}
+
+function HowMuchPanel() {
   const [loaded, setLoaded] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
 
