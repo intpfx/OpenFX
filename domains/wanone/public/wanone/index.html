@@ -7,18 +7,17 @@
     <link rel="stylesheet" type="text/css" href="css/index.css" />
   </head>
   <body>
-    <div id="ad" style="
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
-      z-index: -10;
-      background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%);
-    "></div>
-    <!-- Original video background (vi/bak.mp4, 19MB) replaced with CSS gradient.
-         Deno Deploy has a ~10MB response body limit. Video preserved in
-         domains/wanone/assets/bak.mp4 for local development. -->
+    <video
+      id="ad"
+      width="100%"
+      height="auto"
+      autoplay
+      muted
+      loop
+      playsinline
+    >
+      <source src="vi/bak.mp4" type="video/mp4">
+    </video>
     <div id="player">
       <iframe
         id="play"
