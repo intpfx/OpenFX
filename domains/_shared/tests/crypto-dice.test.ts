@@ -1,6 +1,6 @@
 import { expect } from "@std/expect";
 
-import { encrypt, decrypt, randomGenes, randomPoints } from "../crypto-dice.ts";
+import { decrypt, encrypt, randomGenes, randomPoints } from "../crypto-dice.ts";
 
 // CHARS set from crypto-dice.ts — all valid characters
 const CHARS =

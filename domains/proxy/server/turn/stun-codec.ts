@@ -8,29 +8,37 @@
  * @module turn/stun-codec
  */
 
-import type { StunMessage, StunAttribute, Address, Transport, TurnServerContext, ChannelData, User } from './types.ts';
-import { TransportFamily } from './types.ts';
-import { STUN_ATTR, MAGIC_COOKIE } from './constants.ts';
+import type {
+  Address,
+  ChannelData,
+  StunAttribute,
+  StunMessage,
+  Transport,
+  TurnServerContext,
+  User,
+} from "./types.ts";
+import { TransportFamily } from "./types.ts";
+import { MAGIC_COOKIE, STUN_ATTR } from "./constants.ts";
 import {
-  u8alloc,
-  u8FromHex,
-  u8ToHex,
-  u8ToUtf8,
-  u8FromUtf8,
-  u8Concat,
-  readUInt16BE,
-  readUInt32BE,
-  writeUInt16BE,
-  writeUInt32BE,
-  readInt16BE,
-  writeInt16BE,
-  readBit,
-  writeBit,
-  readUncontiguous,
-  writeUncontiguous,
   crc32,
   createAddress,
-} from './utils.ts';
+  readBit,
+  readInt16BE,
+  readUInt16BE,
+  readUInt32BE,
+  readUncontiguous,
+  u8alloc,
+  u8Concat,
+  u8FromHex,
+  u8FromUtf8,
+  u8ToHex,
+  u8ToUtf8,
+  writeBit,
+  writeInt16BE,
+  writeUInt16BE,
+  writeUInt32BE,
+  writeUncontiguous,
+} from "./utils.ts";
 
 // ---------------------------------------------------------------------------
 // Internal message state
@@ -50,7 +58,7 @@ const MSG_STATE = {
 
 /** Map attribute name (kebab-case) to type code. */
 function attrNameToType(name: string): number {
-  const key = name.replace(/-/g, '_').toUpperCase() as keyof typeof STUN_ATTR;
+  const key = name.replace(/-/g, "_").toUpperCase() as keyof typeof STUN_ATTR;
   const type = STUN_ATTR[key];
   if (type === undefined) throw new Error(`invalid attribute name: ${name}`);
   return type;
@@ -59,7 +67,7 @@ function attrNameToType(name: string): number {
 /** Map attribute type code to name. */
 function attrTypeToName(type: number): string {
   for (const [k, v] of Object.entries(STUN_ATTR)) {
-    if (v === type) return k.replace(/_/g, '-').toLowerCase();
+    if (v === type) return k.replace(/_/g, "-").toLowerCase();
   }
   return `unknown-0x${type.toString(16)}`;
 }
@@ -162,7 +170,9 @@ function decodeAttrValue(
       if (family === TransportFamily.IPV4) {
         const mcBuf = new Uint8Array(4);
         writeUInt32BE(mcBuf, msg.magicCookie, 0);
-        const addr = `${data[8] ^ mcBuf[0]}.${data[9] ^ mcBuf[1]}.${data[10] ^ mcBuf[2]}.${data[11] ^ mcBuf[3]}`;
+        const addr = `${data[8] ^ mcBuf[0]}.${data[9] ^ mcBuf[1]}.${
+          data[10] ^ mcBuf[2]
+        }.${data[11] ^ mcBuf[3]}`;
         return createAddress(addr, port);
       } else {
         const key = new Uint8Array(16);
@@ -176,7 +186,7 @@ function decodeAttrValue(
           const k = readUInt16BE(key, i * 2);
           parts.push((wire ^ k).toString(16));
         }
-        return createAddress(parts.join(':'), port);
+        return createAddress(parts.join(":"), port);
       }
     }
 
@@ -195,7 +205,7 @@ function encodeAttrValue(type: number, value: unknown, msg: StunMessage): Uint8A
       const addr = value as Address;
       out[1] = addr.family;
       writeUInt16BE(out, addr.port, 2);
-      const parts = addr.address.split('.');
+      const parts = addr.address.split(".");
       for (let i = 0; i < 4; i++) out[4 + i] = parseInt(parts[i]);
       return out;
     }
@@ -216,8 +226,8 @@ function encodeAttrValue(type: number, value: unknown, msg: StunMessage): Uint8A
 
     case STUN_ATTR.ERROR_CODE: {
       const ec = value as { code: number; reason: string };
-      if (ec.code < 300 || ec.code > 699) throw new Error('invalid error code');
-      if (ec.reason.length > 128) throw new Error('reason too long');
+      if (ec.code < 300 || ec.code > 699) throw new Error("invalid error code");
+      if (ec.reason.length > 128) throw new Error("reason too long");
       const errClass = Math.floor(ec.code / 100);
       const errNum = ec.code % 100;
       writeUncontiguous(out, errClass, [21, 22, 23]);
@@ -240,15 +250,21 @@ function encodeAttrValue(type: number, value: unknown, msg: StunMessage): Uint8A
       if (addr.family === TransportFamily.IPV4) {
         const mcBuf = new Uint8Array(4);
         writeUInt32BE(mcBuf, msg.magicCookie, 0);
-        const octets = addr.address.split('.');
-        for (let i = 0; i < 4; i++) out[4 + i] = (parseInt(octets[i]) & 0xff) ^ mcBuf[i];
+        const octets = addr.address.split(".");
+        for (let i = 0; i < 4; i++) {
+          out[4 + i] = (parseInt(octets[i]) & 0xff) ^ mcBuf[i];
+        }
       } else {
         const key = new Uint8Array(16);
         writeUInt32BE(key, msg.magicCookie, 0);
         key.set(u8FromHex(msg.transactionID), 4);
-        const parts = addr.address.split(':');
+        const parts = addr.address.split(":");
         for (let i = 0; i < 8; i++) {
-          writeUInt16BE(out, (parseInt(parts[i], 16) ^ readUInt16BE(key, i * 2)), i * 2 + 4);
+          writeUInt16BE(
+            out,
+            parseInt(parts[i], 16) ^ readUInt16BE(key, i * 2),
+            i * 2 + 4,
+          );
         }
       }
       return out;
@@ -295,7 +311,10 @@ function encodeAttrValue(type: number, value: unknown, msg: StunMessage): Uint8A
 // ---------------------------------------------------------------------------
 
 /** Create a new empty StunMessage. */
-export function createStunMessage(serverCtx: TurnServerContext, transport: Transport): StunMessage {
+export function createStunMessage(
+  serverCtx: TurnServerContext,
+  transport: Transport,
+): StunMessage {
   return {
     serverCtx,
     transport,
@@ -307,7 +326,7 @@ export function createStunMessage(serverCtx: TurnServerContext, transport: Trans
     raw: u8alloc(0),
     attributes: [],
     magicCookie: MAGIC_COOKIE,
-    transactionID: '',
+    transactionID: "",
     user: null,
     state: MSG_STATE.WAITING,
     debugLevel: serverCtx.debugLevel,
@@ -332,7 +351,9 @@ export function decodeStunMessage(
   msg.method = readUncontiguous(udpMessage, [2, 3, 4, 5, 6, 8, 9, 10, 12, 13, 14, 15]);
 
   const messageLength = readInt16BE(udpMessage, 2);
-  if (messageLength + 20 > udpMessage.length) throw new Error('invalid STUN message length');
+  if (messageLength + 20 > udpMessage.length) {
+    throw new Error("invalid STUN message length");
+  }
 
   msg.magicCookie = readUInt32BE(udpMessage, 4);
   if (msg.magicCookie !== MAGIC_COOKIE) return null;
@@ -354,7 +375,7 @@ export function decodeStunMessage(
     // Special handling: MESSAGE-INTEGRITY verification
     if (attrType === STUN_ATTR.MESSAGE_INTEGRITY) {
       const hmacInput = udpMessage.slice(0, 20 + msg.length);
-      const username = getAttr(msg, 'username');
+      const username = getAttr(msg, "username");
       if (!username) {
         value = false;
       } else {
@@ -363,7 +384,9 @@ export function decodeStunMessage(
           value = false;
         } else {
           // MD5 key: username:realm:password
-          const hmacKey = md5Hash(`${username as string}:${serverCtx.realm}:${password}`);
+          const hmacKey = md5Hash(
+            `${username as string}:${serverCtx.realm}:${password}`,
+          );
           // Temporarily patch message length for HMAC computation
           const prevLen = readInt16BE(hmacInput, 2);
           writeInt16BE(hmacInput, msg.length + 24, 2);
@@ -403,7 +426,7 @@ export function decodeStunMessage(
 export function encodeStunMessage(msg: StunMessage): Uint8Array {
   // Add fingerprint if originally present
   if (msg.useFingerprint) {
-    addAttr(msg, 'fingerprint');
+    addAttr(msg, "fingerprint");
   }
 
   const header = u8alloc(20);
@@ -442,7 +465,7 @@ export function encodeStunMessage(msg: StunMessage): Uint8Array {
 
 /** Compute the MESSAGE-INTEGRITY value and return its 20-byte HMAC-SHA1. */
 export function computeMessageIntegrityRaw(msg: StunMessage): Uint8Array {
-  if (!msg.user) throw new Error('MESSAGE_INTEGRITY requires a user');
+  if (!msg.user) throw new Error("MESSAGE_INTEGRITY requires a user");
   const keyStr = `${msg.user.username}:${msg.serverCtx.realm}:${msg.user.password}`;
   const hmacKey = md5Hash(keyStr);
 
@@ -479,7 +502,7 @@ export function createReply(msg: StunMessage): StunMessage {
 // ---------------------------------------------------------------------------
 
 export function getAttr(msg: StunMessage, name: string): unknown {
-  const key = name.replace(/-/g, '_').toUpperCase() as keyof typeof STUN_ATTR;
+  const key = name.replace(/-/g, "_").toUpperCase() as keyof typeof STUN_ATTR;
   const type = STUN_ATTR[key];
   for (const attr of msg.attributes) {
     if (attr.type === type && attr.value !== undefined) return attr.value;
@@ -488,21 +511,27 @@ export function getAttr(msg: StunMessage, name: string): unknown {
 }
 
 export function getAttrs(msg: StunMessage, name: string): unknown[] {
-  const key = name.replace(/-/g, '_').toUpperCase() as keyof typeof STUN_ATTR;
+  const key = name.replace(/-/g, "_").toUpperCase() as keyof typeof STUN_ATTR;
   const type = STUN_ATTR[key];
   return msg.attributes.filter((a) => a.type === type).map((a) => a.value);
 }
 
 export function addAttr(msg: StunMessage, name: string, value?: unknown): void {
-  if (!name) throw new Error('addAttr requires a name');
-  if (name === 'message-integrity' && !msg.user) return;
+  if (!name) throw new Error("addAttr requires a name");
+  if (name === "message-integrity" && !msg.user) return;
 
   const type = attrNameToType(name);
   const len = value !== undefined ? attrWireLength(type, value) : 0;
   const pad = attrPadding(len);
   const attrName = attrTypeToName(type);
 
-  msg.attributes.push({ type, name: attrName, length: len, padding: pad, value: value ?? null });
+  msg.attributes.push({
+    type,
+    name: attrName,
+    length: len,
+    padding: pad,
+    value: value ?? null,
+  });
   msg.length += 4 + len + pad;
 }
 
@@ -512,64 +541,64 @@ export function addAttr(msg: StunMessage, name: string, value?: unknown): void {
 
 async function computeMd5(input: string): Promise<Uint8Array> {
   const enc = new TextEncoder().encode(input);
-  const hash = await crypto.subtle.digest('MD5', enc);
+  const hash = await crypto.subtle.digest("MD5", enc);
   return new Uint8Array(hash);
 }
 
 function md5Hash(input: string): Uint8Array {
   // Synchronous fallback using Node.js Buffer if available
-  if (typeof require !== 'undefined') {
+  if (typeof require !== "undefined") {
     try {
-      const { createHash } = require('node:crypto') as typeof import('node:crypto');
-      return createHash('md5').update(input).digest() as Uint8Array;
+      const { createHash } = require("node:crypto") as typeof import("node:crypto");
+      return createHash("md5").update(input).digest() as Uint8Array;
     } catch {
       // fall through
     }
   }
   // Deno compatible: use sync text encode + polyfill note
-  throw new Error('MD5 sync not available; use async init or Node.js');
+  throw new Error("MD5 sync not available; use async init or Node.js");
 }
 
 async function md5HashAsync(input: string): Promise<Uint8Array> {
-  if (typeof require !== 'undefined') {
+  if (typeof require !== "undefined") {
     try {
-      const { createHash } = require('node:crypto') as typeof import('node:crypto');
-      return createHash('md5').update(input).digest() as Uint8Array;
+      const { createHash } = require("node:crypto") as typeof import("node:crypto");
+      return createHash("md5").update(input).digest() as Uint8Array;
     } catch {
       // fall through
     }
   }
   const enc = new TextEncoder().encode(input);
-  const hash = await crypto.subtle.digest('MD5', enc);
+  const hash = await crypto.subtle.digest("MD5", enc);
   return new Uint8Array(hash);
 }
 
 function hmacSha1Hex(key: Uint8Array, data: Uint8Array): string {
-  if (typeof require !== 'undefined') {
+  if (typeof require !== "undefined") {
     try {
-      const { createHmac } = require('node:crypto') as typeof import('node:crypto');
-      return createHmac('sha1', Buffer.from(key.buffer, key.byteOffset, key.byteLength))
+      const { createHmac } = require("node:crypto") as typeof import("node:crypto");
+      return createHmac("sha1", Buffer.from(key.buffer, key.byteOffset, key.byteLength))
         .update(Buffer.from(data.buffer, data.byteOffset, data.byteLength))
-        .digest('hex') as string;
+        .digest("hex") as string;
     } catch {
       // fall through
     }
   }
-  throw new Error('HMAC-SHA1 sync not available');
+  throw new Error("HMAC-SHA1 sync not available");
 }
 
 function hmacSha1Raw(key: Uint8Array, data: Uint8Array): Uint8Array {
-  if (typeof require !== 'undefined') {
+  if (typeof require !== "undefined") {
     try {
-      const { createHmac } = require('node:crypto') as typeof import('node:crypto');
-      return createHmac('sha1', Buffer.from(key.buffer, key.byteOffset, key.byteLength))
+      const { createHmac } = require("node:crypto") as typeof import("node:crypto");
+      return createHmac("sha1", Buffer.from(key.buffer, key.byteOffset, key.byteLength))
         .update(Buffer.from(data.buffer, data.byteOffset, data.byteLength))
         .digest() as Uint8Array;
     } catch {
       // fall through
     }
   }
-  throw new Error('HMAC-SHA1 sync not available');
+  throw new Error("HMAC-SHA1 sync not available");
 }
 
 // ---------------------------------------------------------------------------
@@ -595,8 +624,8 @@ export function decodeChannelData(data: Uint8Array): ChannelData | null {
 
 /** Encode a ChannelData message to wire bytes. */
 export function encodeChannelData(cd: ChannelData): Uint8Array {
-  if (!cd.channelNumber) throw new Error('ChannelData requires channelNumber');
-  if (!cd.data) throw new Error('ChannelData requires data');
+  if (!cd.channelNumber) throw new Error("ChannelData requires channelNumber");
+  if (!cd.data) throw new Error("ChannelData requires data");
   const header = u8alloc(4);
   writeUInt16BE(header, cd.channelNumber, 0);
   writeUInt16BE(header, cd.length, 2);

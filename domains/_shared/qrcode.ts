@@ -20,9 +20,9 @@
 
 // ─── Type Definitions ─────────────────────────────────────────────────────────
 
-export type ErrorCorrectionLevel = 'L' | 'M' | 'Q' | 'H';
+export type ErrorCorrectionLevel = "L" | "M" | "Q" | "H";
 
-export type EncodingMode = 'Numeric' | 'Alphanumeric' | 'Byte' | 'Kanji';
+export type EncodingMode = "Numeric" | "Alphanumeric" | "Byte" | "Kanji";
 
 export interface QROptions {
   /** QR version 1–40. Auto-detected if omitted or < 1. */
@@ -106,15 +106,15 @@ for (let i = 0; i < 8; i += 1) {
   EXP_TABLE[i] = 1 << i;
 }
 for (let i = 8; i < 256; i += 1) {
-  EXP_TABLE[i] =
-    EXP_TABLE[i - 4] ^ EXP_TABLE[i - 5] ^ EXP_TABLE[i - 6] ^ EXP_TABLE[i - 8];
+  EXP_TABLE[i] = EXP_TABLE[i - 4] ^ EXP_TABLE[i - 5] ^ EXP_TABLE[i - 6] ^
+    EXP_TABLE[i - 8];
 }
 for (let i = 0; i < 255; i += 1) {
   LOG_TABLE[EXP_TABLE[i]] = i;
 }
 
 function glog(n: number): number {
-  if (n < 1) throw 'glog(' + n + ')';
+  if (n < 1) throw "glog(" + n + ")";
   return LOG_TABLE[n];
 }
 
@@ -134,7 +134,7 @@ interface QRPolynomial {
 }
 
 function qrPolynomial(num: number[], shift: number): QRPolynomial {
-  if (typeof num.length === 'undefined') throw num.length + '/' + shift;
+  if (typeof num.length === "undefined") throw num.length + "/" + shift;
 
   // Strip leading zeros and apply shift.
   let offset = 0;
@@ -268,8 +268,8 @@ const PATTERN_POSITION_TABLE: number[][] = [
 // G15 = x^10 + x^8 + x^5 + x^4 + x^2 + x^1 + x^0
 const G15 = (1 << 10) | (1 << 8) | (1 << 5) | (1 << 4) | (1 << 2) | (1 << 1) | (1 << 0);
 // G18 = x^12 + x^11 + x^10 + x^9 + x^8 + x^5 + x^2 + x^0
-const G18 =
-  (1 << 12) | (1 << 11) | (1 << 10) | (1 << 9) | (1 << 8) | (1 << 5) | (1 << 2) | (1 << 0);
+const G18 = (1 << 12) | (1 << 11) | (1 << 10) | (1 << 9) | (1 << 8) | (1 << 5) |
+  (1 << 2) | (1 << 0);
 const G15_MASK = (1 << 14) | (1 << 12) | (1 << 10) | (1 << 4) | (1 << 1);
 
 function getBCHDigit(data: number): number {
@@ -327,7 +327,7 @@ function getMaskFunction(maskPattern: number): (i: number, j: number) => boolean
     case QRMaskPattern.PATTERN111:
       return (i, j) => (((i * j) % 3) + ((i + j) % 2)) % 2 === 0;
     default:
-      throw 'bad maskPattern:' + maskPattern;
+      throw "bad maskPattern:" + maskPattern;
   }
 }
 
@@ -356,7 +356,7 @@ function getLengthInBits(mode: number, type: number): number {
       case QRMode.MODE_KANJI:
         return 8;
       default:
-        throw 'mode:' + mode;
+        throw "mode:" + mode;
     }
   } else if (type < 27) {
     switch (mode) {
@@ -369,7 +369,7 @@ function getLengthInBits(mode: number, type: number): number {
       case QRMode.MODE_KANJI:
         return 10;
       default:
-        throw 'mode:' + mode;
+        throw "mode:" + mode;
     }
   } else if (type < 41) {
     switch (mode) {
@@ -382,10 +382,10 @@ function getLengthInBits(mode: number, type: number): number {
       case QRMode.MODE_KANJI:
         return 12;
       default:
-        throw 'mode:' + mode;
+        throw "mode:" + mode;
     }
   } else {
-    throw 'type:' + type;
+    throw "type:" + type;
   }
 }
 
@@ -722,9 +722,12 @@ function parseRSBlockEntry(entry: number[]): RSBlock[] {
 function getRSBlocks(typeNumber: number, errorCorrectionLevel: number): RSBlock[] {
   const vIdx = typeNumber - 1;
   const eIdx = ECC_NUM_TO_INDEX[errorCorrectionLevel];
-  if (eIdx === undefined) throw 'bad errorCorrectionLevel:' + errorCorrectionLevel;
+  if (eIdx === undefined) throw "bad errorCorrectionLevel:" + errorCorrectionLevel;
   const entry = RS_BLOCK_ENTRIES[vIdx * 4 + eIdx];
-  if (!entry) throw 'bad rs block @ typeNumber:' + typeNumber + '/errorCorrectionLevel:' + errorCorrectionLevel;
+  if (!entry) {
+    throw "bad rs block @ typeNumber:" + typeNumber + "/errorCorrectionLevel:" +
+      errorCorrectionLevel;
+  }
   return parseRSBlockEntry(entry);
 }
 
@@ -746,10 +749,10 @@ function strToNum(s: string): number {
 }
 
 function charToNum(c: string): number {
-  if ('0' <= c && c <= '9') {
-    return c.charCodeAt(0) - '0'.charCodeAt(0);
+  if ("0" <= c && c <= "9") {
+    return c.charCodeAt(0) - "0".charCodeAt(0);
   }
-  throw 'illegal char :' + c;
+  throw "illegal char :" + c;
 }
 
 /** Numeric mode encoder. */
@@ -786,32 +789,32 @@ function qrAlphaNum(data: string): QRData {
   const _data = data;
 
   function getCode(c: string): number {
-    if ('0' <= c && c <= '9') {
-      return c.charCodeAt(0) - '0'.charCodeAt(0);
-    } else if ('A' <= c && c <= 'Z') {
-      return c.charCodeAt(0) - 'A'.charCodeAt(0) + 10;
+    if ("0" <= c && c <= "9") {
+      return c.charCodeAt(0) - "0".charCodeAt(0);
+    } else if ("A" <= c && c <= "Z") {
+      return c.charCodeAt(0) - "A".charCodeAt(0) + 10;
     } else {
       switch (c) {
-        case ' ':
+        case " ":
           return 36;
-        case '$':
+        case "$":
           return 37;
-        case '%':
+        case "%":
           return 38;
-        case '*':
+        case "*":
           return 39;
-        case '+':
+        case "+":
           return 40;
-        case '-':
+        case "-":
           return 41;
-        case '.':
+        case ".":
           return 42;
-        case '/':
+        case "/":
           return 43;
-        case ':':
+        case ":":
           return 44;
         default:
-          throw 'illegal char :' + c;
+          throw "illegal char :" + c;
       }
     }
   }
@@ -858,14 +861,14 @@ function qr8BitByte(data: string): QRData {
 /** Kanji mode encoder (Shift-JIS via SJIS). */
 function qrKanji(data: string): QRData {
   const _mode = QRMode.MODE_KANJI;
-  const stringToBytes = stringToBytesFuncs['SJIS'];
+  const stringToBytes = stringToBytesFuncs["SJIS"];
   if (!stringToBytes) {
-    throw 'sjis not supported.';
+    throw "sjis not supported.";
   }
   // Self-test for SJIS support.
-  const test = stringToBytes('\u53cb');
+  const test = stringToBytes("\u53cb");
   if (test.length !== 2 || ((test[0] << 8) | test[1]) !== 0x9746) {
-    throw 'sjis not supported.';
+    throw "sjis not supported.";
   }
   const _bytes = stringToBytes(data);
   return {
@@ -884,14 +887,14 @@ function qrKanji(data: string): QRData {
         } else if (0xe040 <= c && c <= 0xebbf) {
           c -= 0xc140;
         } else {
-          throw 'illegal char at ' + (i + 1) + '/' + c;
+          throw "illegal char at " + (i + 1) + "/" + c;
         }
         c = ((c >>> 8) & 0xff) * 0xc0 + (c & 0xff);
         buffer.put(c, 13);
         i += 2;
       }
       if (i < _bytes.length) {
-        throw 'illegal char at ' + (i + 1);
+        throw "illegal char at " + (i + 1);
       }
     },
   };
@@ -916,8 +919,7 @@ function toUTF8Array(str: string): number[] {
     } else {
       // surrogate pair
       i++;
-      charcode =
-        0x10000 +
+      charcode = 0x10000 +
         (((charcode & 0x3ff) << 10) | (str.charCodeAt(i) & 0x3ff));
       utf8.push(
         0xf0 | (charcode >> 18),
@@ -948,11 +950,9 @@ interface StringToBytesMap {
 }
 
 const stringToBytesFuncs: StringToBytesMap = {
-  'UTF-8': stringToBytesUTF8,
+  "UTF-8": stringToBytesUTF8,
   default: stringToBytesDefault,
 };
-
-
 
 // ─── Core Data Creation ───────────────────────────────────────────────────────
 
@@ -1047,11 +1047,11 @@ function createData(
 
   if (buffer.getLengthInBits() > totalDataCount * 8) {
     throw (
-      'code length overflow. (' +
+      "code length overflow. (" +
       buffer.getLengthInBits() +
-      '>' +
+      ">" +
       totalDataCount * 8 +
-      ')'
+      ")"
     );
   }
 
@@ -1321,7 +1321,9 @@ function makeImpl(
   }
 
   // Map data
-  const data = dataCache.length > 0 ? dataCache : createData(typeNumber, errorCorrectionLevel, dataList);
+  const data = dataCache.length > 0
+    ? dataCache
+    : createData(typeNumber, errorCorrectionLevel, dataList);
   mapData(modules, moduleCount, data, maskPattern);
 
   return finalizeModules(modules, moduleCount);
@@ -1340,7 +1342,14 @@ function getBestMaskPattern(
   let pattern = 0;
 
   for (let i = 0; i < 8; i += 1) {
-    const modules = makeImpl(typeNumber, errorCorrectionLevel, dataCache, dataList, true, i);
+    const modules = makeImpl(
+      typeNumber,
+      errorCorrectionLevel,
+      dataCache,
+      dataList,
+      true,
+      i,
+    );
     const moduleCount = typeNumber * 4 + 17;
     const lostPoint = getLostPoint(modules, moduleCount);
     if (i === 0 || minLostPoint > lostPoint) {
@@ -1359,11 +1368,11 @@ function getBestMaskPattern(
  */
 function detectMode(data: string): EncodingMode {
   // If all characters are digits (0-9), use Numeric mode.
-  if (/^[0-9]+$/.test(data)) return 'Numeric';
+  if (/^[0-9]+$/.test(data)) return "Numeric";
   // If all characters are alphanumeric (0-9, A-Z, space, $%*+-./:), use Alphanumeric mode.
-  if (/^[0-9A-Z $%*+\-./:]+$/.test(data)) return 'Alphanumeric';
+  if (/^[0-9A-Z $%*+\-./:]+$/.test(data)) return "Alphanumeric";
   // Default to Byte mode.
-  return 'Byte';
+  return "Byte";
 }
 
 /**
@@ -1371,16 +1380,16 @@ function detectMode(data: string): EncodingMode {
  */
 function createQRData(data: string, mode: EncodingMode): QRData {
   switch (mode) {
-    case 'Numeric':
+    case "Numeric":
       return qrNumber(data);
-    case 'Alphanumeric':
+    case "Alphanumeric":
       return qrAlphaNum(data);
-    case 'Byte':
+    case "Byte":
       return qr8BitByte(data);
-    case 'Kanji':
+    case "Kanji":
       return qrKanji(data);
     default:
-      throw 'mode:' + mode;
+      throw "mode:" + mode;
   }
 }
 
@@ -1412,13 +1421,13 @@ function autodetectTypeNumber(
     }
   }
 
-  throw 'Data too long for any QR version (max 40).';
+  throw "Data too long for any QR version (max 40).";
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 const DEFAULT_OPTIONS: QROptions = {
-  errorCorrectionLevel: 'M',
+  errorCorrectionLevel: "M",
 };
 
 /**
@@ -1439,10 +1448,10 @@ export function encode(data: string, options?: QROptions): QRCode {
   const opts: QROptions = { ...DEFAULT_OPTIONS, ...options };
 
   // Resolve the error correction level.
-  const ecLevel = opts.errorCorrectionLevel ?? 'M';
+  const ecLevel = opts.errorCorrectionLevel ?? "M";
   const ecLevelNum = QRErrorCorrectionLevel[ecLevel];
   if (ecLevelNum === undefined) {
-    throw 'Unknown error correction level: ' + ecLevel;
+    throw "Unknown error correction level: " + ecLevel;
   }
 
   // Detect mode if not specified.
@@ -1465,7 +1474,14 @@ export function encode(data: string, options?: QROptions): QRCode {
   const maskPattern = getBestMaskPattern(typeNumber, ecLevelNum, dataList, dataCache);
 
   // Build the final matrix.
-  const modules = makeImpl(typeNumber, ecLevelNum, dataCache, dataList, false, maskPattern);
+  const modules = makeImpl(
+    typeNumber,
+    ecLevelNum,
+    dataCache,
+    dataList,
+    false,
+    maskPattern,
+  );
   const moduleCount = typeNumber * 4 + 17;
 
   // Create the result object.
@@ -1477,7 +1493,7 @@ export function encode(data: string, options?: QROptions): QRCode {
     modules,
     getModule(row: number, col: number): boolean {
       if (row < 0 || moduleCount <= row || col < 0 || moduleCount <= col) {
-        throw row + ',' + col;
+        throw row + "," + col;
       }
       return modules[row][col];
     },
@@ -1550,7 +1566,7 @@ export function createStringToBytes(
       if (0x30 <= c && c <= 0x39) return c - 0x30 + 52;
       if (c === 0x2b) return 62;
       if (c === 0x2f) return 63;
-      throw 'c:' + c;
+      throw "c:" + c;
     }
 
     return {
@@ -1558,11 +1574,11 @@ export function createStringToBytes(
         while (_buflen < 8) {
           if (_pos >= str.length) {
             if (_buflen === 0) return -1;
-            throw 'unexpected end of file./' + _buflen;
+            throw "unexpected end of file./" + _buflen;
           }
           const c = str.charAt(_pos);
           _pos += 1;
-          if (c === '=') {
+          if (c === "=") {
             _buflen = 0;
             return -1;
           }
@@ -1581,7 +1597,7 @@ export function createStringToBytes(
   const bin = base64DecodeInputStream(unicodeData);
   function readByte(): number {
     const b = bin.read();
-    if (b === -1) throw 'eof';
+    if (b === -1) throw "eof";
     return b;
   }
 
@@ -1600,10 +1616,10 @@ export function createStringToBytes(
   }
 
   if (count !== numChars) {
-    throw count + ' != ' + numChars;
+    throw count + " != " + numChars;
   }
 
-  const unknownChar = '?'.charCodeAt(0);
+  const unknownChar = "?".charCodeAt(0);
 
   return function (s: string): number[] {
     const bytes: number[] = [];
@@ -1613,7 +1629,7 @@ export function createStringToBytes(
         bytes.push(c);
       } else {
         const b = unicodeMap[s.charAt(i)];
-        if (typeof b === 'number') {
+        if (typeof b === "number") {
           if ((b & 0xff) === b) {
             bytes.push(b);
           } else {
@@ -1636,5 +1652,5 @@ export function createStringToBytes(
  * The function should return Shift-JIS encoded bytes for a given JS string.
  */
 export function registerSJIS(fn: (s: string) => number[]): void {
-  registerStringToBytes('SJIS', fn);
+  registerStringToBytes("SJIS", fn);
 }

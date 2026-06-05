@@ -23,7 +23,7 @@
 // ---------------------------------------------------------------------------
 
 /** 热榜来源标识 */
-export type HotlistSource = 'tophub' | 'tophub-daily' | 'weibo' | 'zhihu';
+export type HotlistSource = "tophub" | "tophub-daily" | "weibo" | "zhihu";
 
 /** 单条热榜条目 */
 export interface HotItem {
@@ -71,7 +71,7 @@ function parseAnchorTags(html: string): Array<{ text: string; href: string }> {
   while ((match = regex.exec(html)) !== null) {
     const href = match[1];
     // 去除内部标签，保留纯文本
-    const text = match[2].replace(/<[^>]+>/g, '').trim();
+    const text = match[2].replace(/<[^>]+>/g, "").trim();
     if (text.length > 0) {
       results.push({ text, href });
     }
@@ -88,7 +88,7 @@ function extractClassText(html: string, className: string): string[] {
   // 匹配 class="className" 或 class='className' 的标签内容
   const regex = new RegExp(
     `class\\s*=\\s*["'][^"']*\\b${className}\\b[^"']*["'][^>]*>([\\s\\S]*?)<\\/`,
-    'gi',
+    "gi",
   );
   let match: RegExpExecArray | null;
   while ((match = regex.exec(html)) !== null) {
@@ -128,7 +128,8 @@ export function parseTophubHtml(html: string): TophubCategory[] {
   const categories: TophubCategory[] = [];
 
   // 按 .cc-cd 容器分割
-  const blockRegex = /<div[^>]*class="cc-cd"[^>]*>([\s\S]*?)<\/div>\s*(?=<div[^>]*class="cc-cd"|<!-- 尾|$)/gi;
+  const blockRegex =
+    /<div[^>]*class="cc-cd"[^>]*>([\s\S]*?)<\/div>\s*(?=<div[^>]*class="cc-cd"|<!-- 尾|$)/gi;
   let blockMatch: RegExpExecArray | null;
 
   while ((blockMatch = blockRegex.exec(html)) !== null) {
@@ -138,15 +139,13 @@ export function parseTophubHtml(html: string): TophubCategory[] {
     const titleMatch = block.match(
       /<[^>]*class="cc-cd-lb"[^>]*>([\s\S]*?)<\//i,
     );
-    const title = titleMatch
-      ? titleMatch[1].replace(/<[^>]+>/g, '').trim()
-      : 'Unknown';
+    const title = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, "").trim() : "Unknown";
 
     // 提取 .cc-cd-cb-l 内的所有链接
     const contentMatch = block.match(
       /<[^>]*class="cc-cd-cb-l[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
     );
-    const content = contentMatch ? contentMatch[1] : '';
+    const content = contentMatch ? contentMatch[1] : "";
 
     const linkRegex = /<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi;
     const links: Array<{ title: string; href: string }> = [];
@@ -159,8 +158,8 @@ export function parseTophubHtml(html: string): TophubCategory[] {
         /<[^>]*class="(?:t|tt)"[^>]*>([\s\S]*?)<\//i,
       );
       const linkTitle = innerMatch
-        ? innerMatch[1].replace(/<[^>]+>/g, '').trim()
-        : linkMatch[2].replace(/<[^>]+>/g, '').trim();
+        ? innerMatch[1].replace(/<[^>]+>/g, "").trim()
+        : linkMatch[2].replace(/<[^>]+>/g, "").trim();
 
       if (linkTitle.length > 0) {
         links.push({ title: linkTitle, href });
@@ -181,7 +180,7 @@ export function parseTophubHtml(html: string): TophubCategory[] {
  * @returns 热榜结果
  */
 export async function fetchTophubHotlist(): Promise<HotlistResult> {
-  const response = await fetch('https://tophub.today/');
+  const response = await fetch("https://tophub.today/");
   if (!response.ok) {
     throw new Error(`tophub.today 请求失败: HTTP ${response.status}`);
   }
@@ -199,8 +198,8 @@ export async function fetchTophubHotlist(): Promise<HotlistResult> {
   }
 
   return {
-    source: 'tophub',
-    sourceName: 'Tophub Today',
+    source: "tophub",
+    sourceName: "Tophub Today",
     items,
   };
 }
@@ -211,10 +210,10 @@ export async function fetchTophubHotlist(): Promise<HotlistResult> {
  * @returns 热榜结果
  */
 export async function fetchTophubDailyHotlist(): Promise<HotlistResult> {
-  const response = await fetch('https://tophub.today/do', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ c: 'hot', t: 'daily' }).toString(),
+  const response = await fetch("https://tophub.today/do", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ c: "hot", t: "daily" }).toString(),
   });
 
   if (!response.ok) {
@@ -238,8 +237,8 @@ export async function fetchTophubDailyHotlist(): Promise<HotlistResult> {
   }));
 
   return {
-    source: 'tophub-daily',
-    sourceName: 'Tophub 今日热榜',
+    source: "tophub-daily",
+    sourceName: "Tophub 今日热榜",
     items,
   };
 }
@@ -269,7 +268,7 @@ interface WeiboHotSearchResponse {
  * @returns 热榜结果
  */
 export async function fetchWeiboHotlist(): Promise<HotlistResult> {
-  const response = await fetch('https://weibo.com/ajax/side/hotSearch');
+  const response = await fetch("https://weibo.com/ajax/side/hotSearch");
 
   if (!response.ok) {
     throw new Error(`微博 API 请求失败: HTTP ${response.status}`);
@@ -278,7 +277,7 @@ export async function fetchWeiboHotlist(): Promise<HotlistResult> {
   const json = (await response.json()) as WeiboHotSearchResponse;
 
   if (!json.data?.realtime) {
-    throw new Error('微博 API 返回数据格式异常');
+    throw new Error("微博 API 返回数据格式异常");
   }
 
   const items: HotItem[] = json.data.realtime.map((item, index) => ({
@@ -290,8 +289,8 @@ export async function fetchWeiboHotlist(): Promise<HotlistResult> {
   }));
 
   return {
-    source: 'weibo',
-    sourceName: '微博热搜',
+    source: "weibo",
+    sourceName: "微博热搜",
     items,
   };
 }
@@ -323,7 +322,7 @@ interface ZhihuHotResponse {
  */
 export async function fetchZhihuHotlist(): Promise<HotlistResult> {
   const response = await fetch(
-    'https://www.zhihu.com/api/v4/creators/rank/hot?domain=0&period=hour',
+    "https://www.zhihu.com/api/v4/creators/rank/hot?domain=0&period=hour",
   );
 
   if (!response.ok) {
@@ -333,7 +332,7 @@ export async function fetchZhihuHotlist(): Promise<HotlistResult> {
   const json = (await response.json()) as ZhihuHotResponse;
 
   if (!json.data) {
-    throw new Error('知乎 API 返回数据格式异常');
+    throw new Error("知乎 API 返回数据格式异常");
   }
 
   const items: HotItem[] = json.data.map((item, index) => ({
@@ -343,8 +342,8 @@ export async function fetchZhihuHotlist(): Promise<HotlistResult> {
   }));
 
   return {
-    source: 'zhihu',
-    sourceName: '知乎热榜',
+    source: "zhihu",
+    sourceName: "知乎热榜",
     items,
   };
 }
@@ -358,18 +357,18 @@ const FETCHERS: Record<
   HotlistSource,
   () => Promise<HotlistResult>
 > = {
-  'tophub': fetchTophubHotlist,
-  'tophub-daily': fetchTophubDailyHotlist,
-  'weibo': fetchWeiboHotlist,
-  'zhihu': fetchZhihuHotlist,
+  "tophub": fetchTophubHotlist,
+  "tophub-daily": fetchTophubDailyHotlist,
+  "weibo": fetchWeiboHotlist,
+  "zhihu": fetchZhihuHotlist,
 };
 
 /** 各来源对应的显示名称 */
 const SOURCE_NAMES: Record<HotlistSource, string> = {
-  'tophub': 'Tophub Today',
-  'tophub-daily': 'Tophub 今日热榜',
-  'weibo': '微博热搜',
-  'zhihu': '知乎热榜',
+  "tophub": "Tophub Today",
+  "tophub-daily": "Tophub 今日热榜",
+  "weibo": "微博热搜",
+  "zhihu": "知乎热榜",
 };
 
 /**
@@ -393,7 +392,7 @@ const SOURCE_NAMES: Record<HotlistSource, string> = {
  * ```
  */
 export async function fetchHotlist(
-  sources: HotlistSource[] = ['tophub', 'weibo', 'zhihu'],
+  sources: HotlistSource[] = ["tophub", "weibo", "zhihu"],
 ): Promise<{
   results: HotlistResult[];
   errors: HotlistFetchError[];
@@ -432,5 +431,5 @@ export async function crawlAllHotlists(): Promise<{
   results: HotlistResult[];
   errors: HotlistFetchError[];
 }> {
-  return fetchHotlist(['tophub', 'tophub-daily', 'weibo', 'zhihu']);
+  return fetchHotlist(["tophub", "tophub-daily", "weibo", "zhihu"]);
 }

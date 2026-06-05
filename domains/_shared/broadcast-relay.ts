@@ -53,7 +53,10 @@ type MessageHandler = (
 /** 中继实例 */
 export interface Relay {
   /** 向指定 region 发送消息，可选等待回复 */
-  send: (targetRegion: string, msg: Omit<RelayMessage, "targetRegion" | "sourceRegion">) => Promise<Record<string, unknown> | void>;
+  send: (
+    targetRegion: string,
+    msg: Omit<RelayMessage, "targetRegion" | "sourceRegion">,
+  ) => Promise<Record<string, unknown> | void>;
   /** 注册特定 type 的处理器 */
   on: (type: string, handler: MessageHandler) => void;
   /** 注销处理器 */
@@ -124,7 +127,9 @@ export const createRelay = (
           let resolved: Record<string, unknown> | undefined;
           await handler(
             { ...msg, targetRegion, sourceRegion: localRegion } as RelayMessage,
-            (data) => { resolved = data; },
+            (data) => {
+              resolved = data;
+            },
           );
           return resolved;
         }

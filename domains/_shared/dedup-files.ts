@@ -91,9 +91,9 @@ export interface WorkerLike {
 
 /** Worker → 主线程的消息 */
 export type WorkerMessage =
-  | { type: 'on'; hash: string; filename: string }
-  | { type: 'off'; name: string; taskCount: number }
-  | { type: 'error'; message: string };
+  | { type: "on"; hash: string; filename: string }
+  | { type: "off"; name: string; taskCount: number }
+  | { type: "error"; message: string };
 
 /**
  * Worker 工厂：给定 worker 代码（字符串/URL），创建 WorkerLike 实例。
@@ -150,7 +150,7 @@ export async function findDuplicateFiles(
   };
 
   // ── 1. 遍历收集文件 ────────────────────────────────────────
-  const dirPath = options.path ?? '.';
+  const dirPath = options.path ?? ".";
   const files: string[] = [];
   const hiddenCache = new Map<string, boolean>();
 
@@ -185,7 +185,7 @@ export async function findDuplicateFiles(
   }
 
   // ── 2. 哈希计算 ────────────────────────────────────────────
-  const hashMap = new Map<string, string>();        // hash → 首个文件路径
+  const hashMap = new Map<string, string>(); // hash → 首个文件路径
   const duplicates = new Map<string, Set<string>>(); // hash → 重复文件集
   let completed = 0;
 
@@ -207,13 +207,13 @@ export async function findDuplicateFiles(
 
   const progressLine = (): string => {
     const pct = Math.min(Math.floor((completed / files.length) * 100), 100);
-    const bar = '='.repeat(Math.floor(pct / 2));
+    const bar = "=".repeat(Math.floor(pct / 2));
     return `[${bar.padEnd(50)}] ${pct}%`;
   };
 
   const updateProgress = (): void => {
     const line = progressLine();
-    const idx = logs.findIndex((l) => l.includes('%'));
+    const idx = logs.findIndex((l) => l.includes("%"));
     if (idx === -1) logs.unshift(line);
     else logs[idx] = line;
     onProgress?.(logs);
@@ -235,9 +235,10 @@ export async function findDuplicateFiles(
     );
 
     const concurrency = options.workerCount ?? Math.min(
-      (typeof navigator !== 'undefined' && typeof navigator.hardwareConcurrency === 'number'
+      typeof navigator !== "undefined" &&
+        typeof navigator.hardwareConcurrency === "number"
         ? navigator.hardwareConcurrency
-        : 4),
+        : 4,
       files.length,
     );
     pushLog(`Worker 数量: ${concurrency}`);
@@ -252,21 +253,21 @@ export async function findDuplicateFiles(
         w.onmessage = (ev: MessageEvent<WorkerMessage>) => {
           const msg = ev.data;
           switch (msg.type) {
-            case 'on':
+            case "on":
               recordHash(msg.hash, msg.filename);
               completed++;
               if (completed % 50 === 0 || completed === files.length) updateProgress();
               break;
-            case 'off':
+            case "off":
               pushLog(`${msg.name} 已完成 ${msg.taskCount} 个任务`);
               w.terminate();
               doneCount++;
               if (doneCount === concurrency) {
-                pushLog('所有任务已完成');
+                pushLog("所有任务已完成");
                 resolve();
               }
               break;
-            case 'error':
+            case "error":
               pushLog(`Worker 错误: ${msg.message}`);
               break;
           }
@@ -312,7 +313,7 @@ export async function findDuplicateFiles(
   }
 
   if (duplicates.size === 0) {
-    pushLog('没有重复文件');
+    pushLog("没有重复文件");
   } else {
     pushLog(`发现 ${duplicates.size} 组重复文件`);
   }
@@ -389,7 +390,7 @@ export function createDenoFileSystemAdapter(): FileSystemAdapter {
 
   const getJoin = async (): Promise<(...segments: string[]) => string> => {
     if (!_join) {
-      const mod = await import('jsr:@std/path');
+      const mod = await import("jsr:@std/path");
       _join = mod.join;
     }
     return _join;
@@ -414,13 +415,13 @@ export function createDenoFileSystemAdapter(): FileSystemAdapter {
 
     isHidden(path: string): boolean {
       try {
-        if (Deno.build.os === 'windows') {
+        if (Deno.build.os === "windows") {
           const name = path.split(/[\\/]/).pop()!;
-          return name.startsWith('.');
+          return name.startsWith(".");
         }
       } catch { /* Deno.build 不可用时忽略 */ }
-      const name = path.split('/').pop() ?? path;
-      return name.startsWith('.');
+      const name = path.split("/").pop() ?? path;
+      return name.startsWith(".");
     },
 
     async joinPath(...segments: string[]): Promise<string> {
@@ -440,7 +441,7 @@ export function createDenoFileSystemAdapter(): FileSystemAdapter {
  * ```
  */
 export async function sha256Hash(data: Uint8Array<ArrayBuffer>): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', data);
+  const digest = await crypto.subtle.digest("SHA-256", data);
   const bytes = Array.from(new Uint8Array(digest));
-  return bytes.map((b) => b.toString(16).padStart(2, '0')).join('');
+  return bytes.map((b) => b.toString(16).padStart(2, "0")).join("");
 }

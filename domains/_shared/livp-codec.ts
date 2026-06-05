@@ -49,9 +49,9 @@ export interface LivpDecoded {
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-const HEADER = encoder.encode('LIVP\n');           // 5 bytes
-const MARKER_TEXT = 'LIVP_BOUNDARY_MARKER';
-const MARKER_BYTES = encoder.encode(MARKER_TEXT);  // 21 bytes
+const HEADER = encoder.encode("LIVP\n"); // 5 bytes
+const MARKER_TEXT = "LIVP_BOUNDARY_MARKER";
+const MARKER_BYTES = encoder.encode(MARKER_TEXT); // 21 bytes
 const GUARD = new Uint8Array([0xff, 0xff, 0xff, 0xff]);
 
 /** Concatenate multiple Uint8Arrays into one. */
@@ -93,7 +93,7 @@ export function replaceFileExtension(
   oldExt: string,
   newExt: string,
 ): string {
-  const regex = new RegExp(`\\.${oldExt}$`, 'i');
+  const regex = new RegExp(`\\.${oldExt}$`, "i");
   return filename.replace(regex, `.${newExt}`);
 }
 
@@ -133,7 +133,7 @@ export function encodeLivp(
 export function decodeLivp(data: Uint8Array): LivpDecoded {
   // 1. Validate header
   if (data.byteLength < HEADER.byteLength + 4) {
-    throw new Error('LIVP decode: data too short for header');
+    throw new Error("LIVP decode: data too short for header");
   }
   for (let i = 0; i < HEADER.byteLength; i++) {
     if (data[i] !== HEADER[i]) {
@@ -149,7 +149,7 @@ export function decodeLivp(data: Uint8Array): LivpDecoded {
   const metaStart = HEADER.byteLength + 4; // offset 9
   const metaEnd = metaStart + metadataLength;
   if (metaEnd > data.byteLength) {
-    throw new Error('LIVP decode: metadata length exceeds data bounds');
+    throw new Error("LIVP decode: metadata length exceeds data bounds");
   }
   const metadataJson = decoder.decode(data.slice(metaStart, metaEnd));
   const metadata: LivpMetadata = JSON.parse(metadataJson);
@@ -159,7 +159,7 @@ export function decodeLivp(data: Uint8Array): LivpDecoded {
   const boundaryIdx = indexOfBytes(remaining, MARKER_BYTES);
 
   if (boundaryIdx === -1) {
-    throw new Error('LIVP decode: boundary marker not found');
+    throw new Error("LIVP decode: boundary marker not found");
   }
 
   // Boundary layout (relative to `remaining`):
@@ -169,7 +169,7 @@ export function decodeLivp(data: Uint8Array): LivpDecoded {
 
   const markerStart = boundaryIdx - 4;
   if (markerStart < 0) {
-    throw new Error('LIVP decode: corrupted boundary marker');
+    throw new Error("LIVP decode: corrupted boundary marker");
   }
 
   // 5. Extract image (from start of remaining to markerStart)
@@ -181,8 +181,8 @@ export function decodeLivp(data: Uint8Array): LivpDecoded {
   const videoData = remaining.slice(videoStart);
 
   // 7. Derive MIME types
-  const imageFormat = (metadata.imageFormat || 'heic').toLowerCase();
-  const videoFormat = (metadata.videoFormat || 'mov').toLowerCase();
+  const imageFormat = (metadata.imageFormat || "heic").toLowerCase();
+  const videoFormat = (metadata.videoFormat || "mov").toLowerCase();
 
   const imageMimeType = mimeForImage(imageFormat);
   const videoMimeType = mimeForVideo(videoFormat);
@@ -211,18 +211,26 @@ function indexOfBytes(haystack: Uint8Array, needle: Uint8Array): number {
 
 function mimeForImage(fmt: string): string {
   switch (fmt) {
-    case 'avif':  return 'image/avif';
-    case 'heic':  return 'image/heic';
-    case 'png':   return 'image/png';
-    case 'webp':  return 'image/webp';
-    default:      return 'image/jpeg';
+    case "avif":
+      return "image/avif";
+    case "heic":
+      return "image/heic";
+    case "png":
+      return "image/png";
+    case "webp":
+      return "image/webp";
+    default:
+      return "image/jpeg";
   }
 }
 
 function mimeForVideo(fmt: string): string {
   switch (fmt) {
-    case 'webm':  return 'video/webm; codecs=av01.0.05M.08';
-    case 'mp4':   return 'video/mp4';
-    default:      return 'video/quicktime';
+    case "webm":
+      return "video/webm; codecs=av01.0.05M.08";
+    case "mp4":
+      return "video/mp4";
+    default:
+      return "video/quicktime";
   }
 }

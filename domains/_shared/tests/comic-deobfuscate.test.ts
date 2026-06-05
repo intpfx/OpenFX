@@ -1,9 +1,6 @@
 import { expect } from "@std/expect";
 
-import {
-  deobfuscateComicData,
-  extractCleanBase64,
-} from "../comic-deobfuscate.ts";
+import { deobfuscateComicData, extractCleanBase64 } from "../comic-deobfuscate.ts";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -177,14 +174,16 @@ Deno.test("deobfuscateComicData: handles empty picture array", () => {
 // ─── Error cases ──────────────────────────────────────────────────────────────
 
 Deno.test("deobfuscateComicData: throws when var DATA is missing", () => {
-  const html = `<html><body><script>window["nonce"] = "fake"; window["nonce"] = "3a";</script></body></html>`;
+  const html =
+    `<html><body><script>window["nonce"] = "fake"; window["nonce"] = "3a";</script></body></html>`;
 
   expect(() => deobfuscateComicData(html)).toThrow("未找到 var DATA 声明");
 });
 
 Deno.test("deobfuscateComicData: throws when window declarations are missing", () => {
   const cleanBase64 = jsonToBase64(SAMPLE_COMIC_JSON);
-  const html = `<html><body><script>var DATA = '${cleanBase64}',</script></body></html>`;
+  const html =
+    `<html><body><script>var DATA = '${cleanBase64}',</script></body></html>`;
 
   expect(() => deobfuscateComicData(html)).toThrow("未找到 window 声明");
 });

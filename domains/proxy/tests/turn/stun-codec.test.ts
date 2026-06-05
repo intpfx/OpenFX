@@ -1,21 +1,21 @@
 import { expect } from "@std/expect";
 
 import {
-  createStunMessage,
-  decodeStunMessage,
-  encodeStunMessage,
   addAttr,
-  getAttr,
-  createReply,
-  decodeChannelData,
-  encodeChannelData,
   computeMessageIntegrityRaw,
+  createReply,
+  createStunMessage,
+  decodeChannelData,
+  decodeStunMessage,
+  encodeChannelData,
+  encodeStunMessage,
+  getAttr,
 } from "../../server/turn/stun-codec.ts";
 import { authenticate } from "../../server/turn/auth.ts";
-import { makeAddress, makeTransport, computeFiveTuple } from "../../server/turn/mod.ts";
-import type { TurnServerContext, Address } from "../../server/turn/types.ts";
-import { STUN_METHOD, STUN_CLASS } from "../../server/turn/constants.ts";
-import { createAddress, crc32 } from "../../server/turn/utils.ts";
+import { computeFiveTuple, makeAddress, makeTransport } from "../../server/turn/mod.ts";
+import type { Address, TurnServerContext } from "../../server/turn/types.ts";
+import { STUN_CLASS, STUN_METHOD } from "../../server/turn/constants.ts";
+import { crc32, createAddress } from "../../server/turn/utils.ts";
 
 // ─── Test context / helpers ──────────────────────────────────────────
 

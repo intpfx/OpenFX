@@ -67,7 +67,9 @@ export const encode = async (
       }
 
       case "ArrayBuffer": {
-        output[`ArrayBuffer[${key}]`] = Array.from(new Uint8Array(value as ArrayBuffer));
+        output[`ArrayBuffer[${key}]`] = Array.from(
+          new Uint8Array(value as ArrayBuffer),
+        );
         break;
       }
 

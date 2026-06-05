@@ -33,35 +33,35 @@
  */
 
 export {
-  // Types (value + type)
-  TransportFamily,
-  // Constants
-  STUN_ATTR,
-  STUN_METHOD,
-  STUN_CLASS,
-  TRANSPORT_PROTO,
-  MAGIC_COOKIE,
-  DEBUG_LEVEL,
+  computeFiveTuple,
   // Functions
   createTurnServer,
-  stunEncode,
-  stunDecode,
-  makeTransport,
+  DEBUG_LEVEL,
+  MAGIC_COOKIE,
   makeAddress,
-  computeFiveTuple,
-} from './turn/mod.ts';
+  makeTransport,
+  // Constants
+  STUN_ATTR,
+  STUN_CLASS,
+  STUN_METHOD,
+  stunDecode,
+  stunEncode,
+  TRANSPORT_PROTO,
+  // Types (value + type)
+  TransportFamily,
+} from "./turn/mod.ts";
 
 export type {
   Address,
-  Transport,
-  User,
-  StunAttribute,
-  StunMessage,
   Allocation,
   ChannelData,
-  TurnServerContext,
+  StunAttribute,
+  StunMessage,
+  Transport,
   TurnServerConfig,
+  TurnServerContext,
   TurnServerHandle,
-  UdpSocket,
   UdpListener,
-} from './turn/mod.ts';
+  UdpSocket,
+  User,
+} from "./turn/mod.ts";

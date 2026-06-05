@@ -89,7 +89,12 @@ const latestEntry = (entries: ManifestEntry[]): ManifestEntry | undefined =>
 
 const fileToEntry = (name: string, entries: ManifestEntry[]): FileEntry => {
   const latest = latestEntry(entries)!;
-  return { name, version: latest.version, timestamp: latest.timestamp, size: latest.size };
+  return {
+    name,
+    version: latest.version,
+    timestamp: latest.timestamp,
+    size: latest.size,
+  };
 };
 
 const allFileEntries = (manifest: Manifest): FileEntry[] =>
@@ -239,13 +244,17 @@ self.onmessage = async (event) => {
 // ─── Image preview helpers (pure) ─────────────────────────────────────
 
 const IMAGE_EXTENSIONS = new Set([
-  "png", "jpg", "jpeg", "gif", "bmp", "webp",
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "bmp",
+  "webp",
 ]);
 
 const isImage = (ext: string): boolean => IMAGE_EXTENSIONS.has(ext);
 
-const formatSize = (bytes: number): string =>
-  `${Math.round(bytes / 1024)} KB`;
+const formatSize = (bytes: number): string => `${Math.round(bytes / 1024)} KB`;
 
 // ─── Web Component ────────────────────────────────────────────────────
 
@@ -333,7 +342,10 @@ export class OpfsFinder extends HTMLElement {
     }
   }
 
-  private sendCommand(cmd: OPFSWorkerCommand, callback?: (resp: WorkerResponse) => void): void {
+  private sendCommand(
+    cmd: OPFSWorkerCommand,
+    callback?: (resp: WorkerResponse) => void,
+  ): void {
     if (callback) {
       const id = `_cb_${this.nextMessageId++}`;
       this.callbacks.set(cmd.type, callback);
@@ -343,7 +355,11 @@ export class OpfsFinder extends HTMLElement {
 
   // ─── Public API ──────────────────────────────────────
 
-  writeFile(name: string, data: ArrayBuffer, callback?: (resp: WorkerResponse) => void): void {
+  writeFile(
+    name: string,
+    data: ArrayBuffer,
+    callback?: (resp: WorkerResponse) => void,
+  ): void {
     const sab = new SharedArrayBuffer(data.byteLength);
     new Uint8Array(sab).set(new Uint8Array(data));
 
@@ -354,7 +370,11 @@ export class OpfsFinder extends HTMLElement {
     });
   }
 
-  readFile(name: string, version?: number, callback?: (buffer: ArrayBuffer) => void): void {
+  readFile(
+    name: string,
+    version?: number,
+    callback?: (buffer: ArrayBuffer) => void,
+  ): void {
     const fileEntry = this.files.find((f) => f.name === name);
     const ver = version ?? fileEntry?.version ?? 1;
     const sab = new SharedArrayBuffer(1024 * 1024);
@@ -370,7 +390,11 @@ export class OpfsFinder extends HTMLElement {
     this.sendCommand({ type: "list" });
   }
 
-  deleteFile(name: string, version?: number, callback?: (resp: WorkerResponse) => void): void {
+  deleteFile(
+    name: string,
+    version?: number,
+    callback?: (resp: WorkerResponse) => void,
+  ): void {
     this.sendCommand({ type: "delete", name, version }, (resp) => {
       console.log(`删除完成：${resp.name} 版本 ${resp.version}`);
       callback?.(resp);
@@ -378,7 +402,11 @@ export class OpfsFinder extends HTMLElement {
     });
   }
 
-  restoreVersion(name: string, version: number, callback?: (resp: WorkerResponse) => void): void {
+  restoreVersion(
+    name: string,
+    version: number,
+    callback?: (resp: WorkerResponse) => void,
+  ): void {
     this.sendCommand({ type: "restore", name, version }, (resp) => {
       console.log(`还原完成：${resp.name} 新版本 ${resp.version}`);
       callback?.(resp);

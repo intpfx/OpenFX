@@ -947,7 +947,15 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
               title="万一"
               lede="你编程生涯的第一个项目，2020.10.26 杭州。全屏视频背景、自定义字体、CSS 渐变色动画。"
             >
-              <div style={{ width: "100%", height: "min(75vh, 600px)", borderRadius: "var(--radius)", overflow: "hidden", border: "1px solid var(--border)" }}>
+              <div
+                style={{
+                  width: "100%",
+                  height: "min(75vh, 600px)",
+                  borderRadius: "var(--radius)",
+                  overflow: "hidden",
+                  border: "1px solid var(--border)",
+                }}
+              >
                 <iframe
                   src="/wanone/index.html"
                   title="万一"

@@ -21,7 +21,8 @@ Follow the development principles in [README.md §开发原则](README.md).
 2. Read `.agents/skills/openfx-repo/SKILL.md` before making stack-level or
    agent-behavior changes.
 3. Update docs together with behavior changes.
-4. Add or update tests when modifying `domains/downip`, `domains/proxy`, `domains/e`, `domains/dss`, or `domains/esn`.
+4. Add or update tests when modifying `domains/downip`, `domains/proxy`, `domains/e`,
+   `domains/dss`, or `domains/esn`.
 
 ## Stack Boundaries
 

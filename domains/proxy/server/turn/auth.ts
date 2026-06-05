@@ -10,9 +10,9 @@
  * @module turn/auth
  */
 
-import type { TurnServerContext, StunMessage, User } from './types.ts';
-import { STUN_CLASS } from './constants.ts';
-import { getAttr, addAttr, createReply } from './stun-codec.ts';
+import type { StunMessage, TurnServerContext, User } from "./types.ts";
+import { STUN_CLASS } from "./constants.ts";
+import { addAttr, createReply, getAttr } from "./stun-codec.ts";
 
 // ---------------------------------------------------------------------------
 // Nonce management
@@ -25,7 +25,9 @@ function generateNonce(nonces: Record<string, { ttl: number }>): string {
   }
   const nonce = gen4() + gen4() + gen4() + gen4() + gen4() + gen4() + gen4() + gen4();
   nonces[nonce] = { ttl: Date.now() + sessionTime };
-  setTimeout(() => { delete nonces[nonce]; }, sessionTime);
+  setTimeout(() => {
+    delete nonces[nonce];
+  }, sessionTime);
   return nonce;
 }
 
@@ -38,7 +40,11 @@ function checkNonce(nonces: Record<string, { ttl: number }>, nonce: string): boo
 // Auth result type
 // ---------------------------------------------------------------------------
 
-export type AuthResult = { ok: true; reply: StunMessage } | { ok: false; error: Error; reply: StunMessage };
+export type AuthResult = { ok: true; reply: StunMessage } | {
+  ok: false;
+  error: Error;
+  reply: StunMessage;
+};
 
 // ---------------------------------------------------------------------------
 // Authentication handlers
@@ -53,16 +59,16 @@ function authShortTerm(
   msg: StunMessage,
 ): AuthResult {
   const reply = createReply(msg);
-  const username = getAttr(msg, 'username') as string | undefined;
-  const integrity = getAttr(msg, 'message-integrity');
+  const username = getAttr(msg, "username") as string | undefined;
+  const integrity = getAttr(msg, "message-integrity");
 
   if (!username || integrity === false || integrity === undefined) {
     if (msg.class === STUN_CLASS.REQUEST) {
       reply.class = STUN_CLASS.ERROR;
-      addAttr(reply, 'error-code', { code: 400, reason: 'Bad Request' });
-      return { ok: false, error: new Error('Bad Request'), reply };
+      addAttr(reply, "error-code", { code: 400, reason: "Bad Request" });
+      return { ok: false, error: new Error("Bad Request"), reply };
     } else {
-      return { ok: false, error: new Error('silently discard'), reply };
+      return { ok: false, error: new Error("silently discard"), reply };
     }
   }
 
@@ -70,10 +76,10 @@ function authShortTerm(
   if (!password) {
     if (msg.class === STUN_CLASS.REQUEST) {
       reply.class = STUN_CLASS.ERROR;
-      addAttr(reply, 'error-code', { code: 401, reason: 'Unauthorized' });
-      return { ok: false, error: new Error('Unauthorized'), reply };
+      addAttr(reply, "error-code", { code: 401, reason: "Unauthorized" });
+      return { ok: false, error: new Error("Unauthorized"), reply };
     } else {
-      return { ok: false, error: new Error('silently discard'), reply };
+      return { ok: false, error: new Error("silently discard"), reply };
     }
   }
 
@@ -86,10 +92,10 @@ function authShortTerm(
 
   if (msg.class === STUN_CLASS.REQUEST) {
     reply.class = STUN_CLASS.ERROR;
-    addAttr(reply, 'error-code', { code: 401, reason: 'Unauthorized' });
-    return { ok: false, error: new Error('Unauthorized'), reply };
+    addAttr(reply, "error-code", { code: 401, reason: "Unauthorized" });
+    return { ok: false, error: new Error("Unauthorized"), reply };
   }
-  return { ok: false, error: new Error('silently discard'), reply };
+  return { ok: false, error: new Error("silently discard"), reply };
 }
 
 function authLongTerm(
@@ -97,55 +103,57 @@ function authLongTerm(
   msg: StunMessage,
 ): AuthResult {
   const reply = createReply(msg);
-  const username = getAttr(msg, 'username') as string | undefined;
-  const integrity = getAttr(msg, 'message-integrity');
-  const realm = getAttr(msg, 'realm') as string | undefined;
-  const nonce = getAttr(msg, 'nonce') as string | undefined;
+  const username = getAttr(msg, "username") as string | undefined;
+  const integrity = getAttr(msg, "message-integrity");
+  const realm = getAttr(msg, "realm") as string | undefined;
+  const nonce = getAttr(msg, "nonce") as string | undefined;
 
   if (!integrity) {
-    addAttr(reply, 'realm', ctx.realm);
-    addAttr(reply, 'nonce', generateNonce(ctx.nonces));
+    addAttr(reply, "realm", ctx.realm);
+    addAttr(reply, "nonce", generateNonce(ctx.nonces));
     reply.class = STUN_CLASS.ERROR;
-    addAttr(reply, 'error-code', { code: 401, reason: 'Unauthorized' });
-    return { ok: false, error: new Error('Unauthorized'), reply };
+    addAttr(reply, "error-code", { code: 401, reason: "Unauthorized" });
+    return { ok: false, error: new Error("Unauthorized"), reply };
   }
 
   if (!username || !realm || !nonce) {
     reply.class = STUN_CLASS.ERROR;
-    addAttr(reply, 'error-code', { code: 400, reason: 'Bad Request' });
-    return { ok: false, error: new Error('Bad Request'), reply };
+    addAttr(reply, "error-code", { code: 400, reason: "Bad Request" });
+    return { ok: false, error: new Error("Bad Request"), reply };
   }
 
   if (!checkNonce(ctx.nonces, nonce)) {
-    addAttr(reply, 'realm', ctx.realm);
-    addAttr(reply, 'nonce', generateNonce(ctx.nonces));
+    addAttr(reply, "realm", ctx.realm);
+    addAttr(reply, "nonce", generateNonce(ctx.nonces));
     reply.class = STUN_CLASS.ERROR;
-    addAttr(reply, 'error-code', { code: 438, reason: 'Stale Nonce' });
-    return { ok: false, error: new Error('Stale Nonce'), reply };
+    addAttr(reply, "error-code", { code: 438, reason: "Stale Nonce" });
+    return { ok: false, error: new Error("Stale Nonce"), reply };
   }
 
   const password = ctx.staticCredentials[username];
   if (!password) {
-    addAttr(reply, 'realm', ctx.realm);
-    addAttr(reply, 'nonce', generateNonce(ctx.nonces));
+    addAttr(reply, "realm", ctx.realm);
+    addAttr(reply, "nonce", generateNonce(ctx.nonces));
     reply.class = STUN_CLASS.ERROR;
-    addAttr(reply, 'error-code', { code: 401, reason: 'Unauthorized' });
-    return { ok: false, error: new Error('Unauthorized'), reply };
+    addAttr(reply, "error-code", { code: 401, reason: "Unauthorized" });
+    return { ok: false, error: new Error("Unauthorized"), reply };
   }
 
   if (integrity === false) {
-    addAttr(reply, 'realm', ctx.realm);
-    addAttr(reply, 'nonce', generateNonce(ctx.nonces));
+    addAttr(reply, "realm", ctx.realm);
+    addAttr(reply, "nonce", generateNonce(ctx.nonces));
     reply.class = STUN_CLASS.ERROR;
-    addAttr(reply, 'error-code', { code: 401, reason: 'Unauthorized' });
-    return { ok: false, error: new Error('Unauthorized'), reply };
+    addAttr(reply, "error-code", { code: 401, reason: "Unauthorized" });
+    return { ok: false, error: new Error("Unauthorized"), reply };
   }
 
   // RFC 5766 §4: check allocation user matches
-  if (msg.allocation && msg.allocation.user && msg.allocation.user.username !== username) {
+  if (
+    msg.allocation && msg.allocation.user && msg.allocation.user.username !== username
+  ) {
     reply.class = STUN_CLASS.ERROR;
-    addAttr(reply, 'error-code', { code: 441, reason: 'Wrong Credentials' });
-    return { ok: false, error: new Error('Wrong Credentials'), reply };
+    addAttr(reply, "error-code", { code: 441, reason: "Wrong Credentials" });
+    return { ok: false, error: new Error("Wrong Credentials"), reply };
   }
 
   const user: User = { username, password };
@@ -160,14 +168,18 @@ export function authenticate(
   msg: StunMessage,
 ): AuthResult {
   switch (ctx.authMech) {
-    case 'none':
+    case "none":
       return authNone(ctx, msg);
-    case 'short-term':
+    case "short-term":
       return authShortTerm(ctx, msg);
-    case 'long-term':
+    case "long-term":
       return authLongTerm(ctx, msg);
     default:
       const errReply = createReply(msg);
-      return { ok: false, error: new Error(`Invalid auth mechanism: ${ctx.authMech}`), reply: errReply };
+      return {
+        ok: false,
+        error: new Error(`Invalid auth mechanism: ${ctx.authMech}`),
+        reply: errReply,
+      };
   }
 }

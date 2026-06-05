@@ -70,15 +70,15 @@ export function checkSharedArrayBufferSupport(): boolean {
  */
 export function getSharedArrayBufferErrorMessage(): string {
   return [
-    'SharedArrayBuffer 不可用',
-    '',
-    'ffmpeg.wasm 需要 SharedArrayBuffer 支持，但当前浏览器环境不支持此功能。',
-    '要启用此功能，您需要：',
-    '  1. 通过 HTTPS 访问此页面',
-    '  2. 服务器设置以下 HTTP 头：',
-    '     - Cross-Origin-Opener-Policy: same-origin',
-    '     - Cross-Origin-Embedder-Policy: require-corp',
-  ].join('\n');
+    "SharedArrayBuffer 不可用",
+    "",
+    "ffmpeg.wasm 需要 SharedArrayBuffer 支持，但当前浏览器环境不支持此功能。",
+    "要启用此功能，您需要：",
+    "  1. 通过 HTTPS 访问此页面",
+    "  2. 服务器设置以下 HTTP 头：",
+    "     - Cross-Origin-Opener-Policy: same-origin",
+    "     - Cross-Origin-Embedder-Policy: require-corp",
+  ].join("\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -98,20 +98,20 @@ export async function createFfmpegPipeline(
   options: FfmpegPipelineOptions = {},
 ): Promise<FfmpegPipeline> {
   const {
-    corePath = 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js',
+    corePath = "https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js",
     log = true,
     onProgress,
   } = options;
 
-  if (typeof (globalThis as Record<string, unknown>).FFmpeg === 'undefined') {
+  if (typeof (globalThis as Record<string, unknown>).FFmpeg === "undefined") {
     throw new Error(
-      'FFmpeg 未加载，请确保已通过 CDN 引入 ffmpeg.wasm 库',
+      "FFmpeg 未加载，请确保已通过 CDN 引入 ffmpeg.wasm 库",
     );
   }
 
   if (!checkSharedArrayBufferSupport()) {
     throw new Error(
-      '当前浏览器不支持 SharedArrayBuffer，无法使用 ffmpeg.wasm',
+      "当前浏览器不支持 SharedArrayBuffer，无法使用 ffmpeg.wasm",
     );
   }
 
@@ -122,9 +122,9 @@ export async function createFfmpegPipeline(
 
   const ffmpeg = FFmpegNS.createFFmpeg({ log, corePath });
 
-  onProgress?.('正在加载 FFmpeg...');
+  onProgress?.("正在加载 FFmpeg...");
   await (ffmpeg as { load: () => Promise<void> }).load();
-  onProgress?.('FFmpeg 已就绪');
+  onProgress?.("FFmpeg 已就绪");
 
   return {
     ffmpeg,
@@ -175,7 +175,7 @@ export async function convertVideo(
   const ffmpegRun = (ffmpeg as { run: (...args: string[]) => Promise<void> }).run;
   const memfs = fs(pipeline);
 
-  const inputExt = input.name.split('.').pop()?.toLowerCase() ?? 'bin';
+  const inputExt = input.name.split(".").pop()?.toLowerCase() ?? "bin";
   const inputName = `input.${inputExt}`;
   const outputName = `output.${outputExt}`;
 
@@ -186,11 +186,11 @@ export async function convertVideo(
 
   try {
     // 2. Run ffmpeg
-    onProgress?.('正在转换视频...');
-    await ffmpegRun('-i', inputName, ...ffmpegArgs, outputName);
+    onProgress?.("正在转换视频...");
+    await ffmpegRun("-i", inputName, ...ffmpegArgs, outputName);
 
     // 3. Verify output
-    const files = memfs.readdir('/');
+    const files = memfs.readdir("/");
     if (!files.includes(outputName)) {
       throw new Error(`输出文件 ${outputName} 未生成`);
     }
@@ -209,12 +209,16 @@ export async function convertVideo(
       { type: mimeForExt(outputExt) },
     );
 
-    onProgress?.('转换完成!');
+    onProgress?.("转换完成!");
     return outFile;
   } finally {
     // 6. Cleanup (always)
-    try { memfs.unlink(inputName); } catch { /* ignore */ }
-    try { memfs.unlink(outputName); } catch { /* ignore */ }
+    try {
+      memfs.unlink(inputName);
+    } catch { /* ignore */ }
+    try {
+      memfs.unlink(outputName);
+    } catch { /* ignore */ }
   }
 }
 
@@ -231,12 +235,17 @@ export async function convertToWebM(
   pipeline: FfmpegPipeline,
   input: File,
 ): Promise<File> {
-  return convertVideo(pipeline, input, 'webm', [
-    '-c:v', 'vp8',
-    '-crf', '30',
-    '-b:v', '1M',
-    '-c:a', 'libvorbis',
-    '-b:a', '128k',
+  return convertVideo(pipeline, input, "webm", [
+    "-c:v",
+    "vp8",
+    "-crf",
+    "30",
+    "-b:v",
+    "1M",
+    "-c:a",
+    "libvorbis",
+    "-b:a",
+    "128k",
   ]);
 }
 
@@ -248,14 +257,21 @@ export async function convertToMp4(
   pipeline: FfmpegPipeline,
   input: File,
 ): Promise<File> {
-  return convertVideo(pipeline, input, 'mp4', [
-    '-c:v', 'libx264',
-    '-preset', 'fast',
-    '-crf', '22',
-    '-c:a', 'aac',
-    '-strict', 'experimental',
-    '-b:a', '128k',
-    '-movflags', 'faststart',
+  return convertVideo(pipeline, input, "mp4", [
+    "-c:v",
+    "libx264",
+    "-preset",
+    "fast",
+    "-crf",
+    "22",
+    "-c:a",
+    "aac",
+    "-strict",
+    "experimental",
+    "-b:a",
+    "128k",
+    "-movflags",
+    "faststart",
   ]);
 }
 
@@ -264,16 +280,20 @@ export async function convertToMp4(
 // ---------------------------------------------------------------------------
 
 function replaceExtension(filename: string, newExt: string): string {
-  const dot = filename.lastIndexOf('.');
+  const dot = filename.lastIndexOf(".");
   const base = dot > 0 ? filename.slice(0, dot) : filename;
   return `${base}.${newExt}`;
 }
 
 function mimeForExt(ext: string): string {
   switch (ext.toLowerCase()) {
-    case 'webm': return 'video/webm';
-    case 'mp4':  return 'video/mp4';
-    case 'mov':  return 'video/quicktime';
-    default:     return 'video/webm';
+    case "webm":
+      return "video/webm";
+    case "mp4":
+      return "video/mp4";
+    case "mov":
+      return "video/quicktime";
+    default:
+      return "video/webm";
   }
 }

@@ -40,7 +40,10 @@ export interface NodeInfo {
   uuid: string;
 }
 
-export type NodeInfoInput = Omit<NodeInfo, "uuid" | "status" | "loginTime" | "onlineTime" | "serverRegions" | "wallet">;
+export type NodeInfoInput = Omit<
+  NodeInfo,
+  "uuid" | "status" | "loginTime" | "onlineTime" | "serverRegions" | "wallet"
+>;
 
 // ── 默认 KV 前缀 ──
 
@@ -76,7 +79,8 @@ const takeOffline = (node: NodeInfo, region: string): NodeInfo => ({
   ...node,
   status: "offline" as const,
   serverRegions: node.serverRegions.filter((r) => r !== region),
-  onlineTime: node.onlineTime + (node.status === "online" ? Date.now() - node.loginTime : 0),
+  onlineTime: node.onlineTime +
+    (node.status === "online" ? Date.now() - node.loginTime : 0),
 });
 
 const applyHeartbeat = (
@@ -155,7 +159,10 @@ export const nodeGet = async (
 
 export interface NodeRegistry {
   online: (uuid: string | null, info: NodeInfoInput) => Promise<NodeInfo>;
-  heartbeat: (uuid: string, delta: Partial<Pick<NodeInfo, "usage" | "quota">>) => Promise<void>;
+  heartbeat: (
+    uuid: string,
+    delta: Partial<Pick<NodeInfo, "usage" | "quota">>,
+  ) => Promise<void>;
   offline: (uuid: string, region: string) => Promise<void>;
   list: () => Promise<NodeInfo[]>;
   get: (uuid: string) => Promise<NodeInfo | null>;

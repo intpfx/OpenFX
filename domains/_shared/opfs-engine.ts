@@ -78,7 +78,11 @@ export interface OpfsEngine {
   setUuid: (uuid: string) => Promise<void>;
 
   /** 写入文件（第二个参数为 Blob 或可 JSON 序列化的值） */
-  set: (key: string, value: Blob | unknown, owner?: string) => Promise<{ type: string }>;
+  set: (
+    key: string,
+    value: Blob | unknown,
+    owner?: string,
+  ) => Promise<{ type: string }>;
 
   /** 删除文件 */
   delete: (key: string) => Promise<{ type: string }>;
@@ -153,8 +157,8 @@ export const createOpfsEngine = async (): Promise<OpfsEngine> => {
     const payload = data instanceof Blob
       ? new Uint8Array(await data.arrayBuffer())
       : data;
-    const access = await (handle as any).createSyncAccessHandle?.()
-      ?? await handle.createWritable();
+    const access = await (handle as any).createSyncAccessHandle?.() ??
+      await handle.createWritable();
     await access.truncate(0);
     await access.write(payload);
     await access.flush?.();
@@ -179,7 +183,10 @@ export const createOpfsEngine = async (): Promise<OpfsEngine> => {
     const file = await readOpfsFile(META_FILENAME);
     if (file.size === 0) {
       const meta = await createDefaultMeta(uuid);
-      await writeOpfsFile(META_FILENAME, new TextEncoder().encode(JSON.stringify(meta)));
+      await writeOpfsFile(
+        META_FILENAME,
+        new TextEncoder().encode(JSON.stringify(meta)),
+      );
       return meta;
     }
     return JSON.parse(await file.text());
@@ -221,13 +228,14 @@ export const createOpfsEngine = async (): Promise<OpfsEngine> => {
 
     setUuid: async (uuid: string) => {
       meta.uuid = uuid;
-      await writeOpfsFile(META_FILENAME, new TextEncoder().encode(JSON.stringify(meta)));
+      await writeOpfsFile(
+        META_FILENAME,
+        new TextEncoder().encode(JSON.stringify(meta)),
+      );
     },
 
     set: async (key, value, owner) => {
-      const payload = value instanceof Blob
-        ? value
-        : new Blob([JSON.stringify(value)]);
+      const payload = value instanceof Blob ? value : new Blob([JSON.stringify(value)]);
 
       await writeOpfsFile(key, payload);
 
@@ -292,7 +300,8 @@ export const createOpfsEngine = async (): Promise<OpfsEngine> => {
     },
 
     getFiltered: async (filter) => {
-      const { startsWith = "", endsWith = "", includes = "", limit = Infinity } = filter;
+      const { startsWith = "", endsWith = "", includes = "", limit = Infinity } =
+        filter;
       const output: Record<string, File> = {};
       for await (const [name, handle] of root.entries()) {
         if (startsWith && !name.startsWith(startsWith)) continue;

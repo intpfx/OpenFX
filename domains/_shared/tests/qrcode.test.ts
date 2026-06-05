@@ -3,8 +3,8 @@ import { expect } from "@std/expect";
 import {
   encode,
   encodeMatrix,
-  registerStringToBytes,
   getStringToBytes,
+  registerStringToBytes,
 } from "../qrcode.ts";
 
 // ─── Basic Functionality ──────────────────────────────────────────────────────

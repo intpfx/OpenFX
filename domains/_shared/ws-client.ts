@@ -15,7 +15,7 @@
  * const client = createWsClient("/socket");
  * const socket = await client.ready() as RpcSocket;
  * attachRpc(socket, {
- *   onMessage: async (msg) => { /* ... */ },
+ *   onMessage: async (msg) => { // ... },
  * });
  *
  * const result = await socket.reply({ type: "query", id: 1 });
@@ -97,7 +97,9 @@ export const createWsClient = (
       heartbeatId = null;
     }
     if (socket) {
-      try { socket.close(4000, "主动关闭"); } catch { /* ignore */ }
+      try {
+        socket.close(4000, "主动关闭");
+      } catch { /* ignore */ }
       socket = null;
     }
   };
@@ -180,7 +182,9 @@ export const createWsClient = (
   createSocket();
 
   return {
-    get socket() { return socket; },
+    get socket() {
+      return socket;
+    },
 
     ready: () => socketReadyPromise,
 

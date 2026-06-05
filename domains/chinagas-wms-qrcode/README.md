@@ -25,5 +25,5 @@ README.md         # 原始文档
 
 脚本通过 Greasy Fork 分发，已停止更新。功能完整，无需维护。
 
-> 这是你曾经做过的一个实用工具项目。从独立仓库 `chinagas_wms_qrcode`
-> 迁移至 OpenFX 作为纪念性 domain 保存。
+> 这是你曾经做过的一个实用工具项目。从独立仓库 `chinagas_wms_qrcode` 迁移至 OpenFX
+> 作为纪念性 domain 保存。

@@ -61,15 +61,15 @@ export interface ComicChapterData {
  * 从 HTML 中提取 `var DATA = '...'` 的原始值（含引号）
  */
 function extractDataRaw(html: string): string {
-  const marker = 'var DATA = ';
+  const marker = "var DATA = ";
   const dataStart = html.indexOf(marker);
   if (dataStart === -1) {
-    throw new Error('未找到 var DATA 声明');
+    throw new Error("未找到 var DATA 声明");
   }
   const valueStart = dataStart + marker.length;
-  const dataEnd = html.indexOf(',', valueStart);
+  const dataEnd = html.indexOf(",", valueStart);
   if (dataEnd === -1) {
-    throw new Error('无法确定 DATA 值结束位置');
+    throw new Error("无法确定 DATA 值结束位置");
   }
   return html.slice(valueStart, dataEnd).trim();
 }
@@ -116,26 +116,26 @@ function extractNonce(html: string): string {
   // 定位第一个 window[" (fake)
   const fakeStart = html.indexOf('window["');
   if (fakeStart === -1) {
-    throw new Error('未找到 window 声明');
+    throw new Error("未找到 window 声明");
   }
 
   // 定位第二个 window[" (真正的 nonce)
   const nonceStart = html.indexOf('window["', fakeStart + 1);
   if (nonceStart === -1) {
-    throw new Error('未找到 nonce window 声明');
+    throw new Error("未找到 nonce window 声明");
   }
 
   // 找到该语句结束的分号
-  const nonceEnd = html.indexOf(';', nonceStart);
+  const nonceEnd = html.indexOf(";", nonceStart);
   if (nonceEnd === -1) {
-    throw new Error('无法确定 nonce 语句结束位置');
+    throw new Error("无法确定 nonce 语句结束位置");
   }
 
   // 提取 = 右侧的字符串字面量
   const statement = html.slice(nonceStart, nonceEnd);
-  const eqIndex = statement.indexOf('=');
+  const eqIndex = statement.indexOf("=");
   if (eqIndex === -1) {
-    throw new Error('nonce 语句中未找到赋值符');
+    throw new Error("nonce 语句中未找到赋值符");
   }
 
   const valueRaw = statement.slice(eqIndex + 1).trim();
@@ -165,7 +165,7 @@ function parseNonceRules(nonce: string): NonceRule[] {
   const rules: NonceRule[] = [];
   for (const m of matches) {
     const digits = m.match(/\d+/)![0];
-    const letters = m.replace(/\d+/g, '');
+    const letters = m.replace(/\d+/g, "");
     const position = parseInt(digits, 10) & 255;
     const length = letters.length;
     rules.push({ position, length });
@@ -204,16 +204,19 @@ function applyNonceRules(chars: string[], rules: NonceRule[]): string[] {
  * 保留与原实现一致的解码行为。
  */
 function base64DecodeToBytes(base64Str: string): Uint8Array {
-  const KEY_STR =
-    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+  const KEY_STR = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
   const bytes: number[] = [];
   let i = 0;
 
   while (i < base64Str.length) {
-    const b = KEY_STR.indexOf(base64Str[i]); i += 1;
-    const d = KEY_STR.indexOf(base64Str[i]); i += 1;
-    const f = KEY_STR.indexOf(base64Str[i]); i += 1;
-    const g = KEY_STR.indexOf(base64Str[i]); i += 1;
+    const b = KEY_STR.indexOf(base64Str[i]);
+    i += 1;
+    const d = KEY_STR.indexOf(base64Str[i]);
+    i += 1;
+    const f = KEY_STR.indexOf(base64Str[i]);
+    i += 1;
+    const g = KEY_STR.indexOf(base64Str[i]);
+    i += 1;
 
     const byte0 = (b << 2) | (d >> 4);
     const byte1 = ((d & 15) << 4) | (f >> 2);
@@ -232,7 +235,7 @@ function base64DecodeToBytes(base64Str: string): Uint8Array {
  */
 function bytesToString(bytes: Uint8Array): string {
   // 使用 TextDecoder 进行正确的 UTF-8 解码
-  return new TextDecoder('utf-8').decode(bytes);
+  return new TextDecoder("utf-8").decode(bytes);
 }
 
 // ---------------------------------------------------------------------------
@@ -276,7 +279,7 @@ export function deobfuscateComicData(html: string): ComicChapterData {
   const rules = parseNonceRules(nonce);
   const chars = Array.from(dataContent);
   const cleanChars = applyNonceRules(chars, rules);
-  const cleanBase64 = cleanChars.join('');
+  const cleanBase64 = cleanChars.join("");
 
   // 4. Base64 解码
   const bytes = base64DecodeToBytes(cleanBase64);
@@ -307,5 +310,5 @@ export function extractCleanBase64(html: string): string {
   const rules = parseNonceRules(nonce);
   const chars = Array.from(dataContent);
   const cleanChars = applyNonceRules(chars, rules);
-  return cleanChars.join('');
+  return cleanChars.join("");
 }

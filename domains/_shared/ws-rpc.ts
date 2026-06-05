@@ -16,7 +16,7 @@
  * Deno.serve((req) => {
  *   const { socket, response } = Deno.upgradeWebSocket(req);
  *   attachRpc(socket, {
- *     onOnline: async (msg) => { /* 节点上线处理 */ },
+ *     onOnline: async (msg) => { // 节点上线处理 },
  *     onMessage: async (msg, reply) => {
  *       if (msg.type === "query") {
  *         const result = await someQuery(msg);

@@ -1,8 +1,8 @@
 import { expect } from "@std/expect";
 
 import {
-  decryptWechatDatFile,
   decryptWechatDat,
+  decryptWechatDatFile,
   extractXorKey,
 } from "../wechat-dat.ts";
 
@@ -10,7 +10,14 @@ import {
 
 /** JPG 文件头前 8 字节 (SOI + APP0/JFIF marker) */
 const JPG_HEADER = new Uint8Array([
-  0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46,
+  0xFF,
+  0xD8,
+  0xFF,
+  0xE0,
+  0x00,
+  0x10,
+  0x4A,
+  0x46,
 ]);
 
 /** 使用给定密钥异或加密数据 */

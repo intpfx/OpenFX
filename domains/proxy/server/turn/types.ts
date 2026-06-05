@@ -7,7 +7,7 @@
  * @module turn/types
  */
 
-import { DEBUG_LEVEL } from './constants.ts';
+import { DEBUG_LEVEL } from "./constants.ts";
 
 // ---------------------------------------------------------------------------
 // Transport address family
@@ -35,7 +35,10 @@ export interface UdpSocket {
     address: string,
   ): Promise<void>;
   close(): void;
-  on(event: 'message' | 'error' | 'listening' | 'close', handler: (...args: unknown[]) => void): void;
+  on(
+    event: "message" | "error" | "listening" | "close",
+    handler: (...args: unknown[]) => void,
+  ): void;
   address(): { address: string; family: string; port: number };
   /** Bind to a specific address/port. Node.js requires this; Deno creates bound. */
   bind(opts: { address: string; port: number; exclusive?: boolean }): void;
@@ -45,8 +48,8 @@ export interface UdpSocket {
 
 /** Platform-agnostic UDP listener factory. */
 export interface UdpListener {
-  type: 'node' | 'deno';
-  createSocket(family: 'udp4' | 'udp6'): UdpSocket;
+  type: "node" | "deno";
+  createSocket(family: "udp4" | "udp6"): UdpSocket;
 }
 
 // ---------------------------------------------------------------------------
@@ -145,7 +148,7 @@ export interface TurnServerContext {
   maxPort: number;
   maxAllocateLifetime: number;
   defaultAllocateLifetime: number;
-  authMech: 'none' | 'short-term' | 'long-term';
+  authMech: "none" | "short-term" | "long-term";
   realm: string;
   staticCredentials: Record<string, string>;
   log: (msg: string) => void;
@@ -171,13 +174,13 @@ export interface TurnServerConfig {
   maxPort?: number;
   maxAllocateLifetime?: number;
   defaultAllocateLifetime?: number;
-  authMech?: 'none' | 'short-term' | 'long-term';
+  authMech?: "none" | "short-term" | "long-term";
   realm?: string;
   credentials?: Record<string, string>;
   debugLevel?: keyof typeof DEBUG_LEVEL;
   log?: (msg: string) => void;
   /** Optional platform override. 'node' (default) or 'deno'. */
-  platform?: 'node' | 'deno';
+  platform?: "node" | "deno";
 }
 
 /** Control handle returned by `createTurnServer`. */

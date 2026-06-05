@@ -258,7 +258,12 @@ export async function verifySwt(
   const unsignedStringWebToken = `${iv}.${token}`;
   const encoded = new TextEncoder().encode(unsignedStringWebToken);
   const signatureArray = base64ToUint8(signature);
-  return await crypto.subtle.verify("HMAC", key, signatureArray as Uint8Array<ArrayBuffer>, encoded);
+  return await crypto.subtle.verify(
+    "HMAC",
+    key,
+    signatureArray as Uint8Array<ArrayBuffer>,
+    encoded,
+  );
 }
 
 // ── Token 签发 ──

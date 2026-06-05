@@ -1,8 +1,6 @@
 import { expect } from "@std/expect";
 
-import {
-  parseTophubHtml,
-} from "../hotlist-crawler.ts";
+import { parseTophubHtml } from "../hotlist-crawler.ts";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -115,8 +113,7 @@ Deno.test("parseTophubHtml: HTML without cc-cd blocks returns empty array", () =
 
 Deno.test("parseTophubHtml: HTML missing cc-cd-cb-l content returns category with no links", () => {
   // 有 cc-cd 但没有 cc-cd-cb-l → links 为空，该分类被跳过
-  const html =
-    `<div class="cc-cd"><div class="cc-cd-lb">空分类</div></div>`;
+  const html = `<div class="cc-cd"><div class="cc-cd-lb">空分类</div></div>`;
   const result = parseTophubHtml(html);
   expect(result).toEqual([]);
 });
@@ -218,7 +215,7 @@ Deno.test("parseTophubHtml: handles special characters in titles", () => {
       items: [
         { title: "价格 < 100 元", href: "/price" },
         { title: "A & B 的关系", href: "/relation" },
-        { title: "\"引用\"内容", href: "/quote" },
+        { title: '"引用"内容', href: "/quote" },
       ],
     },
   ]);

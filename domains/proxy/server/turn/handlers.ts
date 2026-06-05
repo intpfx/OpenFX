@@ -8,28 +8,34 @@
  * @module turn/handlers
  */
 
-import type { StunMessage, TurnServerContext, Allocation, Transport, Address } from './types.ts';
-import { TransportFamily } from './types.ts';
-import { STUN_METHOD, STUN_CLASS, TRANSPORT_PROTO } from './constants.ts';
+import type {
+  Address,
+  Allocation,
+  StunMessage,
+  Transport,
+  TurnServerContext,
+} from "./types.ts";
+import { TransportFamily } from "./types.ts";
+import { STUN_CLASS, STUN_METHOD, TRANSPORT_PROTO } from "./constants.ts";
 import {
-  createAddress,
-  randomUint32,
-  randomBytes,
-  u8ToHex,
   addressToString,
-} from './utils.ts';
+  createAddress,
+  randomBytes,
+  randomUint32,
+  u8ToHex,
+} from "./utils.ts";
 import {
-  createStunMessage,
-  createReply,
   addAttr,
-  getAttr,
-  getAttrs,
-  encodeStunMessage,
+  createReply,
+  createStunMessage,
   decodeChannelData,
   encodeChannelData,
-} from './stun-codec.ts';
-import { authenticate } from './auth.ts';
-import { createUdpSocket } from './socket.ts';
+  encodeStunMessage,
+  getAttr,
+  getAttrs,
+} from "./stun-codec.ts";
+import { authenticate } from "./auth.ts";
+import { createUdpSocket } from "./socket.ts";
 
 // ---------------------------------------------------------------------------
 // Naming helpers
@@ -39,14 +45,14 @@ function getMethodName(method: number): string {
   for (const [k, v] of Object.entries(STUN_METHOD)) {
     if (v === method) return k.toLowerCase();
   }
-  return 'unknown-method';
+  return "unknown-method";
 }
 
 function getClassName(cls: number): string {
   for (const [k, v] of Object.entries(STUN_CLASS)) {
     if (v === cls) return k.toLowerCase();
   }
-  return 'unknown-class';
+  return "unknown-class";
 }
 
 // ---------------------------------------------------------------------------
@@ -54,15 +60,16 @@ function getClassName(cls: number): string {
 // ---------------------------------------------------------------------------
 
 function transportToString(t: Transport): string {
-  const proto = t.protocol === TRANSPORT_PROTO.UDP ? 'UDP' : 'UNKNOWN';
+  const proto = t.protocol === TRANSPORT_PROTO.UDP ? "UDP" : "UNKNOWN";
   return `${proto}: from ${addressToString(t.src)} to ${addressToString(t.dst)}`;
 }
 
 function transportGet5Tuple(t: Transport): string {
-  let tup = '';
-  tup += t.protocol === TRANSPORT_PROTO.UDP ? 'UDP' : '?';
-  tup += t.src.family === TransportFamily.IPV4 ? '4' : '6';
-  tup += '://' + t.src.address + ':' + t.src.port + '>' + t.dst.address + ':' + t.dst.port;
+  let tup = "";
+  tup += t.protocol === TRANSPORT_PROTO.UDP ? "UDP" : "?";
+  tup += t.src.family === TransportFamily.IPV4 ? "4" : "6";
+  tup += "://" + t.src.address + ":" + t.src.port + ">" + t.dst.address + ":" +
+    t.dst.port;
   return tup;
 }
 
@@ -76,7 +83,7 @@ function transportRevert(t: Transport): Transport {
 
 /** Handle STUN Binding request. */
 function handleBinding(msg: StunMessage, reply: StunMessage): StunMessage {
-  addAttr(reply, 'xor-mapped-address', msg.transport.src);
+  addAttr(reply, "xor-mapped-address", msg.transport.src);
   reply.class = STUN_CLASS.SUCCESS;
   return reply;
 }
@@ -95,43 +102,46 @@ async function handleAllocate(
     // Retransmission check
     if (msg.allocation.transactionID === msg.transactionID) {
       // Re-send success response
-      addAttr(reply, 'xor-relayed-address', msg.allocation.relayedTransportAddress);
-      addAttr(reply, 'lifetime', msg.allocation.lifetime);
-      addAttr(reply, 'xor-mapped-address', msg.allocation.mappedAddress);
-      addAttr(reply, 'software', ctx.software);
-      addAttr(reply, 'message-integrity');
+      addAttr(reply, "xor-relayed-address", msg.allocation.relayedTransportAddress);
+      addAttr(reply, "lifetime", msg.allocation.lifetime);
+      addAttr(reply, "xor-mapped-address", msg.allocation.mappedAddress);
+      addAttr(reply, "software", ctx.software);
+      addAttr(reply, "message-integrity");
       reply.class = STUN_CLASS.SUCCESS;
       return reply;
     }
     reply.class = STUN_CLASS.ERROR;
-    addAttr(reply, 'error-code', { code: 437, reason: 'Allocation Mismatch' });
+    addAttr(reply, "error-code", { code: 437, reason: "Allocation Mismatch" });
     return reply;
   }
 
-  const requestedTransport = getAttr(msg, 'requested-transport') as number | undefined;
+  const requestedTransport = getAttr(msg, "requested-transport") as number | undefined;
   if (!requestedTransport) {
     reply.class = STUN_CLASS.ERROR;
-    addAttr(reply, 'error-code', { code: 400, reason: 'Bad Request' });
+    addAttr(reply, "error-code", { code: 400, reason: "Bad Request" });
     return reply;
   }
   if (requestedTransport !== TRANSPORT_PROTO.UDP) {
     reply.class = STUN_CLASS.ERROR;
-    addAttr(reply, 'error-code', { code: 442, reason: 'Unsupported Transport Protocol' });
+    addAttr(reply, "error-code", {
+      code: 442,
+      reason: "Unsupported Transport Protocol",
+    });
     return reply;
   }
 
-  const reservationToken = getAttr(msg, 'reservation-token') as string | undefined;
-  const evenPort = getAttr(msg, 'even-port');
+  const reservationToken = getAttr(msg, "reservation-token") as string | undefined;
+  const evenPort = getAttr(msg, "even-port");
 
   if (reservationToken) {
     if (evenPort !== undefined) {
       reply.class = STUN_CLASS.ERROR;
-      addAttr(reply, 'error-code', { code: 400, reason: 'Bad Request' });
+      addAttr(reply, "error-code", { code: 400, reason: "Bad Request" });
       return reply;
     }
     if (!ctx.reservations[reservationToken]) {
       reply.class = STUN_CLASS.ERROR;
-      addAttr(reply, 'error-code', { code: 508, reason: 'Insufficient Capacity' });
+      addAttr(reply, "error-code", { code: 508, reason: "Insufficient Capacity" });
       return reply;
     }
   }
@@ -152,12 +162,12 @@ async function handleAllocate(
     }
   } catch {
     reply.class = STUN_CLASS.ERROR;
-    addAttr(reply, 'error-code', { code: 508, reason: 'Insufficient Capacity' });
+    addAttr(reply, "error-code", { code: 508, reason: "Insufficient Capacity" });
     return reply;
   }
 
   let lifetime = ctx.defaultAllocateLifetime;
-  const reqLifetime = getAttr(msg, 'lifetime') as number | undefined;
+  const reqLifetime = getAttr(msg, "lifetime") as number | undefined;
   if (reqLifetime !== undefined) {
     lifetime = Math.min(reqLifetime, ctx.maxAllocateLifetime);
   }
@@ -168,11 +178,11 @@ async function handleAllocate(
   const allocation = createAllocation(ctx, msg, sockets, lifetime);
   msg.allocation = allocation;
 
-  addAttr(reply, 'xor-relayed-address', allocation.relayedTransportAddress);
-  addAttr(reply, 'lifetime', allocation.lifetime);
-  addAttr(reply, 'xor-mapped-address', allocation.mappedAddress);
-  addAttr(reply, 'software', ctx.software);
-  addAttr(reply, 'message-integrity');
+  addAttr(reply, "xor-relayed-address", allocation.relayedTransportAddress);
+  addAttr(reply, "lifetime", allocation.lifetime);
+  addAttr(reply, "xor-mapped-address", allocation.mappedAddress);
+  addAttr(reply, "software", ctx.software);
+  addAttr(reply, "message-integrity");
   reply.class = STUN_CLASS.SUCCESS;
   return reply;
 }
@@ -182,16 +192,22 @@ async function handleAllocate(
 // ---------------------------------------------------------------------------
 
 /** Handle Refresh request. */
-function handleRefresh(ctx: TurnServerContext, msg: StunMessage, reply: StunMessage): StunMessage {
+function handleRefresh(
+  ctx: TurnServerContext,
+  msg: StunMessage,
+  reply: StunMessage,
+): StunMessage {
   let desiredLifetime = ctx.defaultAllocateLifetime;
-  const lifetime = getAttr(msg, 'lifetime') as number | undefined;
+  const lifetime = getAttr(msg, "lifetime") as number | undefined;
   if (lifetime !== undefined) {
     desiredLifetime = lifetime === 0 ? 0 : Math.min(lifetime, ctx.maxAllocateLifetime);
   }
 
   if (desiredLifetime === 0) {
     // Use the allocation's fiveTuple if available, otherwise compute from transport
-    const ft = msg.allocation ? msg.allocation.fiveTuple : transportGet5Tuple(msg.transport);
+    const ft = msg.allocation
+      ? msg.allocation.fiveTuple
+      : transportGet5Tuple(msg.transport);
     delete ctx.allocations[ft];
   } else if (msg.allocation) {
     msg.allocation.lifetime = desiredLifetime;
@@ -203,9 +219,9 @@ function handleRefresh(ctx: TurnServerContext, msg: StunMessage, reply: StunMess
     msg.allocation.timeToExpiry = Date.now() + desiredLifetime * 1000;
   }
 
-  addAttr(reply, 'lifetime', desiredLifetime);
-  addAttr(reply, 'software', ctx.software);
-  addAttr(reply, 'message-integrity');
+  addAttr(reply, "lifetime", desiredLifetime);
+  addAttr(reply, "software", ctx.software);
+  addAttr(reply, "message-integrity");
   reply.class = STUN_CLASS.SUCCESS;
   return reply;
 }
@@ -215,22 +231,29 @@ function handleRefresh(ctx: TurnServerContext, msg: StunMessage, reply: StunMess
 // ---------------------------------------------------------------------------
 
 /** Handle CreatePermission request. */
-function handleCreatePermission(ctx: TurnServerContext, msg: StunMessage, reply: StunMessage): StunMessage {
-  const xorPeers = getAttrs(msg, 'xor-peer-address') as Address[];
+function handleCreatePermission(
+  ctx: TurnServerContext,
+  msg: StunMessage,
+  reply: StunMessage,
+): StunMessage {
+  const xorPeers = getAttrs(msg, "xor-peer-address") as Address[];
   if (xorPeers.length === 0) {
     reply.class = STUN_CLASS.ERROR;
-    addAttr(reply, 'error-code', { code: 400, reason: 'Bad Request' });
+    addAttr(reply, "error-code", { code: 400, reason: "Bad Request" });
     return reply;
   }
 
   let badRequest = false;
   for (const peer of xorPeers) {
-    if (!peer.address) { badRequest = true; break; }
+    if (!peer.address) {
+      badRequest = true;
+      break;
+    }
   }
 
   if (badRequest) {
     reply.class = STUN_CLASS.ERROR;
-    addAttr(reply, 'error-code', { code: 400, reason: 'Bad Request' });
+    addAttr(reply, "error-code", { code: 400, reason: "Bad Request" });
     return reply;
   }
 
@@ -239,8 +262,8 @@ function handleCreatePermission(ctx: TurnServerContext, msg: StunMessage, reply:
       msg.allocation.permissions[peer.address] = Date.now() + 300_000; // 5 min
     }
   }
-  addAttr(reply, 'software', ctx.software);
-  addAttr(reply, 'message-integrity');
+  addAttr(reply, "software", ctx.software);
+  addAttr(reply, "message-integrity");
   reply.class = STUN_CLASS.SUCCESS;
   return reply;
 }
@@ -251,8 +274,8 @@ function handleCreatePermission(ctx: TurnServerContext, msg: StunMessage, reply:
 
 /** Handle Send indication. */
 function handleSend(ctx: TurnServerContext, msg: StunMessage): void {
-  const dst = getAttr(msg, 'xor-peer-address') as Address | undefined;
-  const data = getAttr(msg, 'data') as Uint8Array | undefined;
+  const dst = getAttr(msg, "xor-peer-address") as Address | undefined;
+  const data = getAttr(msg, "data") as Uint8Array | undefined;
   if (!dst || !data) return;
 
   if (!msg.allocation) return;
@@ -268,25 +291,29 @@ function handleSend(ctx: TurnServerContext, msg: StunMessage): void {
 // ---------------------------------------------------------------------------
 
 /** Handle ChannelBind request. */
-function handleChannelBind(ctx: TurnServerContext, msg: StunMessage, reply: StunMessage): StunMessage {
-  const channelNumber = getAttr(msg, 'channel-number') as number | undefined;
-  const peer = getAttr(msg, 'xor-peer-address') as Address | undefined;
+function handleChannelBind(
+  ctx: TurnServerContext,
+  msg: StunMessage,
+  reply: StunMessage,
+): StunMessage {
+  const channelNumber = getAttr(msg, "channel-number") as number | undefined;
+  const peer = getAttr(msg, "xor-peer-address") as Address | undefined;
 
   if (!channelNumber || !peer) {
     reply.class = STUN_CLASS.ERROR;
-    addAttr(reply, 'error-code', { code: 400, reason: 'Bad Request' });
+    addAttr(reply, "error-code", { code: 400, reason: "Bad Request" });
     return reply;
   }
 
   if (channelNumber < 0x4000 || channelNumber > 0x7FFE) {
     reply.class = STUN_CLASS.ERROR;
-    addAttr(reply, 'error-code', { code: 400, reason: 'Bad Request' });
+    addAttr(reply, "error-code", { code: 400, reason: "Bad Request" });
     return reply;
   }
 
   if (!msg.allocation) {
     reply.class = STUN_CLASS.ERROR;
-    addAttr(reply, 'error-code', { code: 437, reason: 'Allocation Mismatch' });
+    addAttr(reply, "error-code", { code: 437, reason: "Allocation Mismatch" });
     return reply;
   }
 
@@ -295,13 +322,13 @@ function handleChannelBind(ctx: TurnServerContext, msg: StunMessage, reply: Stun
 
   if (existingChannel && boundChannelNumber !== channelNumber) {
     reply.class = STUN_CLASS.ERROR;
-    addAttr(reply, 'error-code', { code: 400, reason: 'Bad Request' });
+    addAttr(reply, "error-code", { code: 400, reason: "Bad Request" });
     return reply;
   }
 
   if (boundChannelNumber !== undefined && boundChannelNumber !== channelNumber) {
     reply.class = STUN_CLASS.ERROR;
-    addAttr(reply, 'error-code', { code: 400, reason: 'Bad Request' });
+    addAttr(reply, "error-code", { code: 400, reason: "Bad Request" });
     return reply;
   }
 
@@ -320,14 +347,18 @@ function handleChannelBind(ctx: TurnServerContext, msg: StunMessage, reply: Stun
 function createAllocation(
   ctx: TurnServerContext,
   msg: StunMessage,
-  sockets: import('./types.ts').UdpSocket[],
+  sockets: import("./types.ts").UdpSocket[],
   lifetime: number,
 ): Allocation {
   const revertedTransport = transportRevert(msg.transport);
   // 5-tuple uses the ORIGINAL (incoming) transport, matching how allocation lookup works
   const ft = transportGet5Tuple(msg.transport);
   const relayAddr = sockets[0].address();
-  const relayTransportAddress = getRelayedAddress(ctx, relayAddr.address, relayAddr.port);
+  const relayTransportAddress = getRelayedAddress(
+    ctx,
+    relayAddr.address,
+    relayAddr.port,
+  );
 
   const alloc: Allocation = {
     transactionID: msg.transactionID,
@@ -353,48 +384,71 @@ function createAllocation(
 
   // Listen for incoming messages on relay sockets
   for (const sock of sockets) {
-    sock.on('message', ((data: Uint8Array, rinfo: { address: string; port: number }) => {
-      const from = createAddress(rinfo.address, rinfo.port);
-      const perm = alloc.permissions[from.address];
-      if (!perm || perm < Date.now()) {
-        return; // no permission, drop
-      }
+    sock.on(
+      "message",
+      ((data: Uint8Array, rinfo: { address: string; port: number }) => {
+        const from = createAddress(rinfo.address, rinfo.port);
+        const perm = alloc.permissions[from.address];
+        if (!perm || perm < Date.now()) {
+          return; // no permission, drop
+        }
 
-      const channelNumber = getAllocationPeerChannel(alloc, from);
-      const channelMsg = decodeChannelData(data);
-      let payload = data;
-      if (channelMsg) {
-        if (channelNumber === undefined) return;
-        if (channelNumber !== channelMsg.channelNumber) return;
-        payload = channelMsg.data!;
-      }
+        const channelNumber = getAllocationPeerChannel(alloc, from);
+        const channelMsg = decodeChannelData(data);
+        let payload = data;
+        if (channelMsg) {
+          if (channelNumber === undefined) return;
+          if (channelNumber !== channelMsg.channelNumber) return;
+          payload = channelMsg.data!;
+        }
 
-      if (channelNumber !== undefined) {
-        // Send as ChannelData to client
-        const out = encodeChannelData({ channelNumber, length: payload.length, data: payload, padding: 0 });
-        alloc.transport.socket.send(out, 0, out.length, alloc.transport.dst.port, alloc.transport.dst.address).catch(() => {});
-        return;
-      }
+        if (channelNumber !== undefined) {
+          // Send as ChannelData to client
+          const out = encodeChannelData({
+            channelNumber,
+            length: payload.length,
+            data: payload,
+            padding: 0,
+          });
+          alloc.transport.socket.send(
+            out,
+            0,
+            out.length,
+            alloc.transport.dst.port,
+            alloc.transport.dst.address,
+          ).catch(() => {});
+          return;
+        }
 
-      // Send as DataIndication
-      const ind = createStunMessage(ctx, alloc.transport);
-      ind.class = STUN_CLASS.INDICATION;
-      ind.method = STUN_METHOD.DATA;
-      addAttr(ind, 'xor-peer-address', from);
-      // Data indication: generate a random transaction ID
-      randomBytes(12).then((tid) => {
-        ind.transactionID = u8ToHex(tid);
-        addAttr(ind, 'data', payload);
-        const wire = encodeStunMessage(ind);
-        alloc.transport.socket.send(wire, 0, wire.length, alloc.transport.dst.port, alloc.transport.dst.address).catch(() => {});
-      }).catch(() => {});
-    }) as (...args: unknown[]) => void);
+        // Send as DataIndication
+        const ind = createStunMessage(ctx, alloc.transport);
+        ind.class = STUN_CLASS.INDICATION;
+        ind.method = STUN_METHOD.DATA;
+        addAttr(ind, "xor-peer-address", from);
+        // Data indication: generate a random transaction ID
+        randomBytes(12).then((tid) => {
+          ind.transactionID = u8ToHex(tid);
+          addAttr(ind, "data", payload);
+          const wire = encodeStunMessage(ind);
+          alloc.transport.socket.send(
+            wire,
+            0,
+            wire.length,
+            alloc.transport.dst.port,
+            alloc.transport.dst.address,
+          ).catch(() => {});
+        }).catch(() => {});
+      }) as (...args: unknown[]) => void,
+    );
   }
 
   return alloc;
 }
 
-function getAllocationPeerChannel(alloc: Allocation, peer: Address): number | undefined {
+function getAllocationPeerChannel(
+  alloc: Allocation,
+  peer: Address,
+): number | undefined {
   const ps = addressToString(peer);
   for (const [ch, addr] of Object.entries(alloc.channelBindings)) {
     if (addressToString(addr) === ps) return parseInt(ch);
@@ -409,12 +463,12 @@ function getRelayedAddress(
 ): Address {
   let address = relayAddr;
   if (ctx.externalIps) {
-    if (typeof ctx.externalIps === 'string') {
+    if (typeof ctx.externalIps === "string") {
       address = ctx.externalIps;
     } else {
-      address = (ctx.externalIps as Record<string, string>)[relayAddr]
-        || (ctx.externalIps as Record<string, string>).default
-        || relayAddr;
+      address = (ctx.externalIps as Record<string, string>)[relayAddr] ||
+        (ctx.externalIps as Record<string, string>).default ||
+        relayAddr;
     }
   }
   return createAddress(address, port);
@@ -434,27 +488,31 @@ function getRelayIp(ctx: TurnServerContext, msg: StunMessage): string {
 // UDP relay socket allocation
 // ---------------------------------------------------------------------------
 
-async function allocateUdp(ctx: TurnServerContext, msg: StunMessage, ip: string): Promise<import('./types.ts').UdpSocket[]> {
-  const family = createAddress(ip, 0).family === TransportFamily.IPV4 ? 'udp4' : 'udp6';
+async function allocateUdp(
+  ctx: TurnServerContext,
+  msg: StunMessage,
+  ip: string,
+): Promise<import("./types.ts").UdpSocket[]> {
+  const family = createAddress(ip, 0).family === TransportFamily.IPV4 ? "udp4" : "udp6";
   const numEphemeral = ctx.maxPort - ctx.minPort + 1;
   const rand = await randomUint32();
   let nextPort = ctx.minPort + (rand % numEphemeral);
   let count = numEphemeral;
 
-  return new Promise<import('./types.ts').UdpSocket[]>((resolve, reject) => {
+  return new Promise<import("./types.ts").UdpSocket[]>((resolve, reject) => {
     const tryBind = () => {
       const sock = createUdpSocket(ctx, family);
       let listening = false;
-      sock.on('listening', () => {
+      sock.on("listening", () => {
         listening = true;
         resolve([sock]);
       });
-      sock.on('error', () => {
+      sock.on("error", () => {
         if (listening) return;
         count--;
         if (count <= 0) {
           sock.close();
-          reject(new Error('no available port in range'));
+          reject(new Error("no available port in range"));
           return;
         }
         randomUint32().then((r2) => {
@@ -470,22 +528,26 @@ async function allocateUdp(ctx: TurnServerContext, msg: StunMessage, ip: string)
   });
 }
 
-async function allocateUdpEven(ctx: TurnServerContext, msg: StunMessage, rBit: boolean): Promise<import('./types.ts').UdpSocket[]> {
+async function allocateUdpEven(
+  ctx: TurnServerContext,
+  msg: StunMessage,
+  rBit: boolean,
+): Promise<import("./types.ts").UdpSocket[]> {
   const port1 = msg.transport.src.port;
-  if (port1 < ctx.minPort) throw new Error('no available port in range');
+  if (port1 < ctx.minPort) throw new Error("no available port in range");
   const ip = getRelayIp(ctx, msg);
-  const family = createAddress(ip, 0).family === TransportFamily.IPV4 ? 'udp4' : 'udp6';
+  const family = createAddress(ip, 0).family === TransportFamily.IPV4 ? "udp4" : "udp6";
 
-  return new Promise<import('./types.ts').UdpSocket[]>((resolve, reject) => {
-    let sock1: import('./types.ts').UdpSocket | null = null;
-    let sock2: import('./types.ts').UdpSocket | null = null;
+  return new Promise<import("./types.ts").UdpSocket[]>((resolve, reject) => {
+    let sock1: import("./types.ts").UdpSocket | null = null;
+    let sock2: import("./types.ts").UdpSocket | null = null;
 
     const s1 = createUdpSocket(ctx, family);
-    s1.on('listening', () => {
+    s1.on("listening", () => {
       sock1 = s1;
       if (sock2 || !rBit) resolve([s1].concat(sock2 ? [sock2] : []));
     });
-    s1.on('error', (err: unknown) => {
+    s1.on("error", (err: unknown) => {
       s1.close();
       if (sock2) sock2.close();
       reject(err instanceof Error ? err : new Error(String(err)));
@@ -494,13 +556,13 @@ async function allocateUdpEven(ctx: TurnServerContext, msg: StunMessage, rBit: b
 
     if (rBit) {
       const port2 = port1 + 1;
-      if (port2 > ctx.maxPort) return reject(new Error('no available port in range'));
+      if (port2 > ctx.maxPort) return reject(new Error("no available port in range"));
       const s2 = createUdpSocket(ctx, family);
-      s2.on('listening', () => {
+      s2.on("listening", () => {
         sock2 = s2;
         if (sock1) resolve([sock1, s2]);
       });
-      s2.on('error', (err: unknown) => {
+      s2.on("error", (err: unknown) => {
         s2.close();
         if (sock1) sock1.close();
         reject(err instanceof Error ? err : new Error(String(err)));
@@ -517,7 +579,7 @@ async function allocateUdpEven(ctx: TurnServerContext, msg: StunMessage, rBit: b
 function createDispatchHandler(ctx: TurnServerContext): (msg: StunMessage) => void {
   return async (msg: StunMessage) => {
     // Check fingerprint
-    if (getAttr(msg, 'fingerprint') === false) {
+    if (getAttr(msg, "fingerprint") === false) {
       return; // silently discard
     }
 
@@ -538,7 +600,7 @@ function createDispatchHandler(ctx: TurnServerContext): (msg: StunMessage) => vo
         if (msg.class === STUN_CLASS.INDICATION) return; // silently discard
         const reply = createReply(msg);
         reply.class = STUN_CLASS.ERROR;
-        addAttr(reply, 'error-code', { code: 437, reason: 'Allocation Mismatch' });
+        addAttr(reply, "error-code", { code: 437, reason: "Allocation Mismatch" });
         const wire = encodeStunMessage(reply);
         await sendStunMessage(reply, wire);
         return;
@@ -614,7 +676,4 @@ export function getTransport5Tuple(t: Transport): string {
   return transportGet5Tuple(t);
 }
 
-export {
-  createDispatchHandler,
-  sendStunMessage,
-};
+export { createDispatchHandler, sendStunMessage };

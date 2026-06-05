@@ -66,9 +66,12 @@ const TYPE_ICONS: Record<NoticeType, string> = {
   error: "❌",
 };
 
-const defaultIcon = (type: NoticeType): string => TYPE_ICONS[type] ?? TYPE_ICONS.default;
+const defaultIcon = (type: NoticeType): string =>
+  TYPE_ICONS[type] ?? TYPE_ICONS.default;
 
-export const mergeNotice = (partial: Partial<NoticeOptions> | string): NoticeOptions => {
+export const mergeNotice = (
+  partial: Partial<NoticeOptions> | string,
+): NoticeOptions => {
   if (typeof partial === "string") {
     return { ...DEFAULT_OPTIONS, message: partial };
   }
@@ -392,7 +395,11 @@ export class IslandNotice extends HTMLElement {
     return ["visible", "type", "data", "timeout", "max-queue"];
   }
 
-  attributeChangedCallback(name: string, _old: string | null, value: string | null): void {
+  attributeChangedCallback(
+    name: string,
+    _old: string | null,
+    value: string | null,
+  ): void {
     if (value === null) return;
 
     switch (name) {
@@ -400,7 +407,10 @@ export class IslandNotice extends HTMLElement {
         value === "true" ? this.show() : this.hide();
         break;
       case "type":
-        this.state.currentNotice = { ...this.state.currentNotice ?? DEFAULT_OPTIONS, type: value as NoticeType };
+        this.state.currentNotice = {
+          ...this.state.currentNotice ?? DEFAULT_OPTIONS,
+          type: value as NoticeType,
+        };
         this.updateType();
         break;
       case "data":
@@ -517,7 +527,12 @@ export class IslandNotice extends HTMLElement {
   private prepareSlider(): void {
     const slider = this.el(".content-slider") as HTMLElement | null;
     if (!slider) return;
-    slider.classList.remove("slide-left", "slide-right", "slide-in-left", "slide-in-right");
+    slider.classList.remove(
+      "slide-left",
+      "slide-right",
+      "slide-in-left",
+      "slide-in-right",
+    );
     slider.style.transform = "";
     slider.style.transition = "";
   }
@@ -783,13 +798,31 @@ if (typeof customElements !== "undefined") {
 // ─── Global manager singleton ─────────────────────────────────────────
 
 interface IslandNoticeManager {
-  show(options: Partial<NoticeOptions> | string, useQueue?: boolean): Promise<IslandNotice | null>;
+  show(
+    options: Partial<NoticeOptions> | string,
+    useQueue?: boolean,
+  ): Promise<IslandNotice | null>;
   hide(): IslandNotice | null;
-  success(message: string, options?: Partial<NoticeOptions>, useQueue?: boolean): Promise<IslandNotice | null>;
-  warning(message: string, options?: Partial<NoticeOptions>, useQueue?: boolean): Promise<IslandNotice | null>;
-  error(message: string, options?: Partial<NoticeOptions>, useQueue?: boolean): Promise<IslandNotice | null>;
+  success(
+    message: string,
+    options?: Partial<NoticeOptions>,
+    useQueue?: boolean,
+  ): Promise<IslandNotice | null>;
+  warning(
+    message: string,
+    options?: Partial<NoticeOptions>,
+    useQueue?: boolean,
+  ): Promise<IslandNotice | null>;
+  error(
+    message: string,
+    options?: Partial<NoticeOptions>,
+    useQueue?: boolean,
+  ): Promise<IslandNotice | null>;
   queue(options: Partial<NoticeOptions> | string): IslandNotice | null;
-  queueMultiple(notices: (Partial<NoticeOptions> | string)[], clearCurrent?: boolean): IslandNotice | null;
+  queueMultiple(
+    notices: (Partial<NoticeOptions> | string)[],
+    clearCurrent?: boolean,
+  ): IslandNotice | null;
   clearQueue(hideCurrentNotice?: boolean): IslandNotice | null;
   setMaxQueueSize(size: number): IslandNotice | null;
 }

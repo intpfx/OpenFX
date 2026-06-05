@@ -12,7 +12,7 @@
 // ==/UserScript==
 
 (function () {
-  'use strict';
+  "use strict";
 
   // 全局变量
   let isDragging = false;
@@ -23,7 +23,7 @@
 
   // 【关键】判断哈希值是否匹配目标 #A3001
   function isTargetUrl() {
-    return window.location.hash === '#A3001';
+    return globalThis.location.hash === "#A3001";
   }
 
   // 动态导入font-awesome
@@ -38,9 +38,9 @@
       }
 
       // 使用esm.sh导入font-awesome
-      const link = document.createElement('link');
-      link.rel = 'stylesheet';
-      link.href = 'https://esm.sh/font-awesome@4.7.0/css/font-awesome.min.css';
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = "https://esm.sh/font-awesome@4.7.0/css/font-awesome.min.css";
 
       // 返回Promise等待加载完成
       return new Promise((resolve, reject) => {
@@ -49,13 +49,13 @@
           resolve();
         };
         link.onerror = (error) => {
-          console.error('font-awesome加载失败:', error);
-          reject(new Error('图标库加载失败'));
+          console.error("font-awesome加载失败:", error);
+          reject(new Error("图标库加载失败"));
         };
         document.head.appendChild(link);
       });
     } catch (error) {
-      console.error('加载font-awesome时出错:', error);
+      console.error("加载font-awesome时出错:", error);
       throw error;
     }
   }
@@ -65,33 +65,33 @@
     if (qrcodeLib) return qrcodeLib;
 
     try {
-      const { qrcode } = await import('https://esm.sh/jsr/@libs/qrcode');
+      const { qrcode } = await import("https://esm.sh/jsr/@libs/qrcode");
       qrcodeLib = qrcode;
       return qrcode;
     } catch (error) {
-      console.error('JSR包导入失败:', error);
-      showNotification('二维码库加载失败，请检查网络', 'error');
+      console.error("JSR包导入失败:", error);
+      showNotification("二维码库加载失败，请检查网络", "error");
       throw error;
     }
   }
 
   // 显示通知
-  function showNotification(message, type = 'info') {
+  function showNotification(message, type = "info") {
     // 检查是否已有通知
-    let notification = document.getElementById('qrcode-notification');
+    let notification = document.getElementById("qrcode-notification");
     if (notification) {
       notification.remove();
     }
 
-    notification = document.createElement('div');
-    notification.id = 'qrcode-notification';
+    notification = document.createElement("div");
+    notification.id = "qrcode-notification";
     notification.className = `qrcode-notification ${type}`;
     notification.textContent = message;
     document.body.appendChild(notification);
 
     // 3秒后自动消失
     setTimeout(() => {
-      notification.style.opacity = '0';
+      notification.style.opacity = "0";
       setTimeout(() => notification.remove(), 300);
     }, 3000);
   }
@@ -218,10 +218,10 @@
   function getPageInfo() {
     try {
       // 找到页面中id为A3001S05_ALLOCheaderMainForm的表单
-      const form = document.querySelector('#A3001S05_ALLOCheaderMainForm');
+      const form = document.querySelector("#A3001S05_ALLOCheaderMainForm");
 
       if (!form) {
-        throw new Error('未找到表单元素A3001S05_ALLOCheaderMainForm');
+        throw new Error("未找到表单元素A3001S05_ALLOCheaderMainForm");
       }
 
       // 封装获取输入值的函数，增加错误处理
@@ -235,20 +235,20 @@
       };
 
       return {
-        supplierName: getInputValue('lotAtt04','供应商名称'),
-        sku: getInputValue('sku','物料编码'),
-        dop: getInputValue('lotAtt01','生产日期'),
-        batch: getInputValue('lotAtt05','生产批次'),
+        supplierName: getInputValue("lotAtt04", "供应商名称"),
+        sku: getInputValue("sku", "物料编码"),
+        dop: getInputValue("lotAtt01", "生产日期"),
+        batch: getInputValue("lotAtt05", "生产批次"),
       };
     } catch (error) {
-      console.error('获取页面信息失败:', error);
-      showNotification('获取信息失败: ' + error.message, 'error');
+      console.error("获取页面信息失败:", error);
+      showNotification("获取信息失败: " + error.message, "error");
       // 返回默认值，确保功能可以继续运行
       return {
-        supplierName: '暂无数据',
-        sku: '暂无数据',
-        dop: '暂无数据',
-        batch: '暂无数据',
+        supplierName: "暂无数据",
+        sku: "暂无数据",
+        dop: "暂无数据",
+        batch: "暂无数据",
       };
     }
   }
@@ -261,41 +261,41 @@
   // 创建悬浮窗
   function createFloatingWindow() {
     // 检查是否已有悬浮窗
-    const existingWindow = document.getElementById('qrcode-floating-window');
+    const existingWindow = document.getElementById("qrcode-floating-window");
     if (existingWindow) {
       existingWindow.remove();
     }
 
-    const floatingWindow = document.createElement('div');
-    floatingWindow.id = 'qrcode-floating-window';
+    const floatingWindow = document.createElement("div");
+    floatingWindow.id = "qrcode-floating-window";
 
     // 尝试从存储中获取位置
-    const savedPosition = GM_getValue('qrcodeWindowPosition');
+    const savedPosition = GM_getValue("qrcodeWindowPosition");
     if (savedPosition) {
       floatingWindow.style.left = savedPosition.left;
       floatingWindow.style.top = savedPosition.top;
-      floatingWindow.style.transform = 'none';
+      floatingWindow.style.transform = "none";
     }
 
     // 按钮头部容器
-    const header = document.createElement('div');
-    header.id = 'qrcode-header';
+    const header = document.createElement("div");
+    header.id = "qrcode-header";
     floatingWindow.appendChild(header);
 
     // 刷新按钮（使用图标）
-    const refreshBtn = document.createElement('button');
-    refreshBtn.className = 'qrcode-btn';
+    const refreshBtn = document.createElement("button");
+    refreshBtn.className = "qrcode-btn";
     refreshBtn.innerHTML = '<i class="fa fa-refresh"></i>';
-    refreshBtn.title = '刷新二维码';
-    refreshBtn.addEventListener('click', async (e) => {
+    refreshBtn.title = "刷新二维码";
+    refreshBtn.addEventListener("click", async (e) => {
       e.stopPropagation(); // 防止触发拖拽
       refreshBtn.disabled = true;
       refreshBtn.innerHTML = '<i class="fa fa-circle-o-notch fa-spin"></i>';
       try {
         await updateQRCode();
-        showNotification('二维码已更新', 'success');
+        showNotification("二维码已更新", "success");
       } catch (error) {
-        showNotification('更新失败', 'error');
+        showNotification("更新失败", "error");
       } finally {
         refreshBtn.disabled = false;
         refreshBtn.innerHTML = '<i class="fa fa-refresh"></i>';
@@ -304,33 +304,33 @@
     header.appendChild(refreshBtn);
 
     // 缩小按钮（使用图标）
-    const minimizeBtn = document.createElement('button');
-    minimizeBtn.className = 'qrcode-btn';
+    const minimizeBtn = document.createElement("button");
+    minimizeBtn.className = "qrcode-btn";
     minimizeBtn.innerHTML = '<i class="fa fa-compress"></i>';
-    minimizeBtn.title = '最小化';
-    minimizeBtn.addEventListener('click', (e) => {
+    minimizeBtn.title = "最小化";
+    minimizeBtn.addEventListener("click", (e) => {
       e.stopPropagation(); // 防止触发拖拽
       isMinimized = !isMinimized;
       if (isMinimized) {
-        floatingWindow.classList.add('minimized');
+        floatingWindow.classList.add("minimized");
         minimizeBtn.innerHTML = '<i class="fa fa-expand"></i>';
-        minimizeBtn.title = '恢复';
+        minimizeBtn.title = "恢复";
       } else {
-        floatingWindow.classList.remove('minimized');
+        floatingWindow.classList.remove("minimized");
         minimizeBtn.innerHTML = '<i class="fa fa-compress"></i>';
-        minimizeBtn.title = '最小化';
+        minimizeBtn.title = "最小化";
       }
     });
     header.appendChild(minimizeBtn);
 
     // 二维码容器
-    const qrcodeContainer = document.createElement('div');
-    qrcodeContainer.id = 'qrcode-container';
+    const qrcodeContainer = document.createElement("div");
+    qrcodeContainer.id = "qrcode-container";
     floatingWindow.appendChild(qrcodeContainer);
 
     // 信息显示
-    const infoDiv = document.createElement('div');
-    infoDiv.id = 'qrcode-info';
+    const infoDiv = document.createElement("div");
+    infoDiv.id = "qrcode-info";
     floatingWindow.appendChild(infoDiv);
 
     document.body.appendChild(floatingWindow);
@@ -347,10 +347,14 @@
     const qrContent = generateQRContent(pageInfo);
 
     // 更新信息显示
-    const infoDiv = document.getElementById('qrcode-info');
+    const infoDiv = document.getElementById("qrcode-info");
     if (infoDiv) {
       infoDiv.innerHTML = `
-        <div>供应商名称: ${pageInfo.supplierName.length > 20 ? pageInfo.supplierName.substring(0, 20) + '...' : pageInfo.supplierName}</div>
+        <div>供应商名称: ${
+        pageInfo.supplierName.length > 20
+          ? pageInfo.supplierName.substring(0, 20) + "..."
+          : pageInfo.supplierName
+      }</div>
         <div>物料编码: ${pageInfo.sku}</div>
         <div>生产日期: ${pageInfo.dop}</div>
         <div>生产批次: ${pageInfo.batch}</div>
@@ -358,20 +362,20 @@
     }
 
     // 生成二维码
-    const qrcodeContainer = document.getElementById('qrcode-container');
+    const qrcodeContainer = document.getElementById("qrcode-container");
     if (!qrcodeContainer) {
-      throw new Error('二维码容器不存在');
+      throw new Error("二维码容器不存在");
     }
 
     // 清除现有内容
-    qrcodeContainer.innerHTML = '';
+    qrcodeContainer.innerHTML = "";
 
     try {
       // 生成SVG格式的二维码
       let svg = qrcodeLib(qrContent, { output: "svg" });
 
       // 验证SVG内容是否有效
-      if (typeof svg !== 'string' || svg.trim() === '') {
+      if (typeof svg !== "string" || svg.trim() === "") {
         throw new Error("生成的SVG内容为空或无效");
       }
 
@@ -379,11 +383,11 @@
       svg = svg.replace(/viewBox="0 0 \d+ \d+"/, 'viewBox="0 0 52 52"');
 
       // 创建临时容器解析SVG
-      const tempContainer = document.createElement('div');
+      const tempContainer = document.createElement("div");
       tempContainer.innerHTML = svg;
 
       // 尝试获取SVG元素
-      let svgElement = tempContainer.querySelector('svg');
+      let svgElement = tempContainer.querySelector("svg");
 
       // 如果直接解析失败，尝试使用DOMParser
       if (!svgElement) {
@@ -391,21 +395,21 @@
         try {
           const doc = parser.parseFromString(svg, "image/svg+xml");
           // 检查解析错误
-          const parserError = doc.querySelector('parsererror');
+          const parserError = doc.querySelector("parsererror");
           if (parserError) {
             throw new Error("SVG解析错误: " + parserError.textContent);
           }
           svgElement = doc.documentElement;
         } catch (parseError) {
-          console.error('DOMParser解析失败:', parseError);
+          console.error("DOMParser解析失败:", parseError);
           throw new Error("无法解析SVG内容");
         }
       }
 
-      if (svgElement && svgElement.tagName.toLowerCase() === 'svg') {
+      if (svgElement && svgElement.tagName.toLowerCase() === "svg") {
         // 清除可能的事件监听器和不需要的属性
-        svgElement.removeAttribute('onload');
-        svgElement.removeAttribute('onerror');
+        svgElement.removeAttribute("onload");
+        svgElement.removeAttribute("onerror");
 
         // 添加到容器
         qrcodeContainer.appendChild(svgElement);
@@ -413,11 +417,11 @@
         throw new Error("生成的内容不是有效的SVG元素");
       }
     } catch (error) {
-      console.error('生成二维码失败:', error);
+      console.error("生成二维码失败:", error);
       // 创建错误信息元素
-      const errorDiv = document.createElement('div');
-      errorDiv.className = 'error-message';
-      errorDiv.textContent = '二维码生成失败';
+      const errorDiv = document.createElement("div");
+      errorDiv.className = "error-message";
+      errorDiv.textContent = "二维码生成失败";
       qrcodeContainer.appendChild(errorDiv);
       throw error;
     }
@@ -425,9 +429,9 @@
 
   // 实现拖拽功能
   function enableDragging(element) {
-    element.addEventListener('mousedown', (e) => {
+    element.addEventListener("mousedown", (e) => {
       // 只有点击非按钮区域才允许拖拽
-      if (e.target.closest('.qrcode-btn')) {
+      if (e.target.closest(".qrcode-btn")) {
         return;
       }
 
@@ -435,38 +439,38 @@
       const rect = element.getBoundingClientRect();
       offsetX = e.clientX - rect.left;
       offsetY = e.clientY - rect.top;
-      element.style.cursor = 'grabbing';
-      element.style.transition = 'none';
+      element.style.cursor = "grabbing";
+      element.style.transition = "none";
     });
 
-    document.addEventListener('mousemove', (e) => {
+    document.addEventListener("mousemove", (e) => {
       if (!isDragging) return;
 
       const x = e.clientX - offsetX;
       const y = e.clientY - offsetY;
 
       // 限制在窗口内
-      const maxX = window.innerWidth - element.offsetWidth;
-      const maxY = window.innerHeight - element.offsetHeight;
+      const maxX = globalThis.innerWidth - element.offsetWidth;
+      const maxY = globalThis.innerHeight - element.offsetHeight;
 
       const clampedX = Math.max(0, Math.min(x, maxX));
       const clampedY = Math.max(0, Math.min(y, maxY));
 
-      element.style.left = clampedX + 'px';
-      element.style.top = clampedY + 'px';
-      element.style.transform = 'none';
+      element.style.left = clampedX + "px";
+      element.style.top = clampedY + "px";
+      element.style.transform = "none";
     });
 
-    document.addEventListener('mouseup', () => {
+    document.addEventListener("mouseup", () => {
       if (isDragging) {
         isDragging = false;
-        element.style.cursor = 'move';
-        element.style.transition = 'all 0.3s ease';
+        element.style.cursor = "move";
+        element.style.transition = "all 0.3s ease";
 
         // 保存位置到存储
-        GM_setValue('qrcodeWindowPosition', {
+        GM_setValue("qrcodeWindowPosition", {
           left: element.style.left,
-          top: element.style.top
+          top: element.style.top,
         });
 
         // 自动吸附到最近的边缘
@@ -474,15 +478,15 @@
         const centerX = rect.left + rect.width / 2;
         const centerY = rect.top + rect.height / 2;
 
-        const windowWidth = window.innerWidth;
-        const windowHeight = window.innerHeight;
+        const windowWidth = globalThis.innerWidth;
+        const windowHeight = globalThis.innerHeight;
 
         // 计算距离各边缘的距离
         const distances = {
           left: centerX,
           right: windowWidth - centerX,
           top: centerY,
-          bottom: windowHeight - centerY
+          bottom: windowHeight - centerY,
         };
 
         // 找到最近的边缘
@@ -492,36 +496,36 @@
 
         // 吸附到边缘
         switch (closestEdge) {
-          case 'left':
-            element.style.left = '10px';
+          case "left":
+            element.style.left = "10px";
             break;
-          case 'right':
-            element.style.left = (windowWidth - rect.width - 10) + 'px';
+          case "right":
+            element.style.left = (windowWidth - rect.width - 10) + "px";
             break;
-          case 'top':
-            element.style.top = '10px';
+          case "top":
+            element.style.top = "10px";
             break;
-          case 'bottom':
-            element.style.top = (windowHeight - rect.height - 10) + 'px';
+          case "bottom":
+            element.style.top = (windowHeight - rect.height - 10) + "px";
             break;
         }
       }
     });
 
     // 防止拖拽时选择文本
-    element.addEventListener('selectstart', (e) => {
+    element.addEventListener("selectstart", (e) => {
       if (isDragging) {
         e.preventDefault();
       }
     });
 
     // 触摸设备支持
-    element.addEventListener('touchstart', (e) => {
+    element.addEventListener("touchstart", (e) => {
       if (e.touches.length !== 1) return;
 
       const touch = e.touches[0];
       // 只有点击非按钮区域才允许拖拽
-      if (e.target.closest('.qrcode-btn')) {
+      if (e.target.closest(".qrcode-btn")) {
         return;
       }
 
@@ -529,12 +533,12 @@
       const rect = element.getBoundingClientRect();
       offsetX = touch.clientX - rect.left;
       offsetY = touch.clientY - rect.top;
-      element.style.cursor = 'grabbing';
-      element.style.transition = 'none';
+      element.style.cursor = "grabbing";
+      element.style.transition = "none";
       e.preventDefault();
     });
 
-    document.addEventListener('touchmove', (e) => {
+    document.addEventListener("touchmove", (e) => {
       if (!isDragging || e.touches.length !== 1) return;
 
       const touch = e.touches[0];
@@ -542,28 +546,28 @@
       const y = touch.clientY - offsetY;
 
       // 限制在窗口内
-      const maxX = window.innerWidth - element.offsetWidth;
-      const maxY = window.innerHeight - element.offsetHeight;
+      const maxX = globalThis.innerWidth - element.offsetWidth;
+      const maxY = globalThis.innerHeight - element.offsetHeight;
 
       const clampedX = Math.max(0, Math.min(x, maxX));
       const clampedY = Math.max(0, Math.min(y, maxY));
 
-      element.style.left = clampedX + 'px';
-      element.style.top = clampedY + 'px';
-      element.style.transform = 'none';
+      element.style.left = clampedX + "px";
+      element.style.top = clampedY + "px";
+      element.style.transform = "none";
       e.preventDefault();
     });
 
-    document.addEventListener('touchend', () => {
+    document.addEventListener("touchend", () => {
       if (isDragging) {
         isDragging = false;
-        element.style.cursor = 'move';
-        element.style.transition = 'all 0.3s ease';
+        element.style.cursor = "move";
+        element.style.transition = "all 0.3s ease";
 
         // 保存位置到存储
-        GM_setValue('qrcodeWindowPosition', {
+        GM_setValue("qrcodeWindowPosition", {
           left: element.style.left,
-          top: element.style.top
+          top: element.style.top,
         });
 
         // 自动吸附到最近的边缘
@@ -571,15 +575,15 @@
         const centerX = rect.left + rect.width / 2;
         const centerY = rect.top + rect.height / 2;
 
-        const windowWidth = window.innerWidth;
-        const windowHeight = window.innerHeight;
+        const windowWidth = globalThis.innerWidth;
+        const windowHeight = globalThis.innerHeight;
 
         // 计算距离各边缘的距离
         const distances = {
           left: centerX,
           right: windowWidth - centerX,
           top: centerY,
-          bottom: windowHeight - centerY
+          bottom: windowHeight - centerY,
         };
 
         // 找到最近的边缘
@@ -589,17 +593,17 @@
 
         // 吸附到边缘
         switch (closestEdge) {
-          case 'left':
-            element.style.left = '10px';
+          case "left":
+            element.style.left = "10px";
             break;
-          case 'right':
-            element.style.left = (windowWidth - rect.width - 10) + 'px';
+          case "right":
+            element.style.left = (windowWidth - rect.width - 10) + "px";
             break;
-          case 'top':
-            element.style.top = '10px';
+          case "top":
+            element.style.top = "10px";
             break;
-          case 'bottom':
-            element.style.top = (windowHeight - rect.height - 10) + 'px';
+          case "bottom":
+            element.style.top = (windowHeight - rect.height - 10) + "px";
             break;
         }
       }
@@ -616,7 +620,7 @@
   async function initQRCodeGenerator() {
     // 先判断哈希值，不匹配则直接退出，不执行后续逻辑
     if (!isTargetUrl()) {
-      console.log('当前页面哈希值不匹配，不加载二维码生成器');
+      console.log("当前页面哈希值不匹配，不加载二维码生成器");
       return;
     }
 
@@ -633,7 +637,7 @@
       // 创建悬浮窗
       const floatingWindow = createFloatingWindow();
       if (!floatingWindow) {
-        throw new Error('无法创建悬浮窗口');
+        throw new Error("无法创建悬浮窗口");
       }
 
       // 启用拖拽
@@ -642,25 +646,25 @@
       // 生成初始二维码
       await updateQRCode();
 
-      console.log('页面信息二维码生成器已启动！');
-      showNotification('二维码生成器已启动', 'success');
+      console.log("页面信息二维码生成器已启动！");
+      showNotification("二维码生成器已启动", "success");
     } catch (error) {
-      console.error('初始化失败:', error);
+      console.error("初始化失败:", error);
       // 图标加载失败时仍然显示通知，只是没有图标
-      showNotification('二维码生成器初始化失败，请刷新页面重试', 'error');
+      showNotification("二维码生成器初始化失败，请刷新页面重试", "error");
     }
   }
 
   // 页面加载完成后初始化
-  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+  if (document.readyState === "complete" || document.readyState === "interactive") {
     preloadResources();
   } else {
-    document.addEventListener('DOMContentLoaded', preloadResources);
+    document.addEventListener("DOMContentLoaded", preloadResources);
   }
 
   // 监听hash变化（如单页应用）
-  window.addEventListener('hashchange', () => {
-    const floatingWindow = document.getElementById('qrcode-floating-window');
+  globalThis.addEventListener("hashchange", () => {
+    const floatingWindow = document.getElementById("qrcode-floating-window");
     if (isTargetUrl()) {
       // 切换到目标hash，初始化生成器
       if (!floatingWindow) initQRCodeGenerator();
@@ -669,10 +673,9 @@
       if (floatingWindow) {
         floatingWindow.remove();
         // 清除通知
-        const notification = document.getElementById('qrcode-notification');
+        const notification = document.getElementById("qrcode-notification");
         if (notification) notification.remove();
       }
     }
   });
-
 })();
