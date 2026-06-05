@@ -310,6 +310,10 @@ function getProjectCardClick(
     return () => controls.openPanel(card.id);
   }
 
+  if (card.id === "chinagas-wms-qrcode") {
+    return () => window.open("https://greasyfork.org/zh-CN/scripts/550879", "_blank");
+  }
+
   return undefined;
 }
 
