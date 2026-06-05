@@ -226,7 +226,8 @@ Deno.test("encode throws for extremely long data", () => {
 Deno.test("encode throws for unknown error correction level", () => {
   let thrown = false;
   try {
-    encode("TEST", { errorCorrectionLevel: "X" as unknown });
+  // deno-lint-ignore no-explicit-any
+    encode("TEST", { errorCorrectionLevel: "X" as any });
   } catch (e) {
     thrown = true;
     expect(typeof e).toBe("string");
