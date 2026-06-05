@@ -409,7 +409,7 @@ export function createDenoFileSystemAdapter(): FileSystemAdapter {
       }
     },
 
-    async readFile(path: string): Promise<Uint8Array> {
+    readFile(path: string): Promise<Uint8Array> {
       return Deno.readFile(path);
     },
 

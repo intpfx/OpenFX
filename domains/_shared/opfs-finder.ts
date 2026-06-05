@@ -81,7 +81,7 @@ interface WorkerResponse {
 
 // ─── Pure data helpers ────────────────────────────────────────────────
 
-const versionedName = (name: string, timestamp: number): string =>
+const _versionedName = (name: string, timestamp: number): string =>
   `${name}#${timestamp}`;
 
 const latestEntry = (entries: ManifestEntry[]): ManifestEntry | undefined =>
@@ -97,7 +97,7 @@ const fileToEntry = (name: string, entries: ManifestEntry[]): FileEntry => {
   };
 };
 
-const allFileEntries = (manifest: Manifest): FileEntry[] =>
+const _allFileEntries = (manifest: Manifest): FileEntry[] =>
   Object.entries(manifest)
     .filter(([, entries]) => entries.length > 0)
     .map(([name, entries]) => fileToEntry(name, entries));
@@ -347,7 +347,7 @@ export class OpfsFinder extends HTMLElement {
     callback?: (resp: WorkerResponse) => void,
   ): void {
     if (callback) {
-      const id = `_cb_${this.nextMessageId++}`;
+      const _id = `_cb_${this.nextMessageId++}`;
       this.callbacks.set(cmd.type, callback);
     }
     this.worker.postMessage(cmd);

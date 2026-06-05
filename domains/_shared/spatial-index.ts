@@ -18,8 +18,7 @@ export interface RBushItem {
   maxY: number;
   lat: number;
   lon: number;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  data?: any;
+  data?: unknown;
 }
 
 /** RBush 需要的 bbox 搜索参数 */

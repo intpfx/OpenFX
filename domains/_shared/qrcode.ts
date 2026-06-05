@@ -1140,7 +1140,7 @@ function setupTimingPattern(
  */
 function setupPositionAdjustPattern(
   modules: (boolean | null)[][],
-  moduleCount: number,
+  _moduleCount: number,
   typeNumber: number,
 ): void {
   const pos = getPatternPosition(typeNumber);

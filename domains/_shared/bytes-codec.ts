@@ -59,7 +59,7 @@ type EncodedMessage = Record<string, unknown>;
  * 提取自 core/serve.js FrameBase.$encoder（第2054-2149行）
  */
 export async function encode(value: unknown): Promise<Uint8Array> {
-  return encodeInternal(value, false) as Promise<Uint8Array>;
+  return await encodeInternal(value, false) as Uint8Array;
 }
 
 /**

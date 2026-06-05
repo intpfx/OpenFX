@@ -63,7 +63,7 @@ export function createNodeSocket(family: "udp4" | "udp6"): UdpSocket {
 }
 
 /** Deno adapter */
-export function createDenoSocket(family: "udp4" | "udp6"): UdpSocket {
+export function createDenoSocket(_family: "udp4" | "udp6"): UdpSocket {
   const conn = Deno.listenDatagram({ transport: "udp", hostname: "0.0.0.0", port: 0 });
   const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
   const _on = (ev: string, h: (...args: unknown[]) => void) => {
@@ -82,7 +82,7 @@ export function createDenoSocket(family: "udp4" | "udp6"): UdpSocket {
       };
     } catch { /* ignore */ }
     const msgListeners = listeners.get("message");
-    const errorListeners = listeners.get("error");
+    const _errorListeners = listeners.get("error");
     for await (const [data, rinfo] of conn) {
       if (closed) break;
       const remote = rinfo as Deno.NetAddr;
@@ -145,7 +145,7 @@ export function createDenoSocket(family: "udp4" | "udp6"): UdpSocket {
  * Auto-detects Deno vs Node.js at runtime.
  */
 export function createUdpSocket(
-  ctx: { debugLevel: number },
+  _ctx: { debugLevel: number },
   family: "udp4" | "udp6",
 ): UdpSocket {
   if (typeof Deno !== "undefined") {

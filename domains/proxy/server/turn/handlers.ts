@@ -41,14 +41,14 @@ import { createUdpSocket } from "./socket.ts";
 // Naming helpers
 // ---------------------------------------------------------------------------
 
-function getMethodName(method: number): string {
+function _getMethodName(method: number): string {
   for (const [k, v] of Object.entries(STUN_METHOD)) {
     if (v === method) return k.toLowerCase();
   }
   return "unknown-method";
 }
 
-function getClassName(cls: number): string {
+function _getClassName(cls: number): string {
   for (const [k, v] of Object.entries(STUN_CLASS)) {
     if (v === cls) return k.toLowerCase();
   }
@@ -59,7 +59,7 @@ function getClassName(cls: number): string {
 // Transport helpers
 // ---------------------------------------------------------------------------
 
-function transportToString(t: Transport): string {
+function _transportToString(t: Transport): string {
   const proto = t.protocol === TRANSPORT_PROTO.UDP ? "UDP" : "UNKNOWN";
   return `${proto}: from ${addressToString(t.src)} to ${addressToString(t.dst)}`;
 }
@@ -273,7 +273,7 @@ function handleCreatePermission(
 // ---------------------------------------------------------------------------
 
 /** Handle Send indication. */
-function handleSend(ctx: TurnServerContext, msg: StunMessage): void {
+function handleSend(_ctx: TurnServerContext, msg: StunMessage): void {
   const dst = getAttr(msg, "xor-peer-address") as Address | undefined;
   const data = getAttr(msg, "data") as Uint8Array | undefined;
   if (!dst || !data) return;
@@ -292,7 +292,7 @@ function handleSend(ctx: TurnServerContext, msg: StunMessage): void {
 
 /** Handle ChannelBind request. */
 function handleChannelBind(
-  ctx: TurnServerContext,
+  _ctx: TurnServerContext,
   msg: StunMessage,
   reply: StunMessage,
 ): StunMessage {
@@ -490,7 +490,7 @@ function getRelayIp(ctx: TurnServerContext, msg: StunMessage): string {
 
 async function allocateUdp(
   ctx: TurnServerContext,
-  msg: StunMessage,
+  _msg: StunMessage,
   ip: string,
 ): Promise<import("./types.ts").UdpSocket[]> {
   const family = createAddress(ip, 0).family === TransportFamily.IPV4 ? "udp4" : "udp6";
@@ -528,7 +528,7 @@ async function allocateUdp(
   });
 }
 
-async function allocateUdpEven(
+function allocateUdpEven(
   ctx: TurnServerContext,
   msg: StunMessage,
   rBit: boolean,

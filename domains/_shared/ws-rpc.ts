@@ -73,7 +73,7 @@ const generateStamp = (): string => Math.random().toString(36).slice(2);
 const defaults = {
   serialize: (data: Record<string, unknown>): Uint8Array =>
     new TextEncoder().encode(JSON.stringify(data)),
-  deserialize: async (event: MessageEvent): Promise<Record<string, unknown>> =>
+  deserialize: (event: MessageEvent): Promise<Record<string, unknown>> =>
     JSON.parse(new TextDecoder().decode(event.data)),
 };
 

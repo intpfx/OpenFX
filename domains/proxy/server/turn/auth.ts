@@ -50,7 +50,7 @@ export type AuthResult = { ok: true; reply: StunMessage } | {
 // Authentication handlers
 // ---------------------------------------------------------------------------
 
-function authNone(ctx: TurnServerContext, msg: StunMessage): AuthResult {
+function authNone(_ctx: TurnServerContext, msg: StunMessage): AuthResult {
   return { ok: true, reply: createReply(msg) };
 }
 
@@ -174,12 +174,13 @@ export function authenticate(
       return authShortTerm(ctx, msg);
     case "long-term":
       return authLongTerm(ctx, msg);
-    default:
+    default: {
       const errReply = createReply(msg);
       return {
         ok: false,
         error: new Error(`Invalid auth mechanism: ${ctx.authMech}`),
         reply: errReply,
       };
+    }
   }
 }

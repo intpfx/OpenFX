@@ -75,7 +75,7 @@ export const encode = async (
 
       case "Deno.KvU64":
       case "BigInt": {
-        output[`${dt}[${key}]`] = (value as BigInt).toString();
+        output[`${dt}[${key}]`] = (value as bigint).toString();
         break;
       }
 
@@ -83,7 +83,7 @@ export const encode = async (
       case "BigUint64Array": {
         output[`${dt}[${key}]`] = Array.from(
           value as BigInt64Array | BigUint64Array,
-          (v: BigInt) => Number(v),
+          (v: bigint) => Number(v),
         );
         break;
       }

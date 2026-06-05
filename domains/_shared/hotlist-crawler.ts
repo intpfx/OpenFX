@@ -63,7 +63,7 @@ export interface HotlistFetchError {
  */
 
 /** 从 HTML 片段中提取所有 <a> 标签的文本和 href */
-function parseAnchorTags(html: string): Array<{ text: string; href: string }> {
+function _parseAnchorTags(html: string): Array<{ text: string; href: string }> {
   const results: Array<{ text: string; href: string }> = [];
   // 匹配 <a ...>text</a>，同时提取 href 和 inner text
   const regex = /<a[^>]*href\s*=\s*["']([^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
@@ -83,7 +83,7 @@ function parseAnchorTags(html: string): Array<{ text: string; href: string }> {
  * 从 HTML 中提取所有具有指定 class 的元素文本
  * 使用简单正则匹配，适用于 tophub.today 的固定结构
  */
-function extractClassText(html: string, className: string): string[] {
+function _extractClassText(html: string, className: string): string[] {
   const results: string[] = [];
   // 匹配 class="className" 或 class='className' 的标签内容
   const regex = new RegExp(
@@ -364,7 +364,7 @@ const FETCHERS: Record<
 };
 
 /** 各来源对应的显示名称 */
-const SOURCE_NAMES: Record<HotlistSource, string> = {
+const _SOURCE_NAMES: Record<HotlistSource, string> = {
   "tophub": "Tophub Today",
   "tophub-daily": "Tophub 今日热榜",
   "weibo": "微博热搜",
@@ -427,7 +427,7 @@ export async function fetchHotlist(
  *
  * @returns 热榜结果列表和错误列表
  */
-export async function crawlAllHotlists(): Promise<{
+export function crawlAllHotlists(): Promise<{
   results: HotlistResult[];
   errors: HotlistFetchError[];
 }> {

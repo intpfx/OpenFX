@@ -231,7 +231,7 @@ export async function convertVideo(
  * Matches the original `convertVideoToAV1WebM` behaviour
  * (but uses VP8 for maximum browser compatibility).
  */
-export async function convertToWebM(
+export function convertToWebM(
   pipeline: FfmpegPipeline,
   input: File,
 ): Promise<File> {
@@ -253,7 +253,7 @@ export async function convertToWebM(
  * Convert any video to H.264 + AAC MP4.
  * Matches the original `convertMovToMp4` behaviour.
  */
-export async function convertToMp4(
+export function convertToMp4(
   pipeline: FfmpegPipeline,
   input: File,
 ): Promise<File> {

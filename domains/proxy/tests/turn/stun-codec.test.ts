@@ -12,33 +12,45 @@ import {
   getAttr,
 } from "../../server/turn/stun-codec.ts";
 import { authenticate } from "../../server/turn/auth.ts";
-import { computeFiveTuple, makeAddress, makeTransport } from "../../server/turn/mod.ts";
+import { computeFiveTuple, makeAddress } from "../../server/turn/mod.ts";
 import type { Address, TurnServerContext } from "../../server/turn/types.ts";
-import { STUN_CLASS, STUN_METHOD } from "../../server/turn/constants.ts";
-import { crc32, createAddress } from "../../server/turn/utils.ts";
+import { STUN_METHOD } from "../../server/turn/constants.ts";
+import { createAddress } from "../../server/turn/utils.ts";
 
 // ─── Test context / helpers ──────────────────────────────────────────
 
 const TEST_TRANSACTION = "b9e1b7c2d3e4f5a6b7c8d9e0";
 
 const mockCtx: TurnServerContext = {
-  config: {
-    debugLevel: "NONE",
-    software: "openfx-turn-test",
-    realm: "test.realm",
-  },
+  debugLevel: 0,
+  software: "openfx-turn-test",
+  realm: "test.realm",
   authMech: "none",
   allocations: {},
+  // deno-lint-ignore no-explicit-any
   reservations: {} as any,
-  nonceMap: new Map(),
+  nonces: {},
   log: () => {},
-  debug: () => {},
+  listeningIps: ["0.0.0.0"],
+  relayIps: ["0.0.0.0"],
+  externalIps: null,
+  listeningPort: 3478,
+  minPort: 49152,
+  maxPort: 65535,
+  maxAllocateLifetime: 3600,
+  defaultAllocateLifetime: 600,
+  staticCredentials: {},
+  lastRelayIp: "0.0.0.0",
+  onMessage: () => {},
+  _sockets: [],
+  _started: false,
 };
 
 const mockTransport = () => ({
   protocol: 17,
   src: { family: 1, address: "10.0.0.1", port: 34567 },
   dst: { family: 1, address: "10.0.0.2", port: 3478 },
+  // deno-lint-ignore no-explicit-any
   socket: null as any,
 });
 
@@ -189,7 +201,7 @@ Deno.test("ChannelData handles zero-length data", () => {
   expect(decoded).not.toBeNull();
   if (!decoded) return;
   expect(decoded.channelNumber).toBe(0x4001);
-  expect(decoded.data.length).toBe(0);
+  expect(decoded.data!.length).toBe(0);
 });
 
 Deno.test("ChannelData padding is correctly computed", () => {

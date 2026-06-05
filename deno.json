@@ -27,7 +27,17 @@
       "exclude": [
         "no-unversioned-import"
       ]
-    }
+    },
+    "exclude": [
+      "domains/wanone/",
+      "domains/chinagas-wms-qrcode/",
+      "entry/web/src/",
+      "domains/_shared/opfs-finder.ts",
+      "domains/_shared/island-notice.ts",
+      "domains/_shared/idb-engine.ts",
+      "domains/_shared/ffmpeg-pipeline.ts",
+      "domains/_shared/opfs-engine.ts"
+    ]
   },
   "exclude": [
     "dist",

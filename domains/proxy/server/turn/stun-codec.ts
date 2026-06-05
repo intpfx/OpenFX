@@ -11,11 +11,9 @@
 import type {
   Address,
   ChannelData,
-  StunAttribute,
   StunMessage,
   Transport,
   TurnServerContext,
-  User,
 } from "./types.ts";
 import { TransportFamily } from "./types.ts";
 import { MAGIC_COOKIE, STUN_ATTR } from "./constants.ts";
@@ -539,7 +537,7 @@ export function addAttr(msg: StunMessage, name: string, value?: unknown): void {
 // Crypto helpers (Node crypto / Web Crypto)
 // ---------------------------------------------------------------------------
 
-async function computeMd5(input: string): Promise<Uint8Array> {
+async function _computeMd5(input: string): Promise<Uint8Array> {
   const enc = new TextEncoder().encode(input);
   const hash = await crypto.subtle.digest("MD5", enc);
   return new Uint8Array(hash);
@@ -559,7 +557,7 @@ function md5Hash(input: string): Uint8Array {
   throw new Error("MD5 sync not available; use async init or Node.js");
 }
 
-async function md5HashAsync(input: string): Promise<Uint8Array> {
+async function _md5HashAsync(input: string): Promise<Uint8Array> {
   if (typeof require !== "undefined") {
     try {
       const { createHash } = require("node:crypto") as typeof import("node:crypto");
