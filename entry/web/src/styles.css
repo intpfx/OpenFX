@@ -1518,6 +1518,11 @@ textarea {
   grid-template-rows: 1fr;
 }
 
+.domain-panel[data-panel-id="wanone-memorial"] {
+  grid-template-rows: 1fr;
+  padding: 0;
+}
+
 .admin-domain-panel {
   border: 0;
   background: transparent;
