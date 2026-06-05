@@ -306,7 +306,8 @@ function getProjectCardClick(
 ): (() => void) | undefined {
   if (
     card.id === "how-much-this" || card.id === "ipv6-sync-suite" ||
-    card.id === "relay-proxy-gateway" || card.id === "wanone-memorial"
+    card.id === "relay-proxy-gateway" || card.id === "wanone-memorial" ||
+    card.id === "chinagas-wms-qrcode"
   ) {
     return () => controls.openPanel(card.id);
   }
@@ -949,21 +950,53 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
             <div
               className="domain-panel"
               data-panel-id="wanone-memorial"
-              style={{ position: "relative" }}
+              style={{ flex: 1, display: "flex", overflow: "hidden" }}
             >
               <iframe
                 src="/wanone/index.html"
                 title="万一"
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  border: "none",
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                }}
+                style={{ width: "100%", height: "100%", border: "none", flex: 1 }}
               />
             </div>
+          )
+          : null}
+        {activePanel === "chinagas-wms-qrcode"
+          ? (
+            <PanelShell
+              panelId="chinagas-wms-qrcode"
+              eyebrow="用户脚本"
+              title="中燃WMS二维码生成器"
+              lede="Tampermonkey 脚本，在 WMS 物料详情页自动提取信息并生成可拖拽悬浮二维码，供仓储人员手机扫描。"
+            >
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "1rem",
+                  alignItems: "flex-start",
+                }}
+              >
+                <a
+                  href="https://greasyfork.org/zh-CN/scripts/550879"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: "inline-block",
+                    padding: "0.75rem 1.5rem",
+                    background: "var(--accent)",
+                    color: "#fff",
+                    borderRadius: "var(--radius)",
+                    textDecoration: "none",
+                    fontWeight: 600,
+                  }}
+                >
+                  前往 Greasy Fork 安装
+                </a>
+                <p style={{ color: "var(--muted)", fontSize: "0.85rem", margin: 0 }}>
+                  脚本已停止更新，功能完整，永久可用。
+                </p>
+              </div>
+            </PanelShell>
           )
           : null}
         {activePanel === "chinagas-wms-qrcode"
