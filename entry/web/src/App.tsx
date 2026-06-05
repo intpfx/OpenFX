@@ -38,7 +38,8 @@ type ActiveDomainPanel =
   | "admin-console"
   | "ipv6-sync-suite"
   | "how-much-this"
-  | "relay-proxy-gateway";
+  | "relay-proxy-gateway"
+  | "wanone-memorial";
 
 type DownipRouteValue = {
   ipv6: string;
@@ -304,7 +305,7 @@ function getProjectCardClick(
 ): (() => void) | undefined {
   if (
     card.id === "how-much-this" || card.id === "ipv6-sync-suite" ||
-    card.id === "relay-proxy-gateway"
+    card.id === "relay-proxy-gateway" || card.id === "wanone-memorial"
   ) {
     return () => controls.openPanel(card.id);
   }
@@ -937,6 +938,24 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
           : null}
         {activePanel === "relay-proxy-gateway"
           ? <ProxyPanel frameUrl={proxyFrameUrl} />
+          : null}
+        {activePanel === "wanone-memorial"
+          ? (
+            <PanelShell
+              panelId="wanone-memorial"
+              eyebrow="纪念"
+              title="万一"
+              lede="你编程生涯的第一个项目，2020.10.26 杭州。全屏视频背景、自定义字体、CSS 渐变色动画。"
+            >
+              <div style={{ width: "100%", height: "min(75vh, 600px)", borderRadius: "var(--radius)", overflow: "hidden", border: "1px solid var(--border)" }}>
+                <iframe
+                  src="/wanone/index.html"
+                  title="万一"
+                  style={{ width: "100%", height: "100%", border: "none" }}
+                />
+              </div>
+            </PanelShell>
+          )
           : null}
       </div>
 

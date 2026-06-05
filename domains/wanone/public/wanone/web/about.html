@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+</head>
+<body>
+    <div id="first">
+        <a><p>创始愿景</p></a>
+    </div>
+    <div id="second">
+        <a><p>创始团队</p></a>
+    </div>
+    <div id="third">
+        <a><p>公司现状</p></a>
+    </div>
+    <div id="more">
+        <a><p>更多</p></a>
+    </div>
+</body>
+<style>
+    body{
+        background-color: transparent;
+        text-align: left;
+        font-size: 10vmax;
+        color: white;
+        font-family: 'index';
+        position: absolute; 
+        left: 0;
+        overflow-x: hidden;
+        overflow-y: scroll;
+}
+    body::-webkit-scrollbar {
+    display: none;
+}
+    #first{
+        width: 50%;
+        height: 50%;
+        float: left;
+        text-align: center;
+    }
+    #second{
+        width: 50%;
+        height: 50%;
+        float: left;
+        text-align: center;
+    }
+    #third{
+        width: 50%;
+        height: 50%;
+        float: left;
+        text-align: center;
+    }
+    #more{
+        width: 50%;
+        height: 50%;
+        float: left;
+        text-align: center;
+    }
+    p{
+        cursor: pointer;
+    }
+    @font-face{
+    font-family: 'index';
+    src:url('../font/index.TTF');}
+</style>
+</html>

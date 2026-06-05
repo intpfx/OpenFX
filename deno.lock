@@ -6,6 +6,7 @@
     "jsr:@std/expect@^1.0.17": "1.0.19",
     "jsr:@std/internal@^1.0.12": "1.0.13",
     "jsr:@std/internal@^1.0.13": "1.0.13",
+    "jsr:@std/path@*": "1.1.4",
     "jsr:@std/path@^1.1.4": "1.1.4",
     "npm:@vitejs/plugin-react@5": "5.1.4_vite@8.0.13__esbuild@0.25.12",
     "npm:@vitejs/plugin-react@^5.1.4": "5.1.4_vite@8.0.13__esbuild@0.25.12",
@@ -33,7 +34,7 @@
       "dependencies": [
         "jsr:@std/assert@^1.0.19",
         "jsr:@std/internal@^1.0.13",
-        "jsr:@std/path"
+        "jsr:@std/path@^1.1.4"
       ]
     },
     "@std/internal@1.0.13": {

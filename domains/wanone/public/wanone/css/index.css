@@ -1,0 +1,143 @@
+*{
+    padding: auto;
+    margin: auto;
+}
+#logo{
+    position: absolute;
+    width: 5%;
+    height: 10%;
+    left: 2%;
+    top: 5%;
+    font-family: 'logo';
+    font-size: 7vmax;
+    animation: fadeio 6s infinite;
+    -webkit-animation: fadeio 6s infinite;
+    -moz-animation: fadeio 6s infinite;
+    -o-animation: fadeio 6s infinite;
+    z-index: 1;
+}
+#ad{
+    position: fixed;
+    right: 0px;  
+    bottom: 0px;  
+    min-width: 100%;  
+    min-height: 100%;  
+    height: auto;  
+    width: auto;  
+    z-index: -10;
+}
+source{  
+    min-width: 100%;  
+    min-height: 100%;  
+    height: auto;  
+    width: auto;  
+} 
+#player{
+    width:65%;
+    height: 60%;
+    float: left;
+    position: absolute;
+    left: 4.5%;
+    top: 20%;
+    overflow: hidden;
+}
+#player::-webkit-scrollbar{display: none;}
+iframe{
+    overflow: hidden;
+}
+#mean{
+    width:30%;
+    height: 100%;
+    position: absolute;
+    right: 0;
+    top: 0;
+    overflow: hidden;
+    background-color: transparent;
+    text-align: center;
+    font-family: 'index';
+    font-size: 5vmax;
+}
+#list{
+    position: relative;
+    right: 10%;
+    top: 25%;
+    list-style: none;
+    margin: auto;
+    padding: auto;
+}
+#statement{
+    position: absolute;
+    right: 1%;
+    bottom: 1%;
+    font-family: 'index';
+    font-size: 2vmin;
+}
+a{
+    color: white;
+    padding: 10px;
+    text-decoration: none;
+}
+a:hover{
+    background-image: linear-gradient(90deg,#03a9f4,#f441a5,#ffeb3b,#03a9f4);
+    background-size: 400%;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: flow 8s infinite;
+}
+@keyframes flow{
+    100%{
+        background-position: -400% 0;
+    }
+}
+@keyframes fadeio{
+    0%{
+        opacity: 1;
+    }
+    50%{
+        opacity: 0;
+    }
+    100%{
+        opacity: 1;
+    }
+}
+@-moz-keyframes fadeio{
+    0%{
+        opacity: 1;
+    }
+    50%{
+        opacity: 0;
+    }
+    100%{
+        opacity: 1;
+    }
+}
+@-webkit-keyframes fadeio{
+    0%{
+        opacity: 1;
+    }
+    50%{
+        opacity: 0;
+    }
+    100%{
+        opacity: 1;
+    }
+}
+@-o-keyframes fadeio{
+    0%{
+        opacity: 1;
+    }
+    50%{
+        opacity: 0;
+    }
+    100%{
+        opacity: 1;
+    }
+}
+@font-face{
+    font-family: 'logo';
+    src:url('../font/logo.otf');
+}
+@font-face{
+    font-family: 'index';
+    src:url('../font/index.TTF');
+} 

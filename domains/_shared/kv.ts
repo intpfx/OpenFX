@@ -1,5 +1,49 @@
 type KvKeyPart = Deno.KvKeyPart;
 
+// ── SSE 实时推送模式（from intpfx/dss） ──
+
+export type KvEntryEvent = { key: Deno.KvKey; value: unknown };
+
+// 对 ScopedKv 的某个前缀范围创建 SSE ReadableStream
+// 先全量 list 已有数据，再 watch 每个 key 的实时变更
+export const streamKvEntries = (
+  kv: Deno.Kv,
+  prefix: Deno.KvKey = [],
+): ReadableStream<Uint8Array> => {
+  const encoder = new TextEncoder();
+
+  return new ReadableStream({
+    async start(controller) {
+      const watchTasks: Promise<void>[] = [];
+
+      for await (const entry of kv.list<unknown>({ prefix })) {
+        const event: KvEntryEvent = { key: entry.key, value: entry.value };
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+
+        // 为每个 key 挂 watch，变更时实时推送
+        watchTasks.push(
+          (async () => {
+            const watcher = kv.watch([entry.key]);
+            for await (const changes of watcher) {
+              const change = changes[0];
+              const ev: KvEntryEvent = { key: change.key, value: change.value };
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify(ev)}\n\n`));
+            }
+          })(),
+        );
+      }
+
+      // 保持流打开，直到所有 watch 被客户端断开
+      await Promise.all(watchTasks);
+    },
+  });
+};
+
+// 使用方式：
+//   const kv = await getKv();
+//   const stream = streamKvEntries(kv, ["domains", "my-domain"]);
+// 返回的 stream 可直接作为 Response body：new Response(stream, { headers: { "Content-Type": "text/event-stream" } })
+
 // ScopedKv 类 — 自动给所有 key 加 domain 前缀
 export class ScopedKv {
   constructor(private kv: Deno.Kv, private scope: KvKeyPart[]) {}

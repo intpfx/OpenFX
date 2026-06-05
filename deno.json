@@ -8,8 +8,8 @@
     "fmt": "deno fmt .",
     "lint": "deno lint .",
     "guard:deno-only": "deno run -A ./tools/guard-deno-only.ts",
-    "test": "deno test --allow-env domains/e/tests domains/downip/tests domains/proxy/tests entry/web/tests",
-    "check": "deno fmt --check . && deno lint . && deno task guard:deno-only && deno test --allow-env domains/e/tests domains/downip/tests domains/proxy/tests entry/web/tests",
+    "test": "deno test --allow-env domains/e/tests domains/downip/tests domains/proxy/tests entry/web/tests domains/_shared/tests",
+    "check": "deno fmt --check . && deno lint . && deno task guard:deno-only && deno test --allow-env domains/e/tests domains/downip/tests domains/proxy/tests entry/web/tests domains/_shared/tests",
     "web:dev": "deno task --config entry/web/deno.json dev",
     "web:build": "deno task --config entry/web/deno.json build",
     "web:preview": "deno task --config entry/web/deno.json preview"

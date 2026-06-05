@@ -2,10 +2,11 @@
 
 ## Mission
 
-OpenFX is a public monorepo with two first-party products:
+OpenFX is a personal collection monorepo.
 
-- `entry/desktop`: a Perry-compiled native desktop application.
-- `entry/web`: a VitePlus + React + Nitro application that targets Deno Deploy.
+It brings together small projects and active products — from experimental tools like
+DenoKV storage services and edge storage nodes, to a Perry-compiled native desktop app
+and a VitePlus + React + Nitro web stack. All live here, evolving together.
 
 Agents working in this repo must optimize for long-term maintainability, testability,
 and public readability.
@@ -20,7 +21,7 @@ Follow the development principles in [README.md §开发原则](README.md).
 2. Read `.agents/skills/openfx-repo/SKILL.md` before making stack-level or
    agent-behavior changes.
 3. Update docs together with behavior changes.
-4. Add or update tests when modifying `domains/downip`, `domains/proxy`, or `domains/e`.
+4. Add or update tests when modifying `domains/downip`, `domains/proxy`, `domains/e`, `domains/dss`, or `domains/esn`.
 
 ## Stack Boundaries
 

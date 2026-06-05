@@ -16,6 +16,14 @@
           "description": "把桌面端的定时 IPv6 上报、Web 端的映射更新和按 key 重定向串成同一条可部署业务链路。",
           "tech": ["Perry", "Nitro", "IPv6"],
           "sourcePath": "domains/downip/ + entry/desktop/tools/desktop-sync-agent.ts"
+        },
+        {
+          "id": "chinagas-wms-qrcode",
+          "type": "project",
+          "name": "中燃WMS二维码生成器",
+          "description": "Tampermonkey 用户脚本，自动提取物料信息生成可拖拽悬浮二维码。已通过 Greasy Fork 分发。",
+          "tech": ["Tampermonkey", "QR Code", "WMS"],
+          "sourcePath": "greasyfork.org/zh-CN/scripts/550879 · domains/chinagas-wms-qrcode/"
         }
       ]
     },
@@ -30,6 +38,14 @@
           "description": "查一查你常买的东西在各地都是什么价。输入商品名，看看全国各地的实时价格分布。",
           "tech": ["Deno", "Nitro", "D3.js", "高德地图"],
           "sourcePath": "domains/how-much/"
+        },
+        {
+          "id": "wanone-memorial",
+          "type": "project",
+          "name": "万一",
+          "description": "你编程生涯的第一个项目。全屏视频背景的暗色企业官网骨架，纯 HTML+CSS 无 JavaScript，纪念你 2020 年写下的第一行代码。",
+          "tech": ["HTML", "CSS", "纪念"],
+          "sourcePath": "domains/wanone/ · /wanone/index.html"
         },
         {
           "id": "relay-proxy-gateway",
