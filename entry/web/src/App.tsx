@@ -39,7 +39,7 @@ type ActiveDomainPanel =
   | "ipv6-sync-suite"
   | "how-much-this"
   | "relay-proxy-gateway"
-  | "wanone-memorial";
+  | "wanone-memorial" | "chinagas-wms-qrcode";
 
 type DownipRouteValue = {
   ipv6: string;
@@ -311,7 +311,7 @@ function getProjectCardClick(
   }
 
   if (card.id === "chinagas-wms-qrcode") {
-    return () => window.open("https://greasyfork.org/zh-CN/scripts/550879", "_blank");
+    return () => controls.openPanel(card.id);
   }
 
   return undefined;
@@ -945,26 +945,43 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
           : null}
         {activePanel === "wanone-memorial"
           ? (
+            <div className="domain-panel" data-panel-id="wanone-memorial" style={{ position: "relative" }}>
+              <iframe
+                src="/wanone/index.html"
+                title="万一"
+                style={{ width: "100%", height: "100%", border: "none", position: "absolute", top: 0, left: 0 }}
+              />
+            </div>
+          )
+          : null}
+        {activePanel === "chinagas-wms-qrcode"
+          ? (
             <PanelShell
-              panelId="wanone-memorial"
-              eyebrow="纪念"
-              title="万一"
-              lede="你编程生涯的第一个项目，2020.10.26 杭州。全屏视频背景、自定义字体、CSS 渐变色动画。"
+              panelId="chinagas-wms-qrcode"
+              eyebrow="用户脚本"
+              title="中燃WMS二维码生成器"
+              lede="Tampermonkey 脚本，在 WMS 物料详情页自动提取信息并生成可拖拽悬浮二维码，供仓储人员手机扫描。"
             >
-              <div
-                style={{
-                  width: "100%",
-                  height: "min(75vh, 600px)",
-                  borderRadius: "var(--radius)",
-                  overflow: "hidden",
-                  border: "1px solid var(--border)",
-                }}
-              >
-                <iframe
-                  src="/wanone/index.html"
-                  title="万一"
-                  style={{ width: "100%", height: "100%", border: "none" }}
-                />
+              <div style={{ display: "flex", flexDirection: "column", gap: "1rem", alignItems: "flex-start" }}>
+                <a
+                  href="https://greasyfork.org/zh-CN/scripts/550879"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: "inline-block",
+                    padding: "0.75rem 1.5rem",
+                    background: "var(--accent)",
+                    color: "#fff",
+                    borderRadius: "var(--radius)",
+                    textDecoration: "none",
+                    fontWeight: 600,
+                  }}
+                >
+                  前往 Greasy Fork 安装
+                </a>
+                <p style={{ color: "var(--muted)", fontSize: "0.85rem", margin: 0 }}>
+                  脚本已停止更新，功能完整，永久可用。
+                </p>
               </div>
             </PanelShell>
           )
