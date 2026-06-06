@@ -1,6 +1,9 @@
 import type {
   AdversarialAudit,
+  AgentTask,
+  AgentWorkOrder,
   AppliedActionRecord,
+  Artifact,
   ChannelMessage,
   DreamNarrative,
   EvolutionProposal,
@@ -8,6 +11,7 @@ import type {
   ObserverAnalyticsReport,
   PeerMessage,
   ProposedAction,
+  RuntimeAdapterRecord,
   SocialRelation,
   SubagentTask,
   TurnRecord,
@@ -26,6 +30,10 @@ export interface ReplayBundle {
   socialRelations: SocialRelation[];
   channelMessages: ChannelMessage[];
   dreamNarratives: DreamNarrative[];
+  agentTasks: AgentTask[];
+  workOrders: AgentWorkOrder[];
+  artifacts: Artifact[];
+  adapterRecords: RuntimeAdapterRecord[];
 }
 
 export function exportTurnRecordsAsJsonl(records: TurnRecord[]): string {
@@ -77,6 +85,13 @@ export function exportReplayBundleAsJsonl(bundle: ReplayBundle): string {
       kind: "dream_narrative" as const,
       value,
     })),
+    ...bundle.agentTasks.map((value) => ({ kind: "agent_task" as const, value })),
+    ...bundle.workOrders.map((value) => ({ kind: "agent_work_order" as const, value })),
+    ...bundle.artifacts.map((value) => ({ kind: "artifact" as const, value })),
+    ...bundle.adapterRecords.map((value) => ({
+      kind: "runtime_adapter_record" as const,
+      value,
+    })),
   ].map((entry) => JSON.stringify(entry)).join("\n");
 }
 
@@ -94,6 +109,10 @@ export function parseReplayBundleJsonl(jsonl: string): ReplayBundle {
     socialRelations: [],
     channelMessages: [],
     dreamNarratives: [],
+    agentTasks: [],
+    workOrders: [],
+    artifacts: [],
+    adapterRecords: [],
   };
 
   for (const line of jsonl.split("\n")) {
@@ -126,6 +145,14 @@ export function parseReplayBundleJsonl(jsonl: string): ReplayBundle {
       bundle.channelMessages.push(entry.value as ChannelMessage);
     } else if (entry.kind === "dream_narrative") {
       bundle.dreamNarratives.push(entry.value as DreamNarrative);
+    } else if (entry.kind === "agent_task") {
+      bundle.agentTasks.push(entry.value as AgentTask);
+    } else if (entry.kind === "agent_work_order") {
+      bundle.workOrders.push(entry.value as AgentWorkOrder);
+    } else if (entry.kind === "artifact") {
+      bundle.artifacts.push(entry.value as Artifact);
+    } else if (entry.kind === "runtime_adapter_record") {
+      bundle.adapterRecords.push(entry.value as RuntimeAdapterRecord);
     }
   }
 

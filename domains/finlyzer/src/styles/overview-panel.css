@@ -1,0 +1,76 @@
+.overview-panel {
+  gap: 0;
+  padding: 0;
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+.overview-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+}
+
+.overview-kpi-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 7px 9px 8px;
+  border-right: 1px solid hsl(var(--border));
+  border-bottom: 1px solid hsl(var(--border));
+  background: hsl(var(--card));
+}
+
+.overview-kpi-card:nth-child(2n) {
+  border-right: none;
+}
+
+.overview-kpi-card:nth-last-child(-n+2) {
+  border-bottom: none;
+}
+
+.overview-kpi-label {
+  color: hsl(var(--muted-foreground));
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  line-height: 1.15;
+}
+
+.overview-kpi-value {
+  color: hsl(var(--foreground));
+  font-size: 15px;
+  line-height: 1.05;
+  font-family: var(--font-display);
+}
+
+.overview-kpi-card.tone-positive .overview-kpi-value {
+  color: hsl(164 72% 28%);
+}
+
+.overview-kpi-card.tone-negative .overview-kpi-value {
+  color: hsl(4 68% 42%);
+}
+
+.overview-kpi-card.tone-warning .overview-kpi-value {
+  color: hsl(32 82% 36%);
+}
+
+.overview-kpi-card.tone-accent .overview-kpi-value {
+  color: hsl(205 70% 36%);
+}
+
+.overview-kpi-detail {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: hsl(210 10% 42%);
+  font-size: 9px;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.overview-kpi-detail > span {
+  flex-shrink: 0;
+}

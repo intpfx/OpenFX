@@ -1,0 +1,167 @@
+{
+  "steps": [
+    {
+      "title": "欢迎使用 GasMap 企业版功能讲解",
+      "body": "本引导将为您展示 GasMap 企业版的所有强大功能。在引导期间，您将临时体验企业版的完整功能。让我们开始吧！",
+      "selector": null
+    },
+    {
+      "title": "工程管理 - 创建工程",
+      "body": "点击这个绿色圆点按钮可以创建新的工程项目。企业版支持管理多个工程项目。",
+      "selector": "#gm-btn-new-project",
+      "popover": {
+        "side": "right",
+        "align": "center"
+      }
+    },
+    {
+      "title": "工程管理 - 工程列表",
+      "body": "点击工程名称可以打开工程列表，查看和切换不同的工程，还可以重命名或删除工程。",
+      "selector": "#gm-btn-project-name",
+      "popover": {
+        "side": "bottom",
+        "align": "center"
+      }
+    },
+    {
+      "title": "工程管理 - 导入功能",
+      "body": "企业版独有：支持从 JSON 文件导入工程数据，方便团队协作与数据共享。",
+      "selector": "#gm-btn-import-project",
+      "popover": {
+        "side": "left",
+        "align": "center"
+      }
+    },
+    {
+      "title": "工程管理 - 合并功能",
+      "body": "企业版独有：可以将多个工程按接驳点合并为一个，自动对齐坐标并去重，适合大型项目分段设计。",
+      "selector": "#gm-btn-merge-projects",
+      "popover": {
+        "side": "left",
+        "align": "center"
+      }
+    },
+    {
+      "title": "绘制管线 - 画布操作",
+      "body": "在画布上选择起点，使用底部的方向与长度控制来绘制管线。支持缩放、平移等操作。",
+      "selector": "#gm-canvas-area",
+      "popover": {
+        "side": "top",
+        "align": "center"
+      }
+    },
+    {
+      "title": "模式切换 - 模式菜单",
+      "body": "点击这个胶囊按钮可以在不同模式之间切换：绘制、插入、移动、删除、属性等。",
+      "selector": "#gm-mode-capsule",
+      "popover": {
+        "side": "bottom",
+        "align": "center"
+      }
+    },
+    {
+      "title": "历史记录 - 撤销操作",
+      "body": "点击撤销按钮可以回退上一步操作，最多支持30步历史记录。",
+      "selector": "#gm-btn-undo",
+      "popover": {
+        "side": "bottom",
+        "align": "center"
+      }
+    },
+    {
+      "title": "历史记录 - 重做操作",
+      "body": "点击重做按钮可以恢复被撤销的操作。",
+      "selector": "#gm-btn-redo",
+      "popover": {
+        "side": "bottom",
+        "align": "center"
+      }
+    },
+    {
+      "title": "辅助绘图 - 缩放重置",
+      "body": "显示当前缩放比例，点击可以重置到100%。",
+      "selector": "#gm-btn-reset-zoom",
+      "popover": {
+        "side": "bottom",
+        "align": "center"
+      }
+    },
+    {
+      "title": "辅助绘图 - 居中功能",
+      "body": "点击居中按钮快速定位到设计起点或选中元素。",
+      "selector": "#gm-btn-center",
+      "popover": {
+        "side": "bottom",
+        "align": "center"
+      }
+    },
+    {
+      "title": "辅助绘图 - 标注开关",
+      "body": "点击标注按钮开启或关闭管段长度、设备名称等标注信息的显示。",
+      "selector": "#gm-btn-toggle-labels",
+      "popover": {
+        "side": "bottom",
+        "align": "center"
+      }
+    },
+    {
+      "title": "视图模式切换 - 系统图与平面图",
+      "body": "企业版/专业版功能：点击此按钮在系统视图（管线流程图）和平面视图（实际布局图）之间切换。",
+      "selector": "#gm-btn-toggle-viewmode",
+      "popover": {
+        "side": "bottom",
+        "align": "center"
+      }
+    },
+    {
+      "title": "数据统计面板",
+      "body": "点击导出按钮打开统计面板，查看工程的各类统计信息：管线总长、各材质用量、设备数量、配件清单等。",
+      "selector": "#gm-btn-data-panel",
+      "popover": {
+        "side": "left",
+        "align": "center"
+      }
+    },
+    {
+      "title": "数据导出 - 统计表",
+      "body": "打开统计面板后，点击此按钮可以导出工程统计数据为 CSV 格式，方便在 Excel 中处理。",
+      "selector": "#gm-btn-export-statistics",
+      "popover": {
+        "side": "bottom",
+        "align": "center"
+      }
+    },
+    {
+      "title": "数据导出 - 设计文件",
+      "body": "企业版/专业版功能：导出完整的设计文件，包含系统图和平面图的视图快照。",
+      "selector": "#gm-btn-export-design",
+      "popover": {
+        "side": "bottom",
+        "align": "center"
+      }
+    },
+    {
+      "title": "数据导出 - 高清图纸",
+      "body": "导出高分辨率的工程图纸（PNG格式），适合打印、分享和存档。",
+      "selector": "#gm-btn-export-drawing",
+      "popover": {
+        "side": "bottom",
+        "align": "center"
+      }
+    },
+    {
+      "title": "数据导出 - 工程文件",
+      "body": "企业版独有：导出工程为 JSON 文件，可重新导入，方便备份、版本管理和团队协作。",
+      "selector": "#gm-btn-export-project",
+      "popover": {
+        "side": "bottom",
+        "align": "center"
+      }
+    },
+    {
+      "title": "讲解完成",
+      "body": "您已了解 GasMap 企业版的全部功能！引导结束后将恢复您原有的版本。如需升级到企业版，请联系我们获取激活码。",
+      "selector": null
+    }
+  ]
+}

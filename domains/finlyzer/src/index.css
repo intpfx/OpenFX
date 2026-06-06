@@ -1,0 +1,8 @@
+@import "tailwindcss";
+@import "./styles/base.css";
+@import "./styles/app-shell.css";
+@import "./styles/analysis-workbench.css";
+@import "./styles/table.css";
+@import "./styles/import-panel.css";
+@import "./styles/overview-panel.css";
+@import "./styles/category-manager.css";

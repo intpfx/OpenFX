@@ -1,0 +1,20 @@
+[
+  {
+    "id": "gasmap-demo-1",
+    "link": "https://baidu.com",
+    "duration": 5,
+    "weight": 10
+  },
+  {
+    "id": "gasmap-demo-2",
+    "link": "https://bing.com",
+    "duration": 3,
+    "weight": 5
+  },
+  {
+    "id": "gasmap-demo-3",
+    "link": "https://bilibili.com",
+    "duration": 4,
+    "weight": 8
+  }
+]

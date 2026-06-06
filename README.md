@@ -42,6 +42,11 @@ domains/          领域模块（每个子项目一个 domain）
   how-much/       商品比价应用
   proxy/          HTTP 中继业务
   e/              Agent 执行框架
+  gasmap/         燃气工程单线图绘制与统计工具
+  finlyzer/       本地优先账单分析器
+  hlc/            圣灯社区 — Deno PWA 社区 CMS
+  freemac/        Mac 本机仪表盘、IPv6 relay 与受限 agent 控制台
+  costing-assistant/ 工程计价助手 — 云端静态版本
   wanone/         万一 — 你编程生涯的第一个项目（静态纪念站点）
   _shared/        跨 domain 共享工具
     kv.ts             DenoKV 封装（ScopedKv + SSE 实时流）
@@ -100,7 +105,7 @@ deno task --config apps/web/deno.json preview
 ### 构建桌面应用
 
 ```bash
-perry compile apps/desktop/src/main.ts -o dist/openfx-desktop
+perry compile entry/desktop/src/main.ts -o dist/openfx-desktop
 ```
 
 ### 校验
@@ -156,48 +161,95 @@ deno task check
 
 #### 决策
 
-OpenFX 以 TypeScript monorepo 方式启动，采用：
+OpenFX 以 TypeScript monorepo 方式启动：
 
-- **Perry** 作为桌面应用方案
-- **VitePlus + React + Nitro** 作为 Web 应用方案
-- **Apache-2.0** 作为仓库开源协议
+| 层 | 技术 |
+|----|------|
+| 桌面 | Perry（TypeScript → 原生二进制） |
+| Web 前端 | VitePlus + React + 自制 SPA 路由 |
+| Web 服务端 | Nitro（→ Deno Deploy） |
+| 共享逻辑 | Deno TypeScript 纯函数 |
+| 测试 | deno test |
+| CI | GitHub Actions（fmt + lint + guard + test + build） |
 
-#### 背景
+各个 domain 可根据自身需求选择技术——新旧项目并入时暂不强制统一。
 
-仓库需要同时满足以下要求：
+#### 为什么是 Perry
 
-- 使用 TypeScript 保持快速迭代
-- 桌面端可以分发单文件原生二进制，而不是捆绑沉重的浏览器运行时
-- Web 端运行时可兼容 Deno Deploy
-- 编码风格偏向纯函数，方便自动化测试
-
-#### 原因
-
-##### 为什么是 Perry
-
-Perry 直接满足“桌面应用输出为单个原生可执行文件”的核心诉求，同时保持实现语言统一为
+Perry 直接满足"桌面应用输出为单个原生可执行文件"的核心诉求，同时保持实现语言统一为
 TypeScript。
 
-##### 为什么是 VitePlus + React + Nitro
+#### 为什么是 VitePlus + React + Nitro
 
 Web 端需要更直接的前端热更新体验，同时仍然输出到 Deno Deploy。VitePlus + React 负责
 前端开发和构建，Nitro 负责服务端路由与 `deno_deploy` 目标输出，两者组合更贴合当前仓
 库的迭代需求。
 
-##### 为什么放弃旧 Fresh 工作流
+#### 为什么放弃旧 Fresh 工作流
 
 此前的 Fresh 工作流已经成为升级 Vite 与修复本地热更新的阻碍。直接切换到 VitePlus +
 React + Nitro 后，开发、构建和部署链路都更清晰。
 
-##### 为什么是 Apache-2.0 而不是 MIT
+#### 为什么是 Apache-2.0 而不是 MIT
 
 MIT 也可行，但 Apache-2.0 提供了更明确的专利授权，对公开应用型仓库更友好。
+
+## 设计系统
+
+品牌：**FENGXIAO**（冯啸），项目名 **OpenFX**。
+
+### 设计 Token
+
+| Token | 值 | 说明 |
+|-------|-----|------|
+| `--bg` | `oklch(0.985 0.002 250)` | 页面背景 |
+| `--surface` | `oklch(0.97 0.003 250)` | 表面/卡片色 |
+| `--text-primary` | `oklch(0.15 0.002 260)` | 主文字 |
+| `--text-secondary` | `oklch(0.45 0.005 260)` | 副文字 |
+| `--accent` | `oklch(0.55 0.2 250)` | 钴蓝强调色 |
+| `--accent-glow` | `oklch(0.65 0.15 250)` | 强调发光 |
+| `--border` | `oklch(0.88 0.005 260)` | 边框 |
+| `--radius` | `2px` | 圆角 |
+
+### 视觉偏好
+
+- 非对称 grid 布局，单视口零滚动
+- 80px 几何网格背景
+- 手绘感微交互（hover 旋转 + 弹性缓动）
+- 信号噪音 / 打字机动效
+- **禁用**：emoji、Inter/Roboto 字体、紫粉渐变
+
+### 字体策略
+
+- 标题 / brand-word / 按钮：**Space Grotesk**
+- 代码 / tech tags / footer：**Fira Code**
+- 正文字体：system-ui 回退
+
+不依赖 Google Fonts 外部加载（Clash TUN 模式会被阻断）。使用本地 `@font-face` + `src: local() first` 策略，字体文件存放在 `assets/fonts/`。
+
+### 品牌切换动效
+
+`FENGXIAO` ↔ `OpenFX` 切换使用 anime.js `scrambleText` + CSS class 辅助。详见 `.agents/skills/openfx-repo/references/animejs-api-v4.md`。
+
+## 外部项目
+
+OpenFX 在 `intpfx` GitHub org 下有已清理的关联项目：
+
+- **`intpfx/dss`**（已删除）— DenoKV 存储服务原型。SSE 流式推送模式有价值，已提取为 `domains/_shared/kv.ts` 中的 `streamKvEntries()`。
+- **`intpfx/esn`**（已删除）— Edge Storage Node。去中心化文件存储 + WebSocket P2P 中继 + OPFS 浏览器引擎。5 个亮点模式已提取到 `_shared/`（typed-codec、ws-rpc、broadcast-relay、node-registry、opfs-engine）。
+- **`intpfx/GasMap`**（已迁入）— 燃气工程单线图绘制与统计工具。已确认本地与 GitHub `main` 均为 `f810b7960b2702f7e674150bcbc56bd7908a6fe4`，源码以独立 Vite domain 形式保留在 `domains/gasmap/`。
+- **`intpfx/Finlyzer`**（已迁入）— 本地优先账单分析器。已确认本地与 GitHub `main` 均为 `1eff5fcb0b708ae9ca971a426b47c30dd8cb5ef3`，源码以独立 Electron/Vite domain 形式保留在 `domains/finlyzer/`。
+- **`intpfx/hlc`**（已迁入并删除原仓库）— 圣灯社区 PWA/CMS。已确认本地 `HEAD` 与 GitHub `main` 均为 `8d58a5f81af4f28613200e9b3e221a11bc4abb4d`，源码以 legacy Deno domain 形式保留在 `domains/hlc/`；并入时保留本地 `index.js` 的 Deno 2 样式导入改动。
+- **`intpfx/freemac`**（已迁入并删除原仓库）— Mac 本机仪表盘、IPv6 relay 与受限 agent 控制台。已确认本地 `HEAD` 与 GitHub `main` 均为 `812a9f56129573cd28fe347262c6d640912f1cb8`，源码以独立 Bun/VitePlus/Deno Deploy domain 形式保留在 `domains/freemac/`。
+- **`@intpfx/fx`**（JSR 包，已归档）— 全部 5 个版本均已 yank，任何引用需重写。
 
 ## Agent 指南
 
 - 全局仓库规范：[AGENTS.md](AGENTS.md)
-- 项目内 skill：
+- 项目级 skill（含架构、迁移、前端、部署、陷阱）：
   [.agents/skills/openfx-repo/SKILL.md](.agents/skills/openfx-repo/SKILL.md)
+- 参考文档：
+  [.agents/skills/openfx-repo/references/](.agents/skills/openfx-repo/references/)
 
 ## 开源协议
 

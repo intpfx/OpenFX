@@ -7,12 +7,18 @@
 ## 当前状态
 
 `e` 已经从蓝图进入代码层。内核 MVP、DeepSeek reference adapter、端到端 reference
-runtime、“前台交互 / 后台执行分离”的框架协议，以及 `src/core` 下的原生扩展能力均已落地。
+runtime、“前台交互 / 后台执行分离”的框架协议、`src/core` 下的原生扩展能力，以及从
+AStudio 吸收的任务图、WorkOrder、Artifact、Workspace 边界与 runtime-neutral adapter
+模式均已落地。
+
+AStudio 本轮不作为 Rust 产品迁移，也不引入 SQLite、daemon、微信 API 或翻译 Agent
+源码。它的框架价值已经吸收到 `domains/e`；CLI、terminal control console、daemon/social
+binding、translation agent 和微信入口继续只作为产品外壳启发。
 
 可验证入口：
 
 ```bash
-deno task --config packages/e/deno.json test
+deno task --config domains/e/deno.json test
 deno task check
 ```
 
@@ -21,7 +27,7 @@ deno task check
 - **运行时无关优先**：`e` 的核心协议、状态机和 reference runtime 不能绑定 Deno、Node、
   Bun、浏览器或某个托管平台。仓库可以用 Deno
   作为测试与任务入口，但运行时能力必须通过接口注入。
-- **框架先于产品外壳**：`packages/e` 提供协议、状态机和 reference runtime；`e-agent`
+- **框架先于产品外壳**：`domains/e` 提供协议、状态机和 reference runtime；`e-agent`
   等产品只负责 UI、CLI、语音、桌面或 Web 外壳。
 - **前台交互与后台执行分离**：前台负责实时沟通、进度、打断和审批；后台负责模型调用、
   工具执行、文件/资源读取和测试。
@@ -39,10 +45,14 @@ deno task check
 src/
   app/
     e-agent-runtime.ts              # 端到端 reference runtime
+    git-timeline.ts                 # Git 状态 / diff / checkpoint / task branch adapter 契约
+    mcp-gateway.ts                  # MCP tool discovery / invoke adapter 契约与参数边界清洗
+    workspace-toolkit.ts            # workspace read/write/list/command adapter 契约
   core/
     agent-policy.ts                # persona / memory / decision / boundary 策略收口
     agent-loop.ts                   # 单次 turn 主循环
     agent-state.ts                  # persona / memory / observer / heartbeat / cerebellum
+    artifact.ts                     # Artifact 写入、查询与 artifact-first completion summary
     channel.ts                      # 多 Agent 共享频道与发言调度
     deepseek-adapter.ts             # DeepSeek reference provider
     dream-narrative.ts              # 睡眠期记忆叙事草稿
@@ -60,8 +70,10 @@ src/
     social-graph.ts                 # 最小协作关系图
     stream-guard.ts                 # 输出流规则守卫
     subagent-task.ts                # typed 子 Agent 任务
+    task-graph.ts                   # AgentTask 状态机、ready 检测与 WorkOrder 校验
     tool-runner.ts                  # 工具生命周期
     types.ts                        # 公共核心类型
+    workspace-boundary.ts           # 注入式 path resolver 与 workspace boundary request
     workspace-resources.ts          # file/memory/session/artifact 资源读取
     worldview.ts                    # WorldView 候选、合并与冲突标记
   foreground/
@@ -116,15 +128,34 @@ ForegroundSessionController
 `EAgentRuntime.registerSelf()` 可以把当前 runtime 注册为 `AgentCard`，供
 `PeerCommunicationKernel` 的 `peer_list` 能力发现。
 
+`EAgentRuntime` 现在也暴露可选注入项：`taskGraph`、`artifactKernel`、
+`workspaceBoundary`、`workspaceToolAdapter`、`mcpGateway` 和
+`gitTimeline`。这些注入项默认关闭；也不会自动改变 `processNext()`
+的既有工具行为。产品外壳可以按需组合 `createWorkspaceToolkitToolDefinitions()` 或自己的
+adapter 装配层。
+
 ## 关键类型
 
 - `AgentDecision`：`think`、`call_tool`、`request_boundary`、`complete`、
   `ask_orchestrator`。
 - `TurnRecord`：单次 turn
-  的事实来源，包含事件、工具调用、审批、动作、模型路由和最终状态。
+  的事实来源，包含事件、工具调用、审批、动作、模型路由、task/workOrder/artifact、
+  adapter record 和最终状态。
+- `AgentTask` / `TaskStatus` / `TaskPriority`：框架级任务图节点、状态机和优先级。
+- `AgentWorkOrder`：给 agent 的可校验工作单，约束目标、允许路径、必交 artifact、
+  验收标准和验证命令。
+- `Artifact` / `ArtifactKind`：交付事实，支持 discovery、decision、patch summary、
+  verification、boundary plan 等类型。
 - `ModelRoute`：模型角色、供应商、fallback、token budget、latency budget 和 reasoning
   trace。
 - `BoundaryRequest` / `ProposedAction`：副作用审批与预览。
+- `WorkspaceBoundaryDecision`：inside workspace、outside workspace、external import
+  的统一边界判定。
+- `WorkspaceToolAdapter`：workspace read/write/list/run command 的平台注入接口。
+- `McpClientAdapter`：MCP tool discovery / invoke 的平台注入接口。
+- `GitTimelineAdapter`：Git status、diff、checkpoint、task branch 的平台注入接口。
+- `RuntimeAdapterRecord`：workspace tool、MCP gateway、Git timeline 的 replay-friendly
+  adapter 事实。
 - `ProgressEvent`：前台展示后台进度的稳定协议。
 - `AgentCard` / `PeerEnvelope` / `PeerMessage`：平级 Agent 通信协议。
 - `SubagentTask`：父 Agent 派发给子 Agent 的 typed work order。
@@ -157,6 +188,16 @@ ForegroundSessionController
 当前 `WorkspaceResources` 不再默认绑定 `Deno.readTextFile`。产品外壳或测试必须显式注入
 `FileResourceReader`，才能读取 `file://` 资源。
 
+`WorkspaceBoundaryKernel` 也不直接读取文件系统。它只消费注入的 path resolver
+结果，用来判断 inside/outside、symlink escape
+和外部资源导入意图。`workspace-toolkit`、`mcp-gateway`、`git-timeline` 都把外部路径、跨
+workspace 或远端副作用转换为 `BoundaryRequest` / `ProposedAction`，并把 adapter
+成功、失败或 boundary-required 记录成 `RuntimeAdapterRecord`。
+
+`TaskGraphKernel`、`ArtifactKernel` 和 replay export 继续只使用 `KvStore`
+保存事实；completion summary 默认优先使用 `patch_summary` 与 `verification`
+artifact，而不是从产品 UI 或本地文件系统推断状态。
+
 ## 测试覆盖
 
 当前测试覆盖：
@@ -173,6 +214,15 @@ ForegroundSessionController
 - ModelRuntime fallback、DeepSeekProvider、reasoning trace。
 - EventEngine handler 合并和冲突。
 - MessageQueue、SessionManager、ReplayLog。
+- ReplayLog 导出 task、workOrder、artifact、runtime adapter record。
+- TaskGraphKernel 的状态机、依赖 ready 检测和 WorkOrder 校验。
+- ArtifactKernel 的写入、按 task/turn 查询和 artifact-first completion summary。
+- WorkspaceBoundaryKernel 的 inside/outside、symlink escape 和 external import
+  boundary。
+- workspace-toolkit 的安全 read/write/list、外部写入 boundary、command artifact 和
+  adapter 错误。
+- mcp-gateway 的 tool discovery、path 参数清洗、外部 path boundary 和失败降级。
+- git-timeline 的 status、diff、checkpoint、task branch 注入调用、boundary 与失败记录。
 - ObserverAnalytics 的 replay facts 汇总和 memory proposal。
 - PeerCommunicationKernel 的 AgentCard、peer message、inbox、超时与 await。
 - peer_* tools 通过 ToolRunner 调用 PeerCommunicationKernel。

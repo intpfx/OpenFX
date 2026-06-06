@@ -1,0 +1,127 @@
+{
+  "meta": {
+    "badgeColors": {
+      "trial": { "bg": "rgba(251, 191, 36, 0.15)", "text": "#fbbf24" },
+      "full": { "bg": "rgba(34, 197, 94, 0.15)", "text": "#22c55e" },
+      "pro": { "bg": "rgba(79, 43, 245, 0.15)", "text": "#6F85FF" },
+      "enterprise": { "bg": "rgba(99, 102, 241, 0.12)", "text": "#6366f1" }
+    },
+    "featureLabels": {
+      "project.create": "工程管理",
+      "project.rename": "工程管理",
+      "project.delete": "工程管理",
+      "project.import": "工程管理",
+      "project.merge": "工程管理",
+      "edit.insert": "模式切换",
+      "edit.move": "模式切换",
+      "edit.delete": "模式切换",
+      "edit.property": "模式切换",
+      "edit.undo": "历史记录",
+      "edit.redo": "历史记录",
+      "view.zoom": "辅助绘图",
+      "view.center": "辅助绘图",
+      "view.compass": "辅助绘图",
+      "view.annotation": "辅助绘图",
+      "view.viewModeSwitch": "辅助绘图",
+      "export.project": "数据导出",
+      "export.statistics": "数据导出",
+      "export.design": "数据导出",
+      "export.drawing": "数据导出",
+      "data.statistics": "数据统计",
+      "data.panel": "数据统计"
+    }
+    ,
+    "featureDescriptions": {
+      "project.create": "创建新工程并初始化画布与配置，用于开始绘制管道工程。",
+      "project.rename": "重命名现有工程以便更好地识别与管理。",
+      "project.delete": "删除工程及其所有关联数据（请谨慎操作）。",
+      "project.import": "从本地 JSON 文件导入工程数据并恢复场景。",
+      "project.merge": "将多个工程按接驳点合并为一个工程，自动对齐坐标并去重。",
+      "edit.insert": "进入插入模式以添加新的段、设备或管件。",
+      "edit.move": "移动已有元素（设备/接点/管件）以调整布局。",
+      "edit.delete": "删除选中的元素（管段、设备或管件）。",
+      "edit.property": "查看与编辑选中元素的属性与参数。",
+      "edit.undo": "撤销最近的操作以恢复到前一状态。",
+      "edit.redo": "重做被撤销的操作。",
+      "view.zoom": "缩放画布以查看更广或更细的细节。",
+      "view.center": "将画布中心定位到选中或指定的位置。",
+      "view.compass": "显示或隐藏指南针以便快速定位方向。",
+      "view.annotation": "在画布上显示或隐藏注释与标注。",
+      "view.viewModeSwitch": "在系统视图与平面视图之间切换以适配不同绘制需求。",
+      "export.project": "将当前工程导出为可重新导入的 JSON 文件。",
+      "export.statistics": "导出工程统计数据（如长度、配件数量等）为 CSV。",
+      "export.design": "导出工程设计文件（含视图快照/图纸）。",
+      "export.drawing": "导出高分辨率绘图（PNG/图纸）以便打印或分享。",
+      "data.statistics": "打开统计面板查看工程的各类统计信息。",
+      "data.panel": "显示或隐藏数据面板以便查看属性与统计。"
+    }
+  },
+
+  "base": {
+    "features": {
+      "project": {
+        "create": true,
+        "rename": true,
+        "delete": true
+      },
+      "edit": {
+        "insert": true,
+        "move": true,
+        "delete": true,
+        "property": true,
+        "undo": true,
+        "redo": true
+      },
+      "view": {
+        "zoom": true,
+        "center": true,
+        "compass": true,
+        "annotation": true
+      }
+    }
+  },
+
+  "trial": {
+    "name": "体验版",
+    "showAds": true,
+    "features": {
+      "project": { "import": false, "merge": false },
+      "view": { "viewModeSwitch": false },
+      "export": { "project": false, "statistics": false, "design": false, "drawing": true },
+      "data": { "statistics": true, "panel": false }
+    }
+  },
+
+  "full": {
+    "name": "完整版",
+    "showAds": false,
+    "features": {
+      "project": { "import": false, "merge": false },
+      "view": { "viewModeSwitch": false },
+      "export": { "project": false, "statistics": true, "design": false, "drawing": true },
+      "data": { "statistics": true, "panel": true }
+    }
+  },
+
+  "pro": {
+    "name": "专业版",
+    "showAds": false,
+    "features": {
+      "project": { "import": false, "merge": false },
+      "view": { "viewModeSwitch": true },
+      "export": { "project": false, "statistics": true, "design": true, "drawing": true },
+      "data": { "statistics": true, "panel": true }
+    }
+  },
+
+  "enterprise": {
+    "name": "企业版",
+    "showAds": false,
+    "features": {
+      "project": { "import": true, "merge": true },
+      "view": { "viewModeSwitch": true },
+      "export": { "project": true, "statistics": true, "design": true, "drawing": true },
+      "data": { "statistics": true, "panel": true }
+    }
+  }
+}

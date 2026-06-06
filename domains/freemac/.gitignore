@@ -1,0 +1,13 @@
+node_modules
+bun.lock
+.env
+.env.*
+.data
+.DS_Store
+.vite-hooks
+dist
+build
+coverage
+*.log
+*.tsbuildinfo
+deploy/env/freemac.core.env

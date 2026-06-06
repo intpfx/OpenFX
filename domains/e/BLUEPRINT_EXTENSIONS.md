@@ -15,7 +15,12 @@
 - Subagent Task 内核服务。
 - Evolution Proposal、Adversarial Audit、Evolution Sandbox。
 - Minimal Social Graph、Channel、Dream Narrative。
+- TaskGraphKernel、AgentWorkOrder、ArtifactKernel、WorkspaceBoundaryKernel。
+- workspace-toolkit、mcp-gateway、git-timeline reference adapter 契约。
+- Replay bundle 中的 task/workOrder/artifact/runtime adapter record 导出。
 - 运行时无关的 `FileResourceReader`、`KvStore`、`ModelProvider` 等接口边界。
+- AStudio 的框架价值已吸收；不迁 Rust crate、SQLite、daemon 常驻进程、微信 API 或翻译
+  Agent 源码。
 
 ---
 
@@ -65,7 +70,7 @@
 
 ## 3. Product UI / Voice Shell
 
-**位置**：`e-agent` 或其他产品外壳；不进入 `packages/e/src/core`。
+**位置**：`e-agent` 或其他产品外壳；不进入 `domains/e/src/core`。
 
 **目的**：把前台进度、peer 协作、channel 和审批展示给用户。
 
@@ -76,10 +81,18 @@
 - boundary approval / rejection。
 - subagent task 状态。
 
+**AStudio 产品壳启发，只保留蓝图**：
+
+- terminal control console：可作为未来 CLI / desktop shell 的控制台形态参考。
+- daemon / social binding：可作为后台陪伴、社交入口或 notification shell 的启发。
+- translation agent：可作为特定产品能力，不进入 `domains/e` core。
+- 微信入口：只作为外壳入口候选，不引入微信 API 依赖。
+
 **暂不做**：
 
 - 把 UI 状态写进核心事实模型。
 - 在产品层重新实现 AgentLoop。
+- 迁移 AStudio 产品壳源码到 `domains/e`。
 
 ---
 

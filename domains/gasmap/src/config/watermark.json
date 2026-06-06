@@ -1,0 +1,16 @@
+{
+  "wmText": "FENG XIAO",
+  "opacity": 0.5,
+  "bottomLines": [
+    "intpfx@icloud.com",
+    "https://github.com/intpfx"
+  ],
+  "qrBgColor": "#ffffff",
+  "qrBgPad": 6,
+  "qrBgRadius": 8,
+  "pad": 20,
+  "contactGap": 8,
+  "wmFontSize": null,
+  "bottomFontSize": null,
+  "qrPosition": "left"
+}

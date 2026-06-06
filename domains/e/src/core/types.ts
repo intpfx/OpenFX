@@ -176,6 +176,125 @@ export interface QueuedMessage {
   error?: KernelError;
 }
 
+export type TaskStatus =
+  | "proposed"
+  | "ready"
+  | "running"
+  | "waiting_human"
+  | "blocked"
+  | "review"
+  | "done"
+  | "failed"
+  | "cancelled";
+
+export type TaskPriority = "low" | "medium" | "high" | "critical";
+
+export interface AgentTask {
+  id: string;
+  title: string;
+  description: string;
+  status: TaskStatus;
+  priority: TaskPriority;
+  assignedAgentIds: string[];
+  parentTaskId?: string;
+  dependsOnTaskIds: string[];
+  progress: number;
+  projectId?: string;
+  branchName?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type ArtifactKind =
+  | "discovery"
+  | "decision"
+  | "patch_summary"
+  | "verification"
+  | "boundary_plan"
+  | "risk"
+  | "memory_candidate";
+
+export interface Artifact {
+  id: string;
+  taskId: string;
+  turnId?: string;
+  kind: ArtifactKind;
+  path?: string;
+  summary: string;
+  payload?: unknown;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface VerificationCommand {
+  cwd: string;
+  program: string;
+  args: string[];
+  env?: Record<string, string>;
+  timeoutMs?: number;
+}
+
+export interface AgentWorkOrder {
+  id: string;
+  taskId: string;
+  assignedAgentId: string;
+  goal: string;
+  allowedPaths: string[];
+  forbiddenActions: string[];
+  requiredArtifacts: ArtifactKind[];
+  successCriteria: string[];
+  verificationCommands: VerificationCommand[];
+  maxTurns: number;
+  fallbackPlan: string;
+  createdAt: number;
+}
+
+export interface WorkspacePathResolution {
+  inputPath: string;
+  absolutePath: string;
+  relativePath?: string;
+  insideWorkspace: boolean;
+  escapedSymlink?: boolean;
+  workspaceId?: string;
+}
+
+export type WorkspaceBoundaryDecision =
+  | {
+    kind: "inside_workspace";
+    inputPath: string;
+    absolutePath: string;
+    relativePath: string;
+    workspaceId?: string;
+  }
+  | {
+    kind: "outside_workspace";
+    inputPath: string;
+    absolutePath: string;
+    escapedSymlink: boolean;
+    proposedAction: ProposedAction;
+    boundaryRequest: BoundaryRequest;
+  }
+  | {
+    kind: "external_import_required";
+    inputPath: string;
+    absolutePath: string;
+    importTargetUri: string;
+    proposedAction: ProposedAction;
+    boundaryRequest: BoundaryRequest;
+  };
+
+export interface RuntimeAdapterRecord {
+  id: string;
+  kind: "workspace_tool" | "git_timeline" | "mcp_gateway";
+  operation: string;
+  state: "succeeded" | "failed" | "boundary_required";
+  input?: unknown;
+  result?: unknown;
+  boundaryRequestId?: string;
+  error?: KernelError;
+  at: number;
+}
+
 export interface TurnRecord {
   id: string;
   agentId: string;
@@ -193,6 +312,10 @@ export interface TurnRecord {
   proposedActions: ProposedAction[];
   appliedActions: AppliedActionRecord[];
   modelRoutes: ModelRoute[];
+  taskFacts?: AgentTask[];
+  workOrders?: AgentWorkOrder[];
+  artifacts?: Artifact[];
+  adapterRecords?: RuntimeAdapterRecord[];
   finalState: TurnState;
   error?: KernelError;
 }

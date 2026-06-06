@@ -36,11 +36,20 @@
       "domains/_shared/island-notice.ts",
       "domains/_shared/idb-engine.ts",
       "domains/_shared/ffmpeg-pipeline.ts",
-      "domains/_shared/opfs-engine.ts"
+      "domains/_shared/opfs-engine.ts",
+      "domains/costing-assistant/",
+      "domains/finlyzer/",
+      "domains/hlc/",
+      "domains/freemac/"
     ]
   },
   "exclude": [
     "dist",
+    "domains/gasmap",
+    "domains/costing-assistant/",
+    "domains/finlyzer/",
+    "domains/hlc/",
+    "domains/freemac/",
     ".sisyphus"
   ],
   "imports": {

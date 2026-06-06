@@ -11,7 +11,16 @@ const howMuchPublicDir = fileURLToPath(
 const wanonePublicDir = fileURLToPath(
   new URL("../../domains/wanone/public", import.meta.url),
 );
-const nitroDevPort = Number(process.env.OPENFX_NITRO_DEV_PORT ?? "3000");
+const gasmapPublicDir = fileURLToPath(
+  new URL("../../domains/gasmap/public", import.meta.url),
+);
+const finlyzerPublicDir = fileURLToPath(
+  new URL("../../domains/finlyzer/public", import.meta.url),
+);
+const costingAssistantPublicDir = fileURLToPath(
+  new URL("../../domains/costing-assistant/public", import.meta.url),
+);
+const nitroDevPort = Number(process.env.OPENFX_NITRO_DEV_PORT ?? "5500");
 
 export default defineNitroConfig({
   srcDir: fileURLToPath(new URL("./server", import.meta.url)),
@@ -33,6 +42,18 @@ export default defineNitroConfig({
     },
     {
       dir: wanonePublicDir,
+      maxAge: 60 * 60 * 24 * 30,
+    },
+    {
+      dir: gasmapPublicDir,
+      maxAge: 60 * 60 * 24 * 30,
+    },
+    {
+      dir: finlyzerPublicDir,
+      maxAge: 60 * 60 * 24 * 30,
+    },
+    {
+      dir: costingAssistantPublicDir,
       maxAge: 60 * 60 * 24 * 30,
     },
   ],

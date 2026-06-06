@@ -28,24 +28,23 @@ node-registry.ts   # DenoKV 节点注册与状态追踪
 
 以下模块提取自 `Projects/core/`（SGR 框架原型，你编程初期的全栈框架实验）：
 
-| 模块                                     | 来源                                                | 重构说明                                                  |
-| ---------------------------------------- | --------------------------------------------------- | --------------------------------------------------------- |
-| `binary-chunk.ts`                        | `serve.js` → `$decompose`                           | 纯函数，0xFF×4 分隔符扫描                                 |
-| `bytes-codec.ts`                         | `serve.js` → `$encoder/$deliver`                    | 纯函数 TS，支持 20+ 类型的递归序列化                      |
-| `crypto-dice.ts`                         | `serve.js` → `CryptoDice`                           | 纯函数 TS，原 class static method                         |
-| `qrcode.ts`                              | `serve.js` → `$QrcodeEngine`                        | 纯函数 TS，~1640 行，覆盖完整 QR 编码                     |
-| `swt.ts`                                 | `serve.js` → `Account`                              | 纯函数 TS，Web Crypto API，双密钥轮换                     |
-| `opfs-finder.ts`                         | `opfsFinder.js`                                     | TS Web Component + Worker 隔离                            |
-| `idb-engine.ts`                          | `serve.js` → `ProxyServer.atomic`                   | 纯函数 TS，IndexedDB CRUD 完整抽象                        |
-| `island-notice.ts`                       | `island-notice.js`                                  | TS Web Component + 全局管理器                             |
-| `turn-relay.ts`（在 `proxy/server/` 下） | `serve.js` → TURN/STUN                              | TS 纯函数 + Deno 兼容                                     |
-| `wechat-dat.ts`                          | `hiverepo` git 历史 → `decrypt_wechat_datfile.js`   | XOR 解密微信 .dat 文件                                    |
-| `comic-deobfuscate.ts`                   | `hiverepo` git 历史 → `get_comic.js`                | 腾讯动漫混淆数据反混淆+解码                               |
-| `hotlist-crawler.ts`                     | `hiverepo` git 历史 → `craw.js`                     | 多平台热榜聚合爬虫（tophub/微博/知乎）                    |
-| `livp-codec.ts`                          | `pmp` → `mergeLivePhoto` / `parseLivePhoto`         | .livp 二进制格式编解码（Apple Live Photo 容器）           |
-| `ffmpeg-pipeline.ts`                     | `pmp` → `convertVideoToAV1WebM` / `convertMovToMp4` | ffmpeg.wasm 通用转换管线 + WebM/MP4 预设（浏览器端）      |
-| `spatial-index.ts`                       | `toys` → `nn`                                       | Haversine 球面距离 + R-tree 最近邻搜索（纯数学）          |
-| `dedup-files.ts`                         | `toys` → `findRepeatFiles`                          | 运行时无关文件查重 — Worker池 SHA-256 + 可注入 I/O 适配器 |
+| 模块                   | 来源                                                | 重构说明                                                  |
+| ---------------------- | --------------------------------------------------- | --------------------------------------------------------- |
+| `binary-chunk.ts`      | `serve.js` → `$decompose`                           | 纯函数，0xFF×4 分隔符扫描                                 |
+| `bytes-codec.ts`       | `serve.js` → `$encoder/$deliver`                    | 纯函数 TS，支持 20+ 类型的递归序列化                      |
+| `crypto-dice.ts`       | `serve.js` → `CryptoDice`                           | 纯函数 TS，原 class static method                         |
+| `qrcode.ts`            | `serve.js` → `$QrcodeEngine`                        | 纯函数 TS，~1640 行，覆盖完整 QR 编码                     |
+| `swt.ts`               | `serve.js` → `Account`                              | 纯函数 TS，Web Crypto API，双密钥轮换                     |
+| `opfs-finder.ts`       | `opfsFinder.js`                                     | TS Web Component + Worker 隔离                            |
+| `idb-engine.ts`        | `serve.js` → `ProxyServer.atomic`                   | 纯函数 TS，IndexedDB CRUD 完整抽象                        |
+| `island-notice.ts`     | `island-notice.js`                                  | TS Web Component + 全局管理器                             |
+| `wechat-dat.ts`        | `hiverepo` git 历史 → `decrypt_wechat_datfile.js`   | XOR 解密微信 .dat 文件                                    |
+| `comic-deobfuscate.ts` | `hiverepo` git 历史 → `get_comic.js`                | 腾讯动漫混淆数据反混淆+解码                               |
+| `hotlist-crawler.ts`   | `hiverepo` git 历史 → `craw.js`                     | 多平台热榜聚合爬虫（tophub/微博/知乎）                    |
+| `livp-codec.ts`        | `pmp` → `mergeLivePhoto` / `parseLivePhoto`         | .livp 二进制格式编解码（Apple Live Photo 容器）           |
+| `ffmpeg-pipeline.ts`   | `pmp` → `convertVideoToAV1WebM` / `convertMovToMp4` | ffmpeg.wasm 通用转换管线 + WebM/MP4 预设（浏览器端）      |
+| `spatial-index.ts`     | `toys` → `nn`                                       | Haversine 球面距离 + R-tree 最近邻搜索（纯数学）          |
+| `dedup-files.ts`       | `toys` → `findRepeatFiles`                          | 运行时无关文件查重 — Worker池 SHA-256 + 可注入 I/O 适配器 |
 
 ## ScopedKv 模式
 
@@ -77,7 +76,6 @@ await scoped?.set(["home"], { ipv6: "2001:db8::1", port: 3000 });
 # Server-side 模块检查
 deno check domains/_shared/qrcode.ts
 deno check domains/_shared/crypto-dice.ts
-deno check domains/proxy/server/turn-relay.ts
 
 # 完整检查
 deno task check

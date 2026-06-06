@@ -40,7 +40,10 @@ type ActiveDomainPanel =
   | "how-much-this"
   | "relay-proxy-gateway"
   | "wanone-memorial"
-  | "chinagas-wms-qrcode";
+  | "chinagas-wms-qrcode"
+  | "gasmap"
+  | "finlyzer"
+  | "costing-assistant";
 
 type DownipRouteValue = {
   ipv6: string;
@@ -307,7 +310,8 @@ function getProjectCardClick(
   if (
     card.id === "how-much-this" || card.id === "ipv6-sync-suite" ||
     card.id === "relay-proxy-gateway" || card.id === "wanone-memorial" ||
-    card.id === "chinagas-wms-qrcode"
+    card.id === "chinagas-wms-qrcode" || card.id === "gasmap" ||
+    card.id === "finlyzer" || card.id === "costing-assistant"
   ) {
     return () => controls.openPanel(card.id);
   }
@@ -955,6 +959,51 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
               <iframe
                 src="/wanone/index.html"
                 title="万一"
+                style={{ width: "100%", height: "100%", border: "none", flex: 1 }}
+              />
+            </div>
+          )
+          : null}
+        {activePanel === "costing-assistant"
+          ? (
+            <div
+              className="domain-panel"
+              data-panel-id="costing-assistant"
+              style={{ flex: 1, display: "flex", overflow: "hidden" }}
+            >
+              <iframe
+                src="/costing-assistant/index.html"
+                title="工程计价助手"
+                style={{ width: "100%", height: "100%", border: "none", flex: 1 }}
+              />
+            </div>
+          )
+          : null}
+        {activePanel === "gasmap"
+          ? (
+            <div
+              className="domain-panel"
+              data-panel-id="gasmap"
+              style={{ flex: 1, display: "flex", overflow: "hidden" }}
+            >
+              <iframe
+                src="/gasmap/index.html"
+                title="GasMap"
+                style={{ width: "100%", height: "100%", border: "none", flex: 1 }}
+              />
+            </div>
+          )
+          : null}
+        {activePanel === "finlyzer"
+          ? (
+            <div
+              className="domain-panel"
+              data-panel-id="finlyzer"
+              style={{ flex: 1, display: "flex", overflow: "hidden" }}
+            >
+              <iframe
+                src="/finlyzer/index.html"
+                title="Finlyzer"
                 style={{ width: "100%", height: "100%", border: "none", flex: 1 }}
               />
             </div>

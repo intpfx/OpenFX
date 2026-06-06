@@ -1,0 +1,323 @@
+.app-shell {
+  width: 100vw;
+  height: 100vh;
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(320px, 3fr);
+  grid-template-rows: minmax(0, 50vh) minmax(0, 1fr);
+  grid-template-areas:
+    "top top"
+    "bottom side";
+}
+
+.guide-dialog-content {
+  max-width: 760px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.guide-dialog-shell {
+  display: flex;
+  flex-direction: column;
+  max-height: min(780px, calc(100vh - 40px));
+}
+
+.guide-dialog-header {
+  margin: 0;
+  padding: 0;
+}
+
+.guide-dialog-header-band {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 24px 24px 18px;
+  border-bottom: 1px solid hsl(var(--border));
+  background:
+    linear-gradient(180deg, hsl(38 88% 97%) 0%, hsl(var(--card)) 88%),
+    hsl(var(--card));
+}
+
+.guide-dialog-version {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  min-height: 28px;
+  padding: 0 12px;
+  border: 1px solid hsl(38 64% 74%);
+  border-radius: 999px;
+  background: hsl(38 100% 96% / 0.92);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: hsl(28 60% 30%);
+}
+
+.guide-dialog-title {
+  font-size: 24px;
+  font-family: var(--font-display);
+  line-height: 1.1;
+}
+
+.guide-dialog-description {
+  max-width: 620px;
+  line-height: 1.7;
+}
+
+.guide-dialog-sections {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.guide-dialog-section {
+  display: flex;
+  flex-direction: column;
+  padding: 20px 24px;
+  border-bottom: 1px solid hsl(var(--border));
+  background: hsl(var(--card));
+}
+
+.guide-dialog-section-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.guide-dialog-section-head span {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: hsl(174 52% 32%);
+}
+
+.guide-dialog-section-head strong {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: hsl(var(--foreground));
+}
+
+.guide-dialog-section-body {
+  display: grid;
+  gap: 10px;
+}
+
+.guide-dialog-section-body p {
+  margin: 0;
+  padding-left: 14px;
+  position: relative;
+  font-size: 13px;
+  line-height: 1.7;
+  color: hsl(var(--muted-foreground));
+}
+
+.guide-dialog-section-body p::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.75em;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: hsl(174 55% 38%);
+  transform: translateY(-50%);
+}
+
+.guide-dialog-tipbar {
+  display: grid;
+  gap: 8px;
+  padding: 18px 24px;
+  border-bottom: 1px solid hsl(var(--border));
+  background: linear-gradient(180deg, hsl(174 34% 97%), hsl(var(--card)) 92%);
+}
+
+.guide-dialog-tipbar strong {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: hsl(174 52% 28%);
+}
+
+.guide-dialog-tipbar p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: hsl(var(--muted-foreground));
+}
+
+.guide-dialog-footer {
+  margin: 0;
+  padding: 16px 24px 24px;
+  border-top: 0;
+  background: hsl(var(--card));
+}
+
+.top-panel,
+.bottom-main-panel,
+.side-panel {
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.top-panel {
+  grid-area: top;
+  min-height: 0;
+}
+
+.bottom-main-panel {
+  grid-area: bottom;
+  border-right: 1px solid hsl(var(--border));
+}
+
+.side-panel {
+  grid-area: side;
+}
+
+.side-panel-switcher {
+  display: inline-flex;
+  gap: 6px;
+  padding: 10px 10px 0;
+  border-bottom: 1px solid hsl(var(--border));
+  background: hsl(var(--card));
+}
+
+.side-panel-switcher button {
+  border: 0;
+  background: transparent;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 8px 2px 10px;
+  margin-right: 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+
+.side-panel-switcher button:hover {
+  color: hsl(var(--foreground));
+}
+
+.side-panel-switcher button.active {
+  color: hsl(174 80% 24%);
+  border-color: hsl(174 58% 38%);
+}
+
+.panel-card,
+.chart-card,
+.manager-card {
+  background: hsl(var(--card));
+  padding: 14px;
+  border-bottom: 1px solid hsl(var(--border));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.panel-card {
+  flex: 1.4;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.panel-card-table {
+  padding: 0;
+  gap: 0;
+}
+
+.panel-card-import-compact {
+  gap: 8px;
+}
+
+.chart-card {
+  flex: 0.8;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.chart-card-treemap {
+  padding: 0;
+  gap: 0;
+}
+
+.treemap-canvas {
+  flex: 1;
+  min-height: 0;
+}
+
+.treemap-empty-state {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.manager-card {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.manager-card {
+  gap: 8px;
+  padding: 10px;
+}
+
+.manager-card-tree {
+  padding: 8px 10px 10px;
+  overflow-y: auto;
+}
+
+.side-panel .panel-card {
+  flex: 0 0 auto;
+}
+
+.side-panel .manager-card {
+  flex: 1;
+}
+
+.card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.card-head-import {
+  align-items: flex-start;
+}
+
+.card-head-import h4 {
+  flex-shrink: 0;
+}
+
+.card-head h4 {
+  margin: 0;
+  font-size: 13px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: hsl(var(--foreground));
+}
+
+.card-head span {
+  color: hsl(var(--muted-foreground));
+  font-size: 11px;
+}
+
+@media (max-width: 900px) {
+  .guide-dialog-sections {
+    grid-template-columns: 1fr;
+  }
+}

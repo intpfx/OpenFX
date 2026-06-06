@@ -12,6 +12,11 @@ deno task --config apps/web/deno.json build
 deno task --config apps/web/deno.json preview
 ```
 
+## 本地端口
+
+- 前端 Vite：`http://localhost:5501`
+- Nitro 服务：`http://localhost:5500`
+
 ## 部署目标
 
 默认部署目标是 Deno Deploy，由 Nitro 输出服务端入口并由 VitePlus 构建 SPA 客户端。

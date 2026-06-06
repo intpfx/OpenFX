@@ -10,6 +10,7 @@ coverage/
 dist/
 tmp/
 node_modules/
+.pnpm-store/
 apps/web/_fresh/
 apps/web/.client-dist/
 apps/web/.nitro/

@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "composite": true,
+    "paths": {
+      "@freemac/shared": ["../../packages/shared/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*", "vite.config.ts", "../../packages/shared/src/**/*"]
+}

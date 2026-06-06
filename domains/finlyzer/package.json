@@ -1,0 +1,120 @@
+{
+  "name": "finlyzer",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Local-first bill analyzer for Alipay and WeChat exports.",
+  "author": {
+    "name": "Siaovon"
+  },
+  "main": "electron/main.cjs",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k \"pnpm:dev:renderer\" \"pnpm:dev:electron\"",
+    "dev:debug": "concurrently -k \"pnpm:dev:renderer\" \"pnpm:dev:electron:debug\"",
+    "dev:renderer": "vite --host 127.0.0.1 --port 5502 --strictPort",
+    "dev:electron": "wait-on tcp:127.0.0.1:5502 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5502 electron .",
+    "dev:electron:debug": "wait-on tcp:127.0.0.1:5502 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5502 ELECTRON_REMOTE_DEBUGGING_PORT=9222 electron .",
+    "build": "pnpm build:renderer",
+    "build:renderer": "tsc -b && vite build",
+    "build:icons": "node scripts/generate-icons.mjs",
+    "lint": "eslint .",
+    "preview": "vite preview --host 127.0.0.1 --port 4173",
+    "start": "electron .",
+    "dist": "pnpm dist:win",
+    "dist:prepare": "node scripts/reset-release.mjs && pnpm build:icons && pnpm build",
+    "dist:cleanup": "node scripts/cleanup-release.mjs",
+    "dist:win": "pnpm dist:prepare && electron-builder --win portable --x64 && pnpm dist:cleanup",
+    "dist:win:mirror": "pnpm dist:prepare && ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ electron-builder --win portable --x64 && pnpm dist:cleanup"
+  },
+  "dependencies": {
+    "@radix-ui/react-checkbox": "^1.3.3",
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-popover": "^1.1.15",
+    "@radix-ui/react-scroll-area": "^1.2.10",
+    "@radix-ui/react-select": "^2.2.6",
+    "@radix-ui/react-slot": "^1.2.4",
+    "@tailwindcss/vite": "^4.2.1",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "cmdk": "^1.1.1",
+    "dexie": "^4.3.0",
+    "echarts": "^6.0.0",
+    "echarts-for-react": "^3.0.6",
+    "framer-motion": "^12.34.5",
+    "lucide-react": "^0.577.0",
+    "papaparse": "^5.5.3",
+    "react": "^19.2.0",
+    "react-day-picker": "^9.14.0",
+    "react-dom": "^19.2.0",
+    "tailwind-merge": "^3.5.0",
+    "tailwindcss": "^4.2.1",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@types/node": "^24.10.1",
+    "@types/papaparse": "^5.5.2",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.1",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "electron": "^40.8.0",
+    "electron-builder": "^26.8.1",
+    "eslint": "^9.39.1",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.4.24",
+    "globals": "^16.5.0",
+    "png-to-ico": "^3.0.1",
+    "sharp": "^0.34.5",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.48.0",
+    "vite": "^8.0.0-beta.13",
+    "wait-on": "^9.0.4"
+  },
+  "pnpm": {
+    "overrides": {
+      "vite": "^8.0.0-beta.13"
+    },
+    "onlyBuiltDependencies": [
+      "electron",
+      "electron-winstaller"
+    ]
+  },
+  "build": {
+    "appId": "com.finlyzer.desktop",
+    "productName": "Finlyzer",
+    "copyright": "Copyright © 2026 Siaovon",
+    "asar": true,
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.finance",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "artifactName": "Finlyzer-${version}-windows-portable.${ext}",
+      "legalTrademarks": "Finlyzer",
+      "target": [
+        "portable"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "tar.gz"
+      ]
+    }
+  }
+}

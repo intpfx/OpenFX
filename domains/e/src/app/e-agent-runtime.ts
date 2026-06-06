@@ -1,4 +1,5 @@
 import { AgentStateKernel } from "../core/agent-state.ts";
+import type { ArtifactKernel } from "../core/artifact.ts";
 import { EventEngine } from "../core/event-engine.ts";
 import { EvolutionKernel } from "../core/evolution.ts";
 import { MessageQueue } from "../core/message-queue.ts";
@@ -7,6 +8,7 @@ import { PeerCommunicationKernel } from "../core/peer-communication.ts";
 import { runAgentTurn, type RunAgentTurnResult } from "../core/agent-loop.ts";
 import { SessionManager } from "../core/session-manager.ts";
 import { SubagentTaskKernel } from "../core/subagent-task.ts";
+import type { TaskGraphKernel } from "../core/task-graph.ts";
 import type { ToolDefinition } from "../core/tool-runner.ts";
 import type {
   AgentCard,
@@ -14,8 +16,12 @@ import type {
   ToolExecutionRecord,
   WorkspaceResource,
 } from "../core/types.ts";
+import type { WorkspaceBoundaryKernel } from "../core/workspace-boundary.ts";
 import { WorkspaceResources } from "../core/workspace-resources.ts";
 import type { KvStore } from "../interfaces/kv-store.ts";
+import type { GitTimelineAdapter } from "./git-timeline.ts";
+import type { McpClientAdapter } from "./mcp-gateway.ts";
+import type { WorkspaceToolAdapter } from "./workspace-toolkit.ts";
 
 export interface EAgentRuntimeOptions {
   agentId: string;
@@ -24,6 +30,12 @@ export interface EAgentRuntimeOptions {
   model: ModelRuntime;
   workspaceResources: WorkspaceResources;
   tools?: ToolDefinition[];
+  taskGraph?: TaskGraphKernel;
+  artifactKernel?: ArtifactKernel;
+  workspaceBoundary?: WorkspaceBoundaryKernel;
+  workspaceToolAdapter?: WorkspaceToolAdapter;
+  mcpGateway?: McpClientAdapter;
+  gitTimeline?: GitTimelineAdapter;
   eventEngine?: EventEngine;
   agentCard?: Omit<AgentCard, "agentId" | "updatedAt" | "queueDepth">;
   now?: () => number;
@@ -45,6 +57,12 @@ export class EAgentRuntime {
   readonly peers: PeerCommunicationKernel;
   readonly subagents: SubagentTaskKernel;
   readonly evolution: EvolutionKernel;
+  readonly taskGraph?: TaskGraphKernel;
+  readonly artifacts?: ArtifactKernel;
+  readonly workspaceBoundary?: WorkspaceBoundaryKernel;
+  readonly workspaceToolAdapter?: WorkspaceToolAdapter;
+  readonly mcpGateway?: McpClientAdapter;
+  readonly gitTimeline?: GitTimelineAdapter;
   readonly #store: KvStore;
   readonly #model: ModelRuntime;
   readonly #workspaceResources: WorkspaceResources;
@@ -64,6 +82,12 @@ export class EAgentRuntime {
     this.#createId = options.createId ?? crypto.randomUUID;
     this.#eventEngine = options.eventEngine;
     this.#agentCard = options.agentCard;
+    this.taskGraph = options.taskGraph;
+    this.artifacts = options.artifactKernel;
+    this.workspaceBoundary = options.workspaceBoundary;
+    this.workspaceToolAdapter = options.workspaceToolAdapter;
+    this.mcpGateway = options.mcpGateway;
+    this.gitTimeline = options.gitTimeline;
     this.queue = new MessageQueue({
       store: options.store,
       now: this.#now,

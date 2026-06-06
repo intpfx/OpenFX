@@ -1,0 +1,9 @@
+{
+  "valves": [
+    { "type": "copperValve", "label": "铜球阀" },
+    { "type": "flangeValve", "label": "法兰球阀" },
+    { "type": "explosionProofValve", "label": "防爆电磁球阀" }
+  ],
+  "regulatorTypes": ["RX25", "RX50", "RX80", "RX100", "RX150"],
+  "meterTypes": ["G2.5", "G4", "G6", "G10", "G16", "G25"]
+}

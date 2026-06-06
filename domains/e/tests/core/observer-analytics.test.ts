@@ -47,6 +47,10 @@ function emptyBundle(): ReplayBundle {
     socialRelations: [],
     channelMessages: [],
     dreamNarratives: [],
+    agentTasks: [],
+    workOrders: [],
+    artifacts: [],
+    adapterRecords: [],
   };
 }
 

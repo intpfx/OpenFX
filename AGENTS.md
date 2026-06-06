@@ -18,11 +18,12 @@ Follow the development principles in [README.md §开发原则](README.md).
 ## Preferred Workflow
 
 1. Read `README.md` before making structural changes.
-2. Read `.agents/skills/openfx-repo/SKILL.md` before making stack-level or
-   agent-behavior changes.
+2. Load `.agents/skills/openfx-repo/SKILL.md` — the single project-level skill
+   covering repo architecture, migration workflow, frontend patterns, deployment,
+   and known pitfalls.
 3. Update docs together with behavior changes.
-4. Add or update tests when modifying `domains/downip`, `domains/proxy`, `domains/e`,
-   `domains/dss`, or `domains/esn`.
+4. Add or update tests when modifying `domains/downip`, `domains/proxy`,
+   `domains/e`, `domains/how-much`, or `domains/_shared/tests`.
 
 ## Stack Boundaries
 

@@ -1,0 +1,28 @@
+{
+  "name": "freemac",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --filter @freemac/core dev & bun run --filter @freemac/web dev & wait",
+    "dev:core": "bun run --filter @freemac/core dev",
+    "dev:web": "bun run --filter @freemac/web dev",
+    "build": "bun run --filter @freemac/shared build && bun run --filter @freemac/core build && bun run --filter @freemac/web build",
+    "check": "bun run --filter @freemac/shared check && bun run --filter @freemac/core check && bun run --filter @freemac/web check",
+    "start:core": "bun apps/core/src/index.ts",
+    "prepare": "vp config"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "typescript": "^5.8.2",
+    "vite-plus": "catalog:"
+  },
+  "peerDependencies": {
+    "bun": ">=1.2.0"
+  },
+  "packageManager": "pnpm@10.32.1"
+}

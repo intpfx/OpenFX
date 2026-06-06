@@ -24,6 +24,30 @@
           "description": "Tampermonkey 用户脚本，自动提取物料信息生成可拖拽悬浮二维码。已通过 Greasy Fork 分发。",
           "tech": ["Tampermonkey", "QR Code", "WMS"],
           "sourcePath": "greasyfork.org/zh-CN/scripts/550879 · domains/chinagas-wms-qrcode/"
+        },
+        {
+          "id": "gasmap",
+          "type": "project",
+          "name": "GasMap",
+          "description": "燃气工程单线图绘制与统计工具，支持管线布置、设备插入、工程持久化和统计导出。",
+          "tech": ["React", "Vite", "Canvas", "Deno KV"],
+          "sourcePath": "domains/gasmap/"
+        },
+        {
+          "id": "finlyzer",
+          "type": "project",
+          "name": "Finlyzer",
+          "description": "本地优先账单分析器，整理支付宝、微信和银行账单，完成分类、镜像关系、承诺结转和图表分析。",
+          "tech": ["Electron", "React", "Dexie", "ECharts"],
+          "sourcePath": "domains/finlyzer/"
+        },
+        {
+          "id": "costing-assistant",
+          "type": "project",
+          "name": "工程计价助手",
+          "description": "导入字典与竣工量 Excel，在浏览器本地完成匹配、计价、OCR 辅助导入和结果导出。",
+          "tech": ["React", "Ant Design", "Excel", "OCR"],
+          "sourcePath": "domains/costing-assistant/"
         }
       ]
     },

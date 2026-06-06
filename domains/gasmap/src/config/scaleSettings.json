@@ -1,0 +1,15 @@
+{
+  "_comment": "Scale and visual configuration for mapping real-world meters <-> pixels.\n  This file is JSON (no native comments), so explanatory text is kept under keys starting with _comment.\n  Edit the numeric values below to change defaults used across the app.\n  - pxPerMeterBase: pixels per meter at viewScale=1 (independent of CanvasView visual base).\n  - visualBase: CanvasView base visual multiplier (kept here for consistency but CanvasView may have its own constant).\n  - minSegmentPx/maxSegmentPx: pixel clamp bounds for a segment.\n  - minValvePxBase: minimum pixel width considered for valve/device placement (used when deciding min clamp).\n  - defaultUnitsPerMeter: optional default world-units-per-meter for calibration fallback (usually set per project).",
+  "pxPerMeterBase": 144,
+  "_comment_pxPerMeterBase": "每米对应的像素数（在 viewScale=1 时生效）。例如 144 表示 1 米 ≈ 144 像素。可通过修改此值调整整体比例。",
+  "visualBase": 5,
+  "_comment_visualBase": "CanvasView 的基础视觉系数（与视图缩放相乘）。通常 CanvasView 内部也有常量，这里用于统一默认值。",
+  "minSegmentPx": 72,
+  "_comment_minSegmentPx": "管段在屏幕上的最小像素长度（可读性下限）。如果计算结果小于此值，会被截断到此最小值。",
+  "maxSegmentPx": 1728,
+  "_comment_maxSegmentPx": "管段在屏幕上的最大像素长度（版式美观上限）。如果计算结果大于此值，会被截断到此上限。",
+  "minValvePxBase": 24,
+  "_comment_minValvePxBase": "用于决定阀门/设备沿线占位的最小像素宽度（100% 缩放基准）。在计算最小像素长度时会与 minSegmentPx 比较取最大值。",
+  "defaultUnitsPerMeter": 1,
+  "_comment_defaultUnitsPerMeter": "当工程未提供校准 (unitsPerMeter) 时使用的默认世界单位/米值。通常项目会通过标尺校准覆盖此值。"
+}

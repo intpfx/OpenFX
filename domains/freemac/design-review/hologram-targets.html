@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Freemac Hologram Concepts</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #03050a;
+      --panel: #081019;
+      --stroke: rgba(255, 255, 255, .08);
+      --text: #f4e6c7;
+      --muted: #97a2b5;
+      --gold: #ffcb7a;
+      --amber: #ff9d42;
+      --copper: #c58047;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "SF Pro Display", "Inter", system-ui, sans-serif;
+      background:
+        radial-gradient(circle at 50% 10%, rgba(255, 163, 64, .05), transparent 18%),
+        linear-gradient(180deg, #02040a, #06080d 42%, #03050a 100%);
+      color: var(--text);
+      padding: 28px;
+    }
+
+    .page {
+      max-width: 1560px;
+      margin: 0 auto;
+      display: grid;
+      gap: 18px;
+    }
+
+    .header {
+      display: grid;
+      gap: 8px;
+    }
+
+    .title {
+      font-size: 34px;
+      letter-spacing: -.04em;
+      font-weight: 720;
+    }
+
+    .sub {
+      color: var(--muted);
+      line-height: 1.6;
+      max-width: 980px;
+      font-size: 14px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .card {
+      border-radius: 28px;
+      overflow: hidden;
+      background: linear-gradient(180deg, rgba(255, 255, 255, .02), rgba(255, 255, 255, .008));
+      border: 1px solid var(--stroke);
+      box-shadow: 0 28px 70px rgba(0, 0, 0, .45), inset 0 1px 0 rgba(255, 255, 255, .03);
+    }
+
+    .art {
+      position: relative;
+      aspect-ratio: 1.22;
+      background:
+        radial-gradient(circle at 50% 45%, rgba(255, 180, 82, .035), transparent 18%),
+        radial-gradient(circle at 50% 75%, rgba(255, 118, 26, .02), transparent 26%),
+        #03050a;
+    }
+
+    .meta {
+      padding: 18px 20px 22px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .eyebrow {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .24em;
+      color: rgba(255, 210, 145, .72);
+    }
+
+    .name {
+      font-size: 20px;
+      font-weight: 680;
+      letter-spacing: -.02em;
+    }
+
+    .copy {
+      font-size: 13px;
+      line-height: 1.55;
+      color: var(--muted);
+      min-height: 60px;
+    }
+
+    .tags {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .tag {
+      border-radius: 999px;
+      border: 1px solid rgba(255, 195, 110, .18);
+      background: rgba(255, 168, 72, .06);
+      color: rgba(255, 224, 174, .85);
+      font-size: 11px;
+      padding: 7px 10px;
+    }
+
+    .diagnosis {
+      padding: 14px 16px;
+      border-radius: 18px;
+      border: 1px solid rgba(133, 216, 255, .12);
+      background: rgba(9, 14, 22, .82);
+      color: #c7d4e8;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .diagnosis code {
+      font-family: ui-monospace, monospace;
+    }
+
+    svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    @media (max-width: 1280px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="page">
+    <div class="header">
+      <div class="title">Freemac 目标态高保真方向图</div>
+      <div class="sub">这不是实现截图，而是“先定目标”的视觉稿。三版都围绕同一语义模型：核心螺旋、断裂经线、断裂纬线、径向连接、环境数据云。区别只在于结构清晰度、气场强弱和技术感权重。</div>
+    </div>
+    <div class="grid">
+      <section class="card">
+        <div class="art"><svg id="orb-a" viewBox="0 0 520 430"></svg></div>
+        <div class="meta">
+          <div class="eyebrow">Recommended</div>
+          <div class="name">A. Balanced Orb</div>
+          <div class="copy">主体最清楚。核亮、壳碎、层次清楚，不会灰，也不会因为外围雾化把主体吃掉。最适合作为 1:1 落地方向。</div>
+          <div class="tags"><span class="tag">层次清晰</span><span class="tag">主体明确</span><span class="tag">断裂壳层</span><span
+              class="tag">推荐确认</span></div>
+        </div>
+      </section>
+      <section class="card">
+        <div class="art"><svg id="orb-b" viewBox="0 0 520 430"></svg></div>
+        <div class="meta">
+          <div class="eyebrow">Cinematic</div>
+          <div class="name">B. Halo Core</div>
+          <div class="copy">更像“会呼吸的智能体”。中心更神性，外围更柔，但结构性略弱，适合追求高级感和情绪氛围。</div>
+          <div class="tags"><span class="tag">更电影化</span><span class="tag">更柔和</span><span class="tag">更贵</span></div>
+        </div>
+      </section>
+      <section class="card">
+        <div class="art"><svg id="orb-c" viewBox="0 0 520 430"></svg></div>
+        <div class="meta">
+          <div class="eyebrow">Technical</div>
+          <div class="name">C. Fractured Shell</div>
+          <div class="copy">更技术、更计算、更不规则。适合强调“系统感”和“计算感”，但不如 A 那么具有第一眼冲击力。</div>
+          <div class="tags"><span class="tag">更技术</span><span class="tag">更不对称</span><span class="tag">更冷静</span></div>
+        </div>
+      </section>
+    </div>
+    <div class="diagnosis"><strong>当前实现的两个核心问题：</strong>一，发灰不是单点问题，而是多层灰雾叠加：<code>FogExp2</code>、post grain、CSS
+      veil、scanlines、额外 vignette、低阈值 bloom 同时抬亮中灰；二，动画突变来自离散量直接进
+      shader，而不是统一缓动：<code>uAgentState</code>、<code>uErrorState</code>、<code>uBrightness</code>、颜色 uniform 以及每帧
+      <code>Math.random()</code> 电量闪烁，都会造成视觉相位跳变。</div>
+  </div>
+  <script>
+    function rng(seed) { return () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296 } }
+    function el(svg, tag, attrs) { const n = document.createElementNS('http://www.w3.org/2000/svg', tag); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); svg.appendChild(n); return n; }
+    function defs(svg) {
+      const d = el(svg, 'defs', {});
+      const f1 = document.createElementNS('http://www.w3.org/2000/svg', 'filter'); f1.setAttribute('id', 'g1'); f1.setAttribute('x', '-40%'); f1.setAttribute('y', '-40%'); f1.setAttribute('width', '180%'); f1.setAttribute('height', '180%');
+      const b1 = document.createElementNS('http://www.w3.org/2000/svg', 'feGaussianBlur'); b1.setAttribute('stdDeviation', '1.6'); f1.appendChild(b1); d.appendChild(f1);
+      const f2 = document.createElementNS('http://www.w3.org/2000/svg', 'filter'); f2.setAttribute('id', 'g2'); f2.setAttribute('x', '-40%'); f2.setAttribute('y', '-40%'); f2.setAttribute('width', '180%'); f2.setAttribute('height', '180%');
+      const b2 = document.createElementNS('http://www.w3.org/2000/svg', 'feGaussianBlur'); b2.setAttribute('stdDeviation', '5'); f2.appendChild(b2); d.appendChild(f2);
+    }
+    function project(x, y, z, cx, cy, scale) { const d = 8.4; const k = scale / (z + d); return { x: cx + x * k, y: cy + y * k, s: k }; }
+    function buildOrb(id, opts) {
+      const svg = document.getElementById(id); defs(svg);
+      const rand = rng(opts.seed); const cx = 260, cy = 206;
+      el(svg, 'rect', { x: '0', y: '0', width: '520', height: '430', fill: '#03050a' });
+      el(svg, 'ellipse', { cx, cy, rx: '132', ry: '132', fill: 'none', stroke: 'rgba(255,220,188,.06)' });
+      el(svg, 'ellipse', { cx, cy, rx: '92', ry: '92', fill: 'none', stroke: 'rgba(255,220,188,.035)' });
+      el(svg, 'circle', { cx, cy, r: '84', fill: 'rgba(255,185,88,.045)', filter: 'url(#g2)' });
+      el(svg, 'circle', { cx, cy, r: '42', fill: 'rgba(255,238,202,.16)', filter: 'url(#g2)' });
+
+      for (let i = 0; i < opts.cloud; i++) {
+        const t = rand() * Math.PI * 2, p = Math.acos(2 * rand() - 1), rr = 2.2 + rand() * 2.0;
+        const pr = project(rr * Math.sin(p) * Math.cos(t), rr * Math.cos(p), rr * Math.sin(p) * Math.sin(t), cx, cy, 112);
+        el(svg, 'circle', { cx: pr.x, cy: pr.y, r: (0.35 + pr.s * 0.75).toFixed(2), fill: '#8a6138', opacity: (0.03 + pr.s * 0.025).toFixed(3) });
+      }
+
+      for (let band = 0; band < opts.bands; band++) {
+        const rr = 2.45 + band * 0.22, segs = 20 + band * 4;
+        for (let i = 0; i < segs; i++) {
+          if (rand() < opts.gap) continue;
+          const a0 = (i / segs) * Math.PI * 2, a1 = a0 + 0.16 + rand() * 0.09, phi = 0.7 + rand() * 1.7;
+          const p0 = project(rr * Math.sin(phi) * Math.cos(a0), rr * Math.cos(phi), rr * Math.sin(phi) * Math.sin(a0), cx, cy, 112);
+          const p1 = project(rr * Math.sin(phi) * Math.cos(a1), rr * Math.cos(phi), rr * Math.sin(phi) * Math.sin(a1), cx, cy, 112);
+          el(svg, 'line', { x1: p0.x, y1: p0.y, x2: p1.x, y2: p1.y, stroke: '#d59e63', 'stroke-opacity': (0.12 + p0.s * 0.08).toFixed(3), 'stroke-width': (0.75 + p0.s * 0.9).toFixed(2), filter: 'url(#g1)' });
+          if (rand() < 0.86) el(svg, 'circle', { cx: p0.x, cy: p0.y, r: (0.6 + p0.s * 0.95).toFixed(2), fill: '#f1bd7f', opacity: (0.12 + p0.s * 0.10).toFixed(3), filter: 'url(#g1)' });
+        }
+      }
+
+      for (let j = 0; j < 9; j++) {
+        const phi = ((j + 2) / 12) * Math.PI, rr = 2.56;
+        for (let i = 0; i < 110; i++) {
+          if (rand() < 0.17) continue;
+          const t = (i / 110) * Math.PI * 2; const pr = project(rr * Math.sin(phi) * Math.cos(t), rr * Math.cos(phi), rr * Math.sin(phi) * Math.sin(t), cx, cy, 112);
+          el(svg, 'circle', { cx: pr.x, cy: pr.y, r: (0.5 + pr.s * 0.78).toFixed(2), fill: '#ddb079', opacity: (0.08 + pr.s * 0.04).toFixed(3) });
+        }
+      }
+
+      for (let m = 0; m < 14; m++) {
+        const theta = (m / 14) * Math.PI * 2;
+        for (let i = 0; i < 72; i++) {
+          if (rand() < 0.22) continue;
+          const phi = (i / 72) * Math.PI, rr = 2.58 + (rand() - .5) * 0.13; const pr = project(rr * Math.sin(phi) * Math.cos(theta), rr * Math.cos(phi), rr * Math.sin(phi) * Math.sin(theta), cx, cy, 112);
+          el(svg, 'circle', { cx: pr.x, cy: pr.y, r: (0.45 + pr.s * 0.7).toFixed(2), fill: '#c78c57', opacity: (0.06 + pr.s * 0.035).toFixed(3) });
+        }
+      }
+
+      for (let i = 0; i < 38; i++) {
+        const a = (i / 38) * Math.PI * 2 + (rand() - .5) * 0.05;
+        const p0 = project(Math.cos(a) * 0.7, (rand() - .5) * 0.12, Math.sin(a) * 0.7, cx, cy, 120);
+        const p1 = project(Math.cos(a) * (2 + rand() * 0.7), (rand() - .5) * 0.25, Math.sin(a) * (2 + rand() * 0.7), cx, cy, 120);
+        el(svg, 'line', { x1: p0.x, y1: p0.y, x2: p1.x, y2: p1.y, stroke: '#ffd7a6', 'stroke-opacity': opts.connOpacity, 'stroke-width': '0.95', filter: 'url(#g1)' });
+      }
+
+      for (let i = 0; i < 1700; i++) {
+        const arms = 5, turns = 7.2, tt = rand() * Math.PI * 2 * turns, arm = Math.floor(rand() * arms), theta = tt + (arm / arms) * Math.PI * 2, radius = 0.16 + (tt / (Math.PI * 2 * turns)) * 0.98 + rand() * 0.07;
+        const pr = project(Math.cos(theta) * radius, Math.sin(theta) * radius * 0.8, (rand() - .5) * 0.12, cx, cy, 136);
+        el(svg, 'circle', { cx: pr.x, cy: pr.y, r: (0.65 + pr.s * 0.95).toFixed(2), fill: '#ffd79a', opacity: (opts.coreAlpha + pr.s * 0.08).toFixed(3), filter: 'url(#g1)' });
+      }
+
+      for (let i = 0; i < 250; i++) {
+        const a = rand() * Math.PI * 2, rr = rand() * 0.34; const pr = project(Math.cos(a) * rr, Math.sin(a) * rr * 0.82, (rand() - .5) * 0.08, cx, cy, 148);
+        el(svg, 'circle', { cx: pr.x, cy: pr.y, r: (1.1 + pr.s * 0.95).toFixed(2), fill: '#fff1d1', opacity: opts.hotAlpha, filter: 'url(#g2)' });
+      }
+    }
+    buildOrb('orb-a', { seed: 11, cloud: 950, bands: 4, gap: 0.34, connOpacity: 0.11, coreAlpha: 0.18, hotAlpha: 0.36 });
+    buildOrb('orb-b', { seed: 42, cloud: 1200, bands: 3, gap: 0.24, connOpacity: 0.08, coreAlpha: 0.22, hotAlpha: 0.44 });
+    buildOrb('orb-c', { seed: 77, cloud: 760, bands: 5, gap: 0.48, connOpacity: 0.08, coreAlpha: 0.15, hotAlpha: 0.30 });
+  </script>
+</body>
+
+</html>

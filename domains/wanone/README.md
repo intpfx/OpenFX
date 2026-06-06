@@ -59,7 +59,7 @@ domains/wanone/public/wanone/
 启动 Web 应用后访问：
 
 ```
-http://localhost:3000/wanone/index.html
+http://localhost:5501/wanone/index.html
 ```
 
 > 不修改 index.html 里的相对路径（`vi/bak.mp4`、`web/welcome.html` 等），

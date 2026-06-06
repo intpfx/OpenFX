@@ -1,0 +1,21 @@
+{
+  "name": "@freemac/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@elysiajs/cors": "^1.4.1",
+    "@freemac/shared": "workspace:*",
+    "elysia": "^1.4.27",
+    "nanoid": "^5.1.5",
+    "openai": "^6.29.0"
+  },
+  "devDependencies": {
+    "bun-types": "latest"
+  }
+}

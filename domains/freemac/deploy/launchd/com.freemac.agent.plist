@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>com.freemac.core</string>
+    <key>ProgramArguments</key>
+    <array>
+      <string>__FREEMAC_ROOT__/deploy/scripts/start-core.sh</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>__FREEMAC_ROOT__</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>__HOME__/Library/Logs/freemac-core.log</string>
+    <key>StandardErrorPath</key>
+    <string>__HOME__/Library/Logs/freemac-core.error.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+      <key>FREEMAC_ROOT</key>
+      <string>__FREEMAC_ROOT__</string>
+      <key>FREEMAC_ENV_FILE</key>
+      <string>__FREEMAC_ROOT__/deploy/env/freemac.core.env</string>
+      <key>BUN_BIN</key>
+      <string>__BUN_BIN__</string>
+      <key>HOME</key>
+      <string>__HOME__</string>
+    </dict>
+  </dict>
+</plist>
+- `~/Library/Logs/freemac-core.error.log`
+- `~/Library/Logs/freemac-caddy.log`
+- `~/Library/Logs/freemac-caddy.error.log`
+
+## Notes
+
+- The current launchd model is user-scoped and appropriate for a personal Mac tool.
+- Because Caddy binds to `80/443`, you may prefer running it through Homebrew services or a system-level launchd job if user-session binding is insufficient in your environment.
+- freemac currently publishes AAAA only, so external clients still need working IPv6 connectivity.
