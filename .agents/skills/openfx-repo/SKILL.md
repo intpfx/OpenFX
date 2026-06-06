@@ -7,7 +7,8 @@ description: OpenFX monorepo 操作知识。覆盖核心技术模式、旧项目
 
 ## 加载时机
 
-在 OpenFX 仓库内工作时始终加载。README.md 和 AGENTS.md 也有人类可读的文档——本 skill 只记录 agent 写代码需要的操作知识：架构模式、路由表、迁移流程、陷阱。
+在 OpenFX 仓库内工作时始终加载。README.md 和 AGENTS.md 也有人类可读的文档——本 skill
+只记录 agent 写代码需要的操作知识：架构模式、路由表、迁移流程、陷阱。
 
 ---
 
@@ -20,8 +21,8 @@ description: OpenFX monorepo 操作知识。覆盖核心技术模式、旧项目
 ```ts
 import { getDomainKv } from "../../_shared/kv.ts";
 
-const scoped = await getDomainKv("how-much");  // scope: ["domains", "how-much"]
-await scoped.set(["key", "subkey"], value);    // 实际: ["domains", "how-much", "key", "subkey"]
+const scoped = await getDomainKv("how-much"); // scope: ["domains", "how-much"]
+await scoped.set(["key", "subkey"], value); // 实际: ["domains", "how-much", "key", "subkey"]
 ```
 
 - `ScopedKv` 自动给所有 key 加 `["domains", <domain>]` 前缀
@@ -47,7 +48,8 @@ export function App() {
 }
 ```
 
-路由优先级：`/admin` → Homepage + admin 面板 / `/downip` → 全页 DownipPage / 其余 → Homepage
+路由优先级：`/admin` → Homepage + admin 面板 / `/downip` → 全页 DownipPage / 其余 →
+Homepage
 
 ### 通用面板系统
 
@@ -55,8 +57,12 @@ export function App() {
 
 ```tsx
 type ActiveDomainPanel =
-  | "admin-console" | "ipv6-sync-suite" | "how-much-this"
-  | "relay-proxy-gateway" | "wanone-memorial" | "chinagas-wms-qrcode"
+  | "admin-console"
+  | "ipv6-sync-suite"
+  | "how-much-this"
+  | "relay-proxy-gateway"
+  | "wanone-memorial"
+  | "chinagas-wms-qrcode"
   | "costing-assistant";
 ```
 
@@ -77,6 +83,7 @@ function openProjectPanel(panel: ActiveDomainPanel) {
 ```
 
 **关键规则**：
+
 - `flushSync` 是必需的（React 异步批处理 → VT 捕获相同 DOM → 无动画）
 - 面板打开时通过 `.panel-active` class 把卡片的 VT name 设为 `none`，避免与面板同名冲突
 - 不支持的浏览器静默降级
@@ -104,41 +111,46 @@ function loadScript(src: string): Promise<void> {
 `entry/web/content/homepage-projects.json` — JSON 定义 layout + 列 + 卡片列表。
 
 类型定义在 `entry/web/homepage-projects.ts`：
-- `HomepageProjectCard`（id, type, variant?, hidden?, name, description, tech[], sourcePath）
+
+- `HomepageProjectCard`（id, type, variant?, hidden?, name, description, tech[],
+  sourcePath）
 - `HomepageColumn`（id, offsetRem?, cards[]）
 - `HomepageProjects`（layout.gridTemplateColumns, columns[]）
 
-**unlock 机制**：`hidden=true` 的卡片需调 `/api/unlock` 后可见。全局开关 `DOMAIN_CONTENT_PUBLIC` 在 `entry/web/domain-access.ts` 设为 `true` 时跳过解锁。
+**unlock 机制**：`hidden=true` 的卡片需调 `/api/unlock` 后可见。全局开关
+`DOMAIN_CONTENT_PUBLIC` 在 `entry/web/domain-access.ts` 设为 `true` 时跳过解锁。
 
 ### Nitro 路由表
 
-| 路由 | 文件 | 说明 |
-|------|------|------|
-| `/` | `index.get.ts` | SPA |
-| `/admin` | `admin.get.ts` | Admin 后台 |
-| `/downip` | `downip.get.ts` | DownIP 全页 |
-| `/[key]` | `[key].ts` | DownIP 重定向 |
-| `/[key]/[...rest]` | `[key]/[...rest].ts` | DownIP 重定向（带 rest path） |
-| `/update` | `update.{get,post,options}.ts` | DownIP 映射更新 |
-| `/api/health` | `api/health.get.ts` | 健康检查 |
-| `/api/unlock` | `api/unlock.post.ts` | Unlock |
-| `/api/proxy` | `api/proxy.ts` | HTTP 中继（短路径） |
-| `/api/proxy/[...path]` | `api/proxy/[...path].ts` | HTTP 中继（长路径） |
-| `/api/admin/kv` | `api/admin/kv.{get,post,delete}.ts` | KV 管理 CRUD |
-| `/api/admin/unlocks` | `api/admin/unlocks.{get,post,delete}.ts` | Unlock 规则 CRUD |
-| `/api/how-much/search` | `api/how-much/search.get.ts` | 比价搜索 |
-| `/api/how-much/suggestions` | `api/how-much/suggestions.get.ts` | 搜索建议 |
-| `/api/how-much/upload` | `api/how-much/upload.post.ts` | 价格上传 |
-| `/api/how-much/location` | `api/how-much/location.post.ts` | 定位 |
-| `/api/how-much/report` | `api/how-much/report.post.ts` | 举报 |
+| 路由                        | 文件                                     | 说明                          |
+| --------------------------- | ---------------------------------------- | ----------------------------- |
+| `/`                         | `index.get.ts`                           | SPA                           |
+| `/admin`                    | `admin.get.ts`                           | Admin 后台                    |
+| `/downip`                   | `downip.get.ts`                          | DownIP 全页                   |
+| `/[key]`                    | `[key].ts`                               | DownIP 重定向                 |
+| `/[key]/[...rest]`          | `[key]/[...rest].ts`                     | DownIP 重定向（带 rest path） |
+| `/update`                   | `update.{get,post,options}.ts`           | DownIP 映射更新               |
+| `/api/health`               | `api/health.get.ts`                      | 健康检查                      |
+| `/api/unlock`               | `api/unlock.post.ts`                     | Unlock                        |
+| `/api/proxy`                | `api/proxy.ts`                           | HTTP 中继（短路径）           |
+| `/api/proxy/[...path]`      | `api/proxy/[...path].ts`                 | HTTP 中继（长路径）           |
+| `/api/admin/kv`             | `api/admin/kv.{get,post,delete}.ts`      | KV 管理 CRUD                  |
+| `/api/admin/unlocks`        | `api/admin/unlocks.{get,post,delete}.ts` | Unlock 规则 CRUD              |
+| `/api/how-much/search`      | `api/how-much/search.get.ts`             | 比价搜索                      |
+| `/api/how-much/suggestions` | `api/how-much/suggestions.get.ts`        | 搜索建议                      |
+| `/api/how-much/upload`      | `api/how-much/upload.post.ts`            | 价格上传                      |
+| `/api/how-much/location`    | `api/how-much/location.post.ts`          | 定位                          |
+| `/api/how-much/report`      | `api/how-much/report.post.ts`            | 举报                          |
 
 ### Vite 已有 alias
 
-`vite.config.ts` 配置了 `@domains`（→ `../../domains`）、`@web`（→ `./src`）、`@`（→ root）。`nitro.config.ts` 只有 `@` alias。Nitro 中跨域 import 仍需裸相对路径——见 §陷阱。
+`vite.config.ts` 配置了 `@domains`（→ `../../domains`）、`@web`（→ `./src`）、`@`（→
+root）。`nitro.config.ts` 只有 `@` alias。Nitro 中跨域 import 仍需裸相对路径——见 §陷阱。
 
 ### 桌面工具
 
-`entry/desktop/tools/desktop-sync-agent.ts` — 桌面端定时 IPv6 上报代理，配合 `domains/downip/server/` 做映射更新。
+`entry/desktop/tools/desktop-sync-agent.ts` — 桌面端定时 IPv6 上报代理，配合
+`domains/downip/server/` 做映射更新。
 
 ---
 
@@ -163,12 +175,12 @@ function loadScript(src: string): Promise<void> {
 
 ### 阶段 3：决策
 
-| 类型 | 处理方式 | 示例 |
-|------|----------|------|
-| 纪念项目（第一个网站等） | 完整保留为 domain，不改造 | wanone |
-| 独立可维护子项目 | `domains/<name>/` 保持完整结构 | downip, how-much |
+| 类型                        | 处理方式                            | 示例                   |
+| --------------------------- | ----------------------------------- | ---------------------- |
+| 纪念项目（第一个网站等）    | 完整保留为 domain，不改造           | wanone                 |
+| 独立可维护子项目            | `domains/<name>/` 保持完整结构      | downip, how-much       |
 | 基础设施代码（纯函数/算法） | 提取到 `domains/_shared/`，删原仓库 | core→9 模块, dss→kv.ts |
-| 无提取价值的废弃项目 | 直接归档或删除 | — |
+| 无提取价值的废弃项目        | 直接归档或删除                      | —                      |
 
 #### 提取到 _shared
 
@@ -178,13 +190,15 @@ export function encrypt(seq: number, msg: Uint8Array<ArrayBuffer>): Uint8Array<A
 ```
 
 约束：
+
 - Deno 2.x strict 模式 `Uint8Array` 需 `Uint8Array<ArrayBuffer>`
 - 避免 `instanceof`，用 duck typing
 - 浏览器端模块标记运行时边界，在 `deno.json` lint exclude 注册
 
 #### 纪念项目处理
 
-完整保留原始文件，不重构、不转技术栈、不改路径。wanone 模式：文件放 `domains/<name>/public/`，Nitro publicAssets 原样服务。
+完整保留原始文件，不重构、不转技术栈、不改路径。wanone 模式：文件放
+`domains/<name>/public/`，Nitro publicAssets 原样服务。
 
 ### 阶段 4：验证
 
@@ -204,21 +218,21 @@ deno task check
 
 ### 已迁移索引
 
-| 来源 | 处理 | 产物 |
-|------|------|------|
-| core/（SGR 框架原型） | _shared | binary-chunk, bytes-codec, crypto-dice, qrcode, swt, opfs-finder, idb-engine, island-notice |
-| hiverepo | _shared | wechat-dat, comic-deobfuscate, hotlist-crawler |
-| pmp | _shared | livp-codec, ffmpeg-pipeline |
-| toys | _shared | spatial-index, dedup-files |
-| dss（Data Storage Station） | _shared | kv.ts（ScopedKv + SSE 流） |
-| esn（Edge Storage Node） | _shared | typed-codec, ws-rpc, ws-client, broadcast-relay, node-registry, opfs-engine |
-| wanone（第一个网站） | domain | 纯静态归档不改动 |
-| GasMap | domain | 燃气工程单线图绘制与统计工具，完整保留独立 Vite 项目结构 |
-| Finlyzer | domain | 本地优先账单分析器，完整保留 Electron/Vite 项目结构并提供 OpenFX 静态入口 |
-| hlc | domain | 圣灯社区 PWA/CMS，完整保留 legacy Deno 单服务结构并标注可提炼模式 |
-| freemac | domain | Mac 本机仪表盘、IPv6 relay 与受限 agent 控制台，完整保留 Bun/VitePlus/Deno Deploy 产品结构 |
-| 工程计价助手 | domain | 完整保留 Vite 项目源码并提供 OpenFX 云端静态版本 |
-| chinagas-wms-qrcode | 待迁移 | Tampermonkey 用户脚本 |
+| 来源                        | 处理    | 产物                                                                                        |
+| --------------------------- | ------- | ------------------------------------------------------------------------------------------- |
+| core/（SGR 框架原型）       | _shared | binary-chunk, bytes-codec, crypto-dice, qrcode, swt, opfs-finder, idb-engine, island-notice |
+| hiverepo                    | _shared | wechat-dat, comic-deobfuscate, hotlist-crawler                                              |
+| pmp                         | _shared | livp-codec, ffmpeg-pipeline                                                                 |
+| toys                        | _shared | spatial-index, dedup-files                                                                  |
+| dss（Data Storage Station） | _shared | kv.ts（ScopedKv + SSE 流）                                                                  |
+| esn（Edge Storage Node）    | _shared | typed-codec, ws-rpc, ws-client, broadcast-relay, node-registry, opfs-engine                 |
+| wanone（第一个网站）        | domain  | 纯静态归档不改动                                                                            |
+| GasMap                      | domain  | 燃气工程单线图绘制与统计工具，完整保留独立 Vite 项目结构                                    |
+| Finlyzer                    | domain  | 本地优先账单分析器，完整保留 Electron/Vite 项目结构并提供 OpenFX 静态入口                   |
+| hlc                         | domain  | 圣灯社区 PWA/CMS，完整保留 legacy Deno 单服务结构并标注可提炼模式                           |
+| freemac                     | domain  | Mac 本机仪表盘、IPv6 relay 与受限 agent 控制台，完整保留 Bun/VitePlus/Deno Deploy 产品结构  |
+| 工程计价助手                | domain  | 完整保留 Vite 项目源码并提供 OpenFX 云端静态版本                                            |
+| chinagas-wms-qrcode         | 待迁移  | Tampermonkey 用户脚本                                                                       |
 
 ### 经验教训
 
@@ -237,22 +251,25 @@ deno task check
 
 `entry/web/` 嵌套深。Vite 已有 `@domains` alias，Nitro 只有 `@`。
 
-| 文件位置 | 到 _shared 的正确路径 |
-|----------|---------------------|
-| `entry/web/src/*` | `../../../domains/_shared/` |
-| `entry/web/server/routes/*` | `../../../../domains/_shared/` |
-| `entry/web/server/routes/[key]/[...rest].ts` | `../../../../../domains/_shared/` |
-| `entry/web/server/routes/api/how-much/*.ts` | `../../../../../../domains/_shared/` |
+| 文件位置                                     | 到 _shared 的正确路径                |
+| -------------------------------------------- | ------------------------------------ |
+| `entry/web/src/*`                            | `../../../domains/_shared/`          |
+| `entry/web/server/routes/*`                  | `../../../../domains/_shared/`       |
+| `entry/web/server/routes/[key]/[...rest].ts` | `../../../../../domains/_shared/`    |
+| `entry/web/server/routes/api/how-much/*.ts`  | `../../../../../../domains/_shared/` |
 
-Nitro dev（Deno）能容忍部分错误路径，Rollup build 严格检查。添加新路由时验证所有 import。
+Nitro dev（Deno）能容忍部分错误路径，Rollup build 严格检查。添加新路由时验证所有
+import。
 
 ### 2. handlers.ts 缺 re-export
 
-Nitro dev 用 Deno 编译能处理缺失的 re-export，Rollup build 会报错。确认 route 文件 import 的来源文件中所有 symbol 确实被 export。
+Nitro dev 用 Deno 编译能处理缺失的 re-export，Rollup build 会报错。确认 route 文件
+import 的来源文件中所有 symbol 确实被 export。
 
 ### 3. KvKeyPart 含 boolean
 
-`Deno.KvKeyPart = string | number | bigint | boolean`。用 `Deno.KvKeyPart[]` 而非自定义子集类型。
+`Deno.KvKeyPart = string | number | bigint | boolean`。用 `Deno.KvKeyPart[]`
+而非自定义子集类型。
 
 ### 4. lockfile 过期
 
@@ -268,7 +285,8 @@ curl -s --noproxy "*" http://localhost:3000/api/health
 
 ### 6. `flushSync` 是 VT 必需
 
-`document.startViewTransition` 回调中用 `setState` 不加 `flushSync` → React 异步批处理 → VT 捕获相同 DOM → 无动画。
+`document.startViewTransition` 回调中用 `setState` 不加 `flushSync` → React 异步批处理 →
+VT 捕获相同 DOM → 无动画。
 
 ### 7. Vite native binding 失败
 
@@ -279,8 +297,10 @@ Vite 起不来时单独用 Nitro dev server：`deno task --config entry/web/deno
 条件渲染移除 DOM 节点会导致 ref 内容丢失。用 CSS `display` 控制显隐：
 
 ```tsx
-<span ref={labelRef} style={{ display: showPanel ? "none" : undefined }} />
-{showPanel && <span>← 返回</span>}
+<span ref={labelRef} style={{ display: showPanel ? "none" : undefined }} />;
+{
+  showPanel && <span>← 返回</span>;
+}
 ```
 
 ### 9. `.gitignore` 残留旧路径
@@ -293,14 +313,14 @@ Vite 起不来时单独用 Nitro dev server：`deno task --config entry/web/deno
 
 `./references/` 下的文件：
 
-| 文件 | 状态 |
-|------|------|
-| `animejs-api-v4.md` | ✅ 仍适用 |
-| `animation-cleanup-race.md` | ✅ 仍适用 |
-| `css-conflict-diagnostics.md` | ✅ 仍适用 |
-| `nitro-import-path-table.md` | ✅ 仍适用 |
-| `sse-streaming-pattern.md` | ✅ 已实现为 `_shared/kv.ts` |
-| `fresh-architecture.md` | ❌ 过时 |
-| `agent-guidance-restructure.md` | ❌ 部分过时 |
-| `project-migration-workflow.md` | ❌ 被本 skill 取代 |
-| `esn-extraction-patterns.md` | ❌ esn 已提取删除 |
+| 文件                            | 状态                        |
+| ------------------------------- | --------------------------- |
+| `animejs-api-v4.md`             | ✅ 仍适用                   |
+| `animation-cleanup-race.md`     | ✅ 仍适用                   |
+| `css-conflict-diagnostics.md`   | ✅ 仍适用                   |
+| `nitro-import-path-table.md`    | ✅ 仍适用                   |
+| `sse-streaming-pattern.md`      | ✅ 已实现为 `_shared/kv.ts` |
+| `fresh-architecture.md`         | ❌ 过时                     |
+| `agent-guidance-restructure.md` | ❌ 部分过时                 |
+| `project-migration-workflow.md` | ❌ 被本 skill 取代          |
+| `esn-extraction-patterns.md`    | ❌ esn 已提取删除           |

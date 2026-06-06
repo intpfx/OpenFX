@@ -5,26 +5,31 @@
 在 browser_eval 中执行（bb-browser 或 DevTools console）：
 
 ```js
-JSON.stringify({
-  htmlBgColor: getComputedStyle(document.documentElement).backgroundColor,
-  bodyBgImage: getComputedStyle(document.body).backgroundImage,
-  bodyBgSize: getComputedStyle(document.body).backgroundSize,
-  htmlFontFamily: getComputedStyle(document.documentElement).fontFamily,
-  htmlColorScheme: getComputedStyle(document.documentElement).colorScheme,
-  styleTagCount: document.querySelectorAll('style').length,
-  styleTags: [...document.querySelectorAll('style')].map(s => ({
-    len: s.textContent.length,
-    hasNonce: s.hasAttribute('nonce'),
-    viteDevId: s.getAttribute('data-vite-dev-id') || '(none)',
-    preview: s.textContent.substring(0, 100)
-  })),
-  interCount: [...document.querySelectorAll('*')].filter(
-    el => getComputedStyle(el).fontFamily.includes('Inter')
-  ).length
-}, null, 2)
+JSON.stringify(
+  {
+    htmlBgColor: getComputedStyle(document.documentElement).backgroundColor,
+    bodyBgImage: getComputedStyle(document.body).backgroundImage,
+    bodyBgSize: getComputedStyle(document.body).backgroundSize,
+    htmlFontFamily: getComputedStyle(document.documentElement).fontFamily,
+    htmlColorScheme: getComputedStyle(document.documentElement).colorScheme,
+    styleTagCount: document.querySelectorAll("style").length,
+    styleTags: [...document.querySelectorAll("style")].map((s) => ({
+      len: s.textContent.length,
+      hasNonce: s.hasAttribute("nonce"),
+      viteDevId: s.getAttribute("data-vite-dev-id") || "(none)",
+      preview: s.textContent.substring(0, 100),
+    })),
+    interCount: [...document.querySelectorAll("*")].filter(
+      (el) => getComputedStyle(el).fontFamily.includes("Inter"),
+    ).length,
+  },
+  null,
+  2,
+);
 ```
 
 预期结果（正确时）：
+
 - `htmlBgColor`: `"oklch(0.985 0.002 250)"`
 - `bodyBgImage`: 包含 `linear-gradient` 网格
 - `bodyBgSize`: `"80px 80px"`（关键：不是 `"auto, auto"`）
@@ -36,18 +41,20 @@ JSON.stringify({
 ## Google Fonts 网络诊断
 
 在 browser_network 结果中搜索：
+
 ```
 fonts.gstatic.com
 ```
 
-**正常状态**：字体请求 status 200，mimeType `font/woff2`
-**阻断状态**：
+**正常状态**：字体请求 status 200，mimeType `font/woff2` **阻断状态**：
+
 ```
 failed: true
 failureReason: "net::ERR_CONNECTION_CLOSED"
 ```
 
-阻断原因：Clash Verge Rev TUN 模式 fake-IP 范围 `198.18.0.1/30` 的规则可能阻断了 `fonts.gstatic.com`。
+阻断原因：Clash Verge Rev TUN 模式 fake-IP 范围 `198.18.0.1/30` 的规则可能阻断了
+`fonts.gstatic.com`。
 
 ### 排查命令（macOS）
 
@@ -78,21 +85,23 @@ kill <多余PID>
 ## `background` shorthand `!important` footgun 速查
 
 问题代码：
+
 ```css
 /* ❌ 错误：shorthand + !important 吃掉 background-size */
 html, body {
-  background: var(--bg) !important;      /* 包含 background-size: initial !important */
-  background-size: 80px 80px;            /* 无效！被上一行 !important 覆盖 */
+  background: var(--bg) !important; /* 包含 background-size: initial !important */
+  background-size: 80px 80px; /* 无效！被上一行 !important 覆盖 */
 }
 ```
 
 正确写法：
+
 ```css
 /* ✅ 正确：只用需要的子属性 + !important */
 html, body {
   background-color: var(--bg) !important;
-  background-image: /* grid */ !important;
-  background-size: 80px 80px;            /* 正常生效 */
+  background-image:  /* grid */ !important;
+  background-size: 80px 80px; /* 正常生效 */
   background-position: -1px -1px;
 }
 ```
