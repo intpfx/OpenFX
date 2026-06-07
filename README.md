@@ -46,6 +46,8 @@ domains/          领域模块（每个子项目一个 domain）
   finlyzer/       本地优先账单分析器
   hlc/            圣灯社区 — Deno PWA 社区 CMS
   freemac/        Mac 本机仪表盘、IPv6 relay 与受限 agent 控制台
+  BewlyScript/    BewlyCat 的移动优先 Userscripts/Tampermonkey 版本
+  LivpExplorer/   基于 ChronoFrame 的自托管照片库与 Live Photo/Motion Photo 管理应用
   costing-assistant/ 工程计价助手 — 云端静态版本
   wanone/         万一 — 你编程生涯的第一个项目（静态纪念站点）
   _shared/        跨 domain 共享工具
@@ -82,7 +84,9 @@ entry/            入口应用
 - [Perry](https://docs.perryts.com/)
 - 如果你希望通过终端发布或管理仓库，还需要安装 [GitHub CLI](https://cli.github.com/)
 
-Web 端依赖现在统一由 Deno 和 `deno.lock` 管理，不再需要单独安装 `pnpm`。
+Web 端依赖现在统一由 Deno 和 `deno.lock` 管理，不再需要单独安装 `pnpm`。 少数迁入型独立
+domain 会保留自己的工具链，例如 `domains/BewlyScript/` 使用 `pnpm` 构建单文件
+Userscripts/Tampermonkey 脚本。
 
 ### 启动 Web 应用
 
@@ -255,6 +259,14 @@ OpenFX 在 `intpfx` GitHub org 下有已清理的关联项目：
   控制台。已确认本地 `HEAD` 与 GitHub `main` 均为
   `812a9f56129573cd28fe347262c6d640912f1cb8`，源码以独立 Bun/VitePlus/Deno Deploy domain
   形式保留在 `domains/freemac/`。
+- **`intpfx/talk`**（已删除）— `vasanthv/hello` 的 WebRTC 群组视频通话 fork。该 fork
+  未并入 OpenFX；上游仍是可参考的轻量 P2P/Socket.IO 信令项目。
+- **`intpfx/chronoframe`**（已删除）— `HoshinoSuzumi/chronoframe` 的 fork。OpenFX
+  改为直接以 `HoshinoSuzumi/chronoframe@v1.0.0-rc.3`
+  (`2463660a0d3b0efc5118d21f3163ac7e6553cc9c`) 为基线引入源码，并在
+  `domains/LivpExplorer/` 下保留为独立 Nuxt/pnpm domain。旧本地 SwiftUI
+  `/Users/siaovon/Documents/Projects/LivpExplorer` 项目的 Apple Photos、`.livp`、Quick
+  Look 等可吸收功能记录在 `domains/LivpExplorer/OPENFX.md`。
 - **`@intpfx/fx`**（JSR 包，已归档）— 全部 5 个版本均已 yank，任何引用需重写。
 
 ## Agent 指南

@@ -218,21 +218,22 @@ deno task check
 
 ### 已迁移索引
 
-| 来源                        | 处理    | 产物                                                                                        |
-| --------------------------- | ------- | ------------------------------------------------------------------------------------------- |
-| core/（SGR 框架原型）       | _shared | binary-chunk, bytes-codec, crypto-dice, qrcode, swt, opfs-finder, idb-engine, island-notice |
-| hiverepo                    | _shared | wechat-dat, comic-deobfuscate, hotlist-crawler                                              |
-| pmp                         | _shared | livp-codec, ffmpeg-pipeline                                                                 |
-| toys                        | _shared | spatial-index, dedup-files                                                                  |
-| dss（Data Storage Station） | _shared | kv.ts（ScopedKv + SSE 流）                                                                  |
-| esn（Edge Storage Node）    | _shared | typed-codec, ws-rpc, ws-client, broadcast-relay, node-registry, opfs-engine                 |
-| wanone（第一个网站）        | domain  | 纯静态归档不改动                                                                            |
-| GasMap                      | domain  | 燃气工程单线图绘制与统计工具，完整保留独立 Vite 项目结构                                    |
-| Finlyzer                    | domain  | 本地优先账单分析器，完整保留 Electron/Vite 项目结构并提供 OpenFX 静态入口                   |
-| hlc                         | domain  | 圣灯社区 PWA/CMS，完整保留 legacy Deno 单服务结构并标注可提炼模式                           |
-| freemac                     | domain  | Mac 本机仪表盘、IPv6 relay 与受限 agent 控制台，完整保留 Bun/VitePlus/Deno Deploy 产品结构  |
-| 工程计价助手                | domain  | 完整保留 Vite 项目源码并提供 OpenFX 云端静态版本                                            |
-| chinagas-wms-qrcode         | 待迁移  | Tampermonkey 用户脚本                                                                       |
+| 来源                        | 处理    | 产物                                                                                                        |
+| --------------------------- | ------- | ----------------------------------------------------------------------------------------------------------- |
+| core/（SGR 框架原型）       | _shared | binary-chunk, bytes-codec, crypto-dice, qrcode, swt, opfs-finder, idb-engine, island-notice                 |
+| hiverepo                    | _shared | wechat-dat, comic-deobfuscate, hotlist-crawler                                                              |
+| pmp                         | _shared | livp-codec, ffmpeg-pipeline                                                                                 |
+| toys                        | _shared | spatial-index, dedup-files                                                                                  |
+| dss（Data Storage Station） | _shared | kv.ts（ScopedKv + SSE 流）                                                                                  |
+| esn（Edge Storage Node）    | _shared | typed-codec, ws-rpc, ws-client, broadcast-relay, node-registry, opfs-engine                                 |
+| wanone（第一个网站）        | domain  | 纯静态归档不改动                                                                                            |
+| GasMap                      | domain  | 燃气工程单线图绘制与统计工具，完整保留独立 Vite 项目结构                                                    |
+| Finlyzer                    | domain  | 本地优先账单分析器，完整保留 Electron/Vite 项目结构并提供 OpenFX 静态入口                                   |
+| hlc                         | domain  | 圣灯社区 PWA/CMS，完整保留 legacy Deno 单服务结构并标注可提炼模式                                           |
+| freemac                     | domain  | Mac 本机仪表盘、IPv6 relay 与受限 agent 控制台，完整保留 Bun/VitePlus/Deno Deploy 产品结构                  |
+| LivpExplorer                | domain  | 基于 ChronoFrame v1.0.0-rc.3 的自托管照片库；旧 SwiftUI LivpExplorer 的 Apple Photos/.livp 思路仅记录到文档 |
+| 工程计价助手                | domain  | 完整保留 Vite 项目源码并提供 OpenFX 云端静态版本                                                            |
+| chinagas-wms-qrcode         | 待迁移  | Tampermonkey 用户脚本                                                                                       |
 
 ### 经验教训
 

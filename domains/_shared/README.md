@@ -46,6 +46,11 @@ node-registry.ts   # DenoKV 节点注册与状态追踪
 | `spatial-index.ts`     | `toys` → `nn`                                       | Haversine 球面距离 + R-tree 最近邻搜索（纯数学）          |
 | `dedup-files.ts`       | `toys` → `findRepeatFiles`                          | 运行时无关文件查重 — Worker池 SHA-256 + 可注入 I/O 适配器 |
 
+注意：旧本地 `LivpExplorer` SwiftUI 原型设想的 `.livp` 是 ZIP
+容器（`live.heic`、`live.mov`、`metadata.json`），与当前 `livp-codec.ts`
+的二进制容器格式不同。后续如在 `domains/LivpExplorer/` 支持 `.livp` 导入/导出，应先确定
+canonical 格式或显式兼容两种格式。
+
 ## ScopedKv 模式
 
 业务 domain 不应直接拼接全局 KV key。调用方通过 `getDomainKv(domain)` 获取 scoped

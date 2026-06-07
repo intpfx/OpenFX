@@ -40,7 +40,9 @@
       "domains/costing-assistant/",
       "domains/finlyzer/",
       "domains/hlc/",
-      "domains/freemac/"
+      "domains/freemac/",
+      "domains/BewlyScript/",
+      "domains/LivpExplorer/"
     ]
   },
   "exclude": [
@@ -50,6 +52,8 @@
     "domains/finlyzer/",
     "domains/hlc/",
     "domains/freemac/",
+    "domains/BewlyScript/",
+    "domains/LivpExplorer/",
     ".sisyphus"
   ],
   "imports": {

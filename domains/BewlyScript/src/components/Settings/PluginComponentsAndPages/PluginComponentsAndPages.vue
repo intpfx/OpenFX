@@ -1,0 +1,86 @@
+<script setup lang="ts">
+import { ref } from 'vue'
+
+import { PluginPage } from '../types'
+
+const activePage = ref<PluginPage>(PluginPage.General)
+
+const pages = [
+  {
+    value: PluginPage.General,
+    titleKey: 'settings.plugin.general',
+    icon: 'i-mingcute:settings-3-line',
+    iconActivated: 'i-mingcute:settings-3-fill',
+    component: defineAsyncComponent(() => import('./General/General.vue')),
+  },
+  {
+    value: PluginPage.VideoCard,
+    titleKey: 'settings.plugin.video_card',
+    icon: 'i-mingcute:video-camera-line',
+    iconActivated: 'i-mingcute:video-camera-fill',
+    component: defineAsyncComponent(() => import('./VideoCard/VideoCard.vue')),
+  },
+  {
+    value: PluginPage.TopBar,
+    titleKey: 'settings.plugin.topbar',
+    icon: 'i-mingcute:layout-top-line',
+    iconActivated: 'i-mingcute:layout-top-fill',
+    component: defineAsyncComponent(() => import('./TopBar/TopBar.vue')),
+  },
+  {
+    value: PluginPage.Dock,
+    titleKey: 'settings.plugin.dock',
+    icon: 'i-mingcute:navigation-line',
+    iconActivated: 'i-mingcute:navigation-fill',
+    component: defineAsyncComponent(() => import('./Dock/Dock.vue')),
+  },
+  {
+    value: PluginPage.Home,
+    titleKey: 'settings.plugin.home',
+    icon: 'i-mingcute:home-5-line',
+    iconActivated: 'i-mingcute:home-5-fill',
+    component: defineAsyncComponent(() => import('./Home/Home.vue')),
+  },
+  {
+    value: PluginPage.VolumeBalance,
+    titleKey: 'settings.plugin.volume_balance',
+    icon: 'i-mingcute:volume-line',
+    iconActivated: 'i-mingcute:volume-fill',
+    component: defineAsyncComponent(() => import('./VolumeBalance/VolumeBalance.vue')),
+  },
+]
+</script>
+
+<template>
+  <div flex="~" ml--8>
+    <!-- Sidebar -->
+    <div w-160px shrink-0>
+      <div w-inherit pos="fixed">
+        <ul flex="~ col gap-1">
+          <li
+            v-for="page in pages"
+            :key="page.value"
+            :style="{ backgroundColor: activePage === page.value ? 'var(--bew-fill-3)' : '' }"
+            cursor-pointer p="y-2 x-4" rounded="$bew-radius" bg="hover:$bew-fill-2"
+            duration-300
+            @click="activePage = page.value"
+          >
+            <div class="flex items-start min-w-0">
+              <div class="mr-2 w-5 h-5 shrink-0 flex items-center justify-center">
+                <div :class="activePage === page.value ? page.iconActivated : page.icon" class="text-lg leading-none" />
+              </div>
+              <span class="flex-1 min-w-0" leading-5 whitespace-normal break-normal>{{ $t(page.titleKey) }}</span>
+            </div>
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Content -->
+    <div class="flex-1" pl-6 pr-4>
+      <Transition name="page-fade">
+        <Component :is="pages.find(page => page.value === activePage)?.component" />
+      </Transition>
+    </div>
+  </div>
+</template>

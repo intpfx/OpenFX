@@ -1,0 +1,164 @@
+<script setup lang="ts">
+import { useBewlyApp } from '~/composables/useAppProvider'
+
+const props = defineProps<{
+  options: readonly OptionType[]
+  modelValue: any
+}>()
+
+const emit = defineEmits(['update:modelValue', 'change'])
+
+interface OptionType {
+  value: any
+  label: string
+}
+
+const { mainAppRef } = useBewlyApp()
+
+const label = ref<string>('')
+const showOptions = ref<boolean>(false)
+const dropdownPosition = ref({ top: 0, left: 0, width: 0 })
+const containerRef = ref<HTMLElement | null>(null)
+
+onUpdated(() => {
+  // fix the issue when the dropdown menu text doesn't update in real-time based on the updated page language
+  if (props.options)
+    label.value = `${props.options.find((item: OptionType) => item.value === props.modelValue)?.label}`
+})
+
+onMounted(() => {
+  if (props.options)
+    label.value = `${props.options.find((item: OptionType) => item.value === props.modelValue)?.label}`
+
+  // 窗口大小变化时重算位置
+  window.addEventListener('resize', calculatePosition)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', calculatePosition)
+})
+
+/** 计算下拉菜单绝对位置 */
+function calculatePosition() {
+  if (!containerRef.value)
+    return
+
+  const rect = containerRef.value.getBoundingClientRect()
+  dropdownPosition.value = {
+    top: rect.bottom + window.scrollY,
+    left: rect.left + window.scrollX,
+    width: rect.width,
+  }
+}
+
+function onClickOption(val: OptionType) {
+  window.removeEventListener('click', () => {})
+  label.value = val.label
+  emit('update:modelValue', val.value)
+  emit('change', val.value)
+  showOptions.value = false
+}
+
+function closeOptions() {
+  showOptions.value = false
+}
+
+/** when you click on it outside, the selection option will be turned off  */
+function onMouseLeave() {
+  window.addEventListener('click', closeOptions)
+}
+
+function onMouseEnter() {
+  window.removeEventListener('click', closeOptions)
+}
+
+// 显示选项时计算位置
+watchEffect(() => {
+  if (showOptions.value) {
+    calculatePosition()
+  }
+}, { flush: 'pre' })
+</script>
+
+<template>
+  <div
+    ref="containerRef"
+    pos="relative"
+    @mouseleave="onMouseLeave"
+    @mouseenter="onMouseEnter"
+  >
+    <div
+      p="x-4 y-2"
+      bg="$bew-fill-1"
+      rounded="$bew-radius"
+      text="center $bew-text-1"
+      cursor="pointer"
+      flex="~"
+      justify="between"
+      items="center" w="full"
+      :ring="showOptions ? '2px $bew-theme-color' : ''" duration-300
+      @click="showOptions = !showOptions"
+    >
+      <div
+        truncate
+        overflow="hidden"
+        m="r-2"
+        v-text="label === 'undefined' ? '' : label"
+      />
+
+      <!-- arrow -->
+      <div
+        border="~ solid t-0 l-0 r-2 b-2"
+        :border-color="showOptions ? '$bew-theme-color' : '$bew-fill-4'"
+        p="3px"
+        m="l-2"
+        display="inline-block"
+        :transform="`~ ${!showOptions ? 'rotate-45 -translate-y-1/4' : 'rotate-225 translate-y-1/4'} `"
+        transition="all duration-300"
+      />
+    </div>
+
+    <Teleport :to="mainAppRef">
+      <Transition name="dropdown">
+        <div
+          v-if="showOptions"
+          :style="{
+            top: `${dropdownPosition.top}px`,
+            left: `${dropdownPosition.left}px`,
+            width: `${dropdownPosition.width}px`,
+            backdropFilter: 'var(--bew-filter-glass-1)',
+          }"
+          pos="absolute" bg="$bew-elevated" shadow="$bew-shadow-2" p="2"
+          m="t-2"
+          rounded="$bew-radius" z="10004" flex="~ col gap-1"
+          w="full" max-h-300px overflow-y-overlay will-change-transform
+        >
+          <div
+            v-for="option in options"
+            :key="option.value"
+            p="x-2 y-2"
+            rounded="$bew-radius"
+            w="full"
+            bg="hover:$bew-fill-2"
+            transition="all duration-300"
+            cursor="pointer"
+            @click="onClickOption(option)"
+          >
+            <span v-text="option.label" />
+          </div>
+        </div>
+      </Transition>
+
+      <!-- 遮罩 外部滚动时关闭下拉菜单 -->
+      <div
+        v-if="showOptions"
+        pos="fixed top-0 left-0" w-full h-full
+        z="10003"
+        @wheel="closeOptions"
+      />
+    </Teleport>
+  </div>
+</template>
+
+<style lang="scss" scoped>
+</style>
