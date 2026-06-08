@@ -41,6 +41,7 @@ type ActiveDomainPanel =
   | "relay-proxy-gateway"
   | "wanone-memorial"
   | "chinagas-wms-qrcode"
+  | "gas-cad-stats"
   | "gasmap"
   | "finlyzer"
   | "costing-assistant";
@@ -310,7 +311,8 @@ function getProjectCardClick(
   if (
     card.id === "how-much-this" || card.id === "ipv6-sync-suite" ||
     card.id === "relay-proxy-gateway" || card.id === "wanone-memorial" ||
-    card.id === "chinagas-wms-qrcode" || card.id === "gasmap" ||
+    card.id === "chinagas-wms-qrcode" || card.id === "gas-cad-stats" ||
+    card.id === "gasmap" ||
     card.id === "finlyzer" || card.id === "costing-assistant"
   ) {
     return () => controls.openPanel(card.id);
@@ -890,46 +892,28 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
         }}
       >
         {/* 卡片网格 — 面板打开时透明不可交互，但保留在 DOM 中维持 grid 布局 */}
-        <div
-          className="project-column"
-          key={HOMEPAGE_PROJECTS.columns[0].id}
-          style={{
-            ...(HOMEPAGE_PROJECTS.columns[0].offsetRem
-              ? { paddingTop: `${HOMEPAGE_PROJECTS.columns[0].offsetRem}rem` }
-              : undefined),
-            opacity: isPanelOpen ? 0 : 1,
-            pointerEvents: isPanelOpen ? "none" : undefined,
-          }}
-        >
-          {HOMEPAGE_PROJECTS.columns[0].cards.map((card) => (
-            <ProjectCard
-              key={card.id}
-              project={card}
-              revealed={isProjectRevealed(card)}
-              onClick={getProjectCardClick(card, { openPanel: openProjectPanel })}
-            />
-          ))}
-        </div>
-        <div
-          className="project-column"
-          key={HOMEPAGE_PROJECTS.columns[1].id}
-          style={{
-            ...(HOMEPAGE_PROJECTS.columns[1].offsetRem
-              ? { paddingTop: `${HOMEPAGE_PROJECTS.columns[1].offsetRem}rem` }
-              : undefined),
-            opacity: isPanelOpen ? 0 : 1,
-            pointerEvents: isPanelOpen ? "none" : undefined,
-          }}
-        >
-          {HOMEPAGE_PROJECTS.columns[1].cards.map((card) => (
-            <ProjectCard
-              key={card.id}
-              project={card}
-              revealed={isProjectRevealed(card)}
-              onClick={getProjectCardClick(card, { openPanel: openProjectPanel })}
-            />
-          ))}
-        </div>
+        {HOMEPAGE_PROJECTS.columns.map((column) => (
+          <div
+            className="project-column"
+            key={column.id}
+            style={{
+              ...(column.offsetRem
+                ? { paddingTop: `${column.offsetRem}rem` }
+                : undefined),
+              opacity: isPanelOpen ? 0 : 1,
+              pointerEvents: isPanelOpen ? "none" : undefined,
+            }}
+          >
+            {column.cards.map((card) => (
+              <ProjectCard
+                key={card.id}
+                project={card}
+                revealed={isProjectRevealed(card)}
+                onClick={getProjectCardClick(card, { openPanel: openProjectPanel })}
+              />
+            ))}
+          </div>
+        ))}
 
         {/* 面板叠加层 */}
         {activePanel === "admin-console"
@@ -1009,42 +993,54 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
             </div>
           )
           : null}
-        {activePanel === "chinagas-wms-qrcode"
+        {activePanel === "gas-cad-stats"
           ? (
             <PanelShell
-              panelId="chinagas-wms-qrcode"
-              eyebrow="用户脚本"
-              title="中燃WMS二维码生成器"
-              lede="Tampermonkey 脚本，在 WMS 物料详情页自动提取信息并生成可拖拽悬浮二维码，供仓储人员手机扫描。"
+              panelId="gas-cad-stats"
+              eyebrow="CAD 工具"
+              title="Gas CAD Stats"
+              lede="AutoLISP 脚本，在 AutoCAD / 兼容 CAD 中读取既有燃气图纸实体颜色、文字和块属性，并导出工程量统计 CSV。"
             >
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "1rem",
-                  alignItems: "flex-start",
-                }}
-              >
-                <a
-                  href="https://greasyfork.org/zh-CN/scripts/550879"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{
-                    display: "inline-block",
-                    padding: "0.75rem 1.5rem",
-                    background: "var(--accent)",
-                    color: "#fff",
-                    borderRadius: "var(--radius)",
-                    textDecoration: "none",
-                    fontWeight: 600,
-                  }}
-                >
-                  前往 Greasy Fork 安装
-                </a>
-                <p style={{ color: "var(--muted)", fontSize: "0.85rem", margin: 0 }}>
-                  脚本已停止更新，功能完整，永久可用。
+              <article className="domain-panel-section">
+                <h2>使用步骤</h2>
+                <ul>
+                  <li>在 CAD 中打开目标 DWG 图纸。</li>
+                  <li>
+                    执行 <code>APPLOAD</code> 加载 <code>gas_pipeline_stats.lsp</code>。
+                  </li>
+                  <li>
+                    执行 <code>GASSTAT</code> 生成统计结果。
+                  </li>
+                </ul>
+              </article>
+              <article className="domain-panel-section gas-cad-download-section">
+                <h2>脚本下载</h2>
+                <p>
+                  下载后在 AutoCAD / 兼容 CAD 中加载使用；浏览器不会直接运行该脚本。
                 </p>
-              </div>
+                <a
+                  className="panel-download-link"
+                  download
+                  href="/gas-cad-stats/gas_pipeline_stats.lsp"
+                >
+                  下载 gas_pipeline_stats.lsp
+                </a>
+              </article>
+              <article className="domain-panel-section">
+                <h2>输出口径</h2>
+                <ul>
+                  <li>
+                    输出文件为 <code>gas_summary_by_pipe_category.csv</code>。
+                  </li>
+                  <li>
+                    CSV 表头为 <code>管径,类型,合计值,备注</code>。
+                  </li>
+                  <li>
+                    支持颜色到管径、<code>CY</code> /{" "}
+                    <code>SZ</code>、立柱、管件数量和规格后缀归位。
+                  </li>
+                </ul>
+              </article>
             </PanelShell>
           )
           : null}

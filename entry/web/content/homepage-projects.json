@@ -1,11 +1,11 @@
 {
   "layout": {
-    "gridTemplateColumns": "1.1fr 0.9fr"
+    "gridTemplateColumns": "repeat(3, minmax(0, 1fr))"
   },
   "columns": [
     {
       "id": "network-ops",
-      "offsetRem": 0.8,
+      "offsetRem": 0.4,
       "cards": [
         {
           "id": "ipv6-sync-suite",
@@ -32,6 +32,20 @@
           "description": "燃气工程单线图绘制与统计工具，支持管线布置、设备插入、工程持久化和统计导出。",
           "tech": ["React", "Vite", "Canvas", "Deno KV"],
           "sourcePath": "domains/gasmap/"
+        }
+      ]
+    },
+    {
+      "id": "gas-tools",
+      "offsetRem": 1.4,
+      "cards": [
+        {
+          "id": "gas-cad-stats",
+          "type": "project",
+          "name": "Gas CAD Stats",
+          "description": "AutoCAD / 兼容 CAD 内运行的燃气图纸工程量提取脚本，按颜色、文字和块属性汇总 CSV。",
+          "tech": ["AutoLISP", "AutoCAD", "CSV"],
+          "sourcePath": "domains/gas-cad-stats/"
         },
         {
           "id": "finlyzer",
@@ -53,7 +67,7 @@
     },
     {
       "id": "relay",
-      "offsetRem": 2.6,
+      "offsetRem": 0.9,
       "cards": [
         {
           "id": "how-much-this",

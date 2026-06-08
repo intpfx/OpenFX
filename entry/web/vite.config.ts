@@ -6,7 +6,7 @@ import { defineConfig } from "vite-plus";
 
 const rootDir = fileURLToPath(new URL("./", import.meta.url));
 const clientDistDir = fileURLToPath(new URL("./.client-dist", import.meta.url));
-const nitroDevPort = Number(process.env.OPENFX_NITRO_DEV_PORT ?? "5500");
+const nitroDevPort = Number(process.env.OPENFX_NITRO_DEV_PORT ?? "3000");
 
 export default defineConfig({
   root: rootDir,
@@ -23,6 +23,7 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       "/api": `http://localhost:${nitroDevPort}`,
+      "/gas-cad-stats": `http://localhost:${nitroDevPort}`,
       "/update": `http://localhost:${nitroDevPort}`,
     },
   },

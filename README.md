@@ -42,6 +42,7 @@ domains/          领域模块（每个子项目一个 domain）
   how-much/       商品比价应用
   proxy/          HTTP 中继业务
   e/              Agent 执行框架
+  gas-cad-stats/  燃气 CAD 图纸工程量提取脚本
   gasmap/         燃气工程单线图绘制与统计工具
   finlyzer/       本地优先账单分析器
   hlc/            圣灯社区 — Deno PWA 社区 CMS
@@ -249,6 +250,10 @@ OpenFX 在 `intpfx` GitHub org 下有已清理的关联项目：
 - **`intpfx/GasMap`**（已迁入）— 燃气工程单线图绘制与统计工具。已确认本地与 GitHub
   `main` 均为 `f810b7960b2702f7e674150bcbc56bd7908a6fe4`，源码以独立 Vite domain
   形式保留在 `domains/gasmap/`。
+- **本地 `gas_pipeline_stats.lsp`**（已迁入）— 燃气 CAD 图纸工程量提取脚本，来源为
+  `/Users/siaovon/Documents/Projects/tempcode/gas_pipeline_stats.lsp`。该工具运行在
+  AutoCAD / 兼容 CAD 中，源码以独立 AutoLISP domain 形式保留在
+  `domains/gas-cad-stats/`，不并入 GasMap 的 Web/PWA 绘图工作流。
 - **`intpfx/Finlyzer`**（已迁入）— 本地优先账单分析器。已确认本地与 GitHub `main` 均为
   `1eff5fcb0b708ae9ca971a426b47c30dd8cb5ef3`，源码以独立 Electron/Vite domain 形式保留在
   `domains/finlyzer/`。

@@ -1604,6 +1604,30 @@ textarea {
   font-size: 0.72rem;
 }
 
+.gas-cad-download-section {
+  background: oklch(0.985 0.004 250);
+}
+
+.panel-download-link {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  margin-top: auto;
+  background: var(--accent);
+  color: white;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0.72rem 1rem;
+  text-decoration: none;
+}
+
+.panel-download-link:hover {
+  filter: brightness(1.05);
+}
+
 .downip-live-section {
   grid-column: span 2;
 }

@@ -7,15 +7,15 @@ Web 端依赖统一由 Deno 和仓库根目录的 `deno.lock` 管理，不再依
 ## 常用命令
 
 ```bash
-deno task --config apps/web/deno.json dev
-deno task --config apps/web/deno.json build
-deno task --config apps/web/deno.json preview
+deno task --config entry/web/deno.json dev
+deno task --config entry/web/deno.json build
+deno task --config entry/web/deno.json preview
 ```
 
 ## 本地端口
 
 - 前端 Vite：`http://localhost:5501`
-- Nitro 服务：`http://localhost:5500`
+- Nitro 服务：`http://localhost:3000`
 
 ## 部署目标
 
