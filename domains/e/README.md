@@ -9,7 +9,9 @@
 `e` 已经从蓝图进入代码层。内核 MVP、DeepSeek reference adapter、端到端 reference
 runtime、“前台交互 / 后台执行分离”的框架协议、`src/core` 下的原生扩展能力，以及从
 AStudio 吸收的任务图、WorkOrder、Artifact、Workspace 边界与 runtime-neutral adapter
-模式均已落地。
+模式均已落地。`e` 也已从本地 Pi `agent-manager` 插件吸收 app 层协作经验：typed 子任务
+runtime bridge、异步推测 peer 回复、串行/并行/审查协作 recipe，以及带实际验证证据的完成
+判官。
 
 AStudio 本轮不作为 Rust 产品迁移，也不引入 SQLite、daemon、微信 API 或翻译 Agent
 源码。它的框架价值已经吸收到 `domains/e`；CLI、terminal control console、daemon/social
@@ -44,9 +46,13 @@ deno task check
 ```text
 src/
   app/
+    collaboration-recipes.ts         # 串行 / 并行 / creator-reviewer 协作 recipe
+    completion-judge.ts              # evidence-first 完成裁决与 verification artifact
     e-agent-runtime.ts              # 端到端 reference runtime
     git-timeline.ts                 # Git 状态 / diff / checkpoint / task branch adapter 契约
     mcp-gateway.ts                  # MCP tool discovery / invoke adapter 契约与参数边界清洗
+    speculative-peer.ts             # 非阻塞 peer message + prediction / actual 校准记录
+    subagent-runtime-bridge.ts       # SubagentTaskKernel -> runtime adapter 的执行桥
     workspace-toolkit.ts            # workspace read/write/list/command adapter 契约
   core/
     agent-policy.ts                # persona / memory / decision / boundary 策略收口
@@ -133,6 +139,22 @@ ForegroundSessionController
 `gitTimeline`。这些注入项默认关闭；也不会自动改变 `processNext()`
 的既有工具行为。产品外壳可以按需组合 `createWorkspaceToolkitToolDefinitions()` 或自己的
 adapter 装配层。
+
+### Pi Agent Manager 吸收项
+
+Pi `agent-manager` 的源码没有整体迁入；`e` 只吸收运行时无关、可测试的框架模式：
+
+- `SubagentRuntimeBridge`：把 `SubagentTaskKernel` 创建的 typed 子任务交给注入的
+  `SubagentRuntimeAdapter` 执行。子任务默认不继承父 Agent 工具权限，adapter 必须显式接收
+  `allowedTools`。
+- `SpeculativePeerCoordinator`：支持非阻塞 peer message。发送方可以记录 prediction 和
+  working context，稍后把 peer 实际回复同步回来并标记 `aligned / diverged / unknown`。
+- `CollaborationRecipeRunner`：提供 sequential、parallel 和 critic-review 三种 app
+  层协作 recipe，底层仍使用 typed 子任务和 schema 校验。
+- `CompletionJudge`：要求执行方提交验证命令输出作为 evidence，再让 judge agent
+  返回结构化 verdict 和评分；judge 不可用时默认 fail-closed，可显式配置 fail-open。
+
+这些模块位于 `src/app`，不引入 Pi、Bun、Node 子进程、微信、Telegram 或 TUI 依赖。
 
 ## 关键类型
 
@@ -223,6 +245,10 @@ artifact，而不是从产品 UI 或本地文件系统推断状态。
   adapter 错误。
 - mcp-gateway 的 tool discovery、path 参数清洗、外部 path boundary 和失败降级。
 - git-timeline 的 status、diff、checkpoint、task branch 注入调用、boundary 与失败记录。
+- SubagentRuntimeBridge 的 typed 子任务执行、默认空工具权限和 schema fail-closed。
+- SpeculativePeerCoordinator 的 pending reply、prediction 对齐和消费语义。
+- CollaborationRecipeRunner 的 sequential 输出传递和 critic-review 迭代。
+- CompletionJudge 的 evidence 预检、结构化裁决和 verification artifact 写入。
 - ObserverAnalytics 的 replay facts 汇总和 memory proposal。
 - PeerCommunicationKernel 的 AgentCard、peer message、inbox、超时与 await。
 - peer_* tools 通过 ToolRunner 调用 PeerCommunicationKernel。

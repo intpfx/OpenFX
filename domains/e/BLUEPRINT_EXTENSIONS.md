@@ -19,31 +19,34 @@
 - workspace-toolkit、mcp-gateway、git-timeline reference adapter 契约。
 - Replay bundle 中的 task/workOrder/artifact/runtime adapter record 导出。
 - 运行时无关的 `FileResourceReader`、`KvStore`、`ModelProvider` 等接口边界。
+- `SubagentRuntimeBridge`、`SpeculativePeerCoordinator`、`CollaborationRecipeRunner` 和
+  `CompletionJudge`。这些吸收自 Pi `agent-manager` 的 app 层协作模式，已以注入式 adapter
+  和可测试 schema 边界落地。
 - AStudio 的框架价值已吸收；不迁 Rust crate、SQLite、daemon 常驻进程、微信 API 或翻译
   Agent 源码。
 
 ---
 
-## 1. Subagent Runtime Bridge
+## 1. Subagent Runtime Bridge Hardening
 
-**位置**：`src/app/subagent-runtime-bridge.ts`
+**位置**：`src/app/subagent-runtime-bridge.ts` 与 `src/app/e-agent-runtime.ts`
 
-**目的**：把已落地的 `SubagentTaskKernel` 接入 `EAgentRuntime`，让父 Agent
-可以创建、执行和收集 typed 子任务。
+**目的**：已落地的 `SubagentRuntimeBridge` 可以创建、执行和收集 typed 子任务。剩余工作是
+把它作为 `EAgentRuntime` 的可选工具链入口，并补齐更真实的 workspace / worktree
+合并边界。
 
-**第一版范围**：
+**剩余范围**：
 
-- 创建 `SubagentTask`。
-- 为子 Agent 注入隔离后的工具权限。
-- 运行子任务到 `completed / failed / cancelled`。
-- 校验 result schema。
-- 把结果写回父 turn 的 replay 轨迹。
+- 把 subagent recipe 暴露为可注册 tool definitions，而不是只能由产品装配层手动调用。
+- 为子 Agent 工具权限接入 `AgentPolicy`，形成可 replay 的 permission record。
+- worktree / workspace merge 仍必须回到 `ProposedAction`。
+- 将 subagent recipe 的 artifact 写回父 task completion summary。
 
 **验收**：
 
-- 一个 reference flow 能创建 reviewer 子任务并返回 typed result。
-- 子任务默认不继承父 Agent 全部工具权限。
-- worktree / workspace merge 仍必须回到 `ProposedAction`。
+- 一个 reference flow 能通过工具调用创建 reviewer 子任务并返回 typed result。
+- 子任务权限记录可在 replay bundle 中复核。
+- workspace merge 只通过 `BoundaryRequest` / `ProposedAction` 完成。
 
 ---
 
@@ -59,6 +62,8 @@
 - worker adapter。
 - HTTP/SSE adapter。
 - WebRTC adapter。
+- Pi `agent-manager` 的统一 bridge daemon、在线池、互斥占用和自适应轮询只作为 adapter
+  生命周期参考；不迁微信 / Telegram API 依赖。
 
 **验收**：
 
@@ -108,6 +113,7 @@
 - 审批缓存持久化。
 - replay bundle 导出入口。
 - sandbox report 人工确认流程。
+- 将已落地的 `CompletionJudge` 接入产品层完成按钮或任务收口流程。
 
 **暂不做**：
 
