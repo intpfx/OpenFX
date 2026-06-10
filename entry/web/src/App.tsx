@@ -1037,7 +1037,8 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
                   </li>
                   <li>
                     支持颜色到管径、<code>CY</code> /{" "}
-                    <code>SZ</code>、立柱、管件数量和规格后缀归位。
+                    <code>SZ</code>、DN
+                    钢管细分、材料备注、立柱、管件数量和规格后缀归位。
                   </li>
                 </ul>
               </article>

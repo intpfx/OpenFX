@@ -12,16 +12,28 @@
 (vl-load-com)
 
 ;;; 颜色和管径对应关系。
-;;; 其中 de 为地埋塑料管，DN 为架空钢管。
+;;; 其中小写 de 为地埋塑料管，DN 为架空钢管。
 ;;; 如果实体颜色是 ByLayer，脚本会尽量解析为所在图层的颜色。
 (setq *gas-color-dn-map*
   '(
-    ("RGB:255,191,0" . "de32")
     ("RGB:0,0,255" . "DN50")
     ("RGB:0,255,0" . "DN40")
-    ("RGB:255,255,255" . "DN25")
-    ("RGB:0,255,255" . "de63")
     ("RGB:255,255,0" . "DN32")
+    ("RGB:255,255,255" . "DN25")
+    ("RGB:205,105,40" . "DN15")
+    ("RGB:255,191,0" . "de32")
+    ("RGB:255,255,127" . "de40")
+    ("RGB:0,255,255" . "de63")
+    ("RGB:255,127,233" . "de90")
+    ("RGB:76,38,66" . "de110")
+   )
+)
+
+;;; 按颜色写入备注栏的材料来源标记。
+(setq *gas-color-remark-map*
+  '(
+    ("RGB:127,255,223" . "自供材")
+    ("RGB:255,0,0" . "甲供材")
    )
 )
 
@@ -176,18 +188,18 @@
   )
 )
 
-(defun gas-find-prefixed-pipe (text prefix keep-prefix / s pos i ch pipe)
-  (setq s (strcase text))
-  (setq pos (vl-string-search (strcase prefix) s))
+(defun gas-find-prefixed-pipe (text prefix keep-prefix / pos i ch pipe)
+  ;; 管径大小写有业务含义：DN 为架空钢管，小写 de 为地埋塑料管。
+  (setq pos (vl-string-search prefix text))
   (if pos
     (progn
       (setq i (+ pos (strlen prefix)))
       (setq pipe keep-prefix)
-      (while (and (< i (strlen s))
-                  (setq ch (ascii (substr s (+ i 1) 1)))
+      (while (and (< i (strlen text))
+                  (setq ch (ascii (substr text (+ i 1) 1)))
                   (>= ch 48)
                   (<= ch 57))
-        (setq pipe (strcat pipe (substr s (+ i 1) 1)))
+        (setq pipe (strcat pipe (substr text (+ i 1) 1)))
         (setq i (1+ i))
       )
       (if (> (strlen pipe) (strlen keep-prefix)) pipe nil)
@@ -196,12 +208,27 @@
   )
 )
 
-(defun gas-find-pipe (text / de dn)
-  (setq de (gas-find-prefixed-pipe text "DE" "de"))
+(defun gas-normalize-pipe (pipe / result)
+  ;; 历史图纸中可能混用 dn 和 de，这里统一输出为 de。
+  ;; 大写 DN 保持不变。
+  (setq result pipe)
+  (if (and result (>= (strlen result) 2) (= (substr result 1 2) "dn"))
+    (setq result (strcat "de" (substr result 3)))
+  )
+  (while (and result (vl-string-search "/dn" result))
+    (setq result (vl-string-subst "/de" "/dn" result))
+  )
+  result
+)
+
+(defun gas-find-pipe (text / dn lower-dn legacy-de)
   (setq dn (gas-find-prefixed-pipe text "DN" "DN"))
+  (setq lower-dn (gas-find-prefixed-pipe text "dn" "de"))
+  (setq legacy-de (gas-find-prefixed-pipe text "de" "de"))
   (cond
-    (de de)
     (dn dn)
+    (lower-dn lower-dn)
+    (legacy-de legacy-de)
     (T nil)
   )
 )
@@ -394,6 +421,43 @@
   )
 )
 
+(defun gas-numeric-text-p (text / s i n ch has-digit dot-count)
+  ;; 纯数字文本用于区分 DN 默认架空下的镀锌钢管。
+  ;; 允许一个小数点，例如 12 或 12.5。
+  (setq s (vl-string-trim " \t\r\n" text))
+  (setq i 1)
+  (setq n (strlen s))
+  (setq has-digit nil)
+  (setq dot-count 0)
+  (if (= n 0)
+    nil
+    (progn
+      (while (and (<= i n)
+                  (setq ch (ascii (substr s i 1)))
+                  (or (and (>= ch 48) (<= ch 57))
+                      (= ch 46)))
+        (if (= ch 46)
+          (setq dot-count (1+ dot-count))
+          (setq has-digit T)
+        )
+        (setq i (1+ i))
+      )
+      (and has-digit (<= dot-count 1) (> i n))
+    )
+  )
+)
+
+(defun gas-dn-default-category (text / upper)
+  ;; DN 管默认架空时，再按文本形态细分钢管类型。
+  (setq upper (strcase text))
+  (cond
+    ((gas-numeric-text-p text) "镀锌钢管")
+    ((vl-string-search "W-" upper) "无缝焊接钢管")
+    ((vl-string-search "Y-" upper) "有缝焊接钢管")
+    (T "架空")
+  )
+)
+
 (defun gas-category (text pipe / upper)
   (setq upper (strcase text))
   (cond
@@ -401,7 +465,7 @@
     ((vl-string-search "*" text) (gas-star-category text pipe))
     ((vl-string-search *gas-crossing-keyword* upper) "穿越")
     ((vl-string-search *gas-waterdrill-keyword* upper) "水钻")
-    ((= (substr pipe 1 2) "DN") "架空")
+    ((= (substr pipe 1 2) "DN") (gas-dn-default-category text))
     (T "开挖")
   )
 )
@@ -411,6 +475,28 @@
   (if pair
     (subst (cons key (+ (cdr pair) value)) pair sums)
     (append sums (list (cons key value)))
+  )
+)
+
+(defun gas-append-remark (base extra)
+  (cond
+    ((or (null extra) (= extra "")) base)
+    ((or (null base) (= base "")) extra)
+    ((vl-string-search extra base) base)
+    (T (strcat base "；" extra))
+  )
+)
+
+(defun gas-add-remark (key remark remarks / pair)
+  (if (or (null remark) (= remark ""))
+    remarks
+    (progn
+      (setq pair (assoc key remarks))
+      (if pair
+        (subst (cons key (gas-append-remark (cdr pair) remark)) pair remarks)
+        (append remarks (list (cons key remark)))
+      )
+    )
   )
 )
 
@@ -428,7 +514,7 @@
   )
 )
 
-(defun gas-record-from-object (doc obj forced-text / type text color-key pipe value category layer handle count moved)
+(defun gas-record-from-object (doc obj forced-text / type text color-key pipe value category layer handle count moved remark)
   (setq type (gas-safe-get obj 'ObjectName))
   (setq text
     (cond
@@ -453,6 +539,7 @@
               (setq moved (gas-move-category-suffix-to-pipe pipe category))
               (setq pipe (car moved))
               (setq category (cadr moved))
+              (setq pipe (gas-normalize-pipe pipe))
               (setq value
                 (cond
                   ((vl-string-search *gas-pillar-keyword* text) (gas-pillar-value text))
@@ -468,7 +555,8 @@
               )
               (setq layer (gas-safe-get obj 'Layer))
               (setq handle (gas-safe-get obj 'Handle))
-              (list pipe category value count color-key layer handle text type)
+              (setq remark (cdr (assoc color-key *gas-color-remark-map*)))
+              (list pipe category value count color-key layer handle text type remark)
             )
             (progn
               (setq *gas-unmapped-count* (1+ *gas-unmapped-count*))
@@ -482,11 +570,12 @@
   )
 )
 
-(defun gas-process-record (rec / pipe category value count key)
+(defun gas-process-record (rec / pipe category value count remark key)
   (setq pipe (nth 0 rec))
   (setq category (nth 1 rec))
   (setq value (nth 2 rec))
   (setq count (nth 3 rec))
+  (setq remark (nth 9 rec))
   (if (> value 0.0)
     (progn
       (setq key (strcat pipe "|" category))
@@ -494,6 +583,7 @@
       (if (= category "立柱")
         (setq *gas-counts-by-pipe-category* (gas-add-sum key count *gas-counts-by-pipe-category*))
       )
+      (setq *gas-remarks-by-pipe-category* (gas-add-remark key remark *gas-remarks-by-pipe-category*))
     )
   )
 )
@@ -564,7 +654,7 @@
   (if (= s "") "0" s)
 )
 
-(defun gas-write-outputs (doc / dir opened out-path fp pair parts count-pair remark)
+(defun gas-write-outputs (doc / dir opened out-path fp pair parts count-pair remark remark-pair)
   (setq dir (gas-output-dir doc))
 
   ;; 清理旧版脚本可能留下的中间文件，避免客户误看。
@@ -593,6 +683,10 @@
             )
           )
         )
+        (setq remark-pair (assoc (car pair) *gas-remarks-by-pipe-category*))
+        (if remark-pair
+          (setq remark (gas-append-remark remark (cdr remark-pair)))
+        )
         (gas-write-line fp (list (car parts) (cadr parts) (gas-format-number (cdr pair)) remark))
       )
       (close fp)
@@ -619,6 +713,7 @@
 
   (setq *gas-sums-by-pipe-category* '())
   (setq *gas-counts-by-pipe-category* '())
+  (setq *gas-remarks-by-pipe-category* '())
   (setq *gas-unmapped-count* 0)
 
   (setq layouts (vla-get-Layouts doc))
