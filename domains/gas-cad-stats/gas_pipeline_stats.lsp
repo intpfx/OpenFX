@@ -7,7 +7,7 @@
 ;;;   3. 在图纸所在目录查看导出的 gas_summary_by_pipe_category.csv。
 ;;;
 ;;; 输出文件：
-;;;   gas_summary_by_pipe_category.csv - 管径/类型小计
+;;;   gas_summary_by_pipe_category.csv - 材料类型/材料名称/管径小计
 
 (vl-load-com)
 
@@ -29,11 +29,10 @@
    )
 )
 
-;;; 按颜色写入备注栏的材料来源标记。
-(setq *gas-color-remark-map*
+;;; 按原颜色规则识别自供材；其他有效数据默认标注为甲供材。
+(setq *gas-self-supplied-color-keys*
   '(
-    ("RGB:127,255,223" . "自供材")
-    ("RGB:255,0,0" . "甲供材")
+    "RGB:127,255,223"
    )
 )
 
@@ -77,6 +76,10 @@
 (defun gas-safe-call (fn args / value)
   (setq value (vl-catch-all-apply fn args))
   (if (vl-catch-all-error-p value) nil value)
+)
+
+(defun gas-material-type (color-key)
+  (if (member color-key *gas-self-supplied-color-keys*) "自供材" "甲供材")
 )
 
 (defun gas-layer-color (doc layer-name / layers layer color)
@@ -310,7 +313,7 @@
 
 (defun gas-star-category (text pipe / before)
   ;; 非立柱的“*”文本按“*”前内容分类，并去掉其中的管径字样。
-  ;; 例如 钢制弯头DN40*1 => 类型为 钢制弯头。
+  ;; 例如 钢制弯头DN40*1 => 材料名称为 钢制弯头。
   (setq before (gas-before-char text "*"))
   (setq before (gas-remove-pipe-from-text before pipe))
   (if (= before "") "未分类管件" before)
@@ -335,7 +338,7 @@
 
 (defun gas-slash-suffix-valid-p (suffix / s i n ch)
   ;; 只移动规格型后缀，例如 /32、/DN32、/de63。
-  ;; 普通类型名中如果出现其他“/”内容，不做处理。
+  ;; 普通材料名称中如果出现其他“/”内容，不做处理。
   (setq s (strcase suffix))
   (setq n (strlen s))
   (setq i 1)
@@ -356,7 +359,7 @@
 )
 
 (defun gas-move-category-suffix-to-pipe (pipe category / pos suffix clean-category)
-  ;; 类型末尾的规格后缀移到管径列：
+  ;; 材料名称末尾的规格后缀移到管径列：
   ;; DN63 + 电熔变径/32 => DN63/32 + 电熔变径
   ;; DN63 + 钢塑转换/DN32 => DN63/DN32 + 钢塑转换
   (setq pos (gas-last-search "/" category))
@@ -478,28 +481,6 @@
   )
 )
 
-(defun gas-append-remark (base extra)
-  (cond
-    ((or (null extra) (= extra "")) base)
-    ((or (null base) (= base "")) extra)
-    ((vl-string-search extra base) base)
-    (T (strcat base "；" extra))
-  )
-)
-
-(defun gas-add-remark (key remark remarks / pair)
-  (if (or (null remark) (= remark ""))
-    remarks
-    (progn
-      (setq pair (assoc key remarks))
-      (if pair
-        (subst (cons key (gas-append-remark (cdr pair) remark)) pair remarks)
-        (append remarks (list (cons key remark)))
-      )
-    )
-  )
-)
-
 (defun gas-add-sample (color-key text samples / pair existing)
   (setq pair (assoc color-key samples))
   (if pair
@@ -514,7 +495,7 @@
   )
 )
 
-(defun gas-record-from-object (doc obj forced-text / type text color-key pipe value category layer handle count moved remark)
+(defun gas-record-from-object (doc obj forced-text / type text color-key pipe value category layer handle count moved material-type)
   (setq type (gas-safe-get obj 'ObjectName))
   (setq text
     (cond
@@ -555,8 +536,8 @@
               )
               (setq layer (gas-safe-get obj 'Layer))
               (setq handle (gas-safe-get obj 'Handle))
-              (setq remark (cdr (assoc color-key *gas-color-remark-map*)))
-              (list pipe category value count color-key layer handle text type remark)
+              (setq material-type (gas-material-type color-key))
+              (list pipe category value count color-key layer handle text type material-type)
             )
             (progn
               (setq *gas-unmapped-count* (1+ *gas-unmapped-count*))
@@ -570,20 +551,19 @@
   )
 )
 
-(defun gas-process-record (rec / pipe category value count remark key)
+(defun gas-process-record (rec / pipe category value count material-type key)
   (setq pipe (nth 0 rec))
   (setq category (nth 1 rec))
   (setq value (nth 2 rec))
   (setq count (nth 3 rec))
-  (setq remark (nth 9 rec))
+  (setq material-type (nth 9 rec))
   (if (> value 0.0)
     (progn
-      (setq key (strcat pipe "|" category))
-      (setq *gas-sums-by-pipe-category* (gas-add-sum key value *gas-sums-by-pipe-category*))
-      (if (= category "立柱")
-        (setq *gas-counts-by-pipe-category* (gas-add-sum key count *gas-counts-by-pipe-category*))
+      (setq key (strcat material-type "|" pipe "|" category))
+      (setq *gas-sums-by-material-pipe-category* (gas-add-sum key value *gas-sums-by-material-pipe-category*))
+      (if (and (= category "立柱") (> count 0.0))
+        (setq *gas-counts-by-material-pipe-category* (gas-add-sum key count *gas-counts-by-material-pipe-category*))
       )
-      (setq *gas-remarks-by-pipe-category* (gas-add-remark key remark *gas-remarks-by-pipe-category*))
     )
   )
 )
@@ -654,7 +634,7 @@
   (if (= s "") "0" s)
 )
 
-(defun gas-write-outputs (doc / dir opened out-path fp pair parts count-pair remark remark-pair)
+(defun gas-write-outputs (doc / dir opened out-path fp pair parts count-pair remark)
   (setq dir (gas-output-dir doc))
 
   ;; 清理旧版脚本可能留下的中间文件，避免客户误看。
@@ -671,23 +651,19 @@
     (progn
       (setq fp (car opened))
       (setq out-path (cadr opened))
-      (gas-write-line fp '("管径" "类型" "合计值" "备注"))
-      (foreach pair *gas-sums-by-pipe-category*
-        (setq parts (gas-split-key (car pair) "|"))
+      (gas-write-line fp '("材料类型" "材料名称" "管径" "合计值" "备注"))
+      (foreach pair *gas-sums-by-material-pipe-category*
+        (setq parts (gas-split-key3 (car pair) "|"))
         (setq remark "")
-        (if (= (cadr parts) "立柱")
+        (if (= (caddr parts) "立柱")
           (progn
-            (setq count-pair (assoc (car pair) *gas-counts-by-pipe-category*))
+            (setq count-pair (assoc (car pair) *gas-counts-by-material-pipe-category*))
             (if count-pair
               (setq remark (strcat (rtos (cdr count-pair) 2 0) "根"))
             )
           )
         )
-        (setq remark-pair (assoc (car pair) *gas-remarks-by-pipe-category*))
-        (if remark-pair
-          (setq remark (gas-append-remark remark (cdr remark-pair)))
-        )
-        (gas-write-line fp (list (car parts) (cadr parts) (gas-format-number (cdr pair)) remark))
+        (gas-write-line fp (list (car parts) (caddr parts) (cadr parts) (gas-format-number (cdr pair)) remark))
       )
       (close fp)
       (princ (strcat "\n完成。统计文件已输出到：" out-path))
@@ -699,11 +675,22 @@
   )
 )
 
-(defun gas-split-key (s sep / pos)
-  (setq pos (vl-string-search sep s))
-  (if pos
-    (list (substr s 1 pos) (substr s (+ pos 2)))
-    (list s "")
+(defun gas-split-key3 (s sep / first rest second)
+  (setq first (vl-string-search sep s))
+  (if first
+    (progn
+      (setq rest (substr s (+ first (strlen sep) 1)))
+      (setq second (vl-string-search sep rest))
+      (if second
+        (list
+          (substr s 1 first)
+          (substr rest 1 second)
+          (substr rest (+ second (strlen sep) 1))
+        )
+        (list (substr s 1 first) rest "")
+      )
+    )
+    (list s "" "")
   )
 )
 
@@ -711,9 +698,8 @@
   (setq acad (vlax-get-acad-object))
   (setq doc (vla-get-ActiveDocument acad))
 
-  (setq *gas-sums-by-pipe-category* '())
-  (setq *gas-counts-by-pipe-category* '())
-  (setq *gas-remarks-by-pipe-category* '())
+  (setq *gas-sums-by-material-pipe-category* '())
+  (setq *gas-counts-by-material-pipe-category* '())
   (setq *gas-unmapped-count* 0)
 
   (setq layouts (vla-get-Layouts doc))
