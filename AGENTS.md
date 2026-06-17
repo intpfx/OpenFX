@@ -13,11 +13,16 @@ and public readability.
 
 ## Principles
 
-- **Readability**: Code and docs are public-facing — write for human readers, not just agents.
-- **Pure functions first**: Business logic should be explicit, immutable data transformations.
-- **OOP only when justified**: Only introduce object state when lifecycle or integration constraints make it clearly better.
-- **Keep app layers thin**: Entrypoints (desktop/web) handle I/O, rendering, and runtime assembly only.
-- **Docs are part of the product**: Structural changes must update documentation in the same change.
+- **Readability**: Code and docs are public-facing — write for human readers, not just
+  agents.
+- **Pure functions first**: Business logic should be explicit, immutable data
+  transformations.
+- **OOP only when justified**: Only introduce object state when lifecycle or integration
+  constraints make it clearly better.
+- **Keep app layers thin**: Entrypoints (desktop/web) handle I/O, rendering, and runtime
+  assembly only.
+- **Docs are part of the product**: Structural changes must update documentation in the
+  same change.
 
 ## Preferred Workflow
 
