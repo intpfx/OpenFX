@@ -13,7 +13,11 @@ and public readability.
 
 ## Principles
 
-Follow the development principles in [README.md §开发原则](README.md).
+- **Readability**: Code and docs are public-facing — write for human readers, not just agents.
+- **Pure functions first**: Business logic should be explicit, immutable data transformations.
+- **OOP only when justified**: Only introduce object state when lifecycle or integration constraints make it clearly better.
+- **Keep app layers thin**: Entrypoints (desktop/web) handle I/O, rendering, and runtime assembly only.
+- **Docs are part of the product**: Structural changes must update documentation in the same change.
 
 ## Preferred Workflow
 
@@ -48,8 +52,5 @@ Consult official documentation before making stack-level assumptions:
 ## Documentation Rules
 
 - `README.md` is the main entrypoint for humans.
-- The roadmap lives inside `README.md` as the default human-editable roadmap entrypoint.
-- Architectural decisions also live inside `README.md` as the default human-readable
-  record.
 - Human-facing product copy should default to Simplified Chinese unless a task
   explicitly requires another language.
