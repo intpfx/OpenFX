@@ -1,3 +1,5 @@
+import { openMobileUrlInCurrentPage } from '~/userscript/mobile'
+
 /**
  * Get cookie by name
  * @param name cookie name
@@ -46,6 +48,11 @@ export function removeHttpFromUrl(url: string): string {
 }
 
 export function openLinkToNewTab(url: string, features: string = '') {
+  if (Boolean((globalThis as { __BEWLYSCRIPT__?: boolean }).__BEWLYSCRIPT__) && location.protocol === 'https:' && location.hostname === 'm.bilibili.com') {
+    openMobileUrlInCurrentPage(url)
+    return
+  }
+
   window.open(url, '_blank', features)
 }
 

@@ -3,9 +3,11 @@ import { useDateFormat } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 
 import { useBewlyApp } from '~/composables/useAppProvider'
+import { settings } from '~/logic'
 import type { HistoryResult, List as HistoryItem } from '~/models/history/history'
 import { Business } from '~/models/history/history'
 import type { HistorySearchResult, List as HistorySearchItem } from '~/models/video/historySearch'
+import { openBilibiliLoginPage, shouldEnableHoverInteractions } from '~/userscript/mobile'
 import api from '~/utils/api'
 import { calcCurrentTime } from '~/utils/dataFormatter'
 import { getCSRF, removeHttpFromUrl } from '~/utils/main'
@@ -18,6 +20,7 @@ const historyList = reactive<Array<HistoryItem>>([])
 const currentPageNum = ref<number>(1)
 const keyword = ref<string>()
 const historyStatus = ref<boolean>()
+const hoverInteractionsEnabled = computed(() => shouldEnableHoverInteractions(settings.value.touchScreenOptimization))
 const { handlePageRefresh, handleReachBottom, haveScrollbar } = useBewlyApp()
 
 const HistoryBusiness = computed(() => {
@@ -231,7 +234,7 @@ function handleTurnOnWatchHistory() {
 }
 
 function jumpToLoginPage() {
-  location.href = 'https://passport.bilibili.com/login'
+  openBilibiliLoginPage()
 }
 </script>
 
@@ -461,7 +464,7 @@ function jumpToLoginPage() {
               <button
                 text="2xl $bew-text-3"
                 hover:color="$bew-theme-color"
-                opacity-0 group-hover:opacity-100
+                :class="hoverInteractionsEnabled ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'"
                 p-2
                 duration-300
                 @click.prevent.stop="deleteHistoryItem(index, historyItem)"

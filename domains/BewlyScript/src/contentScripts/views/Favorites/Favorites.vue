@@ -11,6 +11,7 @@ import { settings } from '~/logic'
 import type { FavoritesResult, Media as FavoriteItem } from '~/models/video/favorite'
 import type { FavoritesCategoryResult, List as CategoryItem } from '~/models/video/favoriteCategory'
 import type { CollectedFavoriteSeason, CollectedFavoriteSeasonsResult, FavoriteSeasonMedia, FavoriteSeasonResourcesResult } from '~/models/video/favoriteSeason'
+import { openBilibiliLoginPage } from '~/userscript/mobile'
 import api from '~/utils/api'
 import { getCSRF, getUserID, openLinkToNewTab, removeHttpFromUrl } from '~/utils/main'
 import emitter from '~/utils/mitt'
@@ -558,7 +559,7 @@ function getFavoriteSeasonUrl(category: ViewCategory) {
 }
 
 function jumpToLoginPage() {
-  location.href = 'https://passport.bilibili.com/login'
+  openBilibiliLoginPage()
 }
 
 function handleUnfavorite(favoriteResource: FavoriteResource) {

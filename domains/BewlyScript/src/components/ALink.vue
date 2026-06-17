@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import { useBewlyApp } from '~/composables/useAppProvider'
 import { settings } from '~/logic'
+import { isMobileUserscriptRuntimePage, MOBILE_LINK_MANAGED_ATTR, openMobileUrlInCurrentPage, shouldPreferTouchMode } from '~/userscript/mobile'
 import { isHomePage, isInIframe } from '~/utils/main'
 import { openLinkInBackground } from '~/utils/tabs'
 
@@ -20,6 +21,8 @@ const emit = defineEmits<{
 
 const { openIframeDrawer } = useBewlyApp()
 
+const isMobileUserscriptPage = computed(() => isMobileUserscriptRuntimePage())
+
 const processedHref = computed(() => {
   if (!props.href)
     return 'javascript:void(0)'
@@ -28,6 +31,13 @@ const processedHref = computed(() => {
 })
 
 const openMode = computed(() => {
+  if (isMobileUserscriptPage.value) {
+    if (props.type === 'videoCard')
+      return 'drawer'
+
+    return 'currentTab'
+  }
+
   if (props.type === 'topBar')
     return settings.value.topBarLinkOpenMode
   else if (props.type === 'videoCard')
@@ -37,9 +47,14 @@ const openMode = computed(() => {
   return 'newTab'
 })
 
+const preferTouchMode = computed(() => shouldPreferTouchMode(settings.value.touchScreenOptimization))
+
 // Since BewlyBewly sometimes uses an iframe to open the original Bilibili page in the current tab
 // please set the target to `_top` instead of `_self`
 const target = computed(() => {
+  if (isMobileUserscriptPage.value)
+    return '_self'
+
   if (openMode.value === 'newTab') {
     return '_blank'
   }
@@ -62,11 +77,25 @@ function handleClick(event: MouseEvent) {
   }
 
   if (props.customClickEvent) {
+    if (isMobileUserscriptPage.value) {
+      event.preventDefault()
+      event.stopPropagation()
+      emit('click', event)
+      return
+    }
+
     if (!props.customClickEventIncludesModifiers && (event.ctrlKey || event.metaKey || event.altKey))
       return
 
     event.preventDefault()
     emit('click', event)
+    return
+  }
+
+  if (isMobileUserscriptPage.value && props.href) {
+    event.preventDefault()
+    event.stopPropagation()
+    openMobileUrlInCurrentPage(processedHref.value)
     return
   }
 
@@ -78,7 +107,7 @@ function handleClick(event: MouseEvent) {
   // 1. 链接在弹窗内部（.bew-popover）
   // 2. Home按钮（.home-button）
   // 3. 固定分区（.pinned-channels__item）
-  if (props.type === 'topBar' && settings.value.touchScreenOptimization) {
+  if (props.type === 'topBar' && preferTouchMode.value) {
     const target = event.target as HTMLElement
     const isInsidePopup = target.closest('.bew-popover')
     const isHomeButton = target.closest('.home-button')
@@ -103,6 +132,19 @@ function handleClick(event: MouseEvent) {
     openLinkInBackground(processedHref.value)
   }
 }
+
+function handleAuxClick(event: MouseEvent) {
+  if (!isMobileUserscriptPage.value || !props.href)
+    return
+
+  event.preventDefault()
+  event.stopPropagation()
+  if (props.customClickEvent) {
+    emit('click', event)
+    return
+  }
+  openMobileUrlInCurrentPage(processedHref.value)
+}
 </script>
 
 <template>
@@ -111,7 +153,9 @@ function handleClick(event: MouseEvent) {
     :target="target"
     :title="title"
     :rel="rel"
+    :[MOBILE_LINK_MANAGED_ATTR]="isMobileUserscriptPage ? 'true' : undefined"
     @click="handleClick"
+    @auxclick="handleAuxClick"
   >
     <slot />
   </a>

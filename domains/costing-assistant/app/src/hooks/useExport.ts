@@ -62,8 +62,8 @@ export function useExport() {
           ['最终施工费', `¥${summary.finalConstructionFee.toFixed(2)}`, '应用规则后'],
           ['工程总包施工费', `¥${summary.totalPackageFee.toFixed(2)}`, ''],
           [],
-          ['徐州下浮', globalParams.applyXuzhouDiscount ? '是' : '否', `下浮比例：${(globalParams.xuzhouDiscountRate * 100).toFixed(0)}%`],
-          ['分包结算价', summary.subcontractFee !== null ? `¥${summary.subcontractFee.toFixed(2)}` : '--', globalParams.applyXuzhouDiscount ? '总包价下浮后' : '未启用'],
+          ['专项下浮', globalParams.applySpecialDiscount ? '是' : '否', `下浮比例：${(globalParams.specialDiscountRate * 100).toFixed(0)}%`],
+          ['分包结算价', summary.subcontractFee !== null ? `¥${summary.subcontractFee.toFixed(2)}` : '--', globalParams.applySpecialDiscount ? '总包价下浮后' : '未启用'],
           [],
           ['生成时间', new Date().toLocaleString('zh-CN'), ''],
         ]

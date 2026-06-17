@@ -1,13 +1,15 @@
 <script lang="ts" setup>
-import { computed, ref, watch, watchEffect } from 'vue'
+import { computed, nextTick, onUnmounted, ref, watch, watchEffect } from 'vue'
 
 import { useBewlyApp } from '~/composables/useAppProvider'
 import { useVideoCardSharedStyles } from '~/composables/useVideoCardSharedStyles'
 import { settings } from '~/logic'
+import { shouldEnableHoverInteractions } from '~/userscript/mobile'
 import { calcCurrentTime, calcTimeSince, numFormatter } from '~/utils/dataFormatter'
 
 import VideoCardCover from './components/VideoCardCover.vue'
 import VideoCardInfo from './components/VideoCardInfo.vue'
+import { registerAutoPreviewCandidate } from './composables/autoPreviewCoordinator'
 import { useVideoCardLogic } from './composables/useVideoCardLogic'
 import type { Video } from './types'
 import VideoCardContextMenu from './VideoCardContextMenu/VideoCardContextMenu.vue'
@@ -32,8 +34,13 @@ interface Props {
   coverTopLeftAlwaysVisible?: boolean
 }
 
+const autoPreviewActive = ref(false)
+
 // 数据现在在转换阶段已经完成 HTML 解码，直接使用 props
-const logic = useVideoCardLogic(props)
+const logic = useVideoCardLogic(() => ({
+  ...props,
+  autoPreviewActive: autoPreviewActive.value,
+}))
 const { mainAppRef } = useBewlyApp()
 
 // 使用共享样式（避免每个卡片重复计算）
@@ -120,36 +127,81 @@ const hasCoverStats = computed(() => {
   )
 })
 
+const hoverInteractionsEnabled = computed(() => shouldEnableHoverInteractions(settings.value.touchScreenOptimization))
+
 const shouldHideCoverStats = computed(() =>
   props.showPreview
   && settings.value.enableVideoPreview
-  && logic.isHover.value
+  && logic.previewRequested.value
   && logic.previewVideoUrl.value
-  && logic.shouldHideOverlayElements.value,
+  && (hoverInteractionsEnabled.value ? logic.shouldHideOverlayElements.value : true),
 )
 
 const hoverPreviewOnCoverOnly = computed(() =>
-  Boolean(props.showPreview && settings.value.enableVideoPreview && settings.value.onlyCoverVideoPreview),
+  Boolean(
+    hoverInteractionsEnabled.value
+    && props.showPreview
+    && settings.value.enableVideoPreview
+    && settings.value.onlyCoverVideoPreview,
+  ),
 )
 
 const linkEvents = computed(() => ({
   click: props.customClickHandler || logic.handleClick,
-  ...(hoverPreviewOnCoverOnly.value
-    ? {}
-    : {
+  ...(hoverInteractionsEnabled.value && !hoverPreviewOnCoverOnly.value
+    ? {
         mouseenter: logic.handleMouseEnter,
         mouseleave: logic.handelMouseLeave,
-      }),
+      }
+    : {}),
 }))
 
 const coverEvents = computed(() =>
-  hoverPreviewOnCoverOnly.value
+  hoverInteractionsEnabled.value && hoverPreviewOnCoverOnly.value
     ? {
         mouseenter: logic.handleMouseEnter,
         mouseleave: logic.handelMouseLeave,
       }
     : {},
 )
+
+let unregisterAutoPreviewCandidate: (() => void) | undefined
+
+function cleanupAutoPreviewObserver() {
+  unregisterAutoPreviewCandidate?.()
+  unregisterAutoPreviewCandidate = undefined
+  autoPreviewActive.value = false
+}
+
+function setupAutoPreviewObserver() {
+  cleanupAutoPreviewObserver()
+
+  if (!props.showPreview
+    || !settings.value.enableVideoPreview
+    || hoverInteractionsEnabled.value
+    || logic.effectiveVideoCardOpenMode.value !== 'drawer'
+    || !logic.cardRootRef.value) {
+    return
+  }
+
+  unregisterAutoPreviewCandidate = registerAutoPreviewCandidate(logic.cardRootRef.value, (active) => {
+    autoPreviewActive.value = active
+  })
+}
+
+watch(
+  [() => props.showPreview, () => settings.value.enableVideoPreview, hoverInteractionsEnabled, logic.effectiveVideoCardOpenMode, () => logic.cardRootRef.value],
+  () => {
+    nextTick(() => {
+      setupAutoPreviewObserver()
+    })
+  },
+  { immediate: true, flush: 'post' },
+)
+
+onUnmounted(() => {
+  cleanupAutoPreviewObserver()
+})
 
 const primaryTags = computed(() => {
   const video = props.video
@@ -339,7 +391,7 @@ provide('getVideoType', () => props.type!)
         v-bind="coverSkeleton ? {} : {
           href: logic.videoUrl.value,
           type: 'videoCard',
-          customClickEvent: Boolean(props.customClickHandler) || settings.videoCardLinkOpenMode === 'drawer' || settings.videoCardLinkOpenMode === 'background',
+          customClickEvent: Boolean(props.customClickHandler) || logic.effectiveVideoCardOpenMode.value === 'drawer' || logic.effectiveVideoCardOpenMode.value === 'background',
           customClickEventIncludesModifiers: Boolean(props.customClickHandler),
         }"
         v-on="coverSkeleton ? {} : linkEvents"
@@ -355,6 +407,7 @@ provide('getVideoType', () => props.type!)
             :horizontal="horizontal"
             :removed="logic.removed.value"
             :is-hover="logic.isHover.value"
+            :preview-active="logic.previewRequested.value"
             :preview-video-url="logic.previewVideoUrl.value || ''"
             :is-in-watch-later="logic.isInWatchLater.value"
             :show-watcher-later="showWatcherLater"
@@ -442,6 +495,11 @@ provide('getVideoType', () => props.type!)
   /* 防止骨架屏和真实内容切换时的布局偏移：
      确保容器在加载过程中保持稳定的最小高度 */
   min-height: fit-content;
+}
+
+:global(.mobile-userscript) .video-card-container {
+  contain-intrinsic-size: 320px 220px;
+  margin-bottom: 6px !important;
 }
 
 /* 骨架屏状态：禁用交互 */

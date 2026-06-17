@@ -28,7 +28,7 @@ describe('userscript metadata', () => {
     expect(metadata).toContain('// ==UserScript==')
     expect(metadata).toContain('// @name         BewlyScript')
     expect(metadata).toContain('// @inject-into  content')
-    expect(metadata).toContain('// @version      0.0.1-userscript.0')
+    expect(metadata).toContain('// @version      0.0.1-userscript.1')
     expect(metadata).toContain('// ==/UserScript==')
   })
 })

@@ -41,7 +41,6 @@ type ActiveDomainPanel =
   | "relay-proxy-gateway"
   | "wanone-memorial"
   | "chinagas-wms-qrcode"
-  | "gas-cad-stats"
   | "gasmap"
   | "finlyzer"
   | "costing-assistant";
@@ -311,8 +310,7 @@ function getProjectCardClick(
   if (
     card.id === "how-much-this" || card.id === "ipv6-sync-suite" ||
     card.id === "relay-proxy-gateway" || card.id === "wanone-memorial" ||
-    card.id === "chinagas-wms-qrcode" || card.id === "gas-cad-stats" ||
-    card.id === "gasmap" ||
+    card.id === "chinagas-wms-qrcode" || card.id === "gasmap" ||
     card.id === "finlyzer" || card.id === "costing-assistant"
   ) {
     return () => controls.openPanel(card.id);
@@ -991,58 +989,6 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
                 style={{ width: "100%", height: "100%", border: "none", flex: 1 }}
               />
             </div>
-          )
-          : null}
-        {activePanel === "gas-cad-stats"
-          ? (
-            <PanelShell
-              panelId="gas-cad-stats"
-              eyebrow="CAD 工具"
-              title="Gas CAD Stats"
-              lede="AutoLISP 脚本，在 AutoCAD / 兼容 CAD 中读取既有燃气图纸实体颜色、文字和块属性，并导出工程量统计 CSV。"
-            >
-              <article className="domain-panel-section">
-                <h2>使用步骤</h2>
-                <ul>
-                  <li>在 CAD 中打开目标 DWG 图纸。</li>
-                  <li>
-                    执行 <code>APPLOAD</code> 加载 <code>gas_pipeline_stats.lsp</code>。
-                  </li>
-                  <li>
-                    执行 <code>GASSTAT</code> 生成统计结果。
-                  </li>
-                </ul>
-              </article>
-              <article className="domain-panel-section gas-cad-download-section">
-                <h2>脚本下载</h2>
-                <p>
-                  下载后在 AutoCAD / 兼容 CAD 中加载使用；浏览器不会直接运行该脚本。
-                </p>
-                <a
-                  className="panel-download-link"
-                  download
-                  href="/gas-cad-stats/gas_pipeline_stats.lsp"
-                >
-                  下载 gas_pipeline_stats.lsp
-                </a>
-              </article>
-              <article className="domain-panel-section">
-                <h2>输出口径</h2>
-                <ul>
-                  <li>
-                    输出文件为 <code>gas_summary_by_pipe_category.csv</code>。
-                  </li>
-                  <li>
-                    CSV 表头为 <code>管径,类型,合计值,备注</code>。
-                  </li>
-                  <li>
-                    支持颜色到管径、<code>CY</code> /{" "}
-                    <code>SZ</code>、DN
-                    钢管细分、材料备注、立柱、管件数量和规格后缀归位。
-                  </li>
-                </ul>
-              </article>
-            </PanelShell>
           )
           : null}
         {activePanel === "chinagas-wms-qrcode"

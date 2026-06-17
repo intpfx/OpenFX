@@ -4,6 +4,7 @@ import VideoCardGrid from '~/components/VideoCardGrid.vue'
 import { useBewlyApp } from '~/composables/useAppProvider'
 import type { GridLayoutType } from '~/logic'
 import type { FollowingLiveResult, List as FollowingLiveItem } from '~/models/live/getFollowingLiveList'
+import { openBilibiliLoginPage } from '~/userscript/mobile'
 import api from '~/utils/api'
 import { decodeHtmlEntities } from '~/utils/htmlDecode'
 
@@ -155,7 +156,7 @@ async function handleLoadMore() {
 }
 
 function jumpToLoginPage() {
-  location.href = 'https://passport.bilibili.com/login'
+  openBilibiliLoginPage()
 }
 
 defineExpose({ initData })

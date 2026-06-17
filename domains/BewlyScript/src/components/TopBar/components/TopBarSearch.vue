@@ -4,6 +4,7 @@ import { computed } from 'vue'
 
 import { settings } from '~/logic'
 import { useTopBarStore } from '~/stores/topBarStore'
+import { normalizeBilibiliUrlForCurrentSurface, openMobileUrlInCurrentPage } from '~/userscript/mobile'
 import { isHomePage } from '~/utils/main'
 
 import { useTopBarInteraction } from '../composables/useTopBarInteraction'
@@ -12,7 +13,6 @@ const { showSearchBar, forceWhiteIcon } = useTopBarInteraction()
 const topBarStore = useTopBarStore()
 const { searchKeyword } = storeToRefs(topBarStore)
 
-// 可以考虑添加一个计算属性来处理样式
 const searchBarStyles = computed(() => ({
   '--b-search-bar-normal-color': settings.value.enableFrostedGlass ? 'color-mix(in oklab, var(--bew-elevated-solid), transparent 60%)' : 'var(--bew-elevated)',
   '--b-search-bar-hover-color': 'var(--bew-elevated-hover)',
@@ -51,11 +51,15 @@ function pushKeywordToSearchResultsPage(keyword: string) {
     window.dispatchEvent(new Event('pushstate'))
   }
   else {
-    // 如果不在首页,跳转到 bilibili.com 主页的搜索结果页
+    // 如果不在首页,跳转到当前 Bilibili surface 的搜索结果页
     const params = new URLSearchParams()
     params.set('page', 'SearchResults')
     params.set('keyword', normalized)
-    window.location.href = `https://www.bilibili.com/?${params.toString()}`
+    const destination = new URL('https://www.bilibili.com/')
+    destination.search = params.toString()
+    const searchUrl = normalizeBilibiliUrlForCurrentSurface(destination.toString())
+    if (!openMobileUrlInCurrentPage(searchUrl))
+      window.location.href = searchUrl
   }
 }
 
@@ -114,5 +118,11 @@ function handleSearch(keyword: string) {
 .search-bar {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+@media (max-width: 700px) {
+  .top-bar-search-content {
+    width: 100%;
+  }
 }
 </style>

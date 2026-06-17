@@ -11,7 +11,12 @@ import { AppPage } from '~/enums/appEnums'
 import { settings } from '~/logic'
 import type { DockItem } from '~/stores/mainStore'
 import { useMainStore } from '~/stores/mainStore'
-import { getBewlyUserscriptHomeUrl, isMobileBilibiliHomePage, isMobileUserscriptRuntimePage } from '~/userscript/mobile'
+import {
+  getBewlyUserscriptHomeUrl,
+  isMobileBilibiliHomePage,
+  isMobileUserscriptRuntimePage,
+  shouldEnableHoverInteractions,
+} from '~/userscript/mobile'
 import { isHomePage, openLinkToNewTab } from '~/utils/main'
 
 import Tooltip from '../Tooltip.vue'
@@ -44,6 +49,10 @@ function isBewlyHomePage(url: string = window.location.href): boolean {
 const showUndo = computed(() => undoForwardState.value === UndoForwardState.ShowUndo)
 // 计算属性：是否显示前进按钮
 const showForward = computed(() => undoForwardState.value === UndoForwardState.ShowForward)
+const hoverInteractionsEnabled = computed(() => shouldEnableHoverInteractions(settings.value.touchScreenOptimization))
+const dockAutoHideEnabled = computed(() => settings.value.autoHideDock && hoverInteractionsEnabled.value)
+const effectiveDockPosition = computed(() => isMobileUserscriptPage ? 'bottom' : settings.value.dockPosition)
+const effectiveHalfHideDock = computed(() => !isMobileUserscriptPage && settings.value.halfHideDock)
 
 const hideDock = ref<boolean>(false)
 const dockContentHover = ref<boolean>(false)
@@ -64,9 +73,36 @@ const dockContentRef = useDelayedHover({
 const edgeZoneSize = 20 // pixels from edge
 let mouseEnterTimer: any | undefined
 let mouseLeaveTimer: any | undefined
+let isGlobalMouseMoveListening = false
+
+function clearDockHoverTimers() {
+  if (mouseEnterTimer) {
+    clearTimeout(mouseEnterTimer)
+    mouseEnterTimer = undefined
+  }
+
+  if (mouseLeaveTimer) {
+    clearTimeout(mouseLeaveTimer)
+    mouseLeaveTimer = undefined
+  }
+}
+
+function addGlobalMouseMoveListener() {
+  if (!isGlobalMouseMoveListening) {
+    window.addEventListener('mousemove', handleGlobalMouseMove)
+    isGlobalMouseMoveListening = true
+  }
+}
+
+function removeGlobalMouseMoveListener() {
+  if (isGlobalMouseMoveListening) {
+    window.removeEventListener('mousemove', handleGlobalMouseMove)
+    isGlobalMouseMoveListening = false
+  }
+}
 
 function handleGlobalMouseMove(event: MouseEvent) {
-  if (!settings.value.autoHideDock) {
+  if (!dockAutoHideEnabled.value) {
     return
   }
 
@@ -75,13 +111,13 @@ function handleGlobalMouseMove(event: MouseEvent) {
 
   let isInEdgeZone = false
 
-  if (settings.value.dockPosition === 'left' && clientX <= edgeZoneSize) {
+  if (effectiveDockPosition.value === 'left' && clientX <= edgeZoneSize) {
     isInEdgeZone = true
   }
-  else if (settings.value.dockPosition === 'right' && clientX >= innerWidth - edgeZoneSize) {
+  else if (effectiveDockPosition.value === 'right' && clientX >= innerWidth - edgeZoneSize) {
     isInEdgeZone = true
   }
-  else if (settings.value.dockPosition === 'bottom' && clientY >= innerHeight - edgeZoneSize) {
+  else if (effectiveDockPosition.value === 'bottom' && clientY >= innerHeight - edgeZoneSize) {
     isInEdgeZone = true
   }
 
@@ -92,6 +128,7 @@ function handleGlobalMouseMove(event: MouseEvent) {
     }
     if (!mouseEnterTimer) {
       mouseEnterTimer = setTimeout(() => {
+        mouseEnterTimer = undefined
         toggleHideDock(false)
       }, 100)
     }
@@ -103,6 +140,7 @@ function handleGlobalMouseMove(event: MouseEvent) {
     }
     if (!mouseLeaveTimer && !dockContentHover.value) {
       mouseLeaveTimer = setTimeout(() => {
+        mouseLeaveTimer = undefined
         toggleHideDock(true)
       }, 600)
     }
@@ -111,17 +149,26 @@ function handleGlobalMouseMove(event: MouseEvent) {
 
 const hoveringDockItem = reactive<HoveringDockItem>({
   themeMode: false,
-  settings: false,
+})
+const themeModeDockItemRef = useDelayedHover({
+  enterDelay: 0,
+  leaveDelay: 0,
+  enter: () => {
+    hoveringDockItem.themeMode = true
+  },
+  leave: () => {
+    hoveringDockItem.themeMode = false
+  },
 })
 const currentDockItems = ref<DockItem[]>([])
 const activatedDockItem = ref<DockItem>()
 
 const tooltipPlacement = computed(() => {
-  if (settings.value.dockPosition === 'left')
+  if (effectiveDockPosition.value === 'left')
     return 'right'
-  else if (settings.value.dockPosition === 'right')
+  else if (effectiveDockPosition.value === 'right')
     return 'left'
-  else if (settings.value.dockPosition === 'bottom')
+  else if (effectiveDockPosition.value === 'bottom')
     return 'top'
   return 'right'
 })
@@ -156,8 +203,19 @@ const shouldShowUndoForwardButtons = computed((): boolean => {
   return props.activatedPage === AppPage.Home && homeActivatedPage.value === HomeSubPage.ForYou
 })
 
-watch(() => settings.value.autoHideDock, (newValue) => {
-  hideDock.value = newValue
+watch(dockAutoHideEnabled, (enabled) => {
+  clearDockHoverTimers()
+
+  if (enabled) {
+    hideDock.value = true
+    addGlobalMouseMoveListener()
+  }
+  else {
+    removeGlobalMouseMoveListener()
+    dockContentHover.value = false
+    hoveringDockItem.themeMode = false
+    hideDock.value = false
+  }
 }, { immediate: true })
 
 // use Json stringify to watch the changes of the array item properties
@@ -202,20 +260,30 @@ function computeDockItem(): DockItem[] {
 }
 
 function toggleHideDock(hide: boolean) {
-  if (settings.value.autoHideDock)
+  if (dockAutoHideEnabled.value)
     hideDock.value = hide
   else
     hideDock.value = false
 }
 
 function handleDockItemClick($event: MouseEvent, dockItem: DockItem) {
-  if ($event.ctrlKey || $event.metaKey) {
+  if (($event.ctrlKey || $event.metaKey) && !isMobileUserscriptPage) {
     openDockItemInNewTab(dockItem)
     return
   }
 
   activatedDockItem.value = dockItem
   emit('dockItemClick', dockItem)
+}
+
+function handleDockItemMiddleClick($event: MouseEvent, dockItem: DockItem) {
+  if (isMobileUserscriptPage) {
+    $event.preventDefault()
+    handleDockItemClick($event, dockItem)
+    return
+  }
+
+  openDockItemInNewTab(dockItem)
 }
 
 function openDockItemInNewTab(dockItem: DockItem) {
@@ -288,7 +356,7 @@ const dockScale = computed((): number => {
   let heightMargin: number
   let widthMargin: number
 
-  if (settings.value.dockPosition === 'bottom') {
+  if (effectiveDockPosition.value === 'bottom') {
     // For bottom position, use original logic
     heightMargin = Math.max(100, Math.min(150, windowHeight.value * 0.1))
     widthMargin = Math.max(100, Math.min(150, windowWidth.value * 0.1))
@@ -308,7 +376,7 @@ const dockScale = computed((): number => {
   let additionalHeight = 0
   let additionalWidth = 0
 
-  if (settings.value.dockPosition === 'bottom') {
+  if (effectiveDockPosition.value === 'bottom') {
     const maxButtonCount = settings.value.backToTopAndRefreshButtonsAreSeparated ? 2 : 1
     const maxUndoForwardButtonCount = settings.value.enableUndoRefreshButton ? 1 : 0
     additionalWidth = (maxButtonCount + maxUndoForwardButtonCount) * buttonSize + maxButtonCount * buttonGap
@@ -336,9 +404,16 @@ const dockScale = computed((): number => {
 })
 
 const dockTransformStyle = computed((): { transform: string, transformOrigin: string } => {
-  const position = settings.value.dockPosition
+  const position = effectiveDockPosition.value
   const scale = dockScale.value
   dockContentRef.value?.style.setProperty('--scale', `${scale}`)
+
+  if (isMobileUserscriptPage) {
+    return {
+      transform: 'none',
+      transformOrigin: 'center bottom',
+    }
+  }
 
   // Adjust origin based on dock position
   const origin = {
@@ -420,22 +495,13 @@ function handleHomeRefreshKeydown(event: KeyboardEvent) {
 // 在组件挂载时添加键盘事件监听
 onMounted(() => {
   document.addEventListener('keydown', handleHomeRefreshKeydown)
-  // Add global mouse move listener for edge zone detection
-  window.addEventListener('mousemove', handleGlobalMouseMove)
 })
 
 // 在组件卸载时移除键盘事件监听
 onUnmounted(() => {
   document.removeEventListener('keydown', handleHomeRefreshKeydown)
-  // Remove global mouse move listener
-  window.removeEventListener('mousemove', handleGlobalMouseMove)
-  // Clear any pending timers
-  if (mouseEnterTimer) {
-    clearTimeout(mouseEnterTimer)
-  }
-  if (mouseLeaveTimer) {
-    clearTimeout(mouseLeaveTimer)
-  }
+  removeGlobalMouseMoveListener()
+  clearDockHoverTimers()
 })
 </script>
 
@@ -447,11 +513,9 @@ onUnmounted(() => {
   >
     <!-- Edge Div -->
     <div
-      v-if="settings.autoHideDock && hideDock"
+      v-if="dockAutoHideEnabled && hideDock"
       class="dock-edge"
-      :class="`dock-edge-${settings.dockPosition}`"
-      @mouseenter="toggleHideDock(false)"
-      @mouseleave="toggleHideDock(true)"
+      :class="`dock-edge-${effectiveDockPosition}`"
     />
 
     <!-- Dock Content -->
@@ -459,17 +523,15 @@ onUnmounted(() => {
       ref="dockContentRef"
       class="dock-content"
       :class="{
-        'left': settings.dockPosition === 'left',
-        'right': settings.dockPosition === 'right',
-        'bottom': settings.dockPosition === 'bottom',
+        'left': effectiveDockPosition === 'left',
+        'right': effectiveDockPosition === 'right',
+        'bottom': effectiveDockPosition === 'bottom',
         'mobile-userscript': isMobileUserscriptPage,
         'hide': hideDock,
-        'half-hide': settings.halfHideDock,
+        'half-hide': dockAutoHideEnabled && effectiveHalfHideDock,
         'hover': dockContentHover,
       }"
       :style="dockTransformStyle"
-      @mouseenter="toggleHideDock(false)"
-      @mouseleave="toggleHideDock(true)"
     >
       <div
         class="dock-content-inner"
@@ -479,12 +541,13 @@ onUnmounted(() => {
             <button
               class="dock-item group"
               :class="{
+                'hover-enabled': hoverInteractionsEnabled,
                 'active': isDockItemActivated(dockItem),
                 'inactive': hoveringDockItem.themeMode && isDark,
                 'disable-glowing-effect': settings.disableDockGlowingEffect,
               }"
               @click="handleDockItemClick($event, dockItem)"
-              @click.middle="openDockItemInNewTab(dockItem)"
+              @click.middle="handleDockItemMiddleClick($event, dockItem)"
             >
               <div
                 v-show="!isDockItemActivated(dockItem)"
@@ -512,25 +575,29 @@ onUnmounted(() => {
           <!-- moon -->
           <div
             v-if="isDark"
-            pos="absolute top-0 left-0 group-hover:top-2px group-hover:left--4px"
+            pos="absolute top-0 left-0"
+            :class="hoverInteractionsEnabled
+              ? 'group-hover:top-2px group-hover:left--4px opacity-0 group-hover:opacity-100'
+              : 'opacity-0'"
             w-full h-full bg-white rounded="1/2"
             z--2 pointer-events-none
             :shadow="
-              settings.disableDockGlowingEffect
+              settings.disableDockGlowingEffect || !hoverInteractionsEnabled
                 ? 'none'
                 : 'group-hover:[-8px_4px_160px_20px_hsla(226deg,85%,77%,1),-8px_4px_100px_12px_hsla(226deg,85%,77%,0.8),-8px_4px_60px_10px_hsla(226deg,85%,77%,0.6),-8px_4px_20px_4px_hsla(226deg,85%,77%,0.4),-4px_2px_8px_0_hsla(226deg,85%,77%,0.8)]'"
-            opacity-0 group-hover:opacity-100
             duration-600
           />
 
           <button
+            ref="themeModeDockItemRef"
             class="dock-item"
-            bg="!dark-hover:$bew-bg" transform="!dark-hover:scale-100"
-            :shadow="settings.disableDockGlowingEffect ? 'none' : '!dark-hover:[inset_4px_-2px_8px_hsla(226deg,85%,77%,1)]'"
+            :class="{
+              'hover-enabled': hoverInteractionsEnabled,
+              'theme-mode-dark': isDark,
+              'disable-glowing-effect': settings.disableDockGlowingEffect,
+            }"
             pointer-events-auto
             @click="toggleDark"
-            @mouseenter="hoveringDockItem.themeMode = true"
-            @mouseleave="hoveringDockItem.themeMode = false"
           >
             <Transition name="fade">
               <div v-show="hoveringDockItem.themeMode" absolute>
@@ -551,11 +618,18 @@ onUnmounted(() => {
           <button
             class="dock-item group"
             :class="{
+              'hover-enabled': hoverInteractionsEnabled,
+              'disable-glowing-effect': settings.disableDockGlowingEffect,
               inactive: hoveringDockItem.themeMode && isDark,
             }"
             @click="emit('settingsVisibilityChange')"
           >
-            <div i-mingcute:settings-3-line text-xl group-hover:rotate-180 transition="all 2000 ease-out" />
+            <div
+              i-mingcute:settings-3-line
+              text-xl
+              :class="hoverInteractionsEnabled ? 'group-hover:rotate-180' : ''"
+              transition="all 2000 ease-out"
+            />
           </button>
         </Tooltip>
       </div>
@@ -564,10 +638,10 @@ onUnmounted(() => {
       <div
         v-if="showBackToTopOrRefreshActions"
         :style="{
-          bottom: settings.dockPosition === 'bottom' ? 'unset' : 0,
-          right: settings.dockPosition === 'bottom' ? 0 : 'unset',
-          transform: settings.dockPosition === 'bottom' ? 'translate(100%, 0)' : 'translateY(100%)',
-          flexDirection: settings.dockPosition === 'bottom' ? 'row' : 'column',
+          bottom: effectiveDockPosition === 'bottom' ? 'unset' : 0,
+          right: effectiveDockPosition === 'bottom' ? 0 : 'unset',
+          transform: effectiveDockPosition === 'bottom' ? 'translate(100%, 0)' : 'translateY(100%)',
+          flexDirection: effectiveDockPosition === 'bottom' ? 'row' : 'column',
         }"
         pos="absolute"
         flex="~ gap-2"
@@ -581,6 +655,7 @@ onUnmounted(() => {
                 v-if="(key === 1 && canRefreshCurrentPage) || (key === 2 && !reachTop)"
                 class="back-to-top-or-refresh-btn"
                 :class="{
+                  'hover-enabled': hoverInteractionsEnabled,
                   inactive: hoveringDockItem.themeMode && isDark,
                 }"
                 @click="handleBackToTopOrRefresh(key === 1 ? 'refresh' : 'backToTop')"
@@ -603,6 +678,7 @@ onUnmounted(() => {
           <button
             class="back-to-top-or-refresh-btn"
             :class="{
+              'hover-enabled': hoverInteractionsEnabled,
               inactive: hoveringDockItem.themeMode && isDark,
             }"
             @click="handleBackToTopOrRefresh('auto')"
@@ -627,6 +703,7 @@ onUnmounted(() => {
             v-if="shouldShowUndoForwardButtons && (showUndo || showForward) && settings.enableUndoRefreshButton"
             class="back-to-top-or-refresh-btn"
             :class="{
+              'hover-enabled': hoverInteractionsEnabled,
               inactive: hoveringDockItem.themeMode && isDark,
             }"
             @click="handleHistoryNavigation"
@@ -663,15 +740,15 @@ onUnmounted(() => {
   }
 
   &-left {
-    --uno: "left-0 top-0 w-14px h-full hover:w-60px";
+    --uno: "left-0 top-0 w-14px h-full";
   }
 
   &-right {
-    --uno: "right-0 top-0 w-14px h-full hover:w-60px";
+    --uno: "right-0 top-0 w-14px h-full";
   }
 
   &-bottom {
-    --uno: "left-0 bottom-0 w-full h-14px hover-h-60px";
+    --uno: "left-0 bottom-0 w-full h-14px";
   }
 }
 
@@ -730,18 +807,33 @@ onUnmounted(() => {
   }
 
   &.mobile-userscript.bottom {
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
-    max-width: calc(100vw - 16px);
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    transform: none !important;
+    transform-origin: center bottom !important;
   }
 
   &.mobile-userscript .dock-content-inner {
-    max-width: calc(100vw - 16px);
+    width: 100vw !important;
+    max-width: 100vw !important;
+    margin: 0 !important;
     overflow-x: auto;
     overflow-y: hidden;
-    padding: 6px;
-    gap: 6px;
+    padding: 8px max(10px, env(safe-area-inset-left, 0px)) calc(env(safe-area-inset-bottom, 0px) + 8px) max(10px, env(safe-area-inset-right, 0px)) !important;
+    gap: 8px;
     scrollbar-width: none;
     touch-action: pan-x;
+    border-inline: 0 !important;
+    border-bottom: 0 !important;
+    border-radius: 18px 18px 0 0 !important;
+    background: color-mix(in oklab, var(--bew-elevated-solid), transparent 3%);
+    border-color: color-mix(in oklab, var(--bew-border-color), transparent 8%);
+    box-shadow:
+      var(--bew-shadow-edge-glow-1),
+      0 -10px 30px rgba(0, 0, 0, 0.28);
   }
 
   &.mobile-userscript .dock-content-inner::-webkit-scrollbar {
@@ -749,11 +841,12 @@ onUnmounted(() => {
   }
 
   .back-to-top-or-refresh-btn {
-    --uno: "transform active:important-scale-90 hover:scale-110";
+    --uno: "transform active:important-scale-90";
     --uno: "lg:w-45px w-35px lg:h-45px h-35px";
     --uno: "grid place-items-center";
+    --uno: "relative";
     --uno: "filter-$bew-filter-glass-1";
-    --uno: "bg-$bew-elevated hover:bg-$bew-content-hover";
+    --uno: "bg-$bew-elevated";
     --uno: "rounded-full shadow-$bew-shadow-2 border-1 border-$bew-border-color";
 
     backdrop-filter: var(--bew-filter-glass-1);
@@ -764,6 +857,10 @@ onUnmounted(() => {
       box-shadow 300ms ease,
       opacity 600ms ease;
     box-shadow: var(--bew-shadow-edge-glow-1), var(--bew-shadow-2);
+
+    &.hover-enabled:hover {
+      --uno: "hover:scale-110 hover:bg-$bew-content-hover";
+    }
 
     &.active {
       --uno: "important-bg-$bew-theme-color-auto text-$bew-text-auto";
@@ -787,15 +884,15 @@ onUnmounted(() => {
   --shadow-dark-active: 0 4px 20px rgba(255, 255, 255, 0.8);
   --shadow-active-active: 0 4px 20px var(--bew-theme-color-80);
 
-  --uno: "relative transform active:important-scale-90 hover:scale-110";
+  --uno: "relative transform active:important-scale-90";
   --uno: "lg:w-45px w-35px";
   --uno: "lg:lh-45px lh-35px";
   --uno: "p-0 flex items-center justify-center";
   --uno: "aspect-square relative";
   --uno: "leading-0";
   --uno: "rounded-60px antialiased";
-  --uno: "bg-$bew-fill-alt hover:bg-$bew-fill-2 cursor-pointer";
-  --uno: "dark:bg-$bew-fill-1 dark-hover:bg-$bew-fill-4";
+  --uno: "bg-$bew-fill-alt cursor-pointer";
+  --uno: "dark:bg-$bew-fill-1";
 
   box-shadow: var(--bew-shadow-edge-glow-1), var(--bew-shadow-1);
   transition:
@@ -805,7 +902,8 @@ onUnmounted(() => {
     box-shadow 600ms ease,
     opacity 600ms ease;
 
-  &:hover {
+  &.hover-enabled:hover {
+    --uno: "hover:scale-110 hover:bg-$bew-fill-2 dark-hover:bg-$bew-fill-4";
     box-shadow:
       var(--bew-shadow-edge-glow-1),
       0 0 0 2px var(--bew-fill-2),
@@ -814,6 +912,17 @@ onUnmounted(() => {
 
   &.disable-glowing-effect {
     box-shadow: var(--bew-shadow-edge-glow-1), var(--bew-shadow-1) !important;
+  }
+
+  &.theme-mode-dark.hover-enabled:hover {
+    --uno: "!dark-hover:bg-$bew-bg !dark-hover:scale-100";
+  }
+
+  &.theme-mode-dark.hover-enabled:not(.disable-glowing-effect):hover {
+    box-shadow:
+      var(--bew-shadow-edge-glow-1),
+      var(--bew-shadow-1),
+      inset 4px -2px 8px hsla(226deg, 85%, 77%, 1);
   }
 
   &.active {
@@ -838,10 +947,55 @@ onUnmounted(() => {
 
   .dock-item,
   .back-to-top-or-refresh-btn {
-    width: 38px;
-    height: 38px;
-    min-width: 38px;
-    line-height: 38px;
+    width: 52px;
+    height: 52px;
+    min-width: 52px;
+    line-height: 52px;
+    background: transparent;
+    border-color: transparent;
+    border-radius: 16px;
+    box-shadow: none;
+    z-index: 0;
+
+    &::before {
+      content: "";
+      position: absolute;
+      inset: 3px;
+      z-index: 0;
+      border: 1px solid color-mix(in oklab, var(--bew-border-color), transparent 10%);
+      border-radius: 16px;
+      background: transparent;
+      box-shadow: none;
+      transition:
+        transform 240ms ease,
+        background-color 240ms ease,
+        box-shadow 240ms ease;
+    }
+
+    > * {
+      position: relative;
+      z-index: 1;
+    }
+
+    &.active::before {
+      background: var(--bew-theme-color);
+      border-color: color-mix(in oklab, var(--bew-theme-color), white 20%);
+      box-shadow: var(--bew-shadow-edge-glow-1), 0 8px 24px var(--bew-theme-color-40);
+    }
+
+    &.inactive::before {
+      opacity: 0.55;
+    }
+
+    &.hover-enabled:hover::before {
+      transform: scale(1.04);
+      background: var(--bew-fill-2);
+    }
+  }
+
+  .dock-item > div,
+  .back-to-top-or-refresh-btn > div {
+    font-size: 22px;
   }
 }
 </style>

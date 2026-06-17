@@ -8,6 +8,7 @@ import { OVERLAY_SCROLL_BAR_SCROLL, TOP_BAR_SCROLL_VISIBILITY_CHANGE, TOP_BAR_VI
 import { VideoPageTopBarConfig } from '~/enums/appEnums'
 import { settings } from '~/logic'
 import { useTopBarStore } from '~/stores/topBarStore'
+import { isMobileUserscriptRuntimePage, shouldPreferTouchMode } from '~/userscript/mobile'
 import { isHomePage, isUserSpacePage, isVideoOrBangumiPage } from '~/utils/main'
 import emitter from '~/utils/mitt'
 
@@ -23,6 +24,9 @@ const { forceWhiteIcon } = useTopBarInteraction()
 const conflictingHeaderSelectors = ['.fixed-author-header', '.fixed-top-header']
 
 const { isDark } = useDark()
+const isMobileUserscriptPage = isMobileUserscriptRuntimePage()
+const effectiveVideoPageTopBarConfig = computed(() => isMobileUserscriptPage ? VideoPageTopBarConfig.AlwaysHide : settings.value.videoPageTopBarConfig)
+const effectiveAutoHideTopBar = computed(() => !isMobileUserscriptPage && settings.value.autoHideTopBar)
 
 // 顶栏显示控制
 const hideTopBar = ref<boolean>(false)
@@ -68,7 +72,7 @@ function applyTopBarVisibility() {
 
 // 处理顶栏显示/隐藏逻辑的函数
 function handleTopBarVisibility() {
-  if (isVideoOrBangumiPage() && settings.value.videoPageTopBarConfig === VideoPageTopBarConfig.ShowOnMouse) {
+  if (isVideoOrBangumiPage() && effectiveVideoPageTopBarConfig.value === VideoPageTopBarConfig.ShowOnMouse) {
     // 清除之前的计时器
     if (hideTimer) {
       clearTimeout(hideTimer)
@@ -144,7 +148,7 @@ function handleScroll(arg?: number | Event): void {
 
   // 在视频页面处理不同的配置
   if (isVideoOrBangumiPage()) {
-    const config = settings.value.videoPageTopBarConfig
+    const config = effectiveVideoPageTopBarConfig.value
 
     // 总是显示：不处理滚动隐藏
     if (config === VideoPageTopBarConfig.AlwaysShow) {
@@ -196,7 +200,7 @@ function handleScroll(arg?: number | Event): void {
     }
 
     // 在用户首页强制开启滚动隐藏，无论设置如何
-    if (isUserSpacePage() || settings.value.autoHideTopBar) {
+    if (isUserSpacePage() || effectiveAutoHideTopBar.value) {
       if (!hideTopBar.value && scrollDelta < 0) {
         topBarVisibilityAnchorScrollTop.value = scrollTop.value
       }
@@ -236,7 +240,7 @@ function emitTopBarScrollVisibilityChange(visible: boolean, scrollDelta: number)
 function setupScrollListeners() {
   // 根据视频页面配置设置初始显示状态
   if (isVideoOrBangumiPage()) {
-    const config = settings.value.videoPageTopBarConfig
+    const config = effectiveVideoPageTopBarConfig.value
     if (config === VideoPageTopBarConfig.AlwaysHide || config === VideoPageTopBarConfig.ShowOnMouse) {
       toggleTopBarVisible(false)
     }
@@ -253,7 +257,7 @@ function setupScrollListeners() {
 
   // 在视频页面根据配置决定是否设置滚动监听
   if (isVideoOrBangumiPage()) {
-    const config = settings.value.videoPageTopBarConfig
+    const config = effectiveVideoPageTopBarConfig.value
     // 只有在滚动显示模式下才设置滚动监听
     if (config !== VideoPageTopBarConfig.ShowOnScroll) {
       return
@@ -303,7 +307,7 @@ let conflictingHeaderObserver: ReturnType<typeof useMutationObserver> | undefine
 
 // 处理点击外部关闭 POP 窗（仅在触屏优化开启时）
 function handleClickOutsidePopup(event: MouseEvent) {
-  if (!settings.value.touchScreenOptimization)
+  if (!shouldPreferTouchMode(settings.value.touchScreenOptimization))
     return
 
   if (!hasActivePopup.value)
@@ -396,7 +400,7 @@ const VideoPageTopBarConfigEnum = VideoPageTopBarConfig
   <div class="top-bar-container">
     <!-- 顶部监听区域 -->
     <div
-      v-if="isVideoOrBangumiPage() && settings.videoPageTopBarConfig === VideoPageTopBarConfigEnum.ShowOnMouse"
+      v-if="isVideoOrBangumiPage() && effectiveVideoPageTopBarConfig === VideoPageTopBarConfigEnum.ShowOnMouse"
       ref="topAreaTarget"
       class="top-area-listener"
     />

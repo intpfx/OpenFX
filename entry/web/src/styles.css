@@ -1604,10 +1604,6 @@ textarea {
   font-size: 0.72rem;
 }
 
-.gas-cad-download-section {
-  background: oklch(0.985 0.004 250);
-}
-
 .panel-download-link {
   display: inline-flex;
   width: fit-content;

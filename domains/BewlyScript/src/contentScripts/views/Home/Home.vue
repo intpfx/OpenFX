@@ -273,6 +273,10 @@ function toggleTabContentLoading(loading: boolean) {
   margin-bottom: 14px;
 }
 
+.mobile-userscript .home-tabs-panel--inline {
+  top: calc(env(safe-area-inset-top, 0px) + var(--bew-top-bar-height) + 8px);
+}
+
 .home-tabs-scroll {
   max-width: 100%;
   scrollbar-width: none;

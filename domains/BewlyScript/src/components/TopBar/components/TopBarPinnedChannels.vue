@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 
 import ALink from '~/components/ALink.vue'
 import { settings } from '~/logic'
+import { shouldEnableHoverInteractions } from '~/userscript/mobile'
 
 import type { TopBarChannelConfig } from '../constants/channels'
 import { allChannelConfigs } from '../constants/channels'
@@ -60,6 +61,7 @@ const hiddenChannels = computed(() => {
 
 const hiddenCount = computed(() => hiddenChannels.value.length)
 const hiddenTooltip = computed(() => hiddenChannels.value.map(channel => channel.name).join(', '))
+const hoverInteractionsEnabled = computed(() => shouldEnableHoverInteractions(settings.value.touchScreenOptimization))
 
 watch(validPinnedKeys, async (keys) => {
   displayedKeys.value = [...keys]
@@ -185,7 +187,7 @@ function arraysEqual<T>(a: T[], b: T[]): boolean {
         :href="channel.href"
         type="topBar"
         class="pinned-channels__item"
-        :class="{ 'white-icon': props.forceWhiteIcon }"
+        :class="{ 'white-icon': props.forceWhiteIcon, 'hover-enabled': hoverInteractionsEnabled }"
         :title="channel.name"
       >
         <div v-if="channel.icon.startsWith('#')" class="pinned-channels__icon">
@@ -204,7 +206,7 @@ function arraysEqual<T>(a: T[], b: T[]): boolean {
     <div
       v-if="hiddenCount > 0"
       class="pinned-channels__more"
-      :class="{ 'white-icon': props.forceWhiteIcon }"
+      :class="{ 'white-icon': props.forceWhiteIcon, 'hover-enabled': hoverInteractionsEnabled }"
       :title="hiddenTooltip"
     >
       +{{ hiddenCount }}
@@ -244,14 +246,14 @@ function arraysEqual<T>(a: T[], b: T[]): boolean {
       background-color 0.3s ease,
       color 0.3s ease;
 
-    &:hover {
+    &.hover-enabled:hover {
       background: var(--bew-fill-2);
     }
 
     &.white-icon {
       color: white;
 
-      &:hover {
+      &.hover-enabled:hover {
         background: rgba(255, 255, 255, 0.2);
       }
     }
@@ -287,7 +289,7 @@ function arraysEqual<T>(a: T[], b: T[]): boolean {
     filter: drop-shadow(0 0 4px var(--bew-bg));
     transition: background-color 0.3s ease;
 
-    &:hover {
+    &.hover-enabled:hover {
       background: var(--bew-fill-2);
     }
 
@@ -295,7 +297,7 @@ function arraysEqual<T>(a: T[], b: T[]): boolean {
       color: white;
       background: rgba(255, 255, 255, 0.12);
 
-      &:hover {
+      &.hover-enabled:hover {
         background: rgba(255, 255, 255, 0.2);
       }
     }

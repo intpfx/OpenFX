@@ -1,4 +1,5 @@
 import { settings } from '~/logic'
+import { shouldEnableHoverInteractions } from '~/userscript/mobile'
 
 // DISABLED WHEN IN TOUCHSCREEN OPTIMIZATION IS ENABLED IN SETTINGS
 export function useDelayedHover({ enterDelay = 300, leaveDelay = 300, beforeEnter, enter, beforeLeave, leave }:
@@ -43,7 +44,7 @@ export function useDelayedHover({ enterDelay = 300, leaveDelay = 300, beforeEnte
 
   watch(el, (el, _, onCleanup) => {
     if (el) {
-      if (!settings.value.touchScreenOptimization) {
+      if (shouldEnableHoverInteractions(settings.value.touchScreenOptimization)) {
         el.addEventListener('mouseenter', handleMouseEnter)
         el.addEventListener('mouseleave', handleMouseLeave)
       }
@@ -58,7 +59,7 @@ export function useDelayedHover({ enterDelay = 300, leaveDelay = 300, beforeEnte
   }, { flush: 'post' })
 
   watch(() => settings.value.touchScreenOptimization, (newValue) => {
-    if (newValue) {
+    if (!shouldEnableHoverInteractions(newValue)) {
       el.value?.removeEventListener('mouseenter', handleMouseEnter)
       el.value?.removeEventListener('mouseleave', handleMouseLeave)
     }

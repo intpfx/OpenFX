@@ -5,6 +5,7 @@ import { DrawerType, useBewlyApp } from '~/composables/useAppProvider'
 import { useDark } from '~/composables/useDark'
 import { DRAWER_VIDEO_ENTER_PAGE_FULL, DRAWER_VIDEO_EXIT_PAGE_FULL, IFRAME_DARK_MODE_CHANGE } from '~/constants/globalEvents'
 import { settings } from '~/logic'
+import { isMobileUserscriptRuntimePage, openMobileUrlInCurrentPage } from '~/userscript/mobile'
 import { isHomePage, isInIframe } from '~/utils/main'
 import { lockPageScroll, unlockPageScroll } from '~/utils/pageScrollLock'
 
@@ -25,6 +26,7 @@ const { activeDrawer, setActiveDrawer } = useBewlyApp()
 const show = ref(false)
 const headerShow = ref(true)
 const iframeRef = ref<HTMLIFrameElement | null>(null)
+const drawerRootRef = ref<HTMLElement | null>(null)
 const currentUrl = ref<string>(props.url)
 const showIframe = ref<boolean>(false)
 const renderIframe = ref<boolean>(true)
@@ -37,6 +39,9 @@ const isPageScrollLocked = ref(false)
 const isEscPressed = ref<boolean>(false)
 const escPressedTimer = ref<NodeJS.Timeout | null>(null)
 const disableEscPress = ref<boolean>(false)
+const isMobileUserscriptPage = isMobileUserscriptRuntimePage()
+const mobileDrawerHeaderHeight = 'calc(56px + env(safe-area-inset-top, 0px))'
+const modalSiblingState = new Map<HTMLElement, { ariaHidden: string | null, inert: boolean }>()
 let stopIframePushStateListener: (() => void) | null = null
 let stopIframePopStateListener: (() => void) | null = null
 let stopIframeDOMContentLoadedListener: (() => void) | null = null
@@ -47,11 +52,31 @@ const iframeContainerClasses = computed(() => {
   if (isPageFullscreen.value) {
     return 'pos-fixed top-0 left-0 w-full h-full z-999999'
   }
+  else if (isMobileUserscriptPage) {
+    return 'pos-absolute left-0 of-hidden bg-$bew-bg rounded-t-0 w-full'
+  }
   else {
     const topPosition = headerShow.value ? 'top-$bew-top-bar-height' : 'top-0'
     // 修正高度：使用 calc(100% - top位置) 确保容器不会超出可视区域
     const height = headerShow.value ? 'h-[calc(100%-var(--bew-top-bar-height))]' : 'h-full'
     return `pos-absolute ${topPosition} left-0 of-hidden bg-$bew-bg rounded-t-$bew-radius w-full ${height}`
+  }
+})
+
+const iframeContainerStyles = computed(() => {
+  if (!isMobileUserscriptPage || isPageFullscreen.value)
+    return undefined
+
+  if (!headerShow.value) {
+    return {
+      top: '0',
+      height: '100%',
+    }
+  }
+
+  return {
+    top: mobileDrawerHeaderHeight,
+    height: 'calc(100% - 56px - env(safe-area-inset-top, 0px))',
   }
 })
 
@@ -66,6 +91,44 @@ const iframeStyles = computed(() => {
     }
   }
 })
+
+function setMobileModalBackgroundHidden(hidden: boolean) {
+  if (!isMobileUserscriptPage)
+    return
+
+  const root = drawerRootRef.value
+  const parent = root?.parentElement
+  if (!root || !parent)
+    return
+
+  Array.from(parent.children).forEach((child) => {
+    if (!(child instanceof HTMLElement) || child === root)
+      return
+
+    if (hidden) {
+      if (!modalSiblingState.has(child)) {
+        modalSiblingState.set(child, {
+          ariaHidden: child.getAttribute('aria-hidden'),
+          inert: child.inert,
+        })
+      }
+      child.setAttribute('aria-hidden', 'true')
+      child.inert = true
+      return
+    }
+
+    const previousState = modalSiblingState.get(child)
+    if (!previousState)
+      return
+
+    if (previousState.ariaHidden === null)
+      child.removeAttribute('aria-hidden')
+    else
+      child.setAttribute('aria-hidden', previousState.ariaHidden)
+    child.inert = previousState.inert
+    modalSiblingState.delete(child)
+  })
+}
 
 useEventListener(window, 'popstate', updateIframeUrl)
 
@@ -204,7 +267,7 @@ async function remountIframe(url: string) {
   await nextTick()
 }
 
-onMounted(() => {
+onMounted(async () => {
   console.log('[IframeDrawer] onMounted called')
   originUrl.value = window.location.href
   history.pushState(null, '', props.url)
@@ -213,6 +276,8 @@ onMounted(() => {
   currentUrl.value = props.url
   renderIframe.value = true
   setActiveDrawer(DrawerType.IframeDrawer) // 设置为当前活跃抽屉
+  await nextTick()
+  setMobileModalBackgroundHidden(true)
   console.log('[IframeDrawer] show.value:', show.value, 'activeDrawer:', activeDrawer.value)
   if (!isPageScrollLocked.value) {
     lockPageScroll()
@@ -221,6 +286,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(async () => {
+  setMobileModalBackgroundHidden(false)
   cleanupIframeWindowListeners()
   if (isPageScrollLocked.value) {
     unlockPageScroll()
@@ -280,6 +346,7 @@ async function handleClose() {
   show.value = false
   headerShow.value = false
   setActiveDrawer(DrawerType.None) // 清除活跃抽屉状态
+  setMobileModalBackgroundHidden(false)
   console.log('[IframeDrawer] show.value:', show.value, 'activeDrawer:', activeDrawer.value)
   delayCloseTimer.value = setTimeout(() => {
     emit('close')
@@ -317,7 +384,11 @@ async function releaseIframeResources() {
 
 function handleOpenInNewTab() {
   if (iframeRef.value) {
-    window.open(iframeRef.value.contentWindow?.location.href.replace(/\/$/, ''), '_blank')
+    const href = iframeRef.value.contentWindow?.location.href.replace(/\/$/, '')
+    if (isMobileUserscriptPage && href)
+      openMobileUrlInCurrentPage(href)
+    else
+      window.open(href, '_blank')
     handleClose()
   }
 }
@@ -441,6 +512,11 @@ watchEffect(() => {
 
 <template>
   <div
+    ref="drawerRootRef"
+    :class="{ 'iframe-drawer-shell--mobile': isMobileUserscriptPage }"
+    role="dialog"
+    aria-modal="true"
+    :aria-label="props.title || 'Video detail drawer'"
     pos="absolute top-0 left-0" of-hidden w-full h-full
     z-999999
   >
@@ -456,12 +532,19 @@ watchEffect(() => {
     <Transition name="fade">
       <div
         v-if="headerShow"
+        class="iframe-drawer-header"
         pos="relative top-0" flex="~ items-center justify-end gap-2"
         max-w="$bew-page-max-width" w-full h="$bew-top-bar-height"
         m-auto px-4
         pointer-events-none
       >
+        <div
+          v-if="isMobileUserscriptPage"
+          class="iframe-drawer-grabber"
+          aria-hidden="true"
+        />
         <Button
+          v-if="!isMobileUserscriptPage"
           style="
             --b-button-color: var(--bew-elevated-solid);
             --b-button-color-hover: var(--bew-elevated-solid-hover);
@@ -478,7 +561,7 @@ watchEffect(() => {
           </div> -->
         </Button>
         <Button
-          v-if="!isEscPressed"
+          v-if="!isMobileUserscriptPage && !isEscPressed"
           style="
             --b-button-color: var(--bew-elevated-solid);
             --b-button-color-hover: var(--bew-elevated-solid-hover);
@@ -490,10 +573,12 @@ watchEffect(() => {
             <i i-mingcute:close-line />
           </template>
           {{ $t('iframe_drawer.close') }}
-          <kbd>Esc</kbd>
+          <kbd v-if="!isMobileUserscriptPage">
+            Esc
+          </kbd>
         </Button>
         <Button
-          v-else
+          v-else-if="!isMobileUserscriptPage"
           type="error"
           @click="handleClose"
         >
@@ -501,7 +586,9 @@ watchEffect(() => {
             <i i-mingcute:close-line />
           </template>
           {{ $t('iframe_drawer.press_esc_again_to_close') }}
-          <kbd>Esc</kbd>
+          <kbd v-if="!isMobileUserscriptPage">
+            Esc
+          </kbd>
         </Button>
       </div>
     </Transition>
@@ -511,6 +598,7 @@ watchEffect(() => {
       <div
         v-if="show"
         :class="iframeContainerClasses"
+        :style="iframeContainerStyles"
       >
         <Transition name="fade">
           <iframe
@@ -533,6 +621,18 @@ watchEffect(() => {
         </Transition>
       </div>
     </Transition>
+
+    <Transition name="fade">
+      <button
+        v-if="show && !isPageFullscreen && isMobileUserscriptPage"
+        type="button"
+        class="iframe-drawer-mobile-return"
+        :aria-label="$t('iframe_drawer.close')"
+        @click="handleClose"
+      >
+        <i i-mingcute:left-line />
+      </button>
+    </Transition>
   </div>
 </template>
 
@@ -545,5 +645,60 @@ watchEffect(() => {
 .drawer-enter-from,
 .drawer-leave-to {
   transform: translateY(100%);
+}
+
+.iframe-drawer-shell--mobile {
+  .iframe-drawer-header {
+    height: calc(56px + env(safe-area-inset-top, 0px)) !important;
+    max-width: 100vw !important;
+    padding: calc(6px + env(safe-area-inset-top, 0px)) 10px 6px !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
+  .iframe-drawer-grabber {
+    position: absolute;
+    left: 50%;
+    top: calc(env(safe-area-inset-top, 0px) + 8px);
+    width: 42px;
+    height: 5px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--bew-text-3) 62%, transparent);
+    transform: translateX(-50%);
+    pointer-events: none;
+  }
+
+}
+
+.iframe-drawer-mobile-return {
+  position: absolute;
+  left: max(10px, env(safe-area-inset-left, 0px));
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+  z-index: 1;
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--bew-border-color) 82%, transparent);
+  border-radius: 19px;
+  background: color-mix(in srgb, var(--bew-elevated-solid) 92%, transparent);
+  color: var(--bew-text-1);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(18px) saturate(1.2);
+  pointer-events: auto;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    transform 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease;
+
+  &:active {
+    transform: scale(0.94);
+    background: var(--bew-fill-2);
+  }
+
+  i {
+    font-size: 25px;
+  }
 }
 </style>

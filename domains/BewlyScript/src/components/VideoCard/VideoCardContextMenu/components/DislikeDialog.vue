@@ -5,9 +5,10 @@ import { useI18n } from 'vue-i18n'
 import { useToast } from 'vue-toastification'
 
 import type { Video } from '~/components/VideoCard/types'
-import { appAuthTokens } from '~/logic'
+import { appAuthTokens, settings } from '~/logic'
 import type { DislikeReason } from '~/models/video/appForYou'
 import { Type as ThreePointV2Type } from '~/models/video/appForYou'
+import { shouldEnableHoverInteractions } from '~/userscript/mobile'
 import api from '~/utils/api'
 import { getTvSign, TVAppKey } from '~/utils/authProvider'
 
@@ -25,6 +26,7 @@ const showDislikeDialog = defineModel<boolean>()
 
 const toast = useToast()
 const { t } = useI18n()
+const hoverInteractionsEnabled = computed(() => shouldEnableHoverInteractions(settings.value.touchScreenOptimization))
 
 const loadingDislikeDialog = ref<boolean>(false)
 type FeedFeedbackType = ThreePointV2Type.Dislike | ThreePointV2Type.Feedback
@@ -157,8 +159,11 @@ onKeyStroke((e: KeyboardEvent) => {
       <li
         v-for="(reason, index) in dislikeReasons"
         :key="reason.id"
-        :class="{ 'activated-dislike-reason': isSelected(ThreePointV2Type.Dislike, reason) }"
-        p="x-6 y-4" rounded="$bew-radius" cursor-pointer bg="$bew-fill-1 hover:$bew-fill-2"
+        :class="['dislike-reason', {
+          'activated-dislike-reason': isSelected(ThreePointV2Type.Dislike, reason),
+          'hover-enabled': hoverInteractionsEnabled,
+        }]"
+        p="x-6 y-4" rounded="$bew-radius" cursor-pointer bg="$bew-fill-1"
         flex="~ gap-2 items-center justify-between"
         @click="selectOption(ThreePointV2Type.Dislike, reason)"
       >
@@ -183,8 +188,11 @@ onKeyStroke((e: KeyboardEvent) => {
         <li
           v-for="(reason, index) in feedbackReasons"
           :key="reason.id"
-          :class="{ 'activated-dislike-reason': isSelected(ThreePointV2Type.Feedback, reason) }"
-          p="x-6 y-4" rounded="$bew-radius" cursor-pointer bg="$bew-fill-1 hover:$bew-fill-2"
+          :class="['dislike-reason', {
+            'activated-dislike-reason': isSelected(ThreePointV2Type.Feedback, reason),
+            'hover-enabled': hoverInteractionsEnabled,
+          }]"
+          p="x-6 y-4" rounded="$bew-radius" cursor-pointer bg="$bew-fill-1"
           flex="~ gap-2 items-center justify-between"
           @click="selectOption(ThreePointV2Type.Feedback, reason)"
         >
@@ -209,6 +217,12 @@ onKeyStroke((e: KeyboardEvent) => {
 </template>
 
 <style lang="scss" scoped>
+.dislike-reason {
+  &.hover-enabled:not(.activated-dislike-reason):hover {
+    --uno: "bg-$bew-fill-2";
+  }
+}
+
 .activated-dislike-reason {
   --uno: "bg-$bew-theme-color-20 color-$bew-theme-color";
 }

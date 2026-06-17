@@ -26,6 +26,14 @@
           "sourcePath": "greasyfork.org/zh-CN/scripts/550879 · domains/chinagas-wms-qrcode/"
         },
         {
+          "id": "bewlyscript",
+          "type": "project",
+          "name": "BewlyScript",
+          "description": "面向 Safari Userscripts 与 Tampermonkey 的 B 站体验优化脚本，保留 BewlyCat 桌面体验，并为 m.bilibili.com 做移动优先适配。",
+          "tech": ["Userscript", "Vue", "Bilibili", "Mobile"],
+          "sourcePath": "domains/BewlyScript/ · dist/BewlyScript.user.js"
+        },
+        {
           "id": "gasmap",
           "type": "project",
           "name": "GasMap",
@@ -39,14 +47,6 @@
       "id": "gas-tools",
       "offsetRem": 1.4,
       "cards": [
-        {
-          "id": "gas-cad-stats",
-          "type": "project",
-          "name": "Gas CAD Stats",
-          "description": "AutoCAD / 兼容 CAD 内运行的燃气图纸工程量提取脚本，按颜色、文字和块属性汇总 CSV。",
-          "tech": ["AutoLISP", "AutoCAD", "CSV"],
-          "sourcePath": "domains/gas-cad-stats/"
-        },
         {
           "id": "finlyzer",
           "type": "project",

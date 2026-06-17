@@ -128,4 +128,25 @@ const { forceWhiteIcon, handleNotificationsItemClick } = useTopBarInteraction()
     display: none;
   }
 }
+
+@media (max-width: 700px) {
+  .top-bar-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    padding-inline: 10px;
+  }
+
+  .top-bar-header__side--left,
+  .top-bar-header__home-tabs {
+    display: none;
+  }
+
+  .top-bar-header__search {
+    justify-content: stretch;
+  }
+
+  .top-bar-header__side--right {
+    min-width: 44px;
+  }
+}
 </style>

@@ -7,6 +7,7 @@ import type { BewlyAppProvider } from '~/composables/useAppProvider'
 import { AppPage } from '~/enums/appEnums'
 import { settings } from '~/logic'
 import { useTopBarStore } from '~/stores/topBarStore'
+import { isMobileUserscriptRuntimePage, normalizeBilibiliUrlForCurrentSurface, openMobileUrlInCurrentPage, shouldEnableHoverInteractions } from '~/userscript/mobile'
 import api from '~/utils/api'
 import { findLeafActiveElement } from '~/utils/element'
 import { isHomePage } from '~/utils/main'
@@ -86,6 +87,7 @@ const isLoadingHotSearch = ref<boolean>(false)
 // 搜索推荐相关状态
 const searchRecommendation = ref<SearchRecommendationItem | null>(null)
 const isLoadingSearchRecommendation = ref<boolean>(false)
+const hoverInteractionsEnabled = computed(() => shouldEnableHoverInteractions(settings.value.touchScreenOptimization))
 
 const searchMode = computed(() => props.searchBehavior ?? 'navigate')
 const isInPlaceSearch = computed(() => searchMode.value === 'stay')
@@ -325,6 +327,10 @@ function handleNativeInput(event: Event) {
 function buildKeywordHref(keyword: string) {
   const encoded = encodeURIComponent(keyword)
 
+  if (isMobileUserscriptRuntimePage()) {
+    return normalizeBilibiliUrlForCurrentSurface(`https://www.bilibili.com/?page=SearchResults&keyword=${encoded}`)
+  }
+
   // 如果未登录，直接返回 B 站原版搜索页面 URL
   if (!topBarStore.isLogin) {
     return `https://search.bilibili.com/all?keyword=${encoded}`
@@ -336,6 +342,23 @@ function buildKeywordHref(keyword: string) {
   }
   // 写死B站原版搜索页面 URL
   return `https://search.bilibili.com/all?keyword=${encoded}`
+}
+
+function navigateToUrlInCurrentPage(url: string) {
+  try {
+    const parsed = new URL(url, window.location.href)
+    if (parsed.origin === window.location.origin) {
+      window.history.pushState({}, '', `${parsed.pathname}${parsed.search}${parsed.hash}`)
+      window.dispatchEvent(new Event('pushstate'))
+      return
+    }
+  }
+  catch {
+    // Fall through to current-tab navigation.
+  }
+
+  if (!openMobileUrlInCurrentPage(url))
+    window.location.href = url
 }
 
 // 从URL中提取搜索关键词
@@ -389,6 +412,13 @@ async function navigateToSearchResultPage(rawKeyword: string) {
 
   // 不在搜索页时，遵循顶栏链接行为设置
   const searchUrl = buildKeywordHref(normalized)
+
+  if (isMobileUserscriptRuntimePage()) {
+    navigateToUrlInCurrentPage(searchUrl)
+    isFocus.value = false
+    resetKeyboardSelection()
+    return
+  }
 
   if (settings.value.searchBarLinkOpenMode === 'background') {
     // 使用后台标签页打开
@@ -704,9 +734,10 @@ function handleClearKeyword() {
             >
               <span> {{ item.value }}</span>
               <button
+                :class="hoverInteractionsEnabled ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'"
                 rounded-full duration-300 pointer-events-auto cursor-pointer p-1
                 text="xs $bew-text-2 hover:white" leading-0 bg="$bew-fill-2 hover:$bew-theme-color"
-                pos="absolute top-0 right-0" scale-80 opacity-0 group-hover:opacity-100
+                pos="absolute top-0 right-0" scale-80
                 @mousedown.prevent
                 @click.stop.prevent="handleDelete(item.value)"
               >

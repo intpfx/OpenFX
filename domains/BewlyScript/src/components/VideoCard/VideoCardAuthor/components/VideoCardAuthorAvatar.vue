@@ -1,4 +1,5 @@
 <script lang="ts" setup>
+import { isMobileUserscriptRuntimePage, openMobileUrlInCurrentPage } from '~/userscript/mobile'
 import { removeHttpFromUrl } from '~/utils/main'
 
 import type { Author } from '../../types'
@@ -9,6 +10,7 @@ const props = withDefaults(defineProps<{
   maxCount?: number
   isLive?: boolean
   compact?: boolean
+  size?: number
 }>(), {
   maxCount: 3, // 最多显示的头像数量
   compact: false,
@@ -22,12 +24,60 @@ const displayedAvatars = computed(() => {
     return [props.author]
 })
 
+const singleAvatarSize = computed(() => props.size ?? 34)
+const stackedAvatarSize = 28
+
+const avatarRootStyle = computed(() => {
+  if (Array.isArray(props.author) && props.author.length > 1) {
+    return {
+      width: `${28 + (displayedAvatars.value?.length) * 6}px`,
+      height: `${stackedAvatarSize}px`,
+    }
+  }
+
+  return {
+    width: `${singleAvatarSize.value}px`,
+    height: `${singleAvatarSize.value}px`,
+  }
+})
+
+function getAvatarItemStyle(index: number) {
+  const stacked = displayedAvatars.value.length > 1
+  const size = stacked ? stackedAvatarSize : singleAvatarSize.value
+
+  return {
+    zIndex: displayedAvatars.value.length - index,
+    left: `${index * 6}px`,
+    width: `${size}px`,
+    height: `${size}px`,
+  }
+}
+
+const followedBadgeStyle = computed(() => ({
+  top: `${singleAvatarSize.value - 13}px`,
+  left: `${singleAvatarSize.value - 12}px`,
+}))
+
+const liveBadgeStyle = computed(() => ({
+  top: `${singleAvatarSize.value - 16}px`,
+  left: `${singleAvatarSize.value - 12}px`,
+}))
+
 // 检查是否是课堂类型（使用特殊标记）
 const isKetang = computed(() => {
   if (Array.isArray(props.author))
     return false
   return props.author?.authorFace === '__ketang_icon__'
 })
+
+function handleAuthorClick(event: MouseEvent, url: string) {
+  if (openMobileUrlInCurrentPage(url)) {
+    event.preventDefault()
+    event.stopPropagation()
+  }
+}
+
+const authorLinkTarget = computed(() => isMobileUserscriptRuntimePage() ? '_self' : '_blank')
 </script>
 
 <template>
@@ -35,8 +85,8 @@ const isKetang = computed(() => {
   <div
     v-if="isKetang"
     :style="{
-      width: '34px',
-      height: '34px',
+      width: `${singleAvatarSize}px`,
+      height: `${singleAvatarSize}px`,
     }"
     :class="compact ? 'mr-2' : 'mr-4'"
     pos="relative"
@@ -56,10 +106,7 @@ const isKetang = computed(() => {
   <!-- 普通头像 -->
   <div
     v-else
-    :style="{
-      width: Array.isArray(author) && author.length > 1 ? `${28 + (displayedAvatars?.length) * 6}px` : '34px',
-      height: Array.isArray(author) && author.length > 1 ? '28px' : '34px',
-    }"
+    :style="avatarRootStyle"
     :class="compact ? 'mr-2' : 'mr-4'"
     pos="relative"
     shrink-0
@@ -67,18 +114,17 @@ const isKetang = computed(() => {
     <a
       v-for="(item, index) in displayedAvatars"
       :key="index"
-      :href="getAuthorJumpUrl(item)" target="_blank"
+      :href="getAuthorJumpUrl(item)"
+      :target="authorLinkTarget"
       rounded="1/2"
       object="center cover" bg="$bew-skeleton" cursor="pointer"
       position-absolute top-0 inline-block
       :style="{
-        zIndex: displayedAvatars.length - index,
-        left: `${index * 6}px`,
-        width: displayedAvatars.length > 1 ? `28px` : '34px',
-        height: displayedAvatars.length > 1 ? `28px` : '34px',
+        ...getAvatarItemStyle(index),
       }"
       :class="{ live: isLive }"
-      @click.stop=""
+      @click.stop="handleAuthorClick($event, getAuthorJumpUrl(item))"
+      @auxclick="handleAuthorClick($event, getAuthorJumpUrl(item))"
     >
       <!-- Avatar -->
       <Picture
@@ -92,8 +138,9 @@ const isKetang = computed(() => {
       <!-- Following Flag -->
       <div
         v-if="item.followed && !Array.isArray(author)"
-        pos="absolute top-21px left-22px"
+        pos="absolute"
         w-14px h-14px
+        :style="followedBadgeStyle"
         bg="$bew-theme-color"
         border="2 outset solid white"
         rounded="1/2"
@@ -103,8 +150,9 @@ const isKetang = computed(() => {
       </div>
       <div
         v-else-if="isLive"
-        pos="absolute top-18px left-22px"
+        pos="absolute"
         w-14px h-14px
+        :style="liveBadgeStyle"
         bg="$bew-theme-color"
         rounded="1/2" grid place-items-center
       >

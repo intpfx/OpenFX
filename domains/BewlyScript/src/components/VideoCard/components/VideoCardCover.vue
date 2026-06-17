@@ -8,6 +8,7 @@ import Button from '~/components/Button.vue'
 import LazyPicture from '~/components/LazyPicture.vue'
 import Tooltip from '~/components/Tooltip.vue'
 import { settings } from '~/logic'
+import { shouldEnableHoverInteractions, shouldPreferTouchMode } from '~/userscript/mobile'
 
 import type { Video } from '../types'
 
@@ -17,6 +18,7 @@ interface Props {
   horizontal?: boolean
   removed: boolean
   isHover: boolean
+  previewActive?: boolean
   previewVideoUrl: string
   isInWatchLater: boolean
   showWatcherLater: boolean
@@ -52,7 +54,19 @@ const videoRef = ref<HTMLVideoElement | null>(null)
 const isLoadingStream = ref<boolean>(false)
 const isPreviewFullscreen = ref<boolean>(false)
 const showVideoControls = ref<boolean>(false)
+const preferTouchMode = computed(() => shouldPreferTouchMode(settings.value.touchScreenOptimization))
+const hoverInteractionsEnabled = computed(() => shouldEnableHoverInteractions(settings.value.touchScreenOptimization))
 const shouldEnableVideoControls = computed(() => settings.value.enableVideoCtrlBarOnVideoCard && !props.video?.roomid)
+const coverTopLeftVisible = computed(() => preferTouchMode.value || Boolean(props.coverTopLeftAlwaysVisible))
+const watchLaterButtonStyle = computed(() => {
+  if (!preferTouchMode.value)
+    return {}
+
+  return {
+    top: 'auto',
+    bottom: props.hasCoverStats ? '40px' : '8px',
+  }
+})
 let hls: Hls | null = null
 let flvPlayer: flvjs.Player | null = null
 let controlsHideTimeout: number | null = null
@@ -88,7 +102,7 @@ function handlePreviewMouseMove() {
   if (!shouldEnableVideoControls.value || !props.previewVideoUrl)
     return
 
-  if (!props.isHover && !isPreviewFullscreen.value)
+  if (!props.previewActive && !isPreviewFullscreen.value)
     return
 
   showControlsTemporarily()
@@ -132,7 +146,7 @@ function syncPreviewFullscreenState() {
   if (!videoRef.value)
     return
 
-  if (!props.isHover || !props.previewVideoUrl) {
+  if (!props.previewActive || !props.previewVideoUrl) {
     stopPreview(videoRef.value)
     return
   }
@@ -302,11 +316,11 @@ async function setupPreviewVideo(url: string, videoEl: HTMLVideoElement) {
 }
 
 // Watch for preview URL and videoRef changes
-watch([() => props.previewVideoUrl, () => props.isHover, videoRef], ([url, isHover, videoEl]) => {
+watch([() => props.previewVideoUrl, () => props.previewActive, videoRef], ([url, previewActive, videoEl]) => {
   if (!videoEl)
     return
 
-  if (!isHover || !url) {
+  if (!previewActive || !url) {
     if (isPreviewFullscreen.value)
       return
 
@@ -317,14 +331,14 @@ watch([() => props.previewVideoUrl, () => props.isHover, videoRef], ([url, isHov
   setupPreviewVideo(url, videoEl)
 })
 
-watch([shouldEnableVideoControls, () => props.previewVideoUrl, () => props.isHover], ([controlsEnabled, url, isHover]) => {
+watch([shouldEnableVideoControls, () => props.previewVideoUrl, () => props.previewActive], ([controlsEnabled, url, previewActive]) => {
   if (isPreviewFullscreen.value) {
     if (controlsEnabled && url)
       showVideoControls.value = true
     return
   }
 
-  if (!controlsEnabled || !url || !isHover) {
+  if (!controlsEnabled || !url || !previewActive) {
     clearControlsHideTimeout()
     showVideoControls.value = false
     return
@@ -353,11 +367,11 @@ onBeforeUnmount(() => {
 <template>
   <div
     class="group/cover"
+    :class="hoverInteractionsEnabled ? 'group-hover:z-2' : 'z-2'"
     shrink-0
     relative bg="$bew-skeleton" rounded="$bew-radius"
     overflow-hidden
     cursor-pointer
-    group-hover:z-2
     style="aspect-ratio: 16 / 9; contain: layout style; will-change: auto;"
   >
     <!-- Skeleton mode -->
@@ -400,7 +414,7 @@ onBeforeUnmount(() => {
       <!-- Video preview -->
       <Transition v-if="!removed && settings.enableVideoPreview" name="fade">
         <div
-          v-if="previewVideoUrl && isHover"
+          v-if="previewVideoUrl && previewActive"
           pos="absolute top-0 left-0" w-full aspect-video rounded="$bew-radius" bg-black
           @mousemove="handlePreviewMouseMove"
         >
@@ -433,7 +447,7 @@ onBeforeUnmount(() => {
         v-if="video?.rank"
         pos="absolute top-0"
         p-2
-        class="group-hover:opacity-0"
+        :class="hoverInteractionsEnabled ? 'opacity-100 group-hover:opacity-0' : 'opacity-100'"
         duration-300
       >
         <div
@@ -458,8 +472,8 @@ onBeforeUnmount(() => {
 
       <template v-if="!removed && video">
         <div
-          :class="coverTopLeftAlwaysVisible ? 'opacity-100' : 'opacity-0 group-hover/cover:opacity-100'"
-          :transform="coverTopLeftAlwaysVisible ? 'scale-100' : 'scale-70 group-hover/cover:scale-100'"
+          :class="coverTopLeftVisible || !hoverInteractionsEnabled ? 'opacity-100' : 'opacity-0 group-hover/cover:opacity-100'"
+          :transform="coverTopLeftVisible || !hoverInteractionsEnabled ? 'scale-100' : 'scale-70 group-hover/cover:scale-100'"
           duration-300
           pos="absolute top-0 left-0" z-2
           @click.stop=""
@@ -469,7 +483,7 @@ onBeforeUnmount(() => {
 
         <div
           v-if="video.liveStatus === 1"
-          class="group-hover:opacity-0"
+          :class="hoverInteractionsEnabled ? 'group-hover:opacity-0' : 'opacity-100'"
           pos="absolute left-0 top-0" bg="$bew-theme-color" text="xs white" fw-bold
           p="x-2 y-1" m-1 inline-block rounded="$bew-radius" duration-300
         >
@@ -479,7 +493,7 @@ onBeforeUnmount(() => {
 
         <div
           v-if="video.badge && Object.keys(video.badge).length > 0"
-          class="group-hover:opacity-0"
+          :class="hoverInteractionsEnabled ? 'group-hover:opacity-0' : 'opacity-100'"
           :style="{
             backgroundColor: video.badge.bgColor,
             color: video.badge.color,
@@ -501,8 +515,9 @@ onBeforeUnmount(() => {
           rounded="$bew-radius"
           text="!white xl"
           bg="black opacity-60"
-          class="opacity-0 group-hover/cover:opacity-100"
-          transform="scale-70 group-hover/cover:scale-100"
+          :class="hoverInteractionsEnabled ? 'opacity-0 group-hover/cover:opacity-100' : 'opacity-100'"
+          :transform="hoverInteractionsEnabled ? 'scale-70 group-hover/cover:scale-100' : 'scale-100'"
+          :style="watchLaterButtonStyle"
           duration-300
           @click.prevent.stop="emit('toggleWatchLater')"
           @keydown.enter.prevent.stop="emit('toggleWatchLater')"

@@ -67,7 +67,7 @@ export function calculateProjectTotal(
   rows: EnrichedQuantityRow[],
   globalParams: GlobalParams
 ): CalculationSummary {
-  const { coefficient, applyXuzhouDiscount, xuzhouDiscountRate, manualBuriedPipeline } = globalParams;
+  const { coefficient, applySpecialDiscount, specialDiscountRate, manualBuriedPipeline } = globalParams;
 
   // 1. 计算管线总长度（所有行工程量之和）
   const totalPipelineLength = rows.reduce((sum, row) => {
@@ -116,11 +116,11 @@ export function calculateProjectTotal(
   // 5. 工程总包施工费
   const totalPackageFee = new Decimal(finalConstructionFee).toDecimalPlaces(2).toNumber();
 
-  // 6. 分包结算价（徐州下浮17%）
+  // 6. 分包结算价（专项下浮）
   let subcontractFee: number | null = null;
-  if (applyXuzhouDiscount) {
+  if (applySpecialDiscount) {
     subcontractFee = new Decimal(totalPackageFee)
-      .times(1 - xuzhouDiscountRate)
+      .times(1 - specialDiscountRate)
       .toDecimalPlaces(2)
       .toNumber();
   }

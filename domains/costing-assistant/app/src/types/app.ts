@@ -6,8 +6,8 @@ import type { EnrichedQuantityRow } from './quantity';
  */
 export interface GlobalParams {
   coefficient: number;              // 工程系数，默认 1.0
-  applyXuzhouDiscount: boolean;     // 是否应用徐州17%下浮
-  xuzhouDiscountRate: number;       // 下浮比例，默认 0.17
+  applySpecialDiscount: boolean;     // 是否应用专项下浮
+  specialDiscountRate: number;       // 下浮比例，默认 0.17
   manualBuriedPipeline: boolean | null;  // 手动设置埋地管道，null 表示使用自动判定
 }
 
@@ -29,7 +29,7 @@ export interface CalculationSummary {
   standardFee: number;              // 标准费用（非埋地规则）
   finalConstructionFee: number;     // 最终施工费
   totalPackageFee: number;          // 工程总包施工费
-  subcontractFee: number | null;    // 分包结算价（徐州下浮后）
+  subcontractFee: number | null;    // 分包结算价（专项下浮后）
 }
 
 /**
@@ -60,8 +60,8 @@ export interface AppState {
  */
 export const DEFAULT_GLOBAL_PARAMS: GlobalParams = {
   coefficient: 1.0,
-  applyXuzhouDiscount: false,
-  xuzhouDiscountRate: 0.17,
+  applySpecialDiscount: false,
+  specialDiscountRate: 0.17,
   manualBuriedPipeline: null,
 };
 

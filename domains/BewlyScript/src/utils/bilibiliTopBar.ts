@@ -1,3 +1,5 @@
+import { openBilibiliLoginPage } from '~/userscript/mobile'
+
 const BILIBILI_TOP_BAR_SELECTORS = [
   '.bili-header',
   '.bili-header .bili-header__bar',
@@ -76,8 +78,6 @@ export function resetBilibiliTopBarInlineStyles(doc: Document) {
  * to redirect users to the login page.
  */
 export function setupLoginButtonClickHandlers(doc: Document) {
-  const LOGIN_URL = 'https://passport.bilibili.com/login'
-
   // Function to handle login button binding
   function bindLoginButton(button: HTMLElement) {
     if (button.hasAttribute('data-bewly-login-handler'))
@@ -88,7 +88,7 @@ export function setupLoginButtonClickHandlers(doc: Document) {
     button.addEventListener('click', (e) => {
       e.preventDefault()
       e.stopPropagation()
-      window.location.href = LOGIN_URL
+      openBilibiliLoginPage()
     })
   }
 

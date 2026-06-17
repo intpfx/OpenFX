@@ -165,14 +165,6 @@ function closeDropdown() {
   searchQuery.value = ''
 }
 
-function onMouseLeave() {
-  window.addEventListener('click', closeDropdown)
-}
-
-function onMouseEnter() {
-  window.removeEventListener('click', closeDropdown)
-}
-
 watch(() => activatedSeries.value?.number, (newVal, oldVal) => {
   if (newVal && newVal !== oldVal) {
     handleBackToTop(0)
@@ -189,8 +181,6 @@ defineExpose({ initData })
     <div
       ref="containerRef"
       pos="relative" mb-20px w-280px
-      @mouseleave="onMouseLeave"
-      @mouseenter="onMouseEnter"
     >
       <div
         p="x-4 y-2"
@@ -234,8 +224,7 @@ defineExpose({ initData })
             pos="absolute" bg="$bew-elevated" shadow="$bew-shadow-2"
             mt-2 rounded="$bew-radius" z="10004"
             max-h-400px of-hidden
-            @mouseenter="onMouseEnter"
-            @mouseleave="onMouseLeave"
+            @click.stop
           >
             <!-- 搜索框 -->
             <div p-3 border-b="1px solid $bew-border-color">
@@ -282,6 +271,7 @@ defineExpose({ initData })
           v-if="showDropdown"
           pos="fixed top-0 left-0" w-full h-full
           z="10003"
+          @pointerdown="closeDropdown"
           @wheel="closeDropdown"
         />
       </Teleport>

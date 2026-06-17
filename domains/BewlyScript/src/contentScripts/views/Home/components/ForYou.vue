@@ -12,6 +12,7 @@ import { Type as ThreePointV2Type } from '~/models/video/appForYou'
 import type { forYouResult, Item as VideoItem } from '~/models/video/forYou'
 import type { AppVideoElement, VideoCardDisplayData, VideoElement } from '~/stores/forYouStore'
 import { useForYouStore } from '~/stores/forYouStore'
+import { openBilibiliLoginPage } from '~/userscript/mobile'
 import api from '~/utils/api'
 import { TVAppKey } from '~/utils/authProvider'
 import { decodeHtmlEntities } from '~/utils/htmlDecode'
@@ -883,7 +884,7 @@ async function getAppRecommendVideos(version = requestVersion) {
 }
 
 function jumpToLoginPage() {
-  location.href = 'https://passport.bilibili.com/login'
+  openBilibiliLoginPage()
 }
 
 // 修改 defineExpose，暴露重置方法和撤销方法

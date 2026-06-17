@@ -13,7 +13,7 @@ import { settings } from '~/logic'
 import type { DockItem } from '~/stores/mainStore'
 import { useMainStore } from '~/stores/mainStore'
 import { useTopBarStore } from '~/stores/topBarStore'
-import { getBewlyUserscriptHomeUrl, isMobileBilibiliHomePage, isMobileUserscriptRuntimePage } from '~/userscript/mobile'
+import { getBewlyUserscriptHomeUrl, isMobileBilibiliHomePage, isMobileUserscriptRuntimePage, MOBILE_OPEN_IN_PAGE_EVENT, normalizeBilibiliUrlForCurrentSurface } from '~/userscript/mobile'
 import { isHomePage, isInIframe, isNotificationPage, isSearchResultsPage, isVideoOrBangumiPage, openLinkToNewTab, queryDomUntilFound, scrollToTop } from '~/utils/main'
 import emitter from '~/utils/mitt'
 
@@ -26,7 +26,8 @@ function isFestivalPage(): boolean {
 
 const mainStore = useMainStore()
 const topBarStore = useTopBarStore()
-const isMobileUserscriptPage = isMobileUserscriptRuntimePage()
+const isMobileUserscriptPage = isMobileUserscriptRuntimePage() && !isInIframe()
+const currentRouteUrl = ref(window.location.href)
 
 function isBewlyHomePage(url: string = window.location.href): boolean {
   return isHomePage(url) || (isMobileUserscriptPage && isMobileBilibiliHomePage(url))
@@ -63,16 +64,21 @@ const activatedPage = ref<AppPage>(getPageParam() || (settings.value.dockItemsCo
 
 // 监听 URL 变化,同步更新 activatedPage
 useEventListener(window, 'pushstate', () => {
+  currentRouteUrl.value = window.location.href
   const pageParam = getPageParam()
   if (pageParam && pageParam !== activatedPage.value) {
     activatedPage.value = pageParam
   }
 })
 useEventListener(window, 'popstate', () => {
+  currentRouteUrl.value = window.location.href
   const pageParam = getPageParam()
   if (pageParam && pageParam !== activatedPage.value) {
     activatedPage.value = pageParam
   }
+})
+useEventListener(window, 'replacestate', () => {
+  currentRouteUrl.value = window.location.href
 })
 
 // 清理搜索相关的URL参数（仅在首页生效）
@@ -206,6 +212,9 @@ const activeDrawer = ref<DrawerType>(DrawerType.None)
 function setActiveDrawer(drawer: DrawerType) {
   activeDrawer.value = drawer
 }
+const hideShellForMobileIframeDrawer = computed(() => isMobileUserscriptPage && activeDrawer.value === DrawerType.IframeDrawer)
+const hideShellForMobileVideoDetail = computed(() => isMobileUserscriptPage && isVideoOrBangumiPage(currentRouteUrl.value))
+const hideMobileShell = computed(() => hideShellForMobileIframeDrawer.value || hideShellForMobileVideoDetail.value)
 
 // 用于控制当iframe内打开图片预览时隐藏顶栏和Dock
 const hideUIForIframePhotoViewer = ref<boolean>(false)
@@ -309,9 +318,6 @@ const showBewlyPage = computed((): boolean => {
   return isBewlyHomePage()
 })
 const showTopBar = computed((): boolean => {
-  if (isMobileUserscriptPage)
-    return false
-
   // When using the open in drawer feature, the iframe inside the page will hide the top bar
   if (isVideoOrBangumiPage() && isInIframe())
     return false
@@ -445,7 +451,7 @@ onMounted(() => {
 
 function handleDockItemClick(dockItem: DockItem) {
   // Opening in a new tab while still on the current tab doesn't require changing the `activatedPage`
-  if (dockItem.openInNewTab) {
+  if (dockItem.openInNewTab && !isMobileUserscriptPage) {
     openLinkToNewTab(dockItem.hasBewlyPage ? getBewlyPageUrl(dockItem.page) : dockItem.url)
   }
   else {
@@ -454,15 +460,26 @@ function handleDockItemClick(dockItem: DockItem) {
         changeActivatePage(dockItem.page)
       }
       else {
-        location.href = getBewlyPageUrl(dockItem.page)
+        const url = getBewlyPageUrl(dockItem.page)
+        if (isMobileUserscriptPage)
+          openMobileUrlInPage(url)
+        else
+          location.href = url
       }
     }
     else {
       if (!isBewlyHomePage()) {
-        location.href = getBewlyPageUrl(dockItem.page)
+        const url = getBewlyPageUrl(dockItem.page)
+        if (isMobileUserscriptPage)
+          openMobileUrlInPage(url)
+        else
+          location.href = url
       }
       else if (dockItem.url) {
-        location.href = dockItem.url
+        if (isMobileUserscriptPage)
+          openMobileUrlInPage(dockItem.url)
+        else
+          location.href = dockItem.url
       }
     }
 
@@ -576,23 +593,61 @@ function openIframeDrawer(url: string) {
     origin.protocol === destination.protocol && origin.host === destination.host && origin.port === destination.port
 
   const currentUrl = new URL(location.href)
-  const destination = new URL(url)
+  let destination: URL
 
   try {
-    if (!isSameOrigin(currentUrl, destination)) {
-      openLinkToNewTab(url)
+    destination = new URL(normalizeBilibiliUrlForCurrentSurface(url), location.href)
+
+    if (!isMobileUserscriptPage && !isSameOrigin(currentUrl, destination)) {
+      openLinkToNewTab(destination.toString())
       return
     }
   }
   catch {
-    openLinkToNewTab(url)
+    if (!isMobileUserscriptPage)
+      openLinkToNewTab(url)
     return
   }
 
   setActiveDrawer(DrawerType.IframeDrawer)
-  iframeDrawerURL.value = url
+  iframeDrawerURL.value = destination.toString()
   showIframeDrawer.value = true
 }
+
+function openMobileUrlInPage(url: string) {
+  const normalizedUrl = normalizeBilibiliUrlForCurrentSurface(url)
+
+  try {
+    const destination = new URL(normalizedUrl, location.href)
+    const isMobileHomeRoute = destination.origin === location.origin
+      && (destination.pathname === '/' || destination.pathname === '/index.html')
+
+    if (isMobileHomeRoute) {
+      window.history.pushState({}, '', `${destination.pathname}${destination.search}${destination.hash}`)
+      window.dispatchEvent(new Event('pushstate'))
+      return
+    }
+  }
+  catch {
+    // Fall through to drawer handling.
+  }
+
+  openIframeDrawer(normalizedUrl)
+}
+
+function handleMobileOpenInPage(event: Event) {
+  if (!isMobileUserscriptPage)
+    return
+
+  const url = (event as CustomEvent<{ url?: string }>).detail?.url
+  if (!url)
+    return
+
+  event.preventDefault()
+  openMobileUrlInPage(url)
+}
+
+useEventListener(window, MOBILE_OPEN_IN_PAGE_EVENT, handleMobileOpenInPage)
 
 /**
  * Checks if the current viewport has a scrollbar.
@@ -827,12 +882,13 @@ if (settings.value.cleanUrlArgument) {
 
     <!-- Dock & RightSideButtons -->
     <div
-      v-if="!isInIframe()"
+      v-if="!isInIframe() && !hideMobileShell"
       class="bewly-interactive-layer"
       pos="absolute top-0 left-0" w-full h-full overflow-hidden
       pointer-events-none
       :style="{
-        opacity: hideUIForIframePhotoViewer ? 0 : 1,
+        opacity: hideUIForIframePhotoViewer || hideMobileShell ? 0 : 1,
+        pointerEvents: hideUIForIframePhotoViewer || hideMobileShell ? 'none' : 'auto',
         transition: 'opacity 0.2s ease',
       }"
     >
@@ -850,11 +906,11 @@ if (settings.value.cleanUrlArgument) {
 
     <!-- TopBar -->
     <div
-      v-if="showTopBar"
+      v-if="showTopBar && !hideMobileShell"
       m-auto max-w="$bew-page-max-width"
       :style="{
-        opacity: hideUIForIframePhotoViewer ? 0 : 1,
-        pointerEvents: hideUIForIframePhotoViewer ? 'none' : 'auto',
+        opacity: hideUIForIframePhotoViewer || hideMobileShell ? 0 : 1,
+        pointerEvents: hideUIForIframePhotoViewer || hideMobileShell ? 'none' : 'auto',
         transition: 'opacity 0.2s ease',
       }"
     >
@@ -933,7 +989,7 @@ if (settings.value.cleanUrlArgument) {
   .bewly-page-content {
     width: 100%;
     max-width: 100vw;
-    padding: calc(env(safe-area-inset-top, 0px) + 12px) 12px calc(env(safe-area-inset-bottom, 0px) + 86px);
+    padding: calc(env(safe-area-inset-top, 0px) + var(--bew-top-bar-height) + 12px) 12px calc(env(safe-area-inset-bottom, 0px) + 92px);
   }
 
   .bewly-scroll-viewport {

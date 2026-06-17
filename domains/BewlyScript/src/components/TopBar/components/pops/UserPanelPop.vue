@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 
 import { settings } from '~/logic'
 import { useTopBarStore } from '~/stores/topBarStore'
+import { isMobileUserscriptRuntimePage, openMobileUrlInCurrentPage, shouldEnableHoverInteractions, shouldPreferTouchMode } from '~/userscript/mobile'
 import api from '~/utils/api'
 import { revokeAccessKey } from '~/utils/authProvider'
 import { numFormatter } from '~/utils/dataFormatter'
@@ -101,6 +102,16 @@ const showLv6LastLoginInfo = computed(() => {
   return !(props.userInfo?.level_info?.current_level >= 6 && settings.value.hideTopBarUserPanelLv6LastLoginLocation)
 })
 
+const preferTouchMode = computed(() => {
+  return shouldPreferTouchMode(settings.value.touchScreenOptimization)
+})
+
+const hoverInteractionsEnabled = computed(() => {
+  return shouldEnableHoverInteractions(settings.value.touchScreenOptimization)
+})
+
+const isMobileUserscriptPage = computed(() => isMobileUserscriptRuntimePage())
+
 onMounted(() => {
   api.user.getUserStat()
     .then((res) => {
@@ -151,17 +162,24 @@ function getLvIcon(level: number, isSigma: boolean = false): string {
 }
 
 function handleClickChannel() {
+  const spaceUrl = `https://space.bilibili.com/${mid.value}`
+
+  if (isMobileUserscriptRuntimePage()) {
+    openMobileUrlInCurrentPage(spaceUrl)
+    return
+  }
+
   if (settings.value.topBarLinkOpenMode === 'newTab') {
-    window.open(`https://space.bilibili.com/${mid.value}`, '_blank')
+    window.open(spaceUrl, '_blank')
   }
   else if (settings.value.topBarLinkOpenMode === 'currentTabIfNotHomepage') {
     if (isHomePage())
-      window.open(`https://space.bilibili.com/${mid.value}`, '_blank')
+      window.open(spaceUrl, '_blank')
     else
-      window.open(`https://space.bilibili.com/${mid.value}`, '_self')
+      window.open(spaceUrl, '_self')
   }
   else {
-    window.open(`https://space.bilibili.com/${mid.value}`, '_self')
+    window.open(spaceUrl, '_self')
   }
 }
 </script>
@@ -174,13 +192,14 @@ function handleClickChannel() {
     border="1 $bew-border-color"
     shadow="[var(--bew-shadow-3),var(--bew-shadow-edge-glow-1)]"
     class="userPanel-pop bew-popover"
+    :class="{ 'userPanel-pop--mobile-drawer': isMobileUserscriptPage }"
     data-key="userPanel"
   >
     <div
       text="xl" font-medium flex="~ items-center gap-2"
     >
       <Button
-        v-if="settings.touchScreenOptimization"
+        v-if="preferTouchMode"
         type="secondary" strong @click="handleClickChannel"
       >
         {{ userInfo.uname ? userInfo.uname : '-' }}
@@ -213,7 +232,7 @@ function handleClickChannel() {
 
     <ALink
       v-if="userInfo?.level_info?.current_level < 6"
-      href="//account.bilibili.com/account/record?type=exp"
+      href="https://account.bilibili.com/account/record?type=exp"
       type="topBar"
       block mt-2 mb-2 w-full
       flex="~ col justify-center items-start"
@@ -255,13 +274,16 @@ function handleClickChannel() {
 
     <ALink
       v-else
-      href="//account.bilibili.com/account/record?type=exp"
+      href="https://account.bilibili.com/account/record?type=exp"
       type="topBar"
       mt-2 mb-2
       duration-300
       flex="~ items-center gap-2"
       class="lv6-entry"
-      :class="showLv6LastLoginInfo ? 'lv6-entry--card' : 'lv6-entry--compact'"
+      :class="[
+        showLv6LastLoginInfo ? 'lv6-entry--card' : 'lv6-entry--compact',
+        { 'hover-enabled': hoverInteractionsEnabled },
+      ]"
     >
       <div
         :style="{ width: userInfo?.is_senior_member ? '36px' : '28px' }"
@@ -281,7 +303,7 @@ function handleClickChannel() {
 
     <div grid="~ cols-3 gap-2" mb-2>
       <ALink
-        class="channel-info-item"
+        :class="['channel-info-item', { 'hover-enabled': hoverInteractionsEnabled }]"
         :href="`https://space.bilibili.com/${mid}/fans/follow`"
         :title="`${userStat.following}`"
         type="topBar"
@@ -292,7 +314,7 @@ function handleClickChannel() {
         <div>{{ $t('topbar.user_dropdown.following') }}</div>
       </ALink>
       <ALink
-        class="channel-info-item"
+        :class="['channel-info-item', { 'hover-enabled': hoverInteractionsEnabled }]"
         :href="`https://space.bilibili.com/${mid}/fans/fans`"
         :title="`${userStat.follower}`"
         type="topBar"
@@ -303,7 +325,7 @@ function handleClickChannel() {
         <div>{{ $t('topbar.user_dropdown.followers') }}</div>
       </ALink>
       <ALink
-        class="channel-info-item"
+        :class="['channel-info-item', { 'hover-enabled': hoverInteractionsEnabled }]"
         :href="`https://space.bilibili.com/${mid}/dynamic`"
         :title="`${userStat.dynamic_count}`"
         type="topBar"
@@ -327,10 +349,10 @@ function handleClickChannel() {
         :key="item.url"
         :href="item.url"
         type="topBar"
+        :class="hoverInteractionsEnabled ? 'hover:bg-$bew-fill-2' : ''"
         p="x-4 y-2" flex="~ items-center justify-between"
         rounded="$bew-radius"
         duration-300
-        hover:bg="$bew-fill-2"
         relative
       >
         <!-- B币领取提醒dot -->
@@ -358,10 +380,10 @@ function handleClickChannel() {
         :key="item.url"
         :href="item.url"
         type="topBar"
+        :class="hoverInteractionsEnabled ? 'hover:bg-$bew-fill-2' : ''"
         p="x-4 y-2" flex="~ items-center justify-between"
         rounded="$bew-radius"
         duration-300
-        hover:bg="$bew-fill-2"
         relative
       >
         <!-- B币领取提醒dot -->
@@ -380,10 +402,10 @@ function handleClickChannel() {
       </ALink>
       <div
         text="$bew-error-color"
+        :class="hoverInteractionsEnabled ? 'hover:bg-$bew-fill-2' : ''"
         p="x-4 y-2" flex="~ items-center"
         rounded="$bew-radius"
         duration-300 cursor-pointer
-        hover:bg="$bew-fill-2"
         @click="logout()"
       >
         <div i-solar:logout-2-bold-duotone text="$bew-error-60" mr-2 />
@@ -405,8 +427,12 @@ function handleClickChannel() {
 }
 
 .lv6-entry--card {
-  --uno: "w-full p-2 bg-$bew-fill-alt rounded-$bew-radius hover:bg-$bew-fill-2";
+  --uno: "w-full p-2 bg-$bew-fill-alt rounded-$bew-radius";
   box-shadow: var(--bew-shadow-edge-glow-1), var(--bew-shadow-1);
+
+  &.hover-enabled:hover {
+    --uno: "bg-$bew-fill-2";
+  }
 }
 
 .lv6-entry--compact {
@@ -420,8 +446,12 @@ function handleClickChannel() {
 
 .channel-info-item {
   --uno: "p-2 m-0 rounded-$bew-radius text-sm flex flex-col items-center transition-all duration-300";
-  --uno: "bg-$bew-fill-alt hover:bg-$bew-fill-2";
+  --uno: "bg-$bew-fill-alt";
   --uno: "shadow-[var(--bew-shadow-edge-glow-1),var(--bew-shadow-1)]";
+
+  &.hover-enabled:hover {
+    --uno: "bg-$bew-fill-2";
+  }
 
   > * {
     --uno: "transition-all duration-300";
@@ -433,6 +463,51 @@ function handleClickChannel() {
     + div {
       --uno: "text-$bew-text-2 mt-1 text-xs font-semibold";
     }
+  }
+}
+
+.userPanel-pop--mobile-drawer {
+  position: fixed !important;
+  inset: auto 0 0 0 !important;
+  z-index: 10030 !important;
+  width: 100vw !important;
+  max-width: 100vw;
+  max-height: min(78dvh, 720px) !important;
+  padding: 20px 16px calc(env(safe-area-inset-bottom, 0px) + 18px);
+  border-inline: 0;
+  border-bottom: 0;
+  border-radius: 24px 24px 0 0 !important;
+  background: color-mix(in oklab, var(--bew-elevated-solid), transparent 4%);
+  box-shadow:
+    var(--bew-shadow-edge-glow-1),
+    0 -18px 48px rgba(0, 0, 0, 0.38) !important;
+  transform: translateY(0) !important;
+
+  &::before {
+    content: "";
+    display: block;
+    width: 42px;
+    height: 4px;
+    margin: -6px auto 14px;
+    border-radius: 999px;
+    background: var(--bew-fill-4);
+  }
+
+  &::after {
+    display: none !important;
+  }
+
+  &.mobile-user-panel-enter-active,
+  &.mobile-user-panel-leave-active {
+    transition:
+      opacity 180ms ease,
+      transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1) !important;
+  }
+
+  &.mobile-user-panel-enter-from,
+  &.mobile-user-panel-leave-to {
+    opacity: 0;
+    transform: translateY(100%) !important;
   }
 }
 </style>

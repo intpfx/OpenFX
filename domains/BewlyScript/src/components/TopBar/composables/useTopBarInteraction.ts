@@ -13,6 +13,7 @@ import { useDelayedHover } from '~/composables/useDelayedHover'
 import { AppPage } from '~/enums/appEnums'
 import { settings } from '~/logic'
 import { useTopBarStore } from '~/stores/topBarStore'
+import { isMobileUserscriptRuntimePage, shouldPreferTouchMode } from '~/userscript/mobile'
 import { isHomePage } from '~/utils/main'
 import { createTransformer } from '~/utils/transformer'
 
@@ -32,6 +33,7 @@ export function useTopBarInteraction() {
 
   // 监听 URL 变化，使其响应式
   const currentLocationHref = ref(window.location.href)
+  const isMobileUserscriptPage = isMobileUserscriptRuntimePage()
 
   function updateCurrentLocationHref() {
     currentLocationHref.value = window.location.href
@@ -46,7 +48,7 @@ export function useTopBarInteraction() {
       return false
 
     // 如果启用了"始终使用透明样式"，直接返回 true
-    if (settings.value.alwaysUseTransparentTopBar)
+    if (!isMobileUserscriptPage && settings.value.alwaysUseTransparentTopBar)
       return true
 
     if (
@@ -149,7 +151,7 @@ export function useTopBarInteraction() {
 
   // 处理顶栏项点击
   function handleClickTopBarItem(event: MouseEvent, key: string) {
-    if (settings.value.touchScreenOptimization) {
+    if (shouldPreferTouchMode(settings.value.touchScreenOptimization)) {
       event.preventDefault()
       event.stopPropagation()
       closeAllPopups(key)

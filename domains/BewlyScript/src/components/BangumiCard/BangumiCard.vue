@@ -3,6 +3,7 @@ import type { ComponentPublicInstance } from 'vue'
 
 import { useDark } from '~/composables/useDark'
 import { settings } from '~/logic'
+import { shouldEnableHoverInteractions } from '~/userscript/mobile'
 import { numFormatter } from '~/utils/dataFormatter'
 import { removeHttpFromUrl } from '~/utils/main'
 
@@ -64,6 +65,7 @@ interface Bangumi {
 }
 
 const { isDark } = useDark()
+const hoverInteractionsEnabled = computed(() => shouldEnableHoverInteractions(settings.value.touchScreenOptimization))
 </script>
 
 <template>
@@ -71,13 +73,14 @@ const { isDark } = useDark()
     <ALink
       v-if="!skeleton && bangumi"
       ref="cardRootRef"
-      class="group"
+      class="bangumi-card group"
+      :class="hoverInteractionsEnabled ? 'hover:bg-$bew-fill-2 hover:ring-8 hover:ring-$bew-fill-2' : ''"
       :style="{
         display: horizontal ? 'flex' : 'block',
       }"
       :href="bangumi.url"
       type="videoCard"
-      gap-4 hover:bg="$bew-fill-2" hover:ring="8 $bew-fill-2"
+      gap-4
       content-visibility-auto intrinsic-size-400px
       transition="all ease-in-out 300"
       rounded="$bew-radius" h-fit
@@ -92,12 +95,14 @@ const { isDark } = useDark()
           <!-- badge -->
           <div
             v-if="bangumi.badge && bangumi.badge.text"
+            class="bangumi-card__badge"
+            :class="hoverInteractionsEnabled ? 'opacity-100 group-hover:opacity-0' : 'opacity-100'"
             :style="{
               backgroundColor: isDark ? bangumi.badge.bgColorDark : bangumi.badge.bgColor,
             }"
             pos="absolute top-0 right-0"
             p="x-2 y-1" m-1 rounded="$bew-radius"
-            opacity-100 group-hover:opacity-0 duration-300
+            duration-300
             text="sm white" z-1
           >
             {{ bangumi.badge.text }}
@@ -128,10 +133,11 @@ const { isDark } = useDark()
             <!-- anime genres -->
             <div
               v-if="bangumi.evaluate || (Array.isArray(bangumi.tags) && bangumi.tags?.length > 0)"
+              class="bangumi-card__details-overlay"
+              :class="hoverInteractionsEnabled ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'"
+              :transform="hoverInteractionsEnabled ? 'translate-y-4 group-hover:translate-y-0' : 'translate-y-0'"
               pos="absolute bottom-0" w-full h-full p-2
               flex="~ col justify-end"
-              opacity-0 group-hover:opacity-100
-              transform="~ translate-y-4 group-hover:translate-y-0"
               transition="all duration-300"
               z-1
               style="
@@ -141,7 +147,12 @@ const { isDark } = useDark()
                 );
               "
             >
-              <div mb-4 text="white group-hover:shadow-[0_0_4px_rgba(0,0,0,1)]">
+              <div
+                class="bangumi-card__evaluate"
+                :class="hoverInteractionsEnabled ? 'group-hover:shadow-[0_0_4px_rgba(0,0,0,1)]' : ''"
+                mb-4
+                text="white"
+              >
                 {{ bangumi.evaluate }}
               </div>
               <template v-if="Array.isArray(bangumi.tags) && bangumi.tags?.length > 0">
@@ -169,7 +180,8 @@ const { isDark } = useDark()
 
             <!-- image after hovering -->
             <div
-              v-if="bangumi.coverHover"
+              v-if="bangumi.coverHover && hoverInteractionsEnabled"
+              class="bangumi-card__hover-cover"
               w-full
               rounded="$bew-radius"
               aspect="12/16"

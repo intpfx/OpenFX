@@ -4,6 +4,7 @@ import Loading from '~/components/Loading.vue'
 import type { Author, Video } from '~/components/VideoCard/types'
 import VideoCardGrid from '~/components/VideoCardGrid.vue'
 import { useBewlyApp } from '~/composables/useAppProvider'
+import { openBilibiliLoginPage } from '~/userscript/mobile'
 import api from '~/utils/api'
 import { getCSRF, openLinkToNewTab } from '~/utils/main'
 import type { CollaborativeVideoEntry, NormalizedMomentItem } from '~/utils/moments'
@@ -334,7 +335,7 @@ function openOriginalPage() {
 }
 
 function jumpToLoginPage() {
-  location.href = 'https://passport.bilibili.com/login'
+  openBilibiliLoginPage()
 }
 </script>
 

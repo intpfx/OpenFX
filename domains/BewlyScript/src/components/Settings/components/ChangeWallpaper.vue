@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { WALLPAPERS } from '~/constants/imgs'
 import { localSettings, settings } from '~/logic'
+import { shouldEnableHoverInteractions } from '~/userscript/mobile'
 import { hasLocalWallpaper, isLocalWallpaperUrl, removeLocalWallpaper, resolveWallpaperUrl, storeLocalWallpaper } from '~/utils/localWallpaper'
 import { compressAndResizeImage } from '~/utils/main'
 
@@ -8,6 +9,7 @@ import SettingsItem from './SettingsItem.vue'
 import SettingsItemGroup from './SettingsItemGroup.vue'
 
 const uploadWallpaperRef = ref(null)
+const hoverInteractionsEnabled = computed(() => shouldEnableHoverInteractions(settings.value.touchScreenOptimization))
 
 const isBuildInWallpaper = computed(() => {
   return settings.value.wallpaperMode === 'buildIn'
@@ -214,14 +216,15 @@ onMounted(() => {
             >
               <div
                 v-if="localSettings.locallyUploadedWallpaper"
-                class="opacity-0 group-hover:opacity-100" duration-300
+                :class="hoverInteractionsEnabled ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'"
+                class="duration-300"
                 pos="absolute top-4px right-4px" z-1 text="14px" flex="~ gap-1"
               >
                 <button
                   style="backdrop-filter: var(--bew-filter-glass-1);"
                   bg="$bew-content" rounded-full w-28px h-28px
                   grid place-items-center
-                  @click="handleUploadWallpaper"
+                  @click.stop="handleUploadWallpaper"
                 >
                   <i i-mingcute:edit-2-line />
                 </button>
@@ -229,7 +232,7 @@ onMounted(() => {
                   style="backdrop-filter: var(--bew-filter-glass-1);"
                   bg="$bew-content" rounded-full w-28px h-28px
                   grid place-items-center
-                  @click="handleRemoveCustomWallpaper"
+                  @click.stop="handleRemoveCustomWallpaper"
                 >
                   <i i-mingcute:delete-2-line />
                 </button>

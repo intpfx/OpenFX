@@ -169,7 +169,7 @@ export const SummaryFooter: React.FC = () => {
         <Col span={6}>
           {calculationSummary.subcontractFee !== null ? (
             <CopyableStatistic
-              title={`分包结算价 (下浮${(globalParams.xuzhouDiscountRate * 100).toFixed(0)}%)`}
+              title={`分包结算价 (下浮${(globalParams.specialDiscountRate * 100).toFixed(0)}%)`}
               value={calculationSummary.subcontractFee}
               valueStyle={{ color: '#52c41a', fontWeight: 'bold' }}
             />
@@ -240,8 +240,8 @@ export const SummaryFooter: React.FC = () => {
                   <Text strong>4. 分包结算价</Text>
                   <br />
                   <Text type="secondary">
-                    徐州项目部2025财年结算规则：分包结算价 = 工程总包施工费 × (1 - {(globalParams.xuzhouDiscountRate * 100).toFixed(0)}%)
-                    {!globalParams.applyXuzhouDiscount && (
+                    项目结算规则：分包结算价 = 工程总包施工费 × (1 - {(globalParams.specialDiscountRate * 100).toFixed(0)}%)
+                    {!globalParams.applySpecialDiscount && (
                       <Tag color="default" style={{ marginLeft: 8 }}>当前未启用</Tag>
                     )}
                   </Text>

@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { useBewlyApp } from '~/composables/useAppProvider'
 import { settings } from '~/logic'
 import type { List as VideoItem, WatchLaterResult } from '~/models/video/watchLater'
+import { openBilibiliLoginPage, shouldEnableHoverInteractions } from '~/userscript/mobile'
 import api from '~/utils/api'
 import { calcCurrentTime } from '~/utils/dataFormatter'
 import { getCSRF, openLinkToNewTab, removeHttpFromUrl } from '~/utils/main'
@@ -17,6 +18,7 @@ const isLoading = ref<boolean>()
 const noMoreContent = ref<boolean>()
 const currentWatchLaterList = ref<VideoItem[]>([])
 const watchLaterCount = ref<number>(0)
+const hoverInteractionsEnabled = computed(() => shouldEnableHoverInteractions(settings.value.touchScreenOptimization))
 const { handlePageRefresh, handleReachBottom, haveScrollbar } = useBewlyApp()
 const pageNum = ref<number>(1)
 const pageSize = ref<number>(20)
@@ -168,7 +170,7 @@ function handleLinkClick(url: string) {
 }
 
 function jumpToLoginPage() {
-  location.href = 'https://passport.bilibili.com/login'
+  openBilibiliLoginPage()
 }
 
 function handleVideoLinkClick(bvid: string) {
@@ -326,7 +328,7 @@ function handleOpenVideoPageAndRemove(index: number, bvid: string, aid: number) 
                     <button
                       text="2xl $bew-text-3"
                       hover:color="$bew-theme-color"
-                      opacity-0 group-hover:opacity-100
+                      :class="hoverInteractionsEnabled ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'"
                       p-2
                       duration-300
                       @click.prevent.stop="handleOpenVideoPageAndRemove(index, item.bvid, item.aid)"
@@ -338,7 +340,7 @@ function handleOpenVideoPageAndRemove(index: number, bvid: string, aid: number) 
                     <button
                       text="2xl $bew-text-3"
                       hover:color="$bew-theme-color"
-                      opacity-0 group-hover:opacity-100
+                      :class="hoverInteractionsEnabled ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'"
                       p-2
                       duration-300
                       @click.prevent.stop="handleLinkClick(`https://www.bilibili.com/list/watchlater?bvid=${item.bvid}`)"
@@ -350,7 +352,7 @@ function handleOpenVideoPageAndRemove(index: number, bvid: string, aid: number) 
                     <button
                       text="2xl $bew-text-3"
                       hover:color="$bew-theme-color"
-                      opacity-0 group-hover:opacity-100
+                      :class="hoverInteractionsEnabled ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'"
                       p-2
                       duration-300
                       @click.prevent.stop="deleteWatchLaterItem(index, item.aid)"

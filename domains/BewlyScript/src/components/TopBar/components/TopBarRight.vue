@@ -5,6 +5,7 @@ import { storeToRefs } from 'pinia'
 import ALink from '~/components/ALink.vue'
 import { settings } from '~/logic'
 import { useTopBarStore } from '~/stores/topBarStore'
+import { BILIBILI_LOGIN_URL, isMobileUserscriptRuntimePage, openBilibiliLoginPage, shouldEnableHoverInteractions } from '~/userscript/mobile'
 import { getUserID, removeHttpFromUrl } from '~/utils/main'
 import { isComponentVisible, shouldShowBadge, shouldShowDotBadge, shouldShowNumberBadge } from '~/utils/topBarBadge'
 
@@ -14,6 +15,8 @@ import MorePop from './pops/MorePop.vue'
 import NotificationsPop from './pops/NotificationsPop.vue'
 import UploadPop from './pops/UploadPop.vue'
 import UserPanelPop from './pops/UserPanelPop.vue'
+
+defineProps<{}>()
 
 const emit = defineEmits(['notificationsClick'])
 
@@ -44,6 +47,29 @@ const upload = isComponentVisible('upload') ? setupTopBarItemHoverEvent('upload'
 const notifications = isComponentVisible('notifications') ? setupTopBarItemHoverEvent('notifications') : ref()
 const more = setupTopBarItemHoverEvent('more')
 const avatar = setupTopBarItemHoverEvent('userPanel')
+
+function handleLoginClick(event: MouseEvent) {
+  if (event.defaultPrevented)
+    return
+
+  if (isLogin.value)
+    return
+
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+    event.preventDefault()
+
+  if (event.defaultPrevented || !event.button) {
+    event.preventDefault()
+    openBilibiliLoginPage()
+  }
+}
+
+function handleAuxiliaryLoginClick(event: MouseEvent) {
+  if (event.button === 1) {
+    event.preventDefault()
+    openBilibiliLoginPage()
+  }
+}
 
 // 将transformer初始化移到onMounted中
 // 声明组件ref
@@ -104,9 +130,23 @@ watch(() => focused.value, (newVal, _) => {
   }
 })
 
+const hoverInteractionsEnabled = computed(() => {
+  return shouldEnableHoverInteractions(settings.value.touchScreenOptimization)
+})
+const isMobileUserscriptPage = computed(() => isMobileUserscriptRuntimePage())
+
 // 修改通知点击处理
 function handleNotificationsClick(item: { name: string, url: string, unreadCount: number, icon: string }) {
   emit('notificationsClick', item)
+}
+
+function handleAvatarClick(event: MouseEvent) {
+  handleClickTopBarItem(event, 'userPanel')
+}
+
+function closeMobileUserPanelDrawer() {
+  if (popupVisible.value)
+    popupVisible.value.userPanel = false
 }
 
 // 判断分割线是否应该显示
@@ -135,19 +175,29 @@ const shouldShowDivider = computed(() => {
     >
       <div
         v-if="!isLogin"
-        class="right-side-item"
+        class="right-side-item mobile-login-avatar"
+        :class="{ 'hover-enabled': hoverInteractionsEnabled }"
         important-w-auto
       >
-        <a href="https://passport.bilibili.com/login" class="login">
-          <div i-solar:user-circle-bold-duotone class="text-xl mr-2" />{{
-            $t('topbar.sign_in')
-          }}
+        <a
+          :href="BILIBILI_LOGIN_URL"
+          class="login"
+          :title="$t('topbar.sign_in')"
+          @click="handleLoginClick"
+          @auxclick="handleAuxiliaryLoginClick"
+        >
+          <div i-solar:user-circle-bold-duotone class="text-xl mr-2" />
+          <span>{{ $t('topbar.sign_in') }}</span>
         </a>
       </div>
       <template v-if="isLogin">
         <div class="hidden lg:flex" gap-1>
           <!-- Creative center -->
-          <div v-if="isComponentVisible('creatorCenter')" class="right-side-item">
+          <div
+            v-if="isComponentVisible('creatorCenter')"
+            class="right-side-item"
+            :class="{ 'hover-enabled': hoverInteractionsEnabled }"
+          >
             <a
               :class="{ 'white-icon': forceWhiteIcon }"
               href="https://member.bilibili.com/platform/home"
@@ -163,7 +213,7 @@ const shouldShowDivider = computed(() => {
         <div
           ref="more"
           class="right-side-item lg:!hidden flex"
-          :class="{ active: popupVisible?.more }"
+          :class="{ active: popupVisible?.more, 'hover-enabled': hoverInteractionsEnabled }"
           @click="(event: MouseEvent) => handleClickTopBarItem(event, 'more')"
         >
           <a
@@ -197,7 +247,7 @@ const shouldShowDivider = computed(() => {
             v-if="isComponentVisible('upload')"
             ref="upload"
             class="right-side-item"
-            :class="{ active: popupVisible?.upload }"
+            :class="{ active: popupVisible?.upload, 'hover-enabled': hoverInteractionsEnabled }"
             @click="(event: MouseEvent) => handleClickTopBarItem(event, 'upload')"
           >
             <a
@@ -226,7 +276,7 @@ const shouldShowDivider = computed(() => {
             v-if="isComponentVisible('notifications')"
             ref="notifications"
             class="right-side-item"
-            :class="{ active: popupVisible?.notifications }"
+            :class="{ active: popupVisible?.notifications, 'hover-enabled': hoverInteractionsEnabled }"
             @click="(event: MouseEvent) => handleClickTopBarItem(event, 'notifications')"
           >
             <template v-if="unReadMessageCount > 0 && shouldShowBadge('notifications')">
@@ -273,7 +323,7 @@ const shouldShowDivider = computed(() => {
       <div
         v-if="isLogin"
         ref="avatar"
-        :class="{ hover: popupVisible?.userPanel }"
+        :class="{ hover: popupVisible?.userPanel && hoverInteractionsEnabled, 'hover-enabled': hoverInteractionsEnabled }"
         class="avatar right-side-item"
         @click="(event: MouseEvent) => handleClickTopBarItem(event, 'userPanel')"
       >
@@ -281,24 +331,26 @@ const shouldShowDivider = computed(() => {
         <div
           v-if="hasBCoinToReceive && settings.showBCoinReceiveReminder"
           class="unread-dot avatar-dot"
-          :class="{ hover: popupVisible?.userPanel }"
+          :class="{ hover: popupVisible?.userPanel && hoverInteractionsEnabled }"
           style="z-index: 10; right: 6px; top: 6px;"
         />
 
         <ALink
           ref="avatarImg"
-          :href="`https://space.bilibili.com/${mid}`"
+          :href="isMobileUserscriptPage ? undefined : `https://space.bilibili.com/${mid}`"
           type="topBar"
           class="avatar-img"
-          :class="{ hover: popupVisible?.userPanel }"
+          :class="{ hover: popupVisible?.userPanel && hoverInteractionsEnabled }"
           :style="{
             backgroundImage: `url(${userInfo.face ? removeHttpFromUrl(userInfo.face) : ''})`,
           }"
+          :custom-click-event="isMobileUserscriptPage"
+          @click="handleAvatarClick"
         />
         <div
           ref="avatarShadow"
           class="avatar-shadow"
-          :class="{ hover: popupVisible?.userPanel }"
+          :class="{ hover: popupVisible?.userPanel && hoverInteractionsEnabled }"
           :style="{
             backgroundImage: `url(${userInfo.face ? removeHttpFromUrl(userInfo.face) : ''})`,
           }"
@@ -306,14 +358,22 @@ const shouldShowDivider = computed(() => {
         <svg
           v-if="userInfo.vip?.status === 1"
           class="vip-img"
-          :class="{ hover: popupVisible?.userPanel }"
+          :class="{ hover: popupVisible?.userPanel && hoverInteractionsEnabled }"
           :style="{ opacity: popupVisible?.userPanel ? 1 : 0 }"
           bg="[url(https://i0.hdslb.com/bfs/seed/jinkela/short/user-avatar/big-vip.svg)] contain no-repeat"
           w="28%" h="28%" z-1
           pos="absolute bottom-18px right-11px" duration-300
         />
 
-        <Transition name="slide-in">
+        <Transition name="fade">
+          <div
+            v-if="popupVisible?.userPanel && isMobileUserscriptPage"
+            class="mobile-user-panel-mask"
+            @click.stop="closeMobileUserPanelDrawer"
+          />
+        </Transition>
+
+        <Transition :name="isMobileUserscriptPage ? 'mobile-user-panel' : 'slide-in'">
           <UserPanelPop
             v-if="popupVisible?.userPanel"
             ref="avatarPopRef"
@@ -331,4 +391,65 @@ const shouldShowDivider = computed(() => {
 
 <style lang="scss" scoped>
 @use "../styles/index.scss";
+
+.mobile-user-panel-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 10020;
+  background: rgba(0, 0, 0, 0.42);
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 180ms ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+@media (max-width: 700px) {
+  .right-side {
+    flex: 0 0 auto;
+  }
+
+  .others {
+    height: 44px;
+    gap: 0;
+    padding-inline: 0;
+  }
+
+  .others > :not(.avatar):not(.mobile-login-avatar) {
+    display: none !important;
+  }
+
+  .mobile-login-avatar {
+    width: 44px !important;
+    height: 44px;
+    justify-content: center;
+  }
+
+  .mobile-login-avatar .login {
+    width: 44px !important;
+    height: 44px !important;
+    padding-inline: 0 !important;
+    justify-content: center;
+  }
+
+  .mobile-login-avatar .login span {
+    display: none;
+  }
+
+  .avatar.right-side-item {
+    width: 44px;
+    height: 44px;
+  }
+
+  .avatar-img,
+  .avatar-shadow {
+    width: 36px;
+    height: 36px;
+  }
+}
 </style>

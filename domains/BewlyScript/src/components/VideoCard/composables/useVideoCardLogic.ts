@@ -6,6 +6,7 @@ import { appAuthTokens, settings } from '~/logic'
 import type { VideoInfo } from '~/models/video/videoInfo'
 import type { VideoPreviewResult } from '~/models/video/videoPreview'
 import { useTopBarStore } from '~/stores/topBarStore'
+import { DESKTOP_BILIBILI_HOST, isMobileUserscriptRuntimePage, normalizeBilibiliUrlForCurrentSurface, openMobileUrlInCurrentPage, shouldEnableHoverInteractions } from '~/userscript/mobile'
 import api from '~/utils/api'
 import { getTvSign, TVAppKey } from '~/utils/authProvider'
 import { parseStatNumber } from '~/utils/dataFormatter'
@@ -24,6 +25,7 @@ interface VideoCardProps {
   horizontal?: boolean
   showPreview?: boolean
   moreBtn?: boolean
+  autoPreviewActive?: boolean
 }
 
 interface AppFeedFeedbackSelection {
@@ -113,15 +115,19 @@ export function useVideoCardLogic(propsOrGetter: MaybeRefOrGetter<VideoCardProps
     else
       return ''
 
+    const normalizedUrl = effectiveVideoCardOpenMode.value === 'drawer'
+      ? normalizeBilibiliUrlForCurrentSurface(url, `https://${DESKTOP_BILIBILI_HOST}/`)
+      : normalizeBilibiliUrlForCurrentSurface(url)
+
     try {
-      const urlObj = new URL(url)
+      const urlObj = new URL(normalizedUrl)
       if (!urlObj.pathname.endsWith('/')) {
         urlObj.pathname += '/'
       }
       return urlObj.toString()
     }
     catch {
-      return url
+      return normalizedUrl
     }
   })
 
@@ -143,9 +149,28 @@ export function useVideoCardLogic(propsOrGetter: MaybeRefOrGetter<VideoCardProps
     }
   })
 
+  const hoverInteractionsEnabled = computed(() => shouldEnableHoverInteractions(settings.value.touchScreenOptimization))
+  const effectiveVideoCardOpenMode = computed(() => {
+    if (isMobileUserscriptRuntimePage())
+      return 'drawer'
+
+    return settings.value.videoCardLinkOpenMode
+  })
+
+  const previewRequested = computed(() => {
+    return isHover.value || Boolean(
+      props.value.autoPreviewActive
+      && props.value.showPreview
+      && settings.value.enableVideoPreview
+      && !hoverInteractionsEnabled.value
+      && effectiveVideoCardOpenMode.value === 'drawer',
+    )
+  })
+
   const shouldHideOverlayElements = computed(() =>
     props.value.showPreview
     && settings.value.enableVideoPreview
+    && hoverInteractionsEnabled.value
     && isHover.value
     && previewVideoUrl.value
     && topBarStore.isLogin,
@@ -164,7 +189,7 @@ export function useVideoCardLogic(propsOrGetter: MaybeRefOrGetter<VideoCardProps
   }
 
   // Watch
-  watch(() => isHover.value, async (newValue) => {
+  watch(previewRequested, async (newValue) => {
     if (!props.value.video || !newValue)
       return
 
@@ -198,7 +223,7 @@ export function useVideoCardLogic(propsOrGetter: MaybeRefOrGetter<VideoCardProps
             qn: 80, // 流畅画质，适合预览
           })
           // 再次检查是否已卸载
-          if (isDisposed.value || !isHover.value)
+          if (isDisposed.value || !previewRequested.value)
             return
           if (res.code === 0 && res.data.durl && res.data.durl.length > 0) {
             previewVideoUrl.value = res.data.durl[0].url
@@ -217,7 +242,7 @@ export function useVideoCardLogic(propsOrGetter: MaybeRefOrGetter<VideoCardProps
               bvid: props.value.video.bvid,
             })
             // 检查是否已卸载
-            if (isDisposed.value || !isHover.value)
+            if (isDisposed.value || !previewRequested.value)
               return
             if (res.code === 0)
               cid = res.data.cid
@@ -234,7 +259,7 @@ export function useVideoCardLogic(propsOrGetter: MaybeRefOrGetter<VideoCardProps
           cid,
         }).then((res: VideoPreviewResult) => {
           // 检查是否已卸载，已卸载则不更新状态
-          if (isDisposed.value || !isHover.value)
+          if (isDisposed.value || !previewRequested.value)
             return
           if (res.code === 0 && res.data.durl && res.data.durl.length > 0)
             previewVideoUrl.value = res.data.durl[0].url
@@ -243,17 +268,20 @@ export function useVideoCardLogic(propsOrGetter: MaybeRefOrGetter<VideoCardProps
     }
   })
 
-  watch([previewVideoUrl, isHover], ([url, hover]) => {
+  watch([previewVideoUrl, previewRequested], ([url, active]) => {
     if (!url) {
       releaseVideoPreviewCacheEntry(previewCacheKey)
       return
     }
 
-    retainVideoPreviewCacheEntry(previewCacheKey, clearPreviewVideoUrl, hover)
+    retainVideoPreviewCacheEntry(previewCacheKey, clearPreviewVideoUrl, active)
   }, { immediate: true })
 
-  watch([() => props.value.showPreview, () => settings.value.enableVideoPreview], ([showPreview, enableVideoPreview]) => {
-    if (showPreview && enableVideoPreview)
+  watch([() => props.value.showPreview, () => settings.value.enableVideoPreview, hoverInteractionsEnabled, effectiveVideoCardOpenMode], ([showPreview, enableVideoPreview, hoverEnabled, openMode]) => {
+    if (showPreview && enableVideoPreview && hoverEnabled)
+      return
+
+    if (showPreview && enableVideoPreview && !hoverEnabled && openMode === 'drawer')
       return
 
     previewVideoUrl.value = ''
@@ -305,6 +333,9 @@ export function useVideoCardLogic(propsOrGetter: MaybeRefOrGetter<VideoCardProps
   }
 
   function handleMouseEnter() {
+    if (!hoverInteractionsEnabled.value)
+      return
+
     // Cancel any pending leave timeout
     if (mouseLeaveTimeOut.value) {
       clearTimeout(mouseLeaveTimeOut.value)
@@ -327,6 +358,15 @@ export function useVideoCardLogic(propsOrGetter: MaybeRefOrGetter<VideoCardProps
       mouseEnterTimeOut.value = null
     }
 
+    if (!hoverInteractionsEnabled.value) {
+      if (mouseLeaveTimeOut.value) {
+        clearTimeout(mouseLeaveTimeOut.value)
+        mouseLeaveTimeOut.value = null
+      }
+      isHover.value = false
+      return
+    }
+
     // Delay hiding to prevent flicker when mouse hovers near boundaries
     if (mouseLeaveTimeOut.value)
       clearTimeout(mouseLeaveTimeOut.value)
@@ -338,11 +378,18 @@ export function useVideoCardLogic(propsOrGetter: MaybeRefOrGetter<VideoCardProps
   }
 
   function handleClick(event: MouseEvent) {
-    if (settings.value.videoCardLinkOpenMode === 'background' && videoUrl.value && !event.ctrlKey && !event.metaKey) {
+    if (videoUrl.value && openMobileUrlInCurrentPage(videoUrl.value)) {
+      event.preventDefault()
+      event.stopPropagation()
+      return
+    }
+
+    if (effectiveVideoCardOpenMode.value === 'background' && videoUrl.value && !event.ctrlKey && !event.metaKey) {
       event.preventDefault()
       openLinkInBackground(videoUrl.value)
+      return
     }
-    if (settings.value.videoCardLinkOpenMode === 'drawer' && videoUrl.value && !event.ctrlKey && !event.metaKey) {
+    if (effectiveVideoCardOpenMode.value === 'drawer' && videoUrl.value && !event.ctrlKey && !event.metaKey) {
       event.preventDefault()
       openIframeDrawer(videoUrl.value)
     }
@@ -421,6 +468,8 @@ export function useVideoCardLogic(propsOrGetter: MaybeRefOrGetter<VideoCardProps
     videoUrl,
     videoStatNumbers,
     shouldHideOverlayElements,
+    previewRequested,
+    effectiveVideoCardOpenMode,
 
     // Methods
     toggleWatchLater,

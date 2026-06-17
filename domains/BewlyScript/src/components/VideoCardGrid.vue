@@ -8,6 +8,7 @@ import { useVideoCardShadowStyle } from '~/composables/useVideoCardShadowStyle'
 import { OVERLAY_SCROLL_BAR_SCROLL } from '~/constants/globalEvents'
 import type { GridLayoutType } from '~/logic'
 import { settings } from '~/logic'
+import { isMobileUserscriptRuntimePage } from '~/userscript/mobile'
 import emitter from '~/utils/mitt'
 
 import SmoothLoading from './SmoothLoading.vue'
@@ -644,7 +645,7 @@ function getCurrentColumnCount(width: number): number {
 }
 
 function getGridGap(): number {
-  return 20
+  return isMobileUserscriptRuntimePage() ? 12 : 20
 }
 
 function getEstimatedRowSpan(): number {
@@ -665,7 +666,7 @@ function getEstimatedAdaptiveRowHeight(width: number, columns: number): number {
 
   // Keep the first virtual pass close to the actual modern card height so rows
   // do not render with a large temporary gap before ResizeObserver catches up.
-  return coverHeight + 112
+  return coverHeight + (isMobileUserscriptRuntimePage() ? 72 : 112)
 }
 
 const resolvedContainerWidth = computed(() => {

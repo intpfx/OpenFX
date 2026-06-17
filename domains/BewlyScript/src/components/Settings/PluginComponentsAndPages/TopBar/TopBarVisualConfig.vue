@@ -6,6 +6,7 @@ import Radio from '~/components/Radio.vue'
 import Select from '~/components/Select.vue'
 import { VideoPageTopBarConfig } from '~/enums/appEnums'
 import { settings } from '~/logic'
+import { shouldPreferTouchMode } from '~/userscript/mobile'
 
 import { allChannelConfigs } from '../../../TopBar/constants/channels'
 import SettingsItem from '../../components/SettingsItem.vue'
@@ -169,6 +170,10 @@ const pinnedIndexMap = computed(() => {
   return map
 })
 
+const preferTouchMode = computed(() => {
+  return shouldPreferTouchMode(settings.value.touchScreenOptimization)
+})
+
 function toggleChannel(value: string) {
   if (pinnedChannelKeys.value.includes(value))
     settings.value.topBarPinnedChannels = pinnedChannelKeys.value.filter(key => key !== value)
@@ -280,7 +285,7 @@ function toggleChannel(value: string) {
               </div>
 
               <!-- Home 按钮设置（仅在触屏优化开启时显示） -->
-              <div v-if="settings.touchScreenOptimization" bg="$bew-fill-1" rounded="$bew-radius" p-3>
+              <div v-if="preferTouchMode" bg="$bew-fill-1" rounded="$bew-radius" p-3>
                 <SettingsItem :title="$t('settings.show_home_button_in_touch_mode')" right-width="auto">
                   <Radio v-model="settings.showHomeButtonInTouchMode" />
                 </SettingsItem>

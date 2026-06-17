@@ -99,12 +99,12 @@ export const GlobalParamsPanel: React.FC = () => {
 
         <Divider style={{ margin: '12px 0' }} />
 
-        {/* 徐州下浮 */}
+        {/* 专项下浮 */}
         <Form.Item
           label={
             <Space>
-              <span>徐州项目下浮</span>
-              <Tooltip title="徐州项目部2025财年分包结算价 = 总包价下浮17%">
+              <span>专项下浮</span>
+              <Tooltip title="按项目结算规则计算：分包结算价 = 总包价按设定比例下浮">
                 <QuestionCircleOutlined style={{ color: '#999' }} />
               </Tooltip>
             </Space>
@@ -112,18 +112,18 @@ export const GlobalParamsPanel: React.FC = () => {
         >
           <Space>
             <Switch
-              checked={globalParams.applyXuzhouDiscount}
-              onChange={(checked) => setGlobalParams({ applyXuzhouDiscount: checked })}
+              checked={globalParams.applySpecialDiscount}
+              onChange={(checked) => setGlobalParams({ applySpecialDiscount: checked })}
               checkedChildren="启用"
               unCheckedChildren="停用"
             />
-            {globalParams.applyXuzhouDiscount && (
+            {globalParams.applySpecialDiscount && (
               <Space>
                 <Text type="secondary">下浮比例：</Text>
                 <InputNumber
-                  value={globalParams.xuzhouDiscountRate * 100}
+                  value={globalParams.specialDiscountRate * 100}
                   onChange={(value) =>
-                    setGlobalParams({ xuzhouDiscountRate: (value ?? 17) / 100 })
+                    setGlobalParams({ specialDiscountRate: (value ?? 17) / 100 })
                   }
                   min={0}
                   max={100}

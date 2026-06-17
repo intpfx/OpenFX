@@ -16,7 +16,6 @@ const cursor = ref<number>(0)
 const isLoadingAnimeWatchList = ref<boolean>()
 const isLoadingPopularAnime = ref<boolean>()
 const isLoadingRecommendAnime = ref<boolean>()
-const activatedSeasonId = ref<number>()
 const noMoreContent = ref<boolean>()
 const animeTimeTableRef = ref()
 const { handleReachBottom, handlePageRefresh } = useBewlyApp()
@@ -273,8 +272,6 @@ function getPopularAnimeList() {
               evaluate: item.evaluate,
               capsuleText: item.rating,
             }"
-            @mouseenter="activatedSeasonId = item.season_id"
-            @mouseleave="activatedSeasonId = 0"
           />
 
           <BangumiCardSkeleton

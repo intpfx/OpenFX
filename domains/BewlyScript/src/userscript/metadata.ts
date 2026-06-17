@@ -37,7 +37,7 @@ export const USERSCRIPT_CONNECTS = [
 ] as const;
 
 export function getUserscriptVersion(baseVersion = version): string {
-  return `${baseVersion}-userscript.0`;
+  return `${baseVersion}-userscript.1`;
 }
 
 export function buildUserscriptMetadata(baseVersion = version): string {

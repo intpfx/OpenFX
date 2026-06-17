@@ -52,7 +52,6 @@ function calculatePosition() {
 }
 
 function onClickOption(val: OptionType) {
-  window.removeEventListener('click', () => {})
   label.value = val.label
   emit('update:modelValue', val.value)
   emit('change', val.value)
@@ -61,15 +60,6 @@ function onClickOption(val: OptionType) {
 
 function closeOptions() {
   showOptions.value = false
-}
-
-/** when you click on it outside, the selection option will be turned off  */
-function onMouseLeave() {
-  window.addEventListener('click', closeOptions)
-}
-
-function onMouseEnter() {
-  window.removeEventListener('click', closeOptions)
 }
 
 // 显示选项时计算位置
@@ -84,8 +74,6 @@ watchEffect(() => {
   <div
     ref="containerRef"
     pos="relative"
-    @mouseleave="onMouseLeave"
-    @mouseenter="onMouseEnter"
   >
     <div
       p="x-4 y-2"
@@ -154,6 +142,7 @@ watchEffect(() => {
         v-if="showOptions"
         pos="fixed top-0 left-0" w-full h-full
         z="10003"
+        @pointerdown="closeOptions"
         @wheel="closeOptions"
       />
     </Teleport>

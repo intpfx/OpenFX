@@ -20,9 +20,6 @@ const finlyzerPublicDir = fileURLToPath(
 const costingAssistantPublicDir = fileURLToPath(
   new URL("../../domains/costing-assistant/public", import.meta.url),
 );
-const gasCadStatsDir = fileURLToPath(
-  new URL("../../domains/gas-cad-stats", import.meta.url),
-);
 const nitroDevPort = Number(process.env.OPENFX_NITRO_DEV_PORT ?? "3000");
 
 export default defineNitroConfig({
@@ -57,11 +54,6 @@ export default defineNitroConfig({
     },
     {
       dir: costingAssistantPublicDir,
-      maxAge: 60 * 60 * 24 * 30,
-    },
-    {
-      baseURL: "/gas-cad-stats",
-      dir: gasCadStatsDir,
       maxAge: 60 * 60 * 24 * 30,
     },
   ],

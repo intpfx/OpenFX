@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 
 import Button from '~/components/Button.vue'
 import { settings } from '~/logic'
+import { shouldEnableHoverInteractions } from '~/userscript/mobile'
 
 import { allChannelConfigs } from '../../../TopBar/constants/channels'
 import SettingsItem from '../../components/SettingsItem.vue'
@@ -38,6 +39,7 @@ const pinnedIndexMap = computed(() => {
   })
   return map
 })
+const hoverInteractionsEnabled = computed(() => shouldEnableHoverInteractions(settings.value.touchScreenOptimization))
 
 function toggleChannel(value: string) {
   if (pinnedChannelKeys.value.includes(value))
@@ -82,7 +84,7 @@ function resetPinnedChannels() {
             :key="option.value"
             type="button"
             class="channel-grid__item"
-            :class="{ selected: pinnedChannelKeys.includes(option.value) }"
+            :class="{ selected: pinnedChannelKeys.includes(option.value), 'hover-enabled': hoverInteractionsEnabled }"
             @click="toggleChannel(option.value)"
           >
             <div v-if="option.icon.startsWith('#')" class="channel-grid__icon">
@@ -138,12 +140,12 @@ function resetPinnedChannels() {
       border-color: var(--bew-theme-color-30);
       transform: none;
 
-      &:hover {
+      &.hover-enabled:hover {
         background: color-mix(in oklab, var(--bew-theme-color-20), transparent 20%);
       }
     }
 
-    &:hover {
+    &.hover-enabled:hover {
       background: var(--bew-fill-2);
       transform: translateY(-2px);
     }

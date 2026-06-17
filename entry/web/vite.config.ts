@@ -23,7 +23,6 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       "/api": `http://localhost:${nitroDevPort}`,
-      "/gas-cad-stats": `http://localhost:${nitroDevPort}`,
       "/update": `http://localhost:${nitroDevPort}`,
     },
   },

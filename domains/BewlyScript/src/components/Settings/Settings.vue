@@ -3,6 +3,7 @@ import { useEventListener } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 
 import { settings } from '~/logic'
+import { shouldEnableHoverInteractions } from '~/userscript/mobile'
 import { createTransformer } from '~/utils/transformer'
 
 import type { MenuItem } from './types'
@@ -21,6 +22,7 @@ const settingsMenu = {
 }
 const activatedMenuItem = ref<MenuType>(MenuType.PluginComponentsAndPages)
 const settingsWindow = ref<HTMLDivElement>()
+const hoverInteractionsEnabled = computed(() => shouldEnableHoverInteractions(settings.value.touchScreenOptimization))
 
 useEventListener(window, 'resize', () => {
   createTransformer(settingsWindow, {
@@ -106,17 +108,18 @@ function changeMenuItem(menuItem: MenuType) {
     >
       <aside
         class="settings-sidebar"
-        :class="{ group: !settings.touchScreenOptimization }"
+        :class="{ group: hoverInteractionsEnabled }"
         shrink-0 p="x-4" pos="absolute xl:left--84px left--44px" z-2
       >
         <ul
           class="settings-menu"
+          :class="hoverInteractionsEnabled
+            ? 'rounded-30px bg-$bew-content-alt group-hover:rounded-25px group-hover:bg-$bew-elevated dark:bg-$bew-elevated dark-group-hover:bg-$bew-elevated group-hover:scale-105'
+            : 'rounded-25px bg-$bew-elevated dark:bg-$bew-elevated'"
           style="
             box-shadow: var(--bew-shadow-4);
           "
-          relative flex="~ gap-2 col" rounded="30px group-hover:25px" p-2
-          bg="$bew-content-alt group-hover:$bew-elevated dark:$bew-elevated dark-group-hover:$bew-elevated"
-          scale="group-hover:105" duration-300 overflow-hidden antialiased
+          relative flex="~ gap-2 col" p-2 duration-300 overflow-hidden antialiased
         >
           <!-- frosted glass background -->
           <!-- https://github.com/BewlyBewly/BewlyBewly/issues/1162 -->
@@ -134,10 +137,13 @@ function changeMenuItem(menuItem: MenuType) {
           <li v-for="menuItem in settingsMenuItems" :key="menuItem.value">
             <a
               class="settings-menu-link"
-              cursor-pointer w="40px group-hover:190px" h-40px
+              :class="[
+                hoverInteractionsEnabled ? 'w-40px group-hover:w-190px' : 'w-190px',
+                { 'menu-item-activated': menuItem.value === activatedMenuItem },
+              ]"
+              cursor-pointer h-40px
               rounded-30px flex items-center overflow-x-hidden
               duration-300 bg="hover:$bew-fill-2"
-              :class="{ 'menu-item-activated': menuItem.value === activatedMenuItem }"
               @click="changeMenuItem(menuItem.value)"
             >
               <div

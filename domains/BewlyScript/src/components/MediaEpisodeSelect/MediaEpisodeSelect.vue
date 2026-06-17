@@ -71,15 +71,6 @@ function handleEpisodeClick(url?: string) {
   closeDropdown()
 }
 
-/** when you click on it outside, the selection option will be turned off  */
-function onMouseLeave() {
-  window.addEventListener('click', closeDropdown)
-}
-
-function onMouseEnter() {
-  window.removeEventListener('click', closeDropdown)
-}
-
 // 显示选项时计算位置
 watchEffect(() => {
   if (isOpen.value) {
@@ -94,8 +85,6 @@ watchEffect(() => {
     ref="containerRef"
     class="media-episode-select"
     pos="relative"
-    @mouseleave="onMouseLeave"
-    @mouseenter="onMouseEnter"
   >
     <button
       class="select-button"
@@ -164,7 +153,7 @@ watchEffect(() => {
             transition="all duration-300"
             cursor="pointer"
             :title="episode.longTitle || episode.title"
-            @click.stop="handleEpisodeClick(episode.url || fallbackUrl)"
+            @click.prevent.stop="handleEpisodeClick(episode.url || fallbackUrl)"
           >
             <span class="episode-title">{{ episode.title }}</span>
             <span v-if="episode.badge" class="episode-badge">{{ episode.badge }}</span>
@@ -179,6 +168,7 @@ watchEffect(() => {
         w-full
         h-full
         z="10003"
+        @pointerdown="closeDropdown"
         @wheel="closeDropdown"
       />
     </Teleport>

@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { useBewlyApp } from '~/composables/useAppProvider'
 import { settings } from '~/logic'
 import { Type as ThreePointV2Type } from '~/models/video/appForYou'
+import { isMobileUserscriptRuntimePage, openMobileUrlInCurrentPage, shouldEnableHoverInteractions } from '~/userscript/mobile'
 import api from '~/utils/api'
 import { cleanBilibiliUrl, getCSRF, openLinkToNewTab } from '~/utils/main'
 import { openLinkInBackground } from '~/utils/tabs'
@@ -78,6 +79,8 @@ const showUnfollowUserDialog = ref<boolean>(false)
 const showPipWindow = ref<boolean>(false)
 const loadingWebDislike = ref<boolean>(false)
 const { openIframeDrawer } = useBewlyApp()
+const hoverInteractionsEnabled = computed(() => shouldEnableHoverInteractions(settings.value.touchScreenOptimization))
+const isMobileUserscriptPage = computed(() => isMobileUserscriptRuntimePage())
 
 enum VideoOption {
   OpenInNewTab,
@@ -102,14 +105,21 @@ enum VideoOption {
 interface OptionItem { command: VideoOption, name: string, icon: string, color?: string }
 
 const commonOptions = computed((): OptionItem[][] => {
+  const openOptions: OptionItem[] = isMobileUserscriptPage.value
+    ? [
+        { command: VideoOption.OpenInDrawer, name: t('video_card.operation.open_in_drawer'), icon: 'i-solar:archive-up-minimlistic-bold-duotone' },
+        { command: VideoOption.OpenInCurrentTab, name: t('video_card.operation.open_in_current_tab'), icon: 'i-solar:square-top-down-bold-duotone' },
+      ]
+    : [
+        { command: VideoOption.OpenInNewTab, name: t('video_card.operation.open_in_new_tab'), icon: 'i-solar:square-top-down-bold-duotone' },
+        { command: VideoOption.OpenInBackground, name: t('video_card.operation.open_in_background'), icon: 'i-solar:square-top-down-bold-duotone' },
+        { command: VideoOption.OpenInNewWindow, name: t('video_card.operation.open_in_new_window'), icon: 'i-solar:maximize-square-3-bold-duotone' },
+        { command: VideoOption.OpenInCurrentTab, name: t('video_card.operation.open_in_current_tab'), icon: 'i-solar:square-top-down-bold-duotone' },
+        { command: VideoOption.OpenInDrawer, name: t('video_card.operation.open_in_drawer'), icon: 'i-solar:archive-up-minimlistic-bold-duotone' },
+      ]
+
   let result: OptionItem[][] = [
-    [
-      { command: VideoOption.OpenInNewTab, name: t('video_card.operation.open_in_new_tab'), icon: 'i-solar:square-top-down-bold-duotone' },
-      { command: VideoOption.OpenInBackground, name: t('video_card.operation.open_in_background'), icon: 'i-solar:square-top-down-bold-duotone' },
-      { command: VideoOption.OpenInNewWindow, name: t('video_card.operation.open_in_new_window'), icon: 'i-solar:maximize-square-3-bold-duotone' },
-      { command: VideoOption.OpenInCurrentTab, name: t('video_card.operation.open_in_current_tab'), icon: 'i-solar:square-top-down-bold-duotone' },
-      { command: VideoOption.OpenInDrawer, name: t('video_card.operation.open_in_drawer'), icon: 'i-solar:archive-up-minimlistic-bold-duotone' },
-    ],
+    openOptions,
 
     [
       { command: VideoOption.CopyVideoLink, name: t('video_card.operation.copy_video_link'), icon: 'i-solar:copy-bold-duotone' },
@@ -258,18 +268,31 @@ function handleAppMoreCommand(command: ThreePointV2Type) {
 function handleCommonCommand(command: VideoOption) {
   switch (command) {
     case VideoOption.OpenInNewTab:
+      if (props.video.url && openMobileUrlInCurrentPage(props.video.url)) {
+        handleClose()
+        break
+      }
       openLinkToNewTab(props.video.url!)
       handleClose()
       break
     case VideoOption.OpenInBackground:
+      if (props.video.url && openMobileUrlInCurrentPage(props.video.url)) {
+        handleClose()
+        break
+      }
       openLinkInBackground(props.video.url!)
       handleClose()
       break
     case VideoOption.OpenInNewWindow:
+      if (props.video.url && openMobileUrlInCurrentPage(props.video.url)) {
+        handleClose()
+        break
+      }
       showPipWindow.value = true
       break
     case VideoOption.OpenInCurrentTab:
-      window.open(props.video.url, '_self')
+      if (!props.video.url || !openMobileUrlInCurrentPage(props.video.url))
+        window.open(props.video.url, '_self')
       handleClose()
       break
     case VideoOption.OpenInDrawer:
@@ -304,7 +327,8 @@ function handleCommonCommand(command: VideoOption) {
       break
 
     case VideoOption.ViewTheOriginalCover:
-      window.open(props.video.cover, '_blank')
+      if (!openMobileUrlInCurrentPage(props.video.cover))
+        window.open(props.video.cover, '_blank')
       handleClose()
       break
 
@@ -450,19 +474,34 @@ async function unfollowUser() {
 <template>
   <div>
     <!-- more popup -->
-    <div v-if="showContextMenu">
+    <Transition :name="isMobileUserscriptPage ? 'context-menu-mobile' : 'fade'">
+      <div
+        v-if="showContextMenu"
+        :class="['context-menu-layer', { 'context-menu-layer--mobile': isMobileUserscriptPage }]"
+      >
+      <div
+        v-if="isMobileUserscriptPage"
+        class="context-menu-mask"
+        @click="handleClose"
+      />
       <div
         style="backdrop-filter: var(--bew-filter-glass-1); box-shadow: var(--bew-shadow-edge-glow-1), var(--bew-shadow-1);"
-        :style="contextMenuStyles"
+        :style="isMobileUserscriptPage ? undefined : contextMenuStyles"
         p-1 bg="$bew-elevated" rounded="$bew-radius"
         min-w-200px m="t-4 l-[calc(-200px+1rem)]"
         border="1 $bew-border-color"
-        class="context-menu-container"
+        :class="['context-menu-container', { 'context-menu-container--mobile': isMobileUserscriptPage }]"
+        @click.stop
       >
+        <div
+          v-if="isMobileUserscriptPage"
+          class="context-menu-drawer-handle"
+        />
+
         <!-- 顶部滚动指示器 -->
         <div
           v-show="canScrollUp"
-          class="scroll-indicator scroll-indicator-top"
+          :class="['scroll-indicator', 'scroll-indicator-top', { 'hover-enabled': hoverInteractionsEnabled }]"
           @click="scrollToTop"
         >
           <i class="i-mingcute:up-line" />
@@ -479,7 +518,7 @@ async function unfollowUser() {
             <template v-for="option in video.threePointV2" :key="option.type">
               <li
                 v-if="option.type !== ThreePointV2Type.WatchLater && option.type !== ThreePointV2Type.Feedback"
-                class="context-menu-item"
+                :class="['context-menu-item', { 'hover-enabled': hoverInteractionsEnabled }]"
                 @click="handleAppMoreCommand(option.type)"
               >
                 <i class="item-icon" i-solar:confounded-circle-bold-duotone />
@@ -491,7 +530,7 @@ async function unfollowUser() {
           <template v-else-if="getVideoType() === 'rcmd'">
             <li
               v-for="option in videoOptions" :key="option.id"
-              class="context-menu-item"
+              :class="['context-menu-item', { 'hover-enabled': hoverInteractionsEnabled }]"
               @click="handleMoreCommand(option.id)"
             >
               <i class="item-icon" i-solar:confounded-circle-bold-duotone />
@@ -505,8 +544,7 @@ async function unfollowUser() {
             <li
               v-for="option in optionGroup"
               :key="option.command"
-              class="context-menu-item"
-              :class="option.color"
+              :class="['context-menu-item', option.color, { 'hover-enabled': hoverInteractionsEnabled }]"
               @click="handleCommonCommand(option.command)"
             >
               <i class="item-icon" :class="[option.icon, option.color]" />
@@ -520,17 +558,18 @@ async function unfollowUser() {
         <!-- 底部滚动指示器 -->
         <div
           v-show="canScrollDown"
-          class="scroll-indicator scroll-indicator-bottom"
+          :class="['scroll-indicator', 'scroll-indicator-bottom', { 'hover-enabled': hoverInteractionsEnabled }]"
           @click="scrollToBottom"
         >
           <i class="i-mingcute:down-line" />
         </div>
       </div>
-    </div>
+      </div>
+    </Transition>
 
     <!-- mask -->
     <div
-      v-if="showContextMenu"
+      v-if="showContextMenu && !isMobileUserscriptPage"
       pos="fixed top-0 left-0" w-full h-full
       style="z-index: 9998;"
       @click="handleClose"
@@ -578,9 +617,40 @@ async function unfollowUser() {
 </template>
 
 <style lang="scss" scoped>
+.context-menu-layer--mobile {
+  position: fixed;
+  inset: 0;
+  z-index: 10030;
+  display: flex;
+  align-items: flex-end;
+  justify-content: stretch;
+  pointer-events: none;
+}
+
+.context-menu-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: auto;
+  background: rgba(0, 0, 0, 0.42);
+}
+
+.context-menu-drawer-handle {
+  width: 42px;
+  height: 4px;
+  flex: 0 0 auto;
+  margin: 4px auto 10px;
+  border-radius: 999px;
+  background: var(--bew-fill-4);
+}
+
 .context-menu-item {
-  --uno: "hover:bg-$bew-fill-2 text-sm px-2.5 py-1.75 rounded-$bew-radius-half cursor-pointer";
+  --uno: "text-sm px-2.5 py-1.75 rounded-$bew-radius-half cursor-pointer";
   --uno: "flex items-center";
+
+  &.hover-enabled:hover {
+    --uno: "bg-$bew-fill-2";
+  }
 }
 
 .item-icon {
@@ -598,6 +668,45 @@ async function unfollowUser() {
   position: relative;
 }
 
+.context-menu-container--mobile {
+  position: fixed !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  z-index: 1;
+  width: 100vw;
+  min-width: 0;
+  max-height: min(72dvh, 640px);
+  margin: 0 !important;
+  padding: 8px 12px calc(env(safe-area-inset-bottom, 0px) + 12px);
+  border-inline: 0;
+  border-bottom: 0;
+  border-radius: 22px 22px 0 0;
+  pointer-events: auto;
+  background: color-mix(in oklab, var(--bew-elevated-solid), transparent 4%);
+  box-shadow:
+    var(--bew-shadow-edge-glow-1),
+    0 -18px 48px rgba(0, 0, 0, 0.38) !important;
+
+  .context-menu-item {
+    min-height: 48px;
+    padding: 0 14px;
+    border-radius: 14px;
+    font-size: 15px;
+  }
+
+  .item-icon {
+    width: 22px;
+    height: 22px;
+    margin-right: 12px;
+    font-size: 22px;
+  }
+
+  .divider {
+    margin: 6px 0;
+  }
+}
+
 .context-menu-list {
   max-height: calc(80vh - 40px); // 为指示器留出空间
   overflow-y: auto;
@@ -613,6 +722,31 @@ async function unfollowUser() {
   }
 }
 
+.context-menu-container--mobile .context-menu-list {
+  max-height: calc(min(72dvh, 640px) - 48px - env(safe-area-inset-bottom, 0px));
+  padding: 0 0 4px;
+}
+
+.context-menu-mobile-enter-active,
+.context-menu-mobile-leave-active {
+  transition: opacity 180ms ease;
+}
+
+.context-menu-mobile-enter-active .context-menu-container--mobile,
+.context-menu-mobile-leave-active .context-menu-container--mobile {
+  transition: transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.context-menu-mobile-enter-from,
+.context-menu-mobile-leave-to {
+  opacity: 0;
+}
+
+.context-menu-mobile-enter-from .context-menu-container--mobile,
+.context-menu-mobile-leave-to .context-menu-container--mobile {
+  transform: translateY(100%);
+}
+
 .scroll-indicator {
   height: 20px;
   display: flex;
@@ -626,7 +760,7 @@ async function unfollowUser() {
   right: 0;
   z-index: 1;
 
-  &:hover {
+  &.hover-enabled:hover {
     color: var(--bew-text-color-1);
     background: var(--bew-fill-2);
   }
