@@ -1,16 +1,16 @@
 /// <reference types="vitest" />
 
-import { dirname, relative } from 'node:path'
+import process from 'node:process'
 
 import VueI18nPlugin from '@intlify/unplugin-vue-i18n/vite'
 import replace from '@rollup/plugin-replace'
 import Vue from '@vitejs/plugin-vue'
 import AutoImport from 'unplugin-auto-import/vite'
 import type { UserConfig } from 'vite'
-import { defineConfig } from 'vite'
 
-import { isDev, isFirefox, isSafari, port, r } from './scripts/utils'
-// import { MV3Hmr } from './vite-mv3-hmr'
+import { r } from './scripts/utils'
+
+const isDev = process.env.NODE_ENV !== 'production'
 
 export const sharedConfig: UserConfig = {
   root: r('src'),
@@ -53,21 +53,11 @@ export const sharedConfig: UserConfig = {
       'preventAssignment': true,
     }),
 
-    // rewrite assets to use relative path
-    {
-      name: 'assets-rewrite',
-      enforce: 'post',
-      apply: 'build',
-      transformIndexHtml(html, { path }) {
-        return html.replace(/"\/assets\//g, `"${relative(dirname(path), '/assets')}/`)
-      },
-    },
   ],
   optimizeDeps: {
     include: [
       'vue',
       '@vueuse/core',
-      'webextension-polyfill',
     ],
     exclude: [
       'vue-demi',
@@ -76,33 +66,10 @@ export const sharedConfig: UserConfig = {
 
 }
 
-export default defineConfig(({ command }) => ({
+export default {
   ...sharedConfig,
-  base: command === 'serve' ? `http://localhost:${port}/` : '/dist/',
-  server: {
-    port,
-    hmr: {
-      host: 'localhost',
-    },
-  },
-  build: {
-    outDir: r(isFirefox ? 'extension-firefox/dist' : isSafari ? 'extension-safari/dist' : 'extension/dist'),
-    emptyOutDir: true,
-    sourcemap: false, // https://github.com/vitejs/vite-plugin-vue/issues/35
-    // https://developer.chrome.com/docs/webstore/program_policies/#:~:text=Code%20Readability%20Requirements
-    terserOptions: {
-      mangle: false,
-    },
-    rollupOptions: {
-      input: {
-        options: r('src/options/index.html'),
-        popup: r('src/popup/index.html'),
-      },
-    },
-    minify: 'terser',
-  },
   test: {
     globals: true,
     environment: 'jsdom',
   },
-}))
+}

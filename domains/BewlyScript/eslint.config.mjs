@@ -13,7 +13,6 @@ export default antfu(
     ignores: [
       '**/dist/**',
       '**/node_modules/**',
-      '**/.pnpm-store/**',
       '**/public/**',
       '**/extension/**',
       '**/extension-firefox/**',

@@ -1,15 +1,15 @@
-import { installUserscriptFetch } from "./request"
+import { installUserscriptFetch } from './request'
 
 type StorageValue = unknown
 type StorageItems = Record<string, StorageValue>
-type StorageChange = {
+interface StorageChange {
   oldValue?: StorageValue
   newValue?: StorageValue
 }
 type StorageChanges = Record<string, StorageChange>
-type StorageChangeListener = (changes: StorageChanges, areaName: "local") => void
+type StorageChangeListener = (changes: StorageChanges, areaName: 'local') => void
 
-type GmApi = {
+interface GmApi {
   getValue?: (key: string, defaultValue?: StorageValue) => Promise<StorageValue> | StorageValue
   setValue?: (key: string, value: StorageValue) => Promise<void> | void
   deleteValue?: (key: string) => Promise<void> | void
@@ -17,20 +17,13 @@ type GmApi = {
   openInTab?: (url: string, options?: { active?: boolean } | boolean) => unknown
 }
 
-type ResourceMap = Record<string, string>
-
-const storagePrefix = "bewlyscript:"
+const storagePrefix = 'bewlyscript:'
 const listeners = new Set<StorageChangeListener>()
 
 installUserscriptFetch()
 
 function getGm(): GmApi | undefined {
   return (globalThis as { GM?: GmApi }).GM
-}
-
-function getResourceMap(): ResourceMap {
-  return (globalThis as { __BEWLYSCRIPT_RESOURCES__?: ResourceMap })
-    .__BEWLYSCRIPT_RESOURCES__ ?? {}
 }
 
 function storageKey(key: string): string {
@@ -44,7 +37,7 @@ function localStorageAvailable(): boolean {
 
   try {
     const probe = `${storagePrefix}probe`
-    storage.setItem(probe, "1")
+    storage.setItem(probe, '1')
     storage.removeItem(probe)
     return true
   }
@@ -113,14 +106,14 @@ function emitStorageChange(changes: StorageChanges): void {
     return
 
   for (const listener of listeners)
-    listener(changes, "local")
+    listener(changes, 'local')
 }
 
 function normalizeGetKeys(keys?: string | string[] | StorageItems | null): string[] | null {
   if (keys == null)
     return null
 
-  if (typeof keys === "string")
+  if (typeof keys === 'string')
     return [keys]
 
   if (Array.isArray(keys))
@@ -136,7 +129,7 @@ async function getStorageItems(keys?: string | string[] | StorageItems | null): 
 
   for (const key of targetKeys) {
     const value = await getRawValue(key)
-    if (value === undefined && keys && typeof keys === "object" && !Array.isArray(keys))
+    if (value === undefined && keys && typeof keys === 'object' && !Array.isArray(keys))
       result[key] = keys[key]
     else if (value !== undefined)
       result[key] = value
@@ -171,22 +164,20 @@ async function removeStorageItems(keys: string | string[]): Promise<void> {
 }
 
 function getRuntimeUrl(path: string): string {
-  const normalizedPath = path.replace(/^\/+/, "")
-  const resources = getResourceMap()
-  return resources[normalizedPath] ?? resources[`/${normalizedPath}`] ?? path
+  return path
 }
 
 async function sendRuntimeMessage(message: unknown): Promise<unknown> {
-  const { dispatchRuntimeMessage } = await import("./api-dispatcher")
+  const { dispatchRuntimeMessage } = await import('./api-dispatcher')
   return await dispatchRuntimeMessage(message as never)
 }
 
 function getUiLanguage(): string {
-  const language = navigator.language || "zh-CN"
-  if (language.toLowerCase().startsWith("zh-cn"))
-    return "zh-CN"
-  if (language.toLowerCase().startsWith("zh-tw"))
-    return "zh-TW"
+  const language = navigator.language || 'zh-CN'
+  if (language.toLowerCase().startsWith('zh-cn'))
+    return 'zh-CN'
+  if (language.toLowerCase().startsWith('zh-tw'))
+    return 'zh-TW'
   return language
 }
 
@@ -226,12 +217,12 @@ const browser = {
   },
   tabs: {
     async create(options: { url?: string, active?: boolean }) {
-      const url = options.url ?? "about:blank"
+      const url = options.url ?? 'about:blank'
       const gm = getGm()
       if (gm?.openInTab)
         return gm.openInTab(url, { active: options.active ?? true })
 
-      return window.open(url, options.active === false ? "_blank" : "_self")
+      return window.open(url, options.active === false ? '_blank' : '_self')
     },
     async query() {
       return [{ id: 1, index: 0, windowId: 1, active: true }]

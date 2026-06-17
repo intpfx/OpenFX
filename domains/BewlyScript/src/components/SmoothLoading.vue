@@ -1,13 +1,9 @@
 <script setup lang="ts">
-import browser from 'webextension-polyfill'
-
 const props = defineProps<{
   show: boolean | null | undefined
   keepSpace?: boolean // 是否在隐藏时保持占位空间
   minHeight?: string // 最小高度
 }>()
-
-const imgURL = browser.runtime.getURL('/assets/loading.gif')
 
 // 优化：使用计算属性预先确定样式类，避免模板中多次判断
 const containerClass = computed(() => ({
@@ -30,13 +26,7 @@ const containerClass = computed(() => ({
   >
     <Transition name="fade-scale">
       <div v-if="!!show" flex="~ items-center" justify="center" class="loading-content">
-        <img
-          :src="imgURL"
-          alt="loading"
-          w="46px"
-          h="46px"
-          m="r-2"
-        >
+        <span class="loading-spinner" aria-hidden="true" />
         <span>{{ $t('common.loading') }}</span>
       </div>
     </Transition>
@@ -85,6 +75,16 @@ const containerClass = computed(() => ({
   will-change: transform, opacity;
 }
 
+.loading-spinner {
+  width: 46px;
+  height: 46px;
+  margin-right: 0.5rem;
+  border: 3px solid var(--bew-fill-3);
+  border-top-color: var(--bew-theme-color);
+  border-radius: 999px;
+  animation: smooth-loading-spin 0.85s linear infinite;
+}
+
 /* 简化 transition，避免复杂动画 */
 .fade-scale-enter-active,
 .fade-scale-leave-active {
@@ -94,5 +94,11 @@ const containerClass = computed(() => ({
 .fade-scale-enter-from,
 .fade-scale-leave-to {
   opacity: 0;
+}
+
+@keyframes smooth-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

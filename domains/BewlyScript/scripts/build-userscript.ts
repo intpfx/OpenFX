@@ -1,5 +1,6 @@
-import { rm, mkdir, readFile, writeFile } from 'node:fs/promises'
-import { extname, join } from 'node:path'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import process from 'node:process'
 
 import { build } from 'vite'
 
@@ -10,33 +11,6 @@ import { r } from './utils'
 
 const buildDir = r('dist/.build/contentScripts')
 const outputFile = r('dist/BewlyScript.user.js')
-
-const resourceFiles = [
-  ['assets/anime-timetable-icons.png', r('assets/anime-timetable-icons.png')],
-  ['assets/empty.png', r('assets/empty.png')],
-  ['assets/icon-512.png', r('assets/icon-512.png')],
-  ['assets/loading.gif', r('assets/loading.gif')],
-] as const
-
-function mimeType(path: string): string {
-  switch (extname(path)) {
-    case '.gif':
-      return 'image/gif'
-    case '.png':
-      return 'image/png'
-    case '.svg':
-      return 'image/svg+xml'
-    case '.css':
-      return 'text/css;charset=utf-8'
-    default:
-      return 'application/octet-stream'
-  }
-}
-
-function toDataUrl(path: string, content: Buffer | string): string {
-  const body = Buffer.isBuffer(content) ? content : Buffer.from(content)
-  return `data:${mimeType(path)};base64,${body.toString('base64')}`
-}
 
 async function readText(path: string): Promise<string> {
   return await readFile(path, 'utf8')
@@ -54,24 +28,12 @@ async function buildBundles(): Promise<void> {
   })
 }
 
-async function buildResourceMap(): Promise<Record<string, string>> {
-  const resources: Record<string, string> = {}
-
-  for (const [resourcePath, filePath] of resourceFiles) {
-    resources[resourcePath] = toDataUrl(resourcePath, await readFile(filePath))
-  }
-
-  return resources
-}
-
 function assembleUserscript(options: {
   contentCode: string
   injectCode: string
-  resources: Record<string, string>
   styleCss: string
 }): string {
   const metadata = buildUserscriptMetadata(packageJson.version)
-  const resourceJson = JSON.stringify(options.resources)
   const styleCss = JSON.stringify(options.styleCss)
   const injectCode = JSON.stringify(options.injectCode)
 
@@ -83,10 +45,8 @@ function assembleUserscript(options: {
   var userscriptStyleCss = ${styleCss};
   globalObject.__BEWLYSCRIPT__ = true;
   globalObject.__BEWLYSCRIPT_STYLE_CSS__ = userscriptStyleCss;
-  globalObject.__BEWLYSCRIPT_RESOURCES__ = ${resourceJson};
   window.__BEWLYSCRIPT__ = true;
   window.__BEWLYSCRIPT_STYLE_CSS__ = userscriptStyleCss;
-  window.__BEWLYSCRIPT_RESOURCES__ = globalObject.__BEWLYSCRIPT_RESOURCES__;
 
   function addGlobalStyle(css) {
     try {
@@ -124,8 +84,7 @@ async function main(): Promise<void> {
   const contentCode = await readText(join(buildDir, 'content.global.js'))
   const injectCode = await readText(join(buildDir, 'inject.global.js'))
   const styleCss = await readText(join(buildDir, 'style.css'))
-  const resources = await buildResourceMap()
-  const userscript = sanitizeInlineSvg(assembleUserscript({ contentCode, injectCode, resources, styleCss }))
+  const userscript = sanitizeInlineSvg(assembleUserscript({ contentCode, injectCode, styleCss }))
   if (hasExternalExtensionUrl(userscript))
     throw new Error('Refusing to write userscript with external extension URLs')
 

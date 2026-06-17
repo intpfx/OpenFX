@@ -16,11 +16,19 @@
 userscript 产物。用户已确认直接硬删旧本地与云端项目，并以当前上游重新构建 OpenFX 内的
 userscript 版本。
 
+## 安装目标
+
+- Safari：Userscripts app，要求脚本以 `.user.js` 形式安装，并使用 `@inject-into content` 以获得 GM API。
+- Chrome/Edge/Firefox：Tampermonkey、Violentmonkey 或兼容油猴管理器。
+
 ## Userscript 构建
 
+构建链路由 Bun 驱动，content/inject bundle 使用 VitePlus/Rolldown，最后由 `scripts/build-userscript.ts`
+拼装为单个 `.user.js` 文件。
+
 ```bash
-pnpm install --ignore-scripts
-pnpm build:userscript
+bun install
+bun run build:userscript
 ```
 
 最终可安装脚本输出到：
@@ -29,22 +37,43 @@ pnpm build:userscript
 dist/BewlyScript.user.js
 ```
 
-该脚本面向 Userscripts Safari 与 Tampermonkey/油猴系：
+## 兼容层
 
+- `webextension-polyfill` 在 userscript 构建中被 Vite alias 到 `src/userscript/browser-shim.ts`。
 - 使用 `@inject-into content` 保留 GM API。
+- `browser.storage.local` 映射到 GM value API，缺失时退回 `localStorage`。
+- `browser.runtime.sendMessage` 映射到同进程 API dispatcher，复用上游 background API map。
 - 通过 `GM.xmlHttpRequest` / `GM_xmlhttpRequest` 请求 B 站 API，缺失时退回 `fetch`。
-- 通过 `GM.getValue` / `GM.setValue` 存储设置，缺失时退回 `localStorage`。
-- 桌面端继续复用 BewlyCat 原有 WebExtension content UI。
-- 移动端识别 `m.bilibili.com` 首页、视频、搜索、空间、动态等页面类型；移动首页使用
-  BewlyScript 自有页面层，移动原站页保留 B 站正文，只显示安全区内的底部 Dock/设置入口。
-- 移动端不加载桌面顶栏，不清空原站 DOM，不套用桌面站全局 `bewly-design` 样式，并启用触控默认值。
-- Dock 在 iPhone 安全区上方横向滚动；设置面板降级为底部抽屉式布局。
+- 运行时图形使用 CSS/文本绘制，不再把 `assets/*` 内联进单文件脚本。
 
-OpenFX 根级 Deno 校验排除 `domains/BewlyScript/`，避免误处理独立 Vue/Vite/PNPM
-workspace。该 domain 的验证入口是：
+## 瘦身边界
+
+- 本 domain 只保留 userscript 构建链路；WebExtension 的 popup/options/manifest/商店打包发布脚本已移除。
+- `hls.js`、`flv.js` 保留，避免影响播放相关功能。
+- `qrcode.vue` 保留，用于设置页登录二维码。
+- `vuedraggable` 保留，用于 Dock 与首页设置项的拖拽排序。
+- `src/styles/adaptedStyles/` 保留，用于继续适配尽可能完整的 B 站页面样式。
+
+## 移动端策略
+
+移动端以 `m.bilibili.com` 为第一目标：
+
+- `m.bilibili.com/` 作为 BewlyScript 移动首页识别，可进入自有首页、番剧、收藏、历史、稍后再看、动态等页面。
+- 移动视频、搜索、空间、动态原站页不强行替换正文，避免遮挡或破坏 B 站移动端关键内容。
+- 不清空移动页面 DOM，不套用桌面站全局 `bewly-design` 样式。
+- 移动端隐藏桌面 TopBar，只保留安全区内的底部 Dock 和设置入口。
+- Dock 默认底部常显、可横向滚动；设置窗口在窄屏下降级为底部抽屉。
+- 首页分类胶囊在移动端内联显示，不依赖桌面顶栏插槽。
+
+桌面端继续复用 BewlyCat 原有页面与组件逻辑。
+
+## 验证
+
+OpenFX 根级 Deno 校验排除 `domains/BewlyScript/`，避免误处理独立 Vue/Vite/Bun workspace。该 domain
+的验证入口是：
 
 ```bash
-pnpm check:userscript
+bun run check:userscript
 ```
 
 根仓库级验证仍使用：
@@ -52,6 +81,22 @@ pnpm check:userscript
 ```bash
 deno task check
 ```
+
+## 开发与贡献
+
+这个 OpenFX domain 当前只维护 BewlyCat 的 userscript 单文件构建。开发入口如下：
+
+```bash
+bun install
+bun run build:userscript
+bun run check:userscript
+deno task check
+```
+
+可安装产物输出到 `dist/BewlyScript.user.js`。
+
+WebExtension 的 popup/options 页面、manifest 生成、CRX/XPI/ZIP 打包和扩展商店提交流程不再属于本
+domain 的维护范围。
 
 ---
 
@@ -64,7 +109,7 @@ deno task check
 此项目基于[BewlyBewly](https://github.com/BewlyBewly/BewlyBewly)开发，并在其基础上进行功能扩充和调整，并合并了一些其他拓展的功能。
 
 <p align="center" style="margin-bottom: 0px !important;">
-<img width="300" alt="BewlyCat icon" src="./assets/icon-512.png"><br/>
+<strong>BewlyScript</strong><br/>
 </p>
 
 <p align="center">只需对您的 Bilibili 主页进行一些小更改即可。</p>
@@ -157,10 +202,6 @@ deno task check
 3. 在浏览器中加载解压后的扩展文件夹
 
 </details>
-
-## 🤝 构建项目参考
-
-查看 [CONTRIBUTING.md](docs/CONTRIBUTING-cmn_CN.md)
 
 ### BewlyCat&BewlyBewly贡献者
 

@@ -81,12 +81,7 @@ describe('userscript browser shim', () => {
     browser.storage.onChanged.removeListener(listener)
   })
 
-  it('resolves bundled resource URLs', () => {
-    ;(globalThis as { __BEWLYSCRIPT_RESOURCES__?: Record<string, string> })
-      .__BEWLYSCRIPT_RESOURCES__ = {
-        'assets/loading.gif': 'data:image/gif;base64,abc',
-      }
-
-    expect(browser.runtime.getURL('/assets/loading.gif')).toBe('data:image/gif;base64,abc')
+  it('keeps runtime URLs unchanged when extension resources are not bundled', () => {
+    expect(browser.runtime.getURL('/dist/contentScripts/style.css')).toBe('/dist/contentScripts/style.css')
   })
 })

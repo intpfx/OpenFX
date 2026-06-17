@@ -2,18 +2,19 @@
   "$schema": "https://unpkg.com/knip@5/schema.json",
   "entry": [
     "src/contentScripts/index.ts",
-    "src/options/main.ts",
-    "src/popup/main.ts",
+    "src/inject/index.ts",
+    "src/tests/**/*.ts",
+    "src/userscript/**/*.ts",
     "src/components/**",
-    "scripts/*.ts",
+    "scripts/build-userscript.ts",
     "*.config.*"
   ],
-  "ignore": ["src/components/Settings/**", "src/inject/**"],
+  "ignore": ["src/components/Settings/**"],
   "ignoreDependencies": [
     "@iconify/json",
     "uno.css"
   ],
-  "ignoreBinaries": ["gh", "xcrun"],
+  "ignoreBinaries": ["gh"],
   "rules": {
     "types": "off",
     "enumMembers": "off",

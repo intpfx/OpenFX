@@ -1,9 +1,3 @@
-<script setup lang="ts">
-import browser from 'webextension-polyfill'
-
-const imgURL = browser.runtime.getURL('/assets/loading.gif')
-</script>
-
 <template>
   <div
     w="full"
@@ -13,13 +7,25 @@ const imgURL = browser.runtime.getURL('/assets/loading.gif')
     justify="center"
     items="center"
   >
-    <img
-      :src="imgURL"
-      alt="loading"
-      w="46px"
-      h="46px"
-      m="r-2"
-    >
+    <span class="bew-css-loading-spinner" aria-hidden="true" />
     {{ $t('common.loading') }}
   </div>
 </template>
+
+<style scoped lang="scss">
+.bew-css-loading-spinner {
+  width: 46px;
+  height: 46px;
+  margin-right: 0.5rem;
+  border: 3px solid var(--bew-fill-3);
+  border-top-color: var(--bew-theme-color);
+  border-radius: 999px;
+  animation: bew-css-loading-spin 0.85s linear infinite;
+}
+
+@keyframes bew-css-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+</style>
