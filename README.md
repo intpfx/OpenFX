@@ -264,9 +264,8 @@ OpenFX 在 `intpfx` GitHub org 下有已清理的关联项目：
 - **`intpfx/chronoframe`**（已删除）— `HoshinoSuzumi/chronoframe` 的 fork。OpenFX
   改为直接以 `HoshinoSuzumi/chronoframe@v1.0.0-rc.3`
   (`2463660a0d3b0efc5118d21f3163ac7e6553cc9c`) 为基线引入源码，并在
-  `domains/LivpExplorer/` 下保留为独立 Nuxt/pnpm domain。旧本地 SwiftUI
-  项目的 Apple Photos、`.livp`、Quick
-  Look 等可吸收功能记录在 `domains/LivpExplorer/OPENFX.md`。
+  `domains/LivpExplorer/` 下保留为独立 Nuxt/pnpm domain。旧本地 SwiftUI 项目的 Apple
+  Photos、`.livp`、Quick Look 等可吸收功能记录在 `domains/LivpExplorer/OPENFX.md`。
 - **`@intpfx/fx`**（JSR 包，已归档）— 全部 5 个版本均已 yank，任何引用需重写。
 
 ## Agent 指南
