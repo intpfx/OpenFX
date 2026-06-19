@@ -17,6 +17,22 @@ deno task --config entry/web/deno.json preview
 - 前端 Vite：`http://localhost:5501`
 - Nitro 服务：`http://localhost:3000`
 
+## 首页项目卡片约束
+
+`entry/web/content/homepage-projects.json` 里的每一张项目卡片都必须能点击打开对应内容。
+
+新增或改名项目卡片时，需要同步更新：
+
+- `entry/web/src/App.tsx` 的 `ActiveDomainPanel` 类型
+- `getProjectCardClick()` 的可点击项目映射
+- `Homepage` 内对应的 `activePanel === "<project-id>"` 渲染分支
+
+不要只在 JSON
+里新增卡片。没有详情内容的卡片会让首页项目浏览器出现断点，后续维护时应优先补齐说明面板、嵌入页面或外部安装/访问入口。
+
+`entry/web/tests/homepage-projects.test.ts` 会校验 JSON 卡片 ID 与详情面板 ID
+完全一致，新增卡片后需要让 `deno task check` 继续通过。
+
 ## 部署目标
 
 默认部署目标是 Deno Deploy，由 Nitro 输出服务端入口并由 VitePlus 构建 SPA 客户端。

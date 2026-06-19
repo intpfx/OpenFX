@@ -8,6 +8,7 @@
     "jsr:@std/internal@^1.0.13": "1.0.13",
     "jsr:@std/path@*": "1.1.4",
     "jsr:@std/path@^1.1.4": "1.1.4",
+    "npm:@chenglou/pretext@^0.0.8": "0.0.8",
     "npm:@vitejs/plugin-react@5": "5.1.4_vite@8.0.13__esbuild@0.25.12",
     "npm:@vitejs/plugin-react@^5.1.4": "5.1.4_vite@8.0.13__esbuild@0.25.12",
     "npm:animejs@^4.4.1": "4.4.1",
@@ -185,6 +186,9 @@
         "@babel/helper-string-parser",
         "@babel/helper-validator-identifier"
       ]
+    },
+    "@chenglou/pretext@0.0.8": {
+      "integrity": "sha512-yqm2GMxnPI7VHcHwe84P8ZF0JK/2d2DMKPqMN+s95jQhwDMYYXKVFVJUMEaVWckQStdsjdLav/0Vu+d9YbtGxA=="
     },
     "@cloudflare/kv-asset-handler@0.4.2": {
       "integrity": "sha512-SIOD2DxrRRwQ+jgzlXCqoEFiKOFqaPjhnNTGKXSRLvp1HiOvapLaFG2kEr9dYQTYe8rKrd9uvDUzmAITeNyaHQ=="
@@ -3360,6 +3364,7 @@
     "dependencies": [
       "jsr:@std/assert@^1.0.19",
       "jsr:@std/expect@^1.0.17",
+      "npm:@chenglou/pretext@^0.0.8",
       "npm:@vitejs/plugin-react@^5.1.4",
       "npm:animejs@^4.4.1",
       "npm:gsap@^3.15.0",
@@ -3378,6 +3383,7 @@
       "entry/web": {
         "dependencies": [
           "jsr:@std/expect@^1.0.17",
+          "npm:@chenglou/pretext@^0.0.8",
           "npm:@vitejs/plugin-react@^5.1.4",
           "npm:animejs@^4.4.1",
           "npm:gsap@^3.15.0",

@@ -1,6 +1,8 @@
+import { measureNaturalWidth, prepareWithSegments } from "@chenglou/pretext";
 import { animate, type JSAnimation, scrambleText } from "animejs";
 import gsap from "gsap";
 import {
+  type CSSProperties,
   type FormEvent,
   type MutableRefObject,
   type ReactNode,
@@ -19,6 +21,7 @@ import {
   type HomepageProjectCard,
   listHiddenHomepageProjects,
 } from "../homepage-projects";
+import { type ActiveDomainPanel, isProjectDetailPanelId } from "../homepage-panels";
 
 type UnlockRule = {
   key: string;
@@ -33,17 +36,6 @@ type ActiveUnlockSession = {
   projectIds: string[];
   expiresAt: string;
 };
-
-type ActiveDomainPanel =
-  | "admin-console"
-  | "ipv6-sync-suite"
-  | "how-much-this"
-  | "relay-proxy-gateway"
-  | "wanone-memorial"
-  | "chinagas-wms-qrcode"
-  | "gasmap"
-  | "finlyzer"
-  | "costing-assistant";
 
 type DownipRouteValue = {
   ipv6: string;
@@ -70,10 +62,22 @@ const hiddenProjects = listHiddenHomepageProjects();
 
 type BrandName = "FENGXIAO" | "OpenFX";
 
+const BRAND_NAMES: readonly BrandName[] = ["FENGXIAO", "OpenFX"];
+const BRAND_LOCK_PADDING_PX = 4;
+
 const STORAGE_KEYS = {
   activeUnlock: "openfx_active_unlock",
   adminKey: "openfx_admin_key",
 } as const;
+
+function getProjectSearchText(project: HomepageProjectCard) {
+  return [
+    project.name,
+    project.description,
+    project.sourcePath,
+    ...project.tech,
+  ].join(" ").toLowerCase();
+}
 
 function createDefaultExpiryInput() {
   const value = new Date(Date.now() + 24 * 60 * 60 * 1000);
@@ -219,6 +223,42 @@ function dispatchPopstate() {
   globalThis.dispatchEvent?.(new PopStateEvent("popstate"));
 }
 
+function parseCssPixels(value: string) {
+  if (!value || value === "normal") {
+    return 0;
+  }
+
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function buildCanvasFont(style: CSSStyleDeclaration) {
+  const stylePart = style.fontStyle === "normal" ? "" : `${style.fontStyle} `;
+  const variantPart = style.fontVariant === "normal" ? "" : `${style.fontVariant} `;
+  return `${stylePart}${variantPart}${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+}
+
+function measureBrandWordWidth(wordNode: HTMLButtonElement, word: BrandName) {
+  const previousBrand = wordNode.dataset.brand;
+
+  try {
+    wordNode.dataset.brand = word;
+    const style = getComputedStyle(wordNode);
+    const prepared = prepareWithSegments(word, buildCanvasFont(style), {
+      letterSpacing: parseCssPixels(style.letterSpacing),
+      wordBreak: "keep-all",
+    });
+
+    return measureNaturalWidth(prepared);
+  } finally {
+    if (previousBrand === undefined) {
+      delete wordNode.dataset.brand;
+    } else {
+      wordNode.dataset.brand = previousBrand;
+    }
+  }
+}
+
 function usePathname() {
   const [pathname, setPathname] = useState(getBrowserLocationPathname);
 
@@ -240,19 +280,28 @@ export function navigate(pathname: string) {
   dispatchPopstate();
 }
 
-function BrandWord(props: { onToggle: () => void }) {
+function BrandWord(props: {
+  brand: BrandName;
+  lockWidthPx: number | null;
+  switching: boolean;
+  onToggle: () => void;
+}) {
+  const style = props.lockWidthPx === null ? undefined : ({
+    "--brand-lock-width": `${props.lockWidthPx}px`,
+  } as CSSProperties);
+
   return (
     <div className="brand-zone">
       <div className="brand-shell">
         <button
-          className="brand-word"
+          className={`brand-word${props.switching ? " brand-switching" : ""}`}
+          data-brand={props.brand}
           id="brandWord"
+          style={style}
           type="button"
           onClick={props.onToggle}
           aria-label="Toggle brand"
         >
-          <div aria-hidden="true" className="glitch-ghost" id="brandGhostR" />
-          <div aria-hidden="true" className="glitch-ghost" id="brandGhostB" />
           <span className="brand-text" id="brandText" />
         </button>
       </div>
@@ -307,16 +356,7 @@ function getProjectCardClick(
     openPanel: (panel: ActiveDomainPanel) => void;
   },
 ): (() => void) | undefined {
-  if (
-    card.id === "how-much-this" || card.id === "ipv6-sync-suite" ||
-    card.id === "relay-proxy-gateway" || card.id === "wanone-memorial" ||
-    card.id === "chinagas-wms-qrcode" || card.id === "gasmap" ||
-    card.id === "finlyzer" || card.id === "costing-assistant"
-  ) {
-    return () => controls.openPanel(card.id);
-  }
-
-  if (card.id === "chinagas-wms-qrcode") {
+  if (isProjectDetailPanelId(card.id)) {
     return () => controls.openPanel(card.id);
   }
 
@@ -325,7 +365,7 @@ function getProjectCardClick(
 
 function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
   const currentBrandRef = useRef<BrandName>("OpenFX");
-  const brandAnimationRef = useRef<JSAnimation | null>(null);
+  const brandTypewriterCleanupRef = useRef<(() => void) | null>(null);
   const primaryControlAnimationRef = useRef<JSAnimation | null>(null);
   const statusAnimationRef = useRef<JSAnimation | null>(null);
   const busyRef = useRef(false);
@@ -338,11 +378,15 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
   const unlockInputRef = useRef<HTMLInputElement | null>(null);
   const unlockShellRef = useRef<HTMLDivElement | null>(null);
   const unlockFieldRef = useRef<HTMLDivElement | null>(null);
+  const projectScrollerRef = useRef<HTMLDivElement | null>(null);
   const [unlockKey, setUnlockKey] = useState("");
   const [status, setStatus] = useState("");
   const [uiBrand, setUiBrand] = useState<BrandName>("OpenFX");
+  const [brandLockWidth, setBrandLockWidth] = useState<number | null>(null);
+  const [brandSwitching, setBrandSwitching] = useState(false);
   const [showUnlock, setShowUnlock] = useState(false);
   const [showMessage, setShowMessage] = useState(false);
+  const [projectQuery, setProjectQuery] = useState("");
   const [activePanel, setActivePanel] = useState<ActiveDomainPanel | null>(
     props.initialPanel ?? null,
   );
@@ -368,6 +412,38 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
     : "";
   const currentAccessKey = activeUnlock?.key ??
     localStorage.getItem(STORAGE_KEYS.adminKey)?.trim() ?? "";
+  const browsableProjectColumns = useMemo(() => {
+    const query = projectQuery.trim().toLowerCase();
+
+    return HOMEPAGE_PROJECTS.columns.map((column) => ({
+      ...column,
+      cards: column.cards.filter((card) => {
+        const isRevealed = DOMAIN_CONTENT_PUBLIC || !card.hidden ||
+          visibleProjectIds.has(card.id);
+        if (!isRevealed) return false;
+        if (!query) return true;
+
+        return getProjectSearchText(card).includes(query);
+      }),
+    }));
+  }, [projectQuery, visibleProjectIds]);
+  const totalBrowsableProjectCount = useMemo(() => {
+    return HOMEPAGE_PROJECTS.columns.reduce((count, column) => {
+      return count +
+        column.cards.filter((card) =>
+          DOMAIN_CONTENT_PUBLIC || !card.hidden || visibleProjectIds.has(card.id)
+        ).length;
+    }, 0);
+  }, [visibleProjectIds]);
+  const filteredProjectCount = useMemo(() => {
+    return browsableProjectColumns.reduce(
+      (count, column) => count + column.cards.length,
+      0,
+    );
+  }, [browsableProjectColumns]);
+  const projectCountLabel = `${String(filteredProjectCount).padStart(2, "0")} / ${
+    String(totalBrowsableProjectCount).padStart(2, "0")
+  }`;
 
   function isAccentChar(word: string, ch: string) {
     return (word === "FENGXIAO" && ch === "O") ||
@@ -379,13 +455,20 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
     ref.current = null;
   }
 
+  function clearBrandTypewriter() {
+    brandTypewriterCleanupRef.current?.();
+    brandTypewriterCleanupRef.current = null;
+  }
+
   function clearScheduledWork() {
     if (statusClearTimeoutRef.current !== null) {
       clearTimeout(statusClearTimeoutRef.current);
       statusClearTimeoutRef.current = null;
     }
 
-    cancelScramble(brandAnimationRef);
+    clearBrandTypewriter();
+    setBrandSwitching(false);
+    clearBrandTransitionProps();
     cancelScramble(primaryControlAnimationRef);
     cancelScramble(statusAnimationRef);
     if (primaryControlRef.current) {
@@ -396,27 +479,57 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
     }
   }
 
-  function setWord(word: BrandName) {
+  function appendBrandChar(
+    textNode: HTMLSpanElement,
+    word: BrandName,
+    ch: string,
+    index: number,
+  ) {
+    const span = document.createElement("span");
+    span.className = "glitch-char";
+    span.dataset.idx = String(index);
+    span.textContent = ch;
+    if (isAccentChar(word, ch)) {
+      span.style.color = "var(--accent)";
+    }
+    textNode.append(span);
+  }
+
+  function setWord(word: BrandName, visibleLength = word.length) {
     const textNode = brandTextRef.current;
     if (!textNode) {
       return;
     }
 
     textNode.innerHTML = "";
-    for (const [index, ch] of word.split("").entries()) {
-      const span = document.createElement("span");
-      span.className = "glitch-char";
-      span.dataset.idx = String(index);
-      span.textContent = ch;
-      if (isAccentChar(word, ch)) {
-        span.style.color = "var(--accent)";
-      }
-      textNode.append(span);
+    const chars = word.split("").slice(0, visibleLength);
+    for (const [index, ch] of chars.entries()) {
+      appendBrandChar(textNode, word, ch, index);
     }
   }
 
   function setDocumentTitle(brand: BrandName) {
     document.title = brand;
+  }
+
+  function updateBrandLockWidth() {
+    const wordNode = brandWordRef.current;
+    if (!wordNode) {
+      return;
+    }
+
+    try {
+      const nextWidth = Math.ceil(
+        Math.max(
+          ...BRAND_NAMES.map((word) => measureBrandWordWidth(wordNode, word)),
+        ) + BRAND_LOCK_PADDING_PX,
+      );
+      setBrandLockWidth((currentWidth) =>
+        currentWidth === nextWidth ? currentWidth : nextWidth
+      );
+    } catch {
+      setBrandLockWidth(null);
+    }
   }
 
   function playScramble(
@@ -595,31 +708,117 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
     busyRef.current = false;
   }
 
+  function clearBrandTransitionProps() {
+    const brandTextNode = brandTextRef.current;
+    const brandWordNode = brandWordRef.current;
+    gsap.set([brandTextNode, brandWordNode].filter(Boolean), {
+      clearProps: "transform,opacity,visibility,filter",
+    });
+    brandTextNode?.style.removeProperty("max-width");
+    brandTextNode?.style.removeProperty("overflow");
+    brandTextNode?.style.removeProperty("transition");
+    brandTextNode?.style.removeProperty("width");
+    gsap.set(brandTextNode?.querySelectorAll(".glitch-char") ?? [], {
+      clearProps: "transform,opacity,visibility,filter",
+    });
+  }
+
+  function playBrandTypewriter(target: BrandName) {
+    const brandTextNode = brandTextRef.current;
+    const brandWordNode = brandWordRef.current;
+    if (!brandTextNode || !brandWordNode) {
+      finishAnim(target);
+      return;
+    }
+
+    clearBrandTypewriter();
+    clearBrandTransitionProps();
+
+    let finished = false;
+    const timeouts: number[] = [];
+    const source = currentBrandRef.current;
+    const complete = () => {
+      if (finished) {
+        return;
+      }
+
+      finished = true;
+      clearBrandTypewriter();
+      setBrandSwitching(false);
+      clearBrandTransitionProps();
+      finishAnim(target);
+    };
+
+    const schedule = (delayMs: number, task: () => void) => {
+      const timeoutId = globalThis.setTimeout(() => {
+        if (!finished) {
+          task();
+        }
+      }, delayMs);
+      timeouts.push(timeoutId);
+    };
+
+    brandTypewriterCleanupRef.current = () => {
+      for (const timeoutId of timeouts) {
+        clearTimeout(timeoutId);
+      }
+    };
+
+    flushSync(() => setBrandSwitching(true));
+    brandWordNode.dataset.brand = source;
+    setWord(source);
+
+    let elapsedMs = 0;
+    const eraseStepMs = 34;
+    const typeStepMs = target === "OpenFX" ? 62 : 54;
+    const pivotPauseMs = 86;
+
+    for (let length = source.length - 1; length >= 0; length -= 1) {
+      elapsedMs += eraseStepMs;
+      schedule(elapsedMs, () => setWord(source, length));
+    }
+
+    elapsedMs += pivotPauseMs;
+    schedule(elapsedMs, () => {
+      brandWordNode.dataset.brand = target;
+      setUiBrand(target);
+      setDocumentTitle(target);
+      setWord(target, 0);
+    });
+
+    for (let length = 1; length <= target.length; length += 1) {
+      elapsedMs += typeStepMs;
+      schedule(elapsedMs, () => setWord(target, length));
+    }
+
+    schedule(elapsedMs + 160, complete);
+    schedule(elapsedMs + 620, complete);
+  }
+
   function toggleBrand() {
     const brandTextNode = brandTextRef.current;
-    if (busyRef.current || !brandWordRef.current || !brandTextNode) {
+    const brandWordNode = brandWordRef.current;
+    if (busyRef.current || !brandWordNode || !brandTextNode) {
       return;
     }
 
     busyRef.current = true;
-    cancelScramble(brandAnimationRef);
+    clearBrandTypewriter();
 
     const currentWord = currentBrandRef.current;
     const target: BrandName = currentWord === "FENGXIAO" ? "OpenFX" : "FENGXIAO";
-    setUiBrand(target);
-    setDocumentTitle(target);
+    const reduceMotion = globalThis.matchMedia?.(
+      "(prefers-reduced-motion: reduce)",
+    ).matches ?? false;
 
-    cancelScramble(brandAnimationRef);
-    brandAnimationRef.current = animate(brandTextNode, {
-      duration: 720,
-      ease: "linear",
-      innerHTML: scrambleText({ text: target }),
-      onComplete: () => {
-        brandAnimationRef.current = null;
-        brandTextNode.textContent = target;
-        finishAnim(target);
-      },
-    });
+    if (reduceMotion) {
+      brandWordNode.dataset.brand = target;
+      setBrandSwitching(false);
+      finishAnim(target);
+      return;
+    }
+
+    playBrandTypewriter(target);
   }
 
   async function handleUnlock() {
@@ -708,6 +907,39 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
     return DOMAIN_CONTENT_PUBLIC || !card.hidden || visibleProjectIds.has(card.id);
   }
 
+  function updateProjectFocus(scroller: HTMLDivElement) {
+    const reduceMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")
+      .matches ?? false;
+    const cards = [...scroller.querySelectorAll<HTMLElement>(".project-card")]
+      .filter((card) => card.offsetParent !== null);
+    if (!cards.length) return;
+
+    if (reduceMotion) {
+      gsap.set(cards, { clearProps: "transform,opacity,visibility" });
+      return;
+    }
+
+    const scrollerRect = scroller.getBoundingClientRect();
+    const stageCenter = scrollerRect.top + scrollerRect.height / 2;
+    const falloff = Math.max(scrollerRect.height * 0.7, 1);
+
+    for (const card of cards) {
+      const cardRect = card.getBoundingClientRect();
+      const cardCenter = cardRect.top + cardRect.height / 2;
+      const distance = Math.min(Math.abs(cardCenter - stageCenter) / falloff, 1);
+      const focus = 1 - distance;
+
+      gsap.to(card, {
+        autoAlpha: 0.68 + focus * 0.32,
+        duration: 0.22,
+        ease: "power2.out",
+        overwrite: "auto",
+        scale: 0.986 + focus * 0.014,
+        y: (1 - focus) * 5,
+      });
+    }
+  }
+
   function openProjectPanel(panel: ActiveDomainPanel) {
     if (document.startViewTransition) {
       document.startViewTransition(() => flushSync(() => setActivePanel(panel)));
@@ -786,10 +1018,44 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
     document.body.classList.add("homepage-body");
     setWord("OpenFX");
     setDocumentTitle("OpenFX");
+    updateBrandLockWidth();
 
     return () => {
       clearScheduledWork();
       document.body.classList.remove("homepage-body");
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    let frameId: number | null = requestAnimationFrame(() => {
+      frameId = null;
+      if (active) {
+        updateBrandLockWidth();
+      }
+    });
+
+    const queueUpdate = () => {
+      if (frameId !== null) {
+        return;
+      }
+      frameId = requestAnimationFrame(() => {
+        frameId = null;
+        if (active) {
+          updateBrandLockWidth();
+        }
+      });
+    };
+
+    void document.fonts?.ready.then(queueUpdate).catch(() => {});
+    globalThis.addEventListener("resize", queueUpdate);
+
+    return () => {
+      active = false;
+      if (frameId !== null) {
+        cancelAnimationFrame(frameId);
+      }
+      globalThis.removeEventListener("resize", queueUpdate);
     };
   }, []);
 
@@ -859,6 +1125,74 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
   }, [messageButtonText, showUnlock, uiBrand, unlockButtonText]);
 
   useEffect(() => {
+    if (isPanelOpen) return;
+
+    const scroller = projectScrollerRef.current;
+    if (!scroller) return;
+
+    scroller.scrollTo({ top: 0, behavior: "auto" });
+  }, [isPanelOpen, projectQuery]);
+
+  useEffect(() => {
+    if (isPanelOpen) return;
+
+    const scroller = projectScrollerRef.current;
+    if (!scroller) return;
+
+    const cards = [...scroller.querySelectorAll<HTMLElement>(".project-card")]
+      .filter((card) => card.offsetParent !== null);
+    const reduceMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")
+      .matches ?? false;
+    let frameId: number | null = null;
+
+    const queueUpdate = () => {
+      if (frameId !== null) return;
+      frameId = requestAnimationFrame(() => {
+        frameId = null;
+        updateProjectFocus(scroller);
+      });
+    };
+
+    if (!reduceMotion && cards.length > 0) {
+      gsap.fromTo(
+        cards,
+        { autoAlpha: 0, scale: 0.985, y: 18 },
+        {
+          autoAlpha: 1,
+          duration: 0.42,
+          ease: "power2.out",
+          overwrite: "auto",
+          scale: 1,
+          stagger: { amount: 0.18, from: "start" },
+          y: 0,
+          onComplete: queueUpdate,
+        },
+      );
+    } else {
+      updateProjectFocus(scroller);
+    }
+
+    scroller.addEventListener("scroll", queueUpdate, { passive: true });
+    globalThis.addEventListener("resize", queueUpdate);
+    queueUpdate();
+
+    return () => {
+      if (frameId !== null) {
+        cancelAnimationFrame(frameId);
+      }
+      scroller.removeEventListener("scroll", queueUpdate);
+      globalThis.removeEventListener("resize", queueUpdate);
+      gsap.killTweensOf(cards);
+      gsap.set(cards, { clearProps: "transform,opacity,visibility" });
+    };
+  }, [
+    activeUnlock,
+    filteredProjectCount,
+    isPanelOpen,
+    projectQuery,
+  ]);
+
+  useEffect(() => {
     animateStatusText(status);
 
     if (!status) {
@@ -880,38 +1214,64 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
 
   return (
     <div className="page homepage-page">
-      <BrandWord onToggle={toggleBrand} />
+      <BrandWord
+        brand={uiBrand}
+        lockWidthPx={brandLockWidth}
+        switching={brandSwitching}
+        onToggle={toggleBrand}
+      />
 
       <div
         className={`projects-zone${isPanelOpen ? " panel-active" : ""}`}
-        style={{
-          gridTemplateColumns: HOMEPAGE_PROJECTS.layout.gridTemplateColumns,
-          position: "relative",
-        }}
       >
         {/* 卡片网格 — 面板打开时透明不可交互，但保留在 DOM 中维持 grid 布局 */}
-        {HOMEPAGE_PROJECTS.columns.map((column) => (
-          <div
-            className="project-column"
-            key={column.id}
-            style={{
-              ...(column.offsetRem
-                ? { paddingTop: `${column.offsetRem}rem` }
-                : undefined),
-              opacity: isPanelOpen ? 0 : 1,
-              pointerEvents: isPanelOpen ? "none" : undefined,
-            }}
-          >
-            {column.cards.map((card) => (
-              <ProjectCard
-                key={card.id}
-                project={card}
-                revealed={isProjectRevealed(card)}
-                onClick={getProjectCardClick(card, { openPanel: openProjectPanel })}
-              />
-            ))}
+        <div
+          className="project-browser-shell"
+          style={{
+            opacity: isPanelOpen ? 0 : 1,
+            pointerEvents: isPanelOpen ? "none" : undefined,
+          }}
+        >
+          <div className="project-stage" aria-live="polite">
+            <div
+              className="project-stage-scroll"
+              ref={projectScrollerRef}
+              style={{
+                gridTemplateColumns: HOMEPAGE_PROJECTS.layout.gridTemplateColumns,
+              }}
+            >
+              {filteredProjectCount > 0
+                ? browsableProjectColumns.map((column) => (
+                  <div
+                    className="project-column"
+                    key={column.id}
+                    style={column.offsetRem
+                      ? { paddingTop: `${column.offsetRem}rem` }
+                      : undefined}
+                  >
+                    {column.cards.map((card) => (
+                      <ProjectCard
+                        key={card.id}
+                        project={card}
+                        revealed={isProjectRevealed(card)}
+                        onClick={getProjectCardClick(card, {
+                          openPanel: openProjectPanel,
+                        })}
+                      />
+                    ))}
+                  </div>
+                ))
+                : (
+                  <div className="project-empty-state">
+                    <strong>没有匹配项目</strong>
+                    <span>换个搜索词。</span>
+                  </div>
+                )}
+            </div>
+            <div className="project-stage-fade project-stage-fade-top" />
+            <div className="project-stage-fade project-stage-fade-bottom" />
           </div>
-        ))}
+        </div>
 
         {/* 面板叠加层 */}
         {activePanel === "admin-console"
@@ -1030,6 +1390,41 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
             </PanelShell>
           )
           : null}
+        {activePanel === "bewlyscript"
+          ? (
+            <PanelShell
+              panelId="bewlyscript"
+              eyebrow="userscript domain"
+              title="BewlyScript"
+              lede="面向 Safari Userscripts 与 Tampermonkey 的 B 站体验优化脚本，保留 BewlyCat 桌面体验，并为 m.bilibili.com 做移动优先适配。"
+            >
+              <article className="domain-panel-section">
+                <h2>入口</h2>
+                <p>
+                  代码保留在 <code>domains/BewlyScript/</code>，构建产物是可安装的
+                  <code>dist/BewlyScript.user.js</code>。
+                </p>
+              </article>
+              <article className="domain-panel-section">
+                <h2>运行边界</h2>
+                <ul>
+                  <li>桌面端复用 BewlyCat 的首页、收藏、历史与稍后再看体验。</li>
+                  <li>
+                    移动端针对 <code>m.bilibili.com</code> 做内容脚本适配。
+                  </li>
+                  <li>通过浏览器 shim 兼容 Userscripts 与 Tampermonkey API。</li>
+                </ul>
+              </article>
+              <article className="domain-panel-section">
+                <h2>交付形态</h2>
+                <p>
+                  这是独立 userscript domain，不嵌入 OpenFX
+                  首页运行，只在这里展示项目说明和源码入口。
+                </p>
+              </article>
+            </PanelShell>
+          )
+          : null}
       </div>
 
       <div
@@ -1083,124 +1478,143 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
               </form>
             )
             : null}
-          <button
-            className={`ctrl-btn${
-              uiBrand === "OpenFX" && !isPanelOpen ? " primary" : ""
-            }`}
-            id="homepagePrimaryControl"
-            ref={primaryControlRef}
-            type="button"
+          <div
+            className="project-command-bar"
             style={{
               display: activePanel === "relay-proxy-gateway" ? "none" : undefined,
             }}
-            onClick={() => {
-              if (isPanelOpen) {
-                closeProjectPanel();
-                return;
-              }
-              if (uiBrand === "OpenFX") {
-                openInlineUnlock();
-                return;
-              }
-
-              setShowMessage(true);
-            }}
           >
-            <span
-              className="ctrl-btn-label"
-              id="homepagePrimaryControlLabel"
-              ref={primaryControlLabelRef}
-              style={{ display: isPanelOpen ? "none" : undefined }}
-            />
-            {isPanelOpen && <span className="ctrl-btn-back-text">← 返回</span>}
-          </button>
+            {!isPanelOpen
+              ? (
+                <>
+                  <span className="project-count">{projectCountLabel}</span>
+                  <input
+                    aria-label="搜索项目"
+                    className="project-search-input project-command-search"
+                    placeholder="Search"
+                    type="search"
+                    value={projectQuery}
+                    onChange={(event) => setProjectQuery(event.target.value)}
+                  />
+                </>
+              )
+              : null}
+            <button
+              className={`ctrl-btn${
+                uiBrand === "OpenFX" && !isPanelOpen ? " primary" : ""
+              }`}
+              id="homepagePrimaryControl"
+              ref={primaryControlRef}
+              type="button"
+              onClick={() => {
+                if (isPanelOpen) {
+                  closeProjectPanel();
+                  return;
+                }
+                if (uiBrand === "OpenFX") {
+                  openInlineUnlock();
+                  return;
+                }
 
-          <div
-            className="inline-unlock-shell"
-            id="inlineUnlockShell"
-            ref={unlockShellRef}
-            aria-hidden={showUnlock ? "false" : "true"}
-          >
-            <div className="inline-unlock-field" ref={unlockFieldRef}>
-              {activeUnlock
-                ? (
-                  <>
-                    <div
-                      className="inline-unlock-session"
-                      role="status"
-                      aria-live="polite"
-                    >
-                      <strong>{activeUnlock.label}</strong>
-                      <span>{activeUnlockSummary}</span>
-                    </div>
-                    <div className="inline-unlock-actions">
-                      <button
-                        className="inline-unlock-action inline-unlock-confirm"
-                        id="unlockConfirmButton"
-                        type="button"
-                        onClick={() =>
-                          clearActiveUnlock({
-                            message: "Unlock cleared",
-                            closeShell: true,
-                          })}
+                setShowMessage(true);
+              }}
+            >
+              <span
+                className="ctrl-btn-label"
+                id="homepagePrimaryControlLabel"
+                ref={primaryControlLabelRef}
+                style={{ display: isPanelOpen ? "none" : undefined }}
+              />
+              {isPanelOpen && <span className="ctrl-btn-back-text">← 返回</span>}
+            </button>
+
+            <div
+              className="inline-unlock-shell"
+              id="inlineUnlockShell"
+              ref={unlockShellRef}
+              aria-hidden={showUnlock ? "false" : "true"}
+            >
+              <div className="inline-unlock-field" ref={unlockFieldRef}>
+                {activeUnlock
+                  ? (
+                    <>
+                      <div
+                        className="inline-unlock-session"
+                        role="status"
+                        aria-live="polite"
                       >
-                        Exit
-                      </button>
-                      <button
-                        className="inline-unlock-action inline-unlock-cancel"
-                        id="unlockCancelButton"
-                        type="button"
-                        onClick={() => closeInlineUnlock(true)}
-                        aria-label="Close unlock actions"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  </>
-                )
-                : (
-                  <>
-                    <input
-                      autoComplete="off"
-                      className="inline-unlock-input"
-                      id="unlockKeyInput"
-                      placeholder="Enter key"
-                      ref={unlockInputRef}
-                      type="password"
-                      value={unlockKey}
-                      onChange={(event) => setUnlockKey(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          void handleUnlock();
-                        }
-                        if (event.key === "Escape") {
-                          event.preventDefault();
-                          closeInlineUnlock(true);
-                        }
-                      }}
-                    />
-                    <div className="inline-unlock-actions">
-                      <button
-                        className="inline-unlock-action inline-unlock-confirm"
-                        id="unlockConfirmButton"
-                        type="button"
-                        onClick={() => void handleUnlock()}
-                      >
-                        OK
-                      </button>
-                      <button
-                        className="inline-unlock-action inline-unlock-cancel"
-                        id="unlockCancelButton"
-                        type="button"
-                        onClick={() => closeInlineUnlock(true)}
-                        aria-label="Cancel unlock"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  </>
-                )}
+                        <strong>{activeUnlock.label}</strong>
+                        <span>{activeUnlockSummary}</span>
+                      </div>
+                      <div className="inline-unlock-actions">
+                        <button
+                          className="inline-unlock-action inline-unlock-confirm"
+                          id="unlockConfirmButton"
+                          type="button"
+                          onClick={() =>
+                            clearActiveUnlock({
+                              message: "Unlock cleared",
+                              closeShell: true,
+                            })}
+                        >
+                          Exit
+                        </button>
+                        <button
+                          className="inline-unlock-action inline-unlock-cancel"
+                          id="unlockCancelButton"
+                          type="button"
+                          onClick={() => closeInlineUnlock(true)}
+                          aria-label="Close unlock actions"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    </>
+                  )
+                  : (
+                    <>
+                      <input
+                        autoComplete="off"
+                        className="inline-unlock-input"
+                        id="unlockKeyInput"
+                        placeholder="Enter key"
+                        ref={unlockInputRef}
+                        type="password"
+                        value={unlockKey}
+                        onChange={(event) => setUnlockKey(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            void handleUnlock();
+                          }
+                          if (event.key === "Escape") {
+                            event.preventDefault();
+                            closeInlineUnlock(true);
+                          }
+                        }}
+                      />
+                      <div className="inline-unlock-actions">
+                        <button
+                          className="inline-unlock-action inline-unlock-confirm"
+                          id="unlockConfirmButton"
+                          type="button"
+                          onClick={() => void handleUnlock()}
+                        >
+                          OK
+                        </button>
+                        <button
+                          className="inline-unlock-action inline-unlock-cancel"
+                          id="unlockCancelButton"
+                          type="button"
+                          onClick={() => closeInlineUnlock(true)}
+                          aria-label="Cancel unlock"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    </>
+                  )}
+              </div>
             </div>
           </div>
         </div>
