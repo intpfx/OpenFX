@@ -1429,6 +1429,13 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
                   代码保留在 <code>domains/BewlyScript/</code>，构建产物是可安装的
                   <code>dist/BewlyScript.user.js</code>。
                 </p>
+                <a
+                  className="panel-download-link"
+                  href="/bewlyscript/BewlyScript.user.js"
+                  download="BewlyScript.user.js"
+                >
+                  下载 BewlyScript.user.js
+                </a>
               </article>
               <article className="domain-panel-section">
                 <h2>运行边界</h2>
