@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
+import { AppPage } from '../enums/appEnums'
 import {
   classifyMobileBilibiliPage,
+  classifyMobileTakeoverBilibiliPage,
   getBewlyUserscriptHomeUrl,
   injectMobileNativeHeaderCSS,
   isBilibiliVideoDetailPage,
@@ -15,6 +17,8 @@ import {
   shouldPreferTouchMode,
   shouldUseMobileVideoDetailLayout,
 } from '../userscript/mobile'
+import { getMobileRouteAppPage, isCoreMobileRoute, parseMobileRoute } from '../userscript/mobile-route'
+import { parseDanmakuXml, parseMobileVideoUrl, selectPlayableVideoUrl } from '../userscript/mobile-video'
 
 function withViewportWidth(width: number, callback: () => void) {
   const originalWidth = window.innerWidth
@@ -50,16 +54,26 @@ describe('mobile userscript support', () => {
     expect(classifyMobileBilibiliPage('https://m.bilibili.com/')).toBe('home')
     expect(classifyMobileBilibiliPage('https://m.bilibili.com/index.html?foo=1')).toBe('home')
     expect(classifyMobileBilibiliPage('https://m.bilibili.com/video/BV123')).toBe('video')
+    expect(classifyMobileBilibiliPage('https://m.bilibili.com/bangumi/play/ep123')).toBe('other')
     expect(classifyMobileBilibiliPage('https://m.bilibili.com/search?keyword=test')).toBe('search')
     expect(classifyMobileBilibiliPage('https://m.bilibili.com/space/123')).toBe('space')
     expect(classifyMobileBilibiliPage('https://m.bilibili.com/opus/123')).toBe('moments')
     expect(classifyMobileBilibiliPage('https://www.bilibili.com/')).toBe('other')
   })
 
+  it('classifies core takeover pages across mobile and narrow desktop surfaces', () => {
+    expect(classifyMobileTakeoverBilibiliPage('https://m.bilibili.com/video/BV123')).toBe('video')
+    expect(classifyMobileTakeoverBilibiliPage('https://www.bilibili.com/video/BV123')).toBe('video')
+    expect(classifyMobileTakeoverBilibiliPage('https://www.bilibili.com/search?keyword=test')).toBe('search')
+    expect(classifyMobileTakeoverBilibiliPage('https://www.bilibili.com/space/123')).toBe('space')
+    expect(classifyMobileTakeoverBilibiliPage('https://www.bilibili.com/opus/123')).toBe('moments')
+    expect(classifyMobileTakeoverBilibiliPage('https://space.bilibili.com/123')).toBe('other')
+  })
+
   it('marks mobile native CSS with the current page kind', () => {
     const style = injectMobileNativeHeaderCSS('https://m.bilibili.com/video/BV123')
 
-    expect(style?.textContent).toContain('[data-bewly-mobile-page-kind="home"]')
+    expect(style?.textContent).toContain(':not([data-bewly-mobile-page-kind="other"])')
     expect(document.documentElement.getAttribute('data-bewly-mobile')).toBe('true')
     expect(document.documentElement.getAttribute('data-bewly-mobile-page-kind')).toBe('video')
 
@@ -71,12 +85,102 @@ describe('mobile userscript support', () => {
     expect(isMobileBilibiliHomePage('https://m.bilibili.com/video/BV123')).toBe(false)
   })
 
-  it('only hides host content for mobile home takeover pages', () => {
+  it('hides host content for core mobile takeover pages', () => {
     expect(shouldHideMobileNativeContentForPage('https://m.bilibili.com/')).toBe(true)
     expect(shouldHideMobileNativeContentForPage('https://www.bilibili.com/?page=Home')).toBe(true)
-    expect(shouldHideMobileNativeContentForPage('https://m.bilibili.com/video/BV123')).toBe(false)
-    expect(shouldHideMobileNativeContentForPage('https://www.bilibili.com/video/BV123')).toBe(false)
+    expect(shouldHideMobileNativeContentForPage('https://m.bilibili.com/video/BV123')).toBe(true)
+    expect(shouldHideMobileNativeContentForPage('https://www.bilibili.com/video/BV123')).toBe(true)
+    expect(shouldHideMobileNativeContentForPage('https://m.bilibili.com/search?keyword=test')).toBe(true)
+    expect(shouldHideMobileNativeContentForPage('https://www.bilibili.com/search?keyword=test')).toBe(true)
+    expect(shouldHideMobileNativeContentForPage('https://m.bilibili.com/space/123')).toBe(true)
+    expect(shouldHideMobileNativeContentForPage('https://www.bilibili.com/space/123')).toBe(true)
+    expect(shouldHideMobileNativeContentForPage('https://m.bilibili.com/dynamic')).toBe(true)
+    expect(shouldHideMobileNativeContentForPage('https://m.bilibili.com/account/history')).toBe(false)
     expect(shouldHideMobileNativeContentForPage('https://www.bilibili.com/bangumi/play/ep123')).toBe(false)
+  })
+
+  it('parses mobile routes into Bewly pages', () => {
+    expect(parseMobileRoute('https://m.bilibili.com/')).toMatchObject({ kind: 'home', page: AppPage.Home })
+    expect(parseMobileRoute('https://m.bilibili.com/?page=History')).toMatchObject({ kind: 'bewly-page', page: AppPage.History })
+    expect(parseMobileRoute('https://www.bilibili.com/')).toMatchObject({ kind: 'home', page: AppPage.Home })
+    expect(parseMobileRoute('https://www.bilibili.com/?page=Favorites')).toMatchObject({ kind: 'bewly-page', page: AppPage.Favorites })
+    expect(parseMobileRoute('https://m.bilibili.com/video/BV123?p=2')).toMatchObject({ kind: 'video', page: AppPage.VideoDetail, bvid: 'BV123' })
+    expect(parseMobileRoute('https://www.bilibili.com/video/BV123?p=2')).toMatchObject({ kind: 'video', page: AppPage.VideoDetail, bvid: 'BV123' })
+    expect(parseMobileRoute('https://m.bilibili.com/search?keyword=test')).toMatchObject({ kind: 'search', page: AppPage.SearchResults, keyword: 'test' })
+    expect(parseMobileRoute('https://www.bilibili.com/search?keyword=test')).toMatchObject({ kind: 'search', page: AppPage.SearchResults, keyword: 'test' })
+    expect(parseMobileRoute('https://m.bilibili.com/space/123')).toMatchObject({ kind: 'space', page: AppPage.Space, mid: '123' })
+    expect(parseMobileRoute('https://www.bilibili.com/space/123')).toMatchObject({ kind: 'space', page: AppPage.Space, mid: '123' })
+    expect(parseMobileRoute('https://m.bilibili.com/dynamic')).toMatchObject({ kind: 'moments', page: AppPage.Moments })
+    expect(parseMobileRoute('https://www.bilibili.com/dynamic')).toMatchObject({ kind: 'moments', page: AppPage.Moments })
+    expect(parseMobileRoute('https://m.bilibili.com/opus/456')).toMatchObject({ kind: 'moments', page: AppPage.Moments })
+  })
+
+  it('keeps unsupported mobile routes outside the takeover shell', () => {
+    expect(isCoreMobileRoute('https://m.bilibili.com/video/BV123')).toBe(true)
+    expect(isCoreMobileRoute('https://www.bilibili.com/video/BV123')).toBe(true)
+    expect(isCoreMobileRoute('https://m.bilibili.com/search?keyword=test')).toBe(true)
+    expect(isCoreMobileRoute('https://m.bilibili.com/space/123')).toBe(true)
+    expect(isCoreMobileRoute('https://m.bilibili.com/account/history')).toBe(false)
+    expect(parseMobileRoute('https://m.bilibili.com/bangumi/play/ep123')).toMatchObject({ kind: 'unsupported' })
+    expect(getMobileRouteAppPage('https://m.bilibili.com/account/history')).toBeUndefined()
+  })
+
+  it('parses mobile video URL state', () => {
+    expect(parseMobileVideoUrl('https://m.bilibili.com/video/BV123?p=2&cid=456#reply')).toEqual({
+      bvid: 'BV123',
+      page: 2,
+      cid: 456,
+    })
+    expect(parseMobileVideoUrl('https://www.bilibili.com/video/BV123?p=3&cid=789')).toEqual({
+      bvid: 'BV123',
+      page: 3,
+      cid: 789,
+    })
+    expect(parseMobileVideoUrl('https://m.bilibili.com/video/BV123?p=bad')).toEqual({
+      bvid: 'BV123',
+      page: 1,
+      cid: undefined,
+    })
+    expect(parseMobileVideoUrl('https://m.bilibili.com/search?keyword=test')).toBeUndefined()
+    expect(parseMobileVideoUrl('https://m.bilibili.com/bangumi/play/ep123')).toBeUndefined()
+  })
+
+  it('selects playable MP4 durl responses and falls back cleanly', () => {
+    expect(selectPlayableVideoUrl({
+      data: {
+        quality: 80,
+        format: 'mp4',
+        support_formats: [{ quality: 80, new_description: '1080P' }],
+        durl: [{ url: 'https://example.com/video.mp4' }],
+      },
+    })).toEqual({
+      url: 'https://example.com/video.mp4',
+      quality: 80,
+      description: '1080P',
+    })
+
+    expect(selectPlayableVideoUrl({
+      data: {
+        quality: 64,
+        durl: [{ backup_url: ['https://example.com/backup.mp4'] }],
+      },
+    })).toMatchObject({ url: 'https://example.com/backup.mp4', quality: 64 })
+
+    expect(selectPlayableVideoUrl({ code: -403, message: 'denied', data: {} })).toBeUndefined()
+    expect(selectPlayableVideoUrl({ data: { durl: [] } })).toBeUndefined()
+  })
+
+  it('parses danmaku XML into a readonly track', () => {
+    expect(parseDanmakuXml('<i><d p="1.5,1,25,16777215,0,0,0,0">hello</d></i>')).toEqual([{
+      time: 1.5,
+      mode: 1,
+      size: 25,
+      color: 16777215,
+      text: 'hello',
+    }])
+
+    expect(parseDanmakuXml('<i></i>')).toEqual([])
+    expect(parseDanmakuXml('<i><d p="bad">broken</i>')).toEqual([])
   })
 
   it('identifies Bilibili video detail pages across mobile and desktop hosts', () => {

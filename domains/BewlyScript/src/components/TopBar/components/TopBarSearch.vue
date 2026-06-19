@@ -4,22 +4,42 @@ import { computed } from 'vue'
 
 import { settings } from '~/logic'
 import { useTopBarStore } from '~/stores/topBarStore'
-import { normalizeBilibiliUrlForCurrentSurface, openMobileUrlInCurrentPage } from '~/userscript/mobile'
-import { isHomePage } from '~/utils/main'
+import { isMobileUserscriptRuntimePage, normalizeBilibiliUrlForCurrentSurface, openBilibiliLoginPage, openMobileUrlInCurrentPage } from '~/userscript/mobile'
+import { getUserID, isHomePage, removeHttpFromUrl } from '~/utils/main'
 
 import { useTopBarInteraction } from '../composables/useTopBarInteraction'
 
 const { showSearchBar, forceWhiteIcon } = useTopBarInteraction()
 const topBarStore = useTopBarStore()
-const { searchKeyword } = storeToRefs(topBarStore)
+const { isLogin, searchKeyword, userInfo } = storeToRefs(topBarStore)
+const mid = getUserID() || ''
+const props = withDefaults(defineProps<{
+  mobileBottom?: boolean
+}>(), {
+  mobileBottom: false,
+})
+const isMobileBottomSearch = computed(() => props.mobileBottom)
 
 const searchBarStyles = computed(() => ({
-  '--b-search-bar-normal-color': settings.value.enableFrostedGlass ? 'color-mix(in oklab, var(--bew-elevated-solid), transparent 60%)' : 'var(--bew-elevated)',
-  '--b-search-bar-hover-color': 'var(--bew-elevated-hover)',
-  '--b-search-bar-focus-color': 'var(--bew-elevated)',
-  '--b-search-bar-normal-icon-color': forceWhiteIcon.value && settings.value.enableFrostedGlass ? 'white' : 'var(--bew-text-1)',
-  '--b-search-bar-normal-text-color': forceWhiteIcon.value && settings.value.enableFrostedGlass ? 'white' : 'var(--bew-text-1)',
+  '--b-search-bar-normal-color': isMobileBottomSearch.value
+    ? 'color-mix(in oklab, var(--bew-fill-1), transparent 16%)'
+    : settings.value.enableFrostedGlass
+      ? 'color-mix(in oklab, var(--bew-elevated-solid), transparent 60%)'
+      : 'var(--bew-elevated)',
+  '--b-search-bar-hover-color': isMobileBottomSearch.value
+    ? 'color-mix(in oklab, var(--bew-fill-2), transparent 8%)'
+    : 'var(--bew-elevated-hover)',
+  '--b-search-bar-focus-color': isMobileBottomSearch.value
+    ? 'color-mix(in oklab, var(--bew-elevated-solid), transparent 8%)'
+    : 'var(--bew-elevated)',
+  '--b-search-bar-normal-icon-color': isMobileBottomSearch.value || !(forceWhiteIcon.value && settings.value.enableFrostedGlass) ? 'var(--bew-text-1)' : 'white',
+  '--b-search-bar-normal-text-color': isMobileBottomSearch.value || !(forceWhiteIcon.value && settings.value.enableFrostedGlass) ? 'var(--bew-text-1)' : 'white',
 }))
+const isMobileUserscriptPage = computed(() => isMobileUserscriptRuntimePage())
+const mobileAvatarUrl = computed(() => userInfo.value.face ? removeHttpFromUrl(userInfo.value.face) : '')
+const mobileSpaceUrl = computed(() =>
+  mid ? normalizeBilibiliUrlForCurrentSurface(`https://space.bilibili.com/${mid}`) : '',
+)
 
 const searchBehavior = computed<'navigate' | 'stay'>(() => {
   // 不再在这里决定搜索行为，让 SearchBar 组件自己根据情况判断
@@ -81,10 +101,41 @@ function handleSearch(keyword: string) {
 
   pushKeywordToSearchResultsPage(keyword)
 }
+
+function handleMobileAccountPointerDown(event: Event) {
+  event.preventDefault()
+  event.stopPropagation()
+}
+
+function handleMobileLoginClick(event: MouseEvent) {
+  if (event.defaultPrevented)
+    return
+
+  event.preventDefault()
+  event.stopPropagation()
+  openBilibiliLoginPage()
+}
+
+function handleMobileAvatarClick(event: MouseEvent) {
+  if (!mobileSpaceUrl.value)
+    return
+
+  event.preventDefault()
+  event.stopPropagation()
+
+  if (!openMobileUrlInCurrentPage(mobileSpaceUrl.value))
+    window.location.href = mobileSpaceUrl.value
+}
 </script>
 
 <template>
-  <div flex="inline 1 items-center" w="full" data-top-bar-search>
+  <div
+    class="top-bar-search"
+    :class="{ 'top-bar-search--mobile-bottom': isMobileBottomSearch }"
+    flex="inline 1 items-center"
+    w="full"
+    data-top-bar-search
+  >
     <Transition name="slide-out">
       <div
         v-if="showSearchBar"
@@ -94,11 +145,47 @@ function handleSearch(keyword: string) {
         <SearchBar
           v-model="searchKeyword"
           class="search-bar"
+          :class="{ 'search-bar--mobile-bottom': isMobileBottomSearch }"
           :style="searchBarStyles"
           :show-hot-search="settings.showHotSearchInTopBar"
           :search-behavior="searchBehavior"
           @search="handleSearch"
-        />
+        >
+          <template
+            v-if="isMobileUserscriptPage"
+            #suffix
+          >
+            <button
+              v-if="!isLogin"
+              type="button"
+              class="mobile-search-account-button"
+              :aria-label="$t('topbar.sign_in')"
+              :title="$t('topbar.sign_in')"
+              @pointerdown="handleMobileAccountPointerDown"
+              @mousedown="handleMobileAccountPointerDown"
+              @touchstart.stop
+              @click="handleMobileLoginClick"
+            >
+              <div i-solar:user-circle-bold-duotone />
+            </button>
+
+            <button
+              v-else
+              type="button"
+              class="mobile-search-account-button mobile-search-account-button--avatar"
+              :title="userInfo.uname || '个人空间'"
+              :style="{
+                backgroundImage: mobileAvatarUrl ? `url(${mobileAvatarUrl})` : undefined,
+              }"
+              @pointerdown="handleMobileAccountPointerDown"
+              @mousedown="handleMobileAccountPointerDown"
+              @touchstart.stop
+              @click="handleMobileAvatarClick"
+            >
+              <span class="mobile-search-account-button__fallback" i-solar:user-circle-bold-duotone />
+            </button>
+          </template>
+        </SearchBar>
       </div>
     </Transition>
   </div>
@@ -115,13 +202,68 @@ function handleSearch(keyword: string) {
   min-width: 0;
 }
 
+.top-bar-search--mobile-bottom,
+.top-bar-search--mobile-bottom .top-bar-search-content {
+  width: 100%;
+  max-width: none;
+}
+
 .search-bar {
   flex: 1 1 auto;
   min-width: 0;
 }
 
+.mobile-search-account-button {
+  position: absolute;
+  right: 6px;
+  z-index: 2;
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  color: var(--b-search-bar-normal-icon-color);
+  border: 0;
+  border-radius: 999px;
+  outline: none;
+  background: transparent;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    color 0.2s ease,
+    background-color 0.2s ease,
+    transform 0.2s ease;
+}
+
+.mobile-search-account-button:hover,
+.mobile-search-account-button:focus-visible,
+.mobile-search-account-button:active {
+  color: var(--bew-theme-color);
+  background: var(--bew-fill-2);
+}
+
+.mobile-search-account-button:active {
+  transform: scale(0.94);
+}
+
+.mobile-search-account-button--avatar {
+  background-color: var(--bew-fill-2);
+  background-position: center;
+  background-size: cover;
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--bew-border-color), transparent 18%);
+}
+
+.mobile-search-account-button--avatar .mobile-search-account-button__fallback {
+  opacity: v-bind('mobileAvatarUrl ? 0 : 1');
+}
+
 @media (max-width: 700px) {
   .top-bar-search-content {
+    width: 100%;
+    max-width: none;
+  }
+
+  .search-bar {
     width: 100%;
   }
 }

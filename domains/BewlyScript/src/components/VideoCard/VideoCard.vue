@@ -1,12 +1,13 @@
 <script lang="ts" setup>
-import { computed, nextTick, onUnmounted, ref, watch, watchEffect } from 'vue'
+import { computed, nextTick, onUnmounted, ref, useSlots, watch, watchEffect } from 'vue'
 
 import { useBewlyApp } from '~/composables/useAppProvider'
 import { useVideoCardSharedStyles } from '~/composables/useVideoCardSharedStyles'
 import { settings } from '~/logic'
-import { shouldEnableHoverInteractions } from '~/userscript/mobile'
+import { isMobileUserscriptRuntimePage, shouldEnableHoverInteractions } from '~/userscript/mobile'
 import { calcCurrentTime, calcTimeSince, numFormatter } from '~/utils/dataFormatter'
 
+import VideoCardAuthorAvatar from './VideoCardAuthor/components/VideoCardAuthorAvatar.vue'
 import VideoCardCover from './components/VideoCardCover.vue'
 import VideoCardInfo from './components/VideoCardInfo.vue'
 import { registerAutoPreviewCandidate } from './composables/autoPreviewCoordinator'
@@ -35,6 +36,7 @@ interface Props {
 }
 
 const autoPreviewActive = ref(false)
+const slots = useSlots()
 
 // 数据现在在转换阶段已经完成 HTML 解码，直接使用 props
 const logic = useVideoCardLogic(() => ({
@@ -128,6 +130,13 @@ const hasCoverStats = computed(() => {
 })
 
 const hoverInteractionsEnabled = computed(() => shouldEnableHoverInteractions(settings.value.touchScreenOptimization))
+const isMobileUserscriptPage = computed(() => isMobileUserscriptRuntimePage())
+const showMobileCoverAuthorAvatar = computed(() =>
+  isMobileUserscriptPage.value
+  && !props.hideAuthor
+  && !slots.coverTopLeft
+  && Boolean(props.video?.author),
+)
 
 const shouldHideCoverStats = computed(() =>
   props.showPreview
@@ -424,6 +433,14 @@ provide('getVideoType', () => props.type!)
           >
             <template #coverTopLeft>
               <slot name="coverTopLeft" />
+              <VideoCardAuthorAvatar
+                v-if="showMobileCoverAuthorAvatar && props.video?.author"
+                class="video-card-cover-author-avatar"
+                :author="props.video.author"
+                :is-live="props.video.liveStatus === 1"
+                :size="44"
+                compact
+              />
             </template>
           </VideoCardCover>
         </div>
@@ -497,9 +514,27 @@ provide('getVideoType', () => props.type!)
   min-height: fit-content;
 }
 
-:global(.mobile-userscript) .video-card-container {
+:global(.bewly-page-content--mobile) .video-card-container {
   contain-intrinsic-size: 320px 220px;
+  min-height: 0;
   margin-bottom: 6px !important;
+}
+
+:global(.bewly-page-content--mobile) .video-card {
+  overflow: hidden;
+  border-radius: var(--bew-radius);
+}
+
+.video-card-cover-author-avatar {
+  margin: 8px 0 0 8px !important;
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.45));
+}
+
+.video-card-cover-author-avatar :deep(a) {
+  background: color-mix(in oklab, var(--bew-elevated-solid), transparent 12%);
+  border: 2px solid rgba(255, 255, 255, 0.82);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(8px);
 }
 
 /* 骨架屏状态：禁用交互 */
@@ -543,6 +578,12 @@ provide('getVideoType', () => props.type!)
   /* 使用固定的响应式字体大小，不使用容器查询单位 */
   font-size: clamp(12px, 2.5vw, 18px);
   line-height: clamp(1.15, 1.35, 1.5);
+}
+
+.video-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--bew-radius);
 }
 
 .video-card-title {

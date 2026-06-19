@@ -42,6 +42,9 @@ async function toJsonHandler(data: Response): Promise<any> {
     throw error
   }
 }
+async function toTextHandler(data: Response): Promise<string> {
+  return await data.text()
+}
 function toData(data: Promise<any>): Promise<any> {
   return data
 }
@@ -60,10 +63,12 @@ const AHS: {
   J_D: FetchAfterHandler[]
   J_S: FetchAfterHandler[]
   S: FetchAfterHandler[]
+  T_D: FetchAfterHandler[]
 } = {
   J_D: [toJsonHandler, toData],
   J_S: [toJsonHandler, sendResponseHandler],
   S: [sendResponseHandler],
+  T_D: [toTextHandler, toData],
 }
 
 interface Message {
@@ -200,8 +205,15 @@ async function doRequest(message: Message, api: API, sendResponse?: (response?: 
       }
 
       // 对于UP主空间相关的API，设置正确的Referer
-      if (requestUrl.includes('/x/space/wbi/arc/search') && targetParams.mid) {
-        requestHeaders.Referer = `https://space.bilibili.com/${targetParams.mid}/`
+      if (
+        (
+          requestUrl.includes('/x/space/wbi/arc/search')
+          || requestUrl.includes('/x/space/wbi/acc/info')
+          || requestUrl.includes('/x/relation/stat')
+        )
+        && (targetParams.mid || targetParams.vmid)
+      ) {
+        requestHeaders.Referer = `https://space.bilibili.com/${targetParams.mid || targetParams.vmid}/`
       }
 
       // get cant take body

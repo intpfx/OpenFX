@@ -31,7 +31,14 @@
           "name": "BewlyScript",
           "description": "面向 Safari Userscripts 与 Tampermonkey 的 B 站体验优化脚本，保留 BewlyCat 桌面体验，并为 m.bilibili.com 做移动优先适配。",
           "tech": ["Userscript", "Vue", "Bilibili", "Mobile"],
-          "sourcePath": "domains/BewlyScript/ · dist/BewlyScript.user.js"
+          "sourcePath": "domains/BewlyScript/ · dist/BewlyScript.user.js",
+          "links": [
+            {
+              "label": "下载脚本",
+              "href": "/bewlyscript/BewlyScript.user.js",
+              "download": "BewlyScript.user.js"
+            }
+          ]
         },
         {
           "id": "gasmap",
