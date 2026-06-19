@@ -280,6 +280,14 @@ function ProjectCard(props: {
     }
   }
 
+  function stopCardClick(event: React.MouseEvent<HTMLAnchorElement>) {
+    event.stopPropagation();
+  }
+
+  function handleLinkKeyDown(event: React.KeyboardEvent<HTMLAnchorElement>) {
+    event.stopPropagation();
+  }
+
   return (
     <div
       className={classes}
@@ -296,6 +304,23 @@ function ProjectCard(props: {
           <span key={`${props.project.id}-${item}`}>{item}</span>
         ))}
       </div>
+      {props.project.links?.length
+        ? (
+          <div className="pc-links">
+            {props.project.links.map((link) => (
+              <a
+                key={`${props.project.id}-${link.href}`}
+                href={link.href}
+                download={link.download}
+                onClick={stopCardClick}
+                onKeyDown={handleLinkKeyDown}
+              >
+                {link.label}
+              </a>
+            ))}
+          </div>
+        )
+        : null}
       <div className="pc-source">source · {props.project.sourcePath}</div>
     </div>
   );

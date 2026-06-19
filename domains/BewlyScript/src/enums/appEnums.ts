@@ -5,6 +5,8 @@ export enum LanguageType {
 export enum AppPage {
   Home = 'Home',
   SearchResults = 'SearchResults',
+  VideoDetail = 'VideoDetail',
+  Space = 'Space',
   Anime = 'Anime',
   History = 'History',
   Favorites = 'Favorites',

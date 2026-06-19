@@ -214,6 +214,34 @@ textarea {
   color: var(--text-secondary);
 }
 
+.pc-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.pc-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.65rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 0.18rem 0.52rem;
+  color: var(--accent);
+  font-family: ui-monospace, "SFMono-Regular", SFMono-Regular, Menlo, monospace;
+  font-size: 0.64rem;
+  font-weight: 600;
+  text-decoration: none;
+  text-transform: uppercase;
+  transition: background-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.pc-links a:hover {
+  background: var(--accent);
+  color: var(--surface);
+  transform: translateY(-1px);
+}
+
 .pc-source {
   margin-top: auto;
   font-family: ui-monospace, "SFMono-Regular", SFMono-Regular, Menlo, monospace;

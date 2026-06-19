@@ -131,22 +131,20 @@ const { forceWhiteIcon, handleNotificationsItemClick } = useTopBarInteraction()
 
 @media (max-width: 700px) {
   .top-bar-header {
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 8px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
     padding-inline: 10px;
   }
 
   .top-bar-header__side--left,
-  .top-bar-header__home-tabs {
+  .top-bar-header__home-tabs,
+  .top-bar-header__side--right {
     display: none;
   }
 
   .top-bar-header__search {
     justify-content: stretch;
-  }
-
-  .top-bar-header__side--right {
-    min-width: 44px;
+    width: 100%;
   }
 }
 </style>

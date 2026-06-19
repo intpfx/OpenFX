@@ -666,7 +666,9 @@ function getEstimatedAdaptiveRowHeight(width: number, columns: number): number {
 
   // Keep the first virtual pass close to the actual modern card height so rows
   // do not render with a large temporary gap before ResizeObserver catches up.
-  return coverHeight + (isMobileUserscriptRuntimePage() ? 72 : 112)
+  // Mobile takeover cards render title/author/actions as cover overlays, so the
+  // row height is just the cover height plus the virtual gap.
+  return coverHeight + (isMobileUserscriptRuntimePage() ? 0 : 112)
 }
 
 const resolvedContainerWidth = computed(() => {

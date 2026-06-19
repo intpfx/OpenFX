@@ -638,21 +638,27 @@ function handleClearKeyword() {
         <div i-ic-baseline-clear shrink-0 />
       </button>
 
-      <button
-        p-2
-        rounded-full
-        text="lg leading-0 $b-search-bar-normal-icon-color group-hover:$b-search-bar-hover-icon-color group-focus-within:$b-search-bar-focus-icon-color"
-        transition="all duration-300"
-        border-none
-        outline-none
-        pos="absolute right-6px"
-        bg="hover:$bew-fill-2"
-        filter="group-focus-within:~"
-        style="--un-drop-shadow: drop-shadow(0 0 6px var(--bew-theme-color))"
-        @click="navigateToSearchResultPage(keyword)"
+      <slot
+        name="suffix"
+        :keyword="keyword"
+        :search="navigateToSearchResultPage"
       >
-        <div i-tabler:search block align-middle />
-      </button>
+        <button
+          p-2
+          rounded-full
+          text="lg leading-0 $b-search-bar-normal-icon-color group-hover:$b-search-bar-hover-icon-color group-focus-within:$b-search-bar-focus-icon-color"
+          transition="all duration-300"
+          border-none
+          outline-none
+          pos="absolute right-6px"
+          bg="hover:$bew-fill-2"
+          filter="group-focus-within:~"
+          style="--un-drop-shadow: drop-shadow(0 0 6px var(--bew-theme-color))"
+          @click="navigateToSearchResultPage(keyword)"
+        >
+          <div i-tabler:search block align-middle />
+        </button>
+      </slot>
     </div>
 
     <Transition name="result-list">
@@ -960,6 +966,46 @@ function handleClearKeyword() {
         --uno: "bg-$bew-fill-2 shadow-[var(--bew-shadow-1),var(--bew-shadow-edge-glow-1)]";
       }
     }
+  }
+
+  &.search-bar--mobile-bottom {
+    height: 44px;
+
+    .search-bar {
+      input {
+        border-radius: 18px;
+        border-color: color-mix(in oklab, var(--bew-border-color), transparent 50%);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+
+        &:focus {
+          border-radius: 18px;
+          box-shadow:
+            inset 0 0 0 1px color-mix(in oklab, var(--bew-theme-color), white 18%),
+            0 8px 22px var(--bew-theme-color-20);
+        }
+      }
+    }
+
+    #search-dropdown,
+    #search-suggestion {
+      top: auto;
+      right: 0;
+      bottom: calc(100% + 10px);
+      left: 0;
+      width: 100%;
+      max-height: min(420px, calc(100dvh - var(--bew-mobile-bottom-shell-height, 120px) - env(safe-area-inset-top, 0px) - 18px)) !important;
+      margin-top: 0;
+      border-radius: 18px;
+      box-shadow:
+        0 16px 38px rgba(0, 0, 0, 0.26),
+        var(--bew-shadow-edge-glow-1);
+    }
+  }
+}
+
+@media (max-width: 700px) {
+  #search-wrap {
+    max-width: 100%;
   }
 }
 </style>

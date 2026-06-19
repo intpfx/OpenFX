@@ -163,7 +163,11 @@ function toggleTabContentLoading(loading: boolean) {
 </script>
 
 <template>
-  <div pos="relative">
+  <div
+    class="home-view"
+    :class="{ 'home-view--mobile-floating-tabs': isMobileUserscriptPage && showInlineHomeTabs }"
+    pos="relative"
+  >
     <Teleport v-if="topBarHomeTabsTarget && shouldShowHomeTabs" :to="topBarHomeTabsTarget">
       <section
         class="home-tabs-panel glass-panel"
@@ -273,8 +277,20 @@ function toggleTabContentLoading(loading: boolean) {
   margin-bottom: 14px;
 }
 
+.home-view--mobile-floating-tabs {
+  padding-top: 68px;
+}
+
 .mobile-userscript .home-tabs-panel--inline {
-  top: calc(env(safe-area-inset-top, 0px) + var(--bew-top-bar-height) + 8px);
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 10px);
+  left: 12px;
+  right: 12px;
+  z-index: 1001;
+  width: auto;
+  max-width: none;
+  margin-bottom: 0;
+  box-sizing: border-box;
 }
 
 .home-tabs-scroll {

@@ -3,7 +3,7 @@ export function injectMobileNativeHeaderCSS(url: string = location.href): HTMLSt
   style.textContent = MOBILE_NATIVE_HEADER_CSS
   document.documentElement.appendChild(style)
   document.documentElement.setAttribute('data-bewly-mobile', 'true')
-  document.documentElement.setAttribute('data-bewly-mobile-page-kind', classifyMobileBilibiliPage(url))
+  document.documentElement.setAttribute('data-bewly-mobile-page-kind', classifyMobileTakeoverBilibiliPage(url))
   return style
 }
 
@@ -86,6 +86,14 @@ let mobileNoNewTabGuardInstalled = false
 let originalWindowOpen: typeof window.open | undefined
 let mobileLinkTargetObserver: MutationObserver | undefined
 
+type GmOpenInTabOptions = {
+  active?: boolean
+}
+
+type GmApi = {
+  openInTab?: (url: string, options?: boolean | GmOpenInTabOptions) => unknown
+}
+
 export const MOBILE_OPEN_IN_PAGE_EVENT = 'bewly-mobile-open-in-page'
 export const MOBILE_LINK_MANAGED_ATTR = 'data-bewly-mobile-link-managed'
 export const BILIBILI_LOGIN_URL = 'https://passport.bilibili.com/login'
@@ -110,11 +118,37 @@ export function openMobileUrlInCurrentPage(url: string): boolean {
   return true
 }
 
+export function openMobileExternalUrl(url: string, target: string = '_blank'): boolean {
+  const normalizedUrl = normalizeMobileNavigationUrl(url)
+  const gm = (globalThis as { GM?: GmApi }).GM
+
+  if (gm?.openInTab) {
+    gm.openInTab(normalizedUrl, { active: target !== '_blank' })
+    return true
+  }
+
+  if (!shouldKeepMobileNavigationInCurrentTab()) {
+    window.open(normalizedUrl, target, 'noopener,noreferrer')
+    return true
+  }
+
+  return false
+}
+
+function navigateCurrentPage(url: string): void {
+  if (typeof location.assign === 'function') {
+    location.assign(url)
+    return
+  }
+
+  location.href = url
+}
+
 export function openBilibiliLoginPage(): void {
-  if (openMobileUrlInCurrentPage(BILIBILI_LOGIN_URL))
+  if (openMobileExternalUrl(BILIBILI_LOGIN_URL, '_self'))
     return
 
-  location.assign(BILIBILI_LOGIN_URL)
+  navigateCurrentPage(BILIBILI_LOGIN_URL)
 }
 
 function getMobileNavigableAnchorHref(anchor: HTMLAnchorElement): string | undefined {
@@ -272,12 +306,14 @@ html[data-bewly-mobile="true"] body {
   background: var(--native-bg) !important;
 }
 
-html[data-bewly-mobile="true"][data-bewly-mobile-page-kind="home"]:not([data-bewly-mobile-mounted="true"]) body > :not(#bewly) {
+html[data-bewly-mobile="true"]:not([data-bewly-mobile-page-kind="other"]):not([data-bewly-mobile-mounted="true"]) body > :not(#bewly) {
   opacity: 0 !important;
   pointer-events: none !important;
 }
 
 html[data-bewly-mobile="true"] body > [data-bewly-mobile-native-managed="true"] {
+  opacity: 0 !important;
+  visibility: hidden !important;
   pointer-events: none !important;
   user-select: none !important;
 }
@@ -366,25 +402,45 @@ export function isDesktopBilibiliPage(url: string = location.href): boolean {
 
 export type MobileBilibiliPageKind = 'home' | 'video' | 'search' | 'space' | 'moments' | 'other'
 
+function classifyCoreBilibiliPath(pathname: string): MobileBilibiliPageKind {
+  const normalizedPathname = pathname.replace(/\/+$/, '') || '/'
+
+  if (normalizedPathname === '/' || normalizedPathname === '/index.html')
+    return 'home'
+  if (normalizedPathname.startsWith('/video/'))
+    return 'video'
+  if (normalizedPathname.startsWith('/search'))
+    return 'search'
+  if (normalizedPathname.startsWith('/space/'))
+    return 'space'
+  if (normalizedPathname.startsWith('/dynamic') || normalizedPathname.startsWith('/opus/'))
+    return 'moments'
+
+  return 'other'
+}
+
 export function classifyMobileBilibiliPage(url: string = location.href): MobileBilibiliPageKind {
   try {
     const parsed = new URL(url)
     if (parsed.protocol !== 'https:' || parsed.hostname !== MOBILE_BILIBILI_HOST)
       return 'other'
 
-    const pathname = parsed.pathname.replace(/\/+$/, '') || '/'
-    if (pathname === '/' || pathname === '/index.html')
-      return 'home'
-    if (pathname.startsWith('/video/') || pathname.startsWith('/bangumi/play/'))
-      return 'video'
-    if (pathname.startsWith('/search'))
-      return 'search'
-    if (pathname.startsWith('/space/'))
-      return 'space'
-    if (pathname.startsWith('/dynamic') || pathname.startsWith('/opus/'))
-      return 'moments'
-
+    return classifyCoreBilibiliPath(parsed.pathname)
+  }
+  catch {
     return 'other'
+  }
+}
+
+export function classifyMobileTakeoverBilibiliPage(url: string = location.href): MobileBilibiliPageKind {
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol !== 'https:')
+      return 'other'
+    if (parsed.hostname !== MOBILE_BILIBILI_HOST && parsed.hostname !== DESKTOP_BILIBILI_HOST)
+      return 'other'
+
+    return classifyCoreBilibiliPath(parsed.pathname)
   }
   catch {
     return 'other'
@@ -412,7 +468,8 @@ export function isDesktopBilibiliHomePage(url: string = location.href): boolean 
 }
 
 export function shouldHideMobileNativeContentForPage(url: string = location.href): boolean {
-  return isMobileBilibiliHomePage(url) || isDesktopBilibiliHomePage(url)
+  const mobilePageKind = classifyMobileTakeoverBilibiliPage(url)
+  return mobilePageKind !== 'other' || isDesktopBilibiliHomePage(url)
 }
 
 export function isBilibiliVideoDetailPage(url: string = location.href): boolean {

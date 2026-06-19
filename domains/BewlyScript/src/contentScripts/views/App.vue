@@ -14,9 +14,11 @@ import type { DockItem } from '~/stores/mainStore'
 import { useMainStore } from '~/stores/mainStore'
 import { useTopBarStore } from '~/stores/topBarStore'
 import { getBewlyUserscriptHomeUrl, isMobileBilibiliHomePage, isMobileUserscriptRuntimePage, MOBILE_OPEN_IN_PAGE_EVENT, normalizeBilibiliUrlForCurrentSurface } from '~/userscript/mobile'
+import { getMobileRouteAppPage, isCoreMobileRoute, parseMobileRoute } from '~/userscript/mobile-route'
 import { isHomePage, isInIframe, isNotificationPage, isSearchResultsPage, isVideoOrBangumiPage, openLinkToNewTab, queryDomUntilFound, scrollToTop } from '~/utils/main'
 import emitter from '~/utils/mitt'
 
+import TopBarSearch from '~/components/TopBar/components/TopBarSearch.vue'
 import { setupNecessarySettingsWatchers } from './necessarySettingsWatchers'
 
 // Check if current page is festival page
@@ -60,23 +62,23 @@ function getPageParam(): AppPage | null {
   return null
 }
 
-const activatedPage = ref<AppPage>(getPageParam() || (settings.value.dockItemsConfig.find(e => e.visible === true)?.page || AppPage.Home))
+function getCurrentAppPage(): AppPage {
+  const mobileRoutePage = isMobileUserscriptPage ? getMobileRouteAppPage(window.location.href) : undefined
+  return mobileRoutePage || getPageParam() || (settings.value.dockItemsConfig.find(e => e.visible === true)?.page || AppPage.Home)
+}
+
+const activatedPage = ref<AppPage>(getCurrentAppPage())
+
+function syncRouteFromUrl() {
+  currentRouteUrl.value = window.location.href
+  const nextPage = getCurrentAppPage()
+  if (nextPage !== activatedPage.value)
+    activatedPage.value = nextPage
+}
 
 // 监听 URL 变化,同步更新 activatedPage
-useEventListener(window, 'pushstate', () => {
-  currentRouteUrl.value = window.location.href
-  const pageParam = getPageParam()
-  if (pageParam && pageParam !== activatedPage.value) {
-    activatedPage.value = pageParam
-  }
-})
-useEventListener(window, 'popstate', () => {
-  currentRouteUrl.value = window.location.href
-  const pageParam = getPageParam()
-  if (pageParam && pageParam !== activatedPage.value) {
-    activatedPage.value = pageParam
-  }
-})
+useEventListener(window, 'pushstate', syncRouteFromUrl)
+useEventListener(window, 'popstate', syncRouteFromUrl)
 useEventListener(window, 'replacestate', () => {
   currentRouteUrl.value = window.location.href
 })
@@ -153,6 +155,8 @@ watch(
 const pages = {
   [AppPage.Home]: defineAsyncComponent(() => import('./Home/Home.vue')),
   [AppPage.SearchResults]: defineAsyncComponent(() => import('./SearchResults/SearchResults.vue')),
+  [AppPage.VideoDetail]: defineAsyncComponent(() => import('./VideoDetail/VideoDetail.vue')),
+  [AppPage.Space]: defineAsyncComponent(() => import('./Space/Space.vue')),
   [AppPage.Anime]: defineAsyncComponent(() => import('./Anime/Anime.vue')),
   [AppPage.History]: defineAsyncComponent(() => import('./History/History.vue')),
   [AppPage.WatchLater]: defineAsyncComponent(() => import('./WatchLater/WatchLater.vue')),
@@ -213,7 +217,7 @@ function setActiveDrawer(drawer: DrawerType) {
   activeDrawer.value = drawer
 }
 const hideShellForMobileIframeDrawer = computed(() => isMobileUserscriptPage && activeDrawer.value === DrawerType.IframeDrawer)
-const hideShellForMobileVideoDetail = computed(() => isMobileUserscriptPage && isVideoOrBangumiPage(currentRouteUrl.value))
+const hideShellForMobileVideoDetail = computed(() => isMobileUserscriptPage && activatedPage.value === AppPage.VideoDetail)
 const hideMobileShell = computed(() => hideShellForMobileIframeDrawer.value || hideShellForMobileVideoDetail.value)
 
 // 用于控制当iframe内打开图片预览时隐藏顶栏和Dock
@@ -303,6 +307,9 @@ const showBewlyPage = computed((): boolean => {
   if (isInIframe())
     return false
 
+  if (isMobileUserscriptPage)
+    return isCoreMobileRoute(currentRouteUrl.value)
+
   // SearchResults 页面是虚拟页面，不在 dockItems 中，但应该显示
   if (activatedPage.value === AppPage.SearchResults) {
     return isBewlyHomePage()
@@ -317,6 +324,7 @@ const showBewlyPage = computed((): boolean => {
 
   return isBewlyHomePage()
 })
+const activePageKey = computed(() => isMobileUserscriptPage ? `${activatedPage.value}:${currentRouteUrl.value}` : activatedPage.value)
 const showTopBar = computed((): boolean => {
   // When using the open in drawer feature, the iframe inside the page will hide the top bar
   if (isVideoOrBangumiPage() && isInIframe())
@@ -363,7 +371,7 @@ const isFirstTimeActivatedPageChange = ref<boolean>(true)
 watch(
   () => activatedPage.value,
   () => {
-    if (!isFirstTimeActivatedPageChange.value) {
+    if (!isFirstTimeActivatedPageChange.value && !isMobileUserscriptPage) {
       // Update the URL query parameter when activatedPage changes
       const url = new URL(window.location.href)
       url.searchParams.set('page', activatedPage.value)
@@ -395,7 +403,7 @@ onMounted(() => {
 
   // ✅ 设置 IntersectionObserver 用于无限滚动底部检测（仅在首页且使用Bewly页面时）
   // 避免在每次滚动时读取 scrollHeight/clientHeight
-  if (isBewlyHomePage()) {
+  if (showBewlyPage.value) {
     nextTick(() => {
       const viewport = scrollViewportRef.value
       if (!viewport)
@@ -417,7 +425,7 @@ onMounted(() => {
     })
   }
 
-  if (isBewlyHomePage()) {
+  if (showBewlyPage.value) {
     // Force overwrite Bilibili Evolved body tag & html tag background color
     document.body.style.setProperty('background-color', 'unset', 'important')
 
@@ -455,6 +463,12 @@ function handleDockItemClick(dockItem: DockItem) {
     openLinkToNewTab(dockItem.hasBewlyPage ? getBewlyPageUrl(dockItem.page) : dockItem.url)
   }
   else {
+    if (isMobileUserscriptPage && dockItem.hasBewlyPage) {
+      openMobileUrlInPage(getBewlyPageUrl(dockItem.page))
+      activatedPage.value = dockItem.page
+      return
+    }
+
     if (dockItem.hasBewlyPage) {
       if (isBewlyHomePage()) {
         changeActivatePage(dockItem.page)
@@ -619,10 +633,9 @@ function openMobileUrlInPage(url: string) {
 
   try {
     const destination = new URL(normalizedUrl, location.href)
-    const isMobileHomeRoute = destination.origin === location.origin
-      && (destination.pathname === '/' || destination.pathname === '/index.html')
+    const route = parseMobileRoute(destination.toString())
 
-    if (isMobileHomeRoute) {
+    if (route.kind !== 'unsupported') {
       window.history.pushState({}, '', `${destination.pathname}${destination.search}${destination.hash}`)
       window.dispatchEvent(new Event('pushstate'))
       return
@@ -882,7 +895,7 @@ if (settings.value.cleanUrlArgument) {
 
     <!-- Dock & RightSideButtons -->
     <div
-      v-if="!isInIframe() && !hideMobileShell"
+      v-if="!isInIframe() && !hideMobileShell && !isMobileUserscriptPage"
       class="bewly-interactive-layer"
       pos="absolute top-0 left-0" w-full h-full overflow-hidden
       pointer-events-none
@@ -904,9 +917,31 @@ if (settings.value.cleanUrlArgument) {
       />
     </div>
 
+    <div
+      v-if="isMobileUserscriptPage && !isInIframe() && !hideMobileShell"
+      class="bewly-mobile-bottom-shell"
+      :style="{
+        opacity: hideUIForIframePhotoViewer ? 0 : 1,
+        pointerEvents: hideUIForIframePhotoViewer ? 'none' : 'auto',
+        transition: 'opacity 0.2s ease',
+      }"
+    >
+      <TopBarSearch mobile-bottom />
+      <Dock
+        :activated-page="activatedPage"
+        mobile-embedded
+        @settings-visibility-change="toggleSettings"
+        @refresh="handleThrottledPageRefresh"
+        @undo-refresh="handleThrottledPageUnRefresh"
+        @forward-refresh="handleThrottledPageForwardRefresh"
+        @back-to-top="handleThrottledBackToTop"
+        @dock-item-click="handleDockItemClick"
+      />
+    </div>
+
     <!-- TopBar -->
     <div
-      v-if="showTopBar && !hideMobileShell"
+      v-if="showTopBar && !hideMobileShell && !isMobileUserscriptPage"
       m-auto max-w="$bew-page-max-width"
       :style="{
         opacity: hideUIForIframePhotoViewer || hideMobileShell ? 0 : 1,
@@ -938,11 +973,15 @@ if (settings.value.cleanUrlArgument) {
             <main class="bewly-page-main" m-auto max-w="$bew-page-max-width">
               <div
                 class="bewly-page-content"
+                :class="{
+                  'bewly-page-content--mobile': isMobileUserscriptPage,
+                  'bewly-page-content--mobile-video': isMobileUserscriptPage && activatedPage === AppPage.VideoDetail,
+                }"
                 p="t-[calc(var(--bew-top-bar-height)+10px)]" m-auto
                 w="lg:[calc(100%-200px)] [calc(100%-150px)]"
               >
                 <Transition name="page-fade">
-                  <Component :is="pages[activatedPage]" :key="activatedPage" />
+                  <Component :is="pages[activatedPage]" :key="activePageKey" />
                 </Transition>
 
                 <!-- ✅ IntersectionObserver 哨兵：用于检测滚动到底部，避免在 RAF 中读取 scrollHeight -->
@@ -980,16 +1019,47 @@ if (settings.value.cleanUrlArgument) {
 }
 
 .mobile-userscript {
+  --bew-mobile-bottom-shell-height: calc(114px + env(safe-area-inset-bottom, 0px));
+
+  .bewly-mobile-bottom-shell {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 1002;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    box-sizing: border-box;
+    width: 100vw;
+    padding: 8px max(10px, env(safe-area-inset-right, 0px)) 0 max(10px, env(safe-area-inset-left, 0px));
+    border: 1px solid color-mix(in oklab, var(--bew-border-color), transparent 52%);
+    border-bottom: 0;
+    border-radius: 22px 22px 0 0;
+    background: color-mix(in oklab, var(--bew-elevated-solid), transparent 18%);
+    box-shadow:
+      0 -1px 0 rgba(255, 255, 255, 0.08),
+      0 -12px 32px rgba(0, 0, 0, 0.24);
+    backdrop-filter: blur(24px) saturate(1.35);
+  }
+
   .bewly-page-main {
+    width: 100vw;
     max-width: 100vw;
     min-height: 100dvh;
     background: var(--bew-bg);
   }
 
-  .bewly-page-content {
-    width: 100%;
-    max-width: 100vw;
-    padding: calc(env(safe-area-inset-top, 0px) + var(--bew-top-bar-height) + 12px) 12px calc(env(safe-area-inset-bottom, 0px) + 92px);
+  .bewly-page-content--mobile {
+    width: 100% !important;
+    max-width: 100vw !important;
+    min-height: 100dvh;
+    margin: 0 !important;
+    padding: calc(env(safe-area-inset-top, 0px) + 10px) 12px calc(var(--bew-mobile-bottom-shell-height) + 14px) !important;
+  }
+
+  .bewly-page-content--mobile-video {
+    padding: 0 0 calc(env(safe-area-inset-bottom, 0px) + 24px) !important;
   }
 
   .bewly-scroll-viewport {

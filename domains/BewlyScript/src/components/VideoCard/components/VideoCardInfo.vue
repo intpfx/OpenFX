@@ -85,7 +85,7 @@ function handleTitleClick(event: MouseEvent) {
   <div
     :style="{
       width: horizontal ? '100%' : 'unset',
-      marginTop: horizontal ? '0' : '0.5rem',
+      marginTop: horizontal || isMobileUserscriptPage ? '0' : '0.5rem',
     }"
     flex="~"
   >
@@ -152,15 +152,6 @@ function handleTitleClick(event: MouseEvent) {
       <div class="group/desc" flex="~ col gap-2" w="full" align="items-start">
         <template v-if="isMobileUserscriptPage && !hideAuthor">
           <div class="video-card-mobile-summary">
-            <VideoCardAuthorAvatar
-              v-if="video.author"
-              class="video-card-mobile-summary__avatar"
-              :author="video.author"
-              :is-live="video.liveStatus === 1"
-              :size="56"
-              compact
-            />
-
             <div class="video-card-mobile-summary__body">
               <div class="video-card-mobile-title-line">
                 <h3
@@ -476,11 +467,29 @@ function handleTitleClick(event: MouseEvent) {
 .video-card-mobile-summary {
   --bew-mobile-video-card-avatar-size: 56px;
 
-  display: flex;
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: block;
   width: 100%;
+  height: 100%;
   min-width: 0;
-  gap: 9px;
-  align-items: flex-start;
+  overflow: hidden;
+  border-radius: var(--bew-radius);
+  color: #fff;
+  pointer-events: none;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.8);
+}
+
+.video-card-mobile-summary::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.5), transparent 32%),
+    linear-gradient(to top, rgba(0, 0, 0, 0.78), transparent 48%);
+  pointer-events: none;
 }
 
 .video-card-mobile-summary__avatar {
@@ -490,51 +499,82 @@ function handleTitleClick(event: MouseEvent) {
 }
 
 .video-card-mobile-summary__body {
-  display: flex;
+  position: relative;
+  z-index: 1;
+  display: block;
   min-width: 0;
-  min-height: var(--bew-mobile-video-card-avatar-size);
-  flex: 1 1 auto;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 4px;
+  height: 100%;
+  min-height: 0;
 }
 
 .video-card-mobile-title-line {
-  display: flex;
+  position: absolute;
+  right: 54px;
+  bottom: 31px;
+  left: 10px;
+  display: block;
   min-width: 0;
-  width: 100%;
-  align-items: flex-start;
-  gap: 6px;
+  pointer-events: none;
 }
 
 .video-card-mobile-title-line .video-card-title {
   min-width: 0;
   min-height: auto;
-  flex: 1 1 auto;
+  max-height: calc(1.25em * 2);
+  color: #fff !important;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.25;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.9);
+}
+
+.video-card-mobile-title-line .video-card-title a {
+  color: inherit;
+  pointer-events: auto;
 }
 
 .video-card-mobile-title-line .video-card__more-btn {
-  margin-top: -4px;
-  margin-right: -4px;
+  position: absolute;
+  right: -46px;
+  bottom: -2px;
+  width: 34px !important;
+  height: 34px !important;
+  margin: 0 !important;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.46);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+    0 8px 20px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(10px);
+  pointer-events: auto;
 }
 
 .video-card-mobile-author-line {
+  position: absolute;
+  top: 8px;
+  right: 50px;
+  left: 62px;
   display: flex;
   min-width: 0;
-  width: 100%;
-  align-items: center;
-  gap: 7px;
-  color: var(--bew-text-3);
+  min-height: 44px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 4px;
+  color: rgba(255, 255, 255, 0.86);
+  pointer-events: none;
 }
 
 .video-card-mobile-author-line :deep(.channel-name) {
   min-width: 0;
-  max-width: 52%;
+  max-width: 100%;
   margin-right: 0;
   overflow: hidden;
-  color: var(--bew-text-2);
+  color: #fff;
+  font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
+  pointer-events: auto;
 }
 
 .video-card-mobile-meta-row {
@@ -542,13 +582,20 @@ function handleTitleClick(event: MouseEvent) {
   min-width: 0;
   flex: 1 1 auto;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   overflow: hidden;
   white-space: nowrap;
 }
 
 .video-card-mobile-meta-row .video-card-meta__chip {
   flex: 0 0 auto;
+  max-width: 100%;
+  padding: 0 6px;
+  color: rgba(255, 255, 255, 0.92) !important;
+  background: rgba(0, 0, 0, 0.42) !important;
+  border-radius: 999px;
+  line-height: 18px;
+  backdrop-filter: blur(8px);
 }
 
 .video-card-meta {

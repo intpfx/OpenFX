@@ -58,15 +58,7 @@ const preferTouchMode = computed(() => shouldPreferTouchMode(settings.value.touc
 const hoverInteractionsEnabled = computed(() => shouldEnableHoverInteractions(settings.value.touchScreenOptimization))
 const shouldEnableVideoControls = computed(() => settings.value.enableVideoCtrlBarOnVideoCard && !props.video?.roomid)
 const coverTopLeftVisible = computed(() => preferTouchMode.value || Boolean(props.coverTopLeftAlwaysVisible))
-const watchLaterButtonStyle = computed(() => {
-  if (!preferTouchMode.value)
-    return {}
-
-  return {
-    top: 'auto',
-    bottom: props.hasCoverStats ? '40px' : '8px',
-  }
-})
+const watchLaterButtonStyle = computed(() => ({}))
 let hls: Hls | null = null
 let flvPlayer: flvjs.Player | null = null
 let controlsHideTimeout: number | null = null

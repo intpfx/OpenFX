@@ -109,6 +109,26 @@ const API_USER = {
     },
     afterHandle: AHS.J_D,
   },
+  getSpaceInfo: {
+    url: 'https://api.bilibili.com/x/space/wbi/acc/info',
+    _fetch: {
+      method: 'get',
+    },
+    params: {
+      mid: '',
+    },
+    afterHandle: AHS.J_D,
+  },
+  getSpaceStat: {
+    url: 'https://api.bilibili.com/x/relation/stat',
+    _fetch: {
+      method: 'get',
+    },
+    params: {
+      vmid: '',
+    },
+    afterHandle: AHS.J_D,
+  },
   // https://socialsisteryi.github.io/bilibili-API-collect/docs/login/login_notice.html
   getLoginLog: {
     url: 'https://api.bilibili.com/x/member/web/login/log',

@@ -9,6 +9,13 @@ export type HomepageProjectCard = {
   description: string;
   tech: string[];
   sourcePath: string;
+  links?: HomepageProjectLink[];
+};
+
+export type HomepageProjectLink = {
+  label: string;
+  href: string;
+  download?: string;
 };
 
 export type HomepageColumn = {

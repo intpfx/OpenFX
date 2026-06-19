@@ -24,6 +24,7 @@ import type { HoveringDockItem } from './types'
 
 const props = defineProps<{
   activatedPage: AppPage
+  mobileEmbedded?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -53,6 +54,8 @@ const hoverInteractionsEnabled = computed(() => shouldEnableHoverInteractions(se
 const dockAutoHideEnabled = computed(() => settings.value.autoHideDock && hoverInteractionsEnabled.value)
 const effectiveDockPosition = computed(() => isMobileUserscriptPage ? 'bottom' : settings.value.dockPosition)
 const effectiveHalfHideDock = computed(() => !isMobileUserscriptPage && settings.value.halfHideDock)
+const showDockUtilityActions = computed(() => !isMobileUserscriptPage)
+const showDockThemeSwitcher = computed(() => showDockUtilityActions.value && !settings.value.disableLightDarkModeSwitcherOnDock)
 
 const hideDock = ref<boolean>(false)
 const dockContentHover = ref<boolean>(false)
@@ -508,6 +511,7 @@ onUnmounted(() => {
 <template>
   <aside
     class="dock-wrap"
+    :class="{ 'dock-wrap--mobile-embedded': props.mobileEmbedded && isMobileUserscriptPage }"
     pos="fixed top-0" z-100 flex="~ col justify-center items-center" w-full h-full
     z-10 pointer-events-none
   >
@@ -527,6 +531,7 @@ onUnmounted(() => {
         'right': effectiveDockPosition === 'right',
         'bottom': effectiveDockPosition === 'bottom',
         'mobile-userscript': isMobileUserscriptPage,
+        'mobile-shell-embedded': props.mobileEmbedded && isMobileUserscriptPage,
         'hide': hideDock,
         'half-hide': dockAutoHideEnabled && effectiveHalfHideDock,
         'hover': dockContentHover,
@@ -564,10 +569,10 @@ onUnmounted(() => {
         </template>
 
         <!-- dividing line -->
-        <div class="divider" />
+        <div v-if="showDockUtilityActions" class="divider" />
 
         <Tooltip
-          v-if="!settings.disableLightDarkModeSwitcherOnDock"
+          v-if="showDockThemeSwitcher"
           :content="isDark ? $t('dock.dark_mode') : $t('dock.light_mode')" :placement="tooltipPlacement"
           class="group"
           pointer-events-none
@@ -614,7 +619,7 @@ onUnmounted(() => {
           </button>
         </Tooltip>
 
-        <Tooltip :content="$t('dock.settings')" :placement="tooltipPlacement">
+        <Tooltip v-if="showDockUtilityActions" :content="$t('dock.settings')" :placement="tooltipPlacement">
           <button
             class="dock-item group"
             :class="{
@@ -730,6 +735,15 @@ onUnmounted(() => {
   > * {
     --uno: "pointer-events-auto";
   }
+
+  &.dock-wrap--mobile-embedded {
+    position: static !important;
+    z-index: auto !important;
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    pointer-events: auto !important;
+  }
 }
 
 .dock-edge {
@@ -807,11 +821,14 @@ onUnmounted(() => {
   }
 
   &.mobile-userscript.bottom {
+    position: fixed !important;
+    top: auto !important;
     left: 0 !important;
     right: 0 !important;
     bottom: 0 !important;
     width: 100vw !important;
     max-width: 100vw !important;
+    margin: 0 !important;
     transform: none !important;
     transform-origin: center bottom !important;
   }
@@ -822,18 +839,39 @@ onUnmounted(() => {
     margin: 0 !important;
     overflow-x: auto;
     overflow-y: hidden;
-    padding: 8px max(10px, env(safe-area-inset-left, 0px)) calc(env(safe-area-inset-bottom, 0px) + 8px) max(10px, env(safe-area-inset-right, 0px)) !important;
-    gap: 8px;
+    min-height: calc(56px + env(safe-area-inset-bottom, 0px));
+    justify-content: space-evenly;
+    padding: 6px max(8px, env(safe-area-inset-left, 0px)) max(6px, env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-right, 0px)) !important;
+    gap: clamp(1px, 0.6vw, 3px);
     scrollbar-width: none;
     touch-action: pan-x;
     border-inline: 0 !important;
     border-bottom: 0 !important;
-    border-radius: 18px 18px 0 0 !important;
-    background: color-mix(in oklab, var(--bew-elevated-solid), transparent 3%);
-    border-color: color-mix(in oklab, var(--bew-border-color), transparent 8%);
+    border-radius: 22px 22px 0 0 !important;
+    background: color-mix(in oklab, var(--bew-elevated-solid), transparent 18%);
+    border-color: color-mix(in oklab, var(--bew-border-color), transparent 42%);
     box-shadow:
-      var(--bew-shadow-edge-glow-1),
-      0 -10px 30px rgba(0, 0, 0, 0.28);
+      0 -1px 0 rgba(255, 255, 255, 0.08),
+      0 -10px 28px rgba(0, 0, 0, 0.22);
+    backdrop-filter: blur(24px) saturate(1.35);
+  }
+
+  &.mobile-userscript.mobile-shell-embedded.bottom {
+    position: static !important;
+    inset: auto !important;
+    width: 100% !important;
+    max-width: none !important;
+  }
+
+  &.mobile-userscript.mobile-shell-embedded .dock-content-inner {
+    width: 100% !important;
+    max-width: none !important;
+    min-height: calc(56px + env(safe-area-inset-bottom, 0px));
+    padding: 5px 0 max(6px, env(safe-area-inset-bottom, 0px)) !important;
+    border-radius: 0 !important;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
   }
 
   &.mobile-userscript .dock-content-inner::-webkit-scrollbar {
@@ -942,19 +980,20 @@ onUnmounted(() => {
 
 .dock-content.mobile-userscript {
   .divider {
-    --uno: "mx-1 my-2";
+    display: none;
   }
 
   .dock-item,
   .back-to-top-or-refresh-btn {
-    width: 52px;
-    height: 52px;
-    min-width: 52px;
-    line-height: 52px;
-    background: transparent;
-    border-color: transparent;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    line-height: 44px;
+    color: color-mix(in oklab, var(--bew-text-1), transparent 12%);
+    background: transparent !important;
+    border: 0 !important;
     border-radius: 16px;
-    box-shadow: none;
+    box-shadow: none !important;
     z-index: 0;
 
     &::before {
@@ -962,12 +1001,14 @@ onUnmounted(() => {
       position: absolute;
       inset: 3px;
       z-index: 0;
-      border: 1px solid color-mix(in oklab, var(--bew-border-color), transparent 10%);
       border-radius: 16px;
+      border: 0;
       background: transparent;
       box-shadow: none;
+      opacity: 0;
       transition:
         transform 240ms ease,
+        opacity 180ms ease,
         background-color 240ms ease,
         box-shadow 240ms ease;
     }
@@ -978,24 +1019,31 @@ onUnmounted(() => {
     }
 
     &.active::before {
+      opacity: 1;
       background: var(--bew-theme-color);
-      border-color: color-mix(in oklab, var(--bew-theme-color), white 20%);
-      box-shadow: var(--bew-shadow-edge-glow-1), 0 8px 24px var(--bew-theme-color-40);
+      box-shadow:
+        inset 0 0 0 1px color-mix(in oklab, var(--bew-theme-color), white 22%),
+        0 8px 22px var(--bew-theme-color-30);
     }
 
     &.inactive::before {
-      opacity: 0.55;
+      opacity: 0;
     }
 
     &.hover-enabled:hover::before {
+      opacity: 1;
       transform: scale(1.04);
-      background: var(--bew-fill-2);
+      background: color-mix(in oklab, var(--bew-fill-2), transparent 20%);
+    }
+
+    &.active {
+      color: var(--bew-text-auto) !important;
     }
   }
 
   .dock-item > div,
   .back-to-top-or-refresh-btn > div {
-    font-size: 22px;
+    font-size: 23px;
   }
 }
 </style>

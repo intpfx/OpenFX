@@ -2,6 +2,7 @@ import { usePreferredDark } from '@vueuse/core'
 
 import { DARK_MODE_BASE_COLOR_CHANGE } from '~/constants/globalEvents'
 import { settings } from '~/logic'
+import { isMobileUserscriptRuntimePage } from '~/userscript/mobile'
 import { runWhenIdle } from '~/utils/lazyLoad'
 import { setCookie } from '~/utils/main'
 import { executeTimes } from '~/utils/timer'
@@ -31,8 +32,9 @@ function setDarkModeBaseColor(color: string) {
 export function useDark() {
   const isPreferredDark = usePreferredDark()
   const currentSystemColorScheme = computed(() => isPreferredDark.value ? 'dark' : 'light')
+  const mobileFollowsSystemTheme = computed(() => isMobileUserscriptRuntimePage())
   const currentAppColorScheme = computed((): 'dark' | 'light' => {
-    if (settings.value.theme !== 'auto')
+    if (!mobileFollowsSystemTheme.value && settings.value.theme !== 'auto')
       return settings.value.theme
     else
       return currentSystemColorScheme.value

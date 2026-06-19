@@ -170,6 +170,16 @@ const API_VIDEO = {
     },
     afterHandle: AHS.J_D,
   },
+  getDanmakuXml: {
+    url: 'https://api.bilibili.com/x/v1/dm/list.so',
+    _fetch: {
+      method: 'get',
+    },
+    params: {
+      oid: 0,
+    },
+    afterHandle: AHS.T_D,
+  },
 } satisfies APIMAP
 
 export default API_VIDEO

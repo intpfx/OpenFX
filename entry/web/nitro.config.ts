@@ -20,6 +20,9 @@ const finlyzerPublicDir = fileURLToPath(
 const costingAssistantPublicDir = fileURLToPath(
   new URL("../../domains/costing-assistant/public", import.meta.url),
 );
+const bewlyScriptPublicDir = fileURLToPath(
+  new URL("../../domains/BewlyScript/public", import.meta.url),
+);
 const nitroDevPort = Number(process.env.OPENFX_NITRO_DEV_PORT ?? "3000");
 
 export default defineNitroConfig({
@@ -55,6 +58,10 @@ export default defineNitroConfig({
     {
       dir: costingAssistantPublicDir,
       maxAge: 60 * 60 * 24 * 30,
+    },
+    {
+      dir: bewlyScriptPublicDir,
+      maxAge: 0,
     },
   ],
   alias: {

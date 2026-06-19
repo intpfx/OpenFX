@@ -435,10 +435,24 @@ const shouldShowDivider = computed(() => {
     height: 44px !important;
     padding-inline: 0 !important;
     justify-content: center;
+    color: var(--bew-text-1) !important;
+    background: transparent !important;
+    filter: none !important;
+    box-shadow: none !important;
   }
 
   .mobile-login-avatar .login span {
     display: none;
+  }
+
+  .mobile-login-avatar .login > div {
+    margin-right: 0 !important;
+  }
+
+  .mobile-login-avatar.hover-enabled .login:hover,
+  .mobile-login-avatar .login:active {
+    color: var(--bew-theme-color) !important;
+    background: transparent !important;
   }
 
   .avatar.right-side-item {
