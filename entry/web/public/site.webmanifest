@@ -1,0 +1,19 @@
+{
+  "name": "OpenFX",
+  "short_name": "OpenFX",
+  "icons": [
+    {
+      "src": "/openfx-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/openfx-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "theme_color": "#f8f9fb",
+  "background_color": "#f8f9fb",
+  "display": "standalone"
+}
