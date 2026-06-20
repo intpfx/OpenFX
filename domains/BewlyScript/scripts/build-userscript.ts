@@ -1,5 +1,5 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import process from 'node:process'
 
 import { build } from 'vite'
@@ -12,6 +12,7 @@ import { r } from './utils'
 const buildDir = r('dist/.build/contentScripts')
 const outputFile = r('dist/BewlyScript.user.js')
 const publicOutputFile = r('public/bewlyscript/BewlyScript.user.js')
+const webPublicOutputFile = r('../../entry/web/public/bewlyscript/BewlyScript.user.js')
 
 async function readText(path: string): Promise<string> {
   return await readFile(path, 'utf8')
@@ -93,12 +94,11 @@ async function main(): Promise<void> {
   if (hasExternalExtensionUrl(userscript))
     throw new Error('Refusing to write userscript with external extension URLs')
 
-  await mkdir(r('dist'), { recursive: true })
-  await mkdir(r('public/bewlyscript'), { recursive: true })
-  await writeFile(outputFile, userscript)
-  await writeFile(publicOutputFile, userscript)
-  console.log(`Wrote ${outputFile}`)
-  console.log(`Wrote ${publicOutputFile}`)
+  for (const file of [outputFile, publicOutputFile, webPublicOutputFile]) {
+    await mkdir(dirname(file), { recursive: true })
+    await writeFile(file, userscript)
+    console.log(`Wrote ${file}`)
+  }
 }
 
 main().catch((error) => {

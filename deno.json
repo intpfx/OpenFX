@@ -31,6 +31,7 @@
     "exclude": [
       "domains/wanone/",
       "domains/chinagas-wms-qrcode/",
+      "entry/web/public/bewlyscript/",
       "entry/web/src/",
       "domains/_shared/opfs-finder.ts",
       "domains/_shared/island-notice.ts",
@@ -50,6 +51,7 @@
     "domains/gasmap",
     "domains/costing-assistant/",
     "domains/finlyzer/",
+    "entry/web/public/bewlyscript/",
     "domains/hlc/",
     "domains/freemac/",
     "domains/BewlyScript/",
