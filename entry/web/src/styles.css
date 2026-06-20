@@ -126,6 +126,8 @@ textarea {
 }
 
 .brand-word:focus-visible .brand-text {
+  outline: 2px solid oklch(0.55 0.2 250 / 0.32);
+  outline-offset: 0.08em;
   text-shadow: 0 0 0.14em oklch(0.55 0.2 250 / 0.16);
 }
 
@@ -453,6 +455,73 @@ textarea {
   box-shadow: inset 0 -1px 0 var(--accent);
 }
 
+.project-command-bar.message-compose-active {
+  border-color: oklch(0.55 0.2 250 / 0.78);
+  box-shadow: 0 10px 32px oklch(0.55 0.2 250 / 0.11);
+}
+
+.message-compose-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.8rem;
+  border: 0;
+  border-right: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.92rem;
+  transition: color 0.18s ease, background-color 0.18s ease;
+}
+
+.message-compose-back:hover,
+.message-compose-back:focus-visible {
+  background: oklch(0.97 0.01 250 / 0.82);
+  color: var(--accent);
+  outline: none;
+}
+
+.message-count {
+  min-width: 4rem;
+  justify-content: center;
+}
+
+.message-inline-form {
+  display: grid;
+  grid-template-columns: minmax(10rem, 1fr);
+  flex: 1 1 20rem;
+  min-width: 0;
+  border-right: 1px solid var(--border);
+  animation: message-compose-in 0.24s ease-out both;
+}
+
+.message-inline-content {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  padding: 0.42rem 0.55rem;
+  font-family: ui-monospace, "SFMono-Regular", SFMono-Regular, Menlo, monospace;
+  font-size: 0.72rem;
+  outline: none;
+}
+
+.message-inline-content:focus {
+  box-shadow: inset 0 -1px 0 var(--accent);
+}
+
+@keyframes message-compose-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .control-status {
   display: flex;
   flex: 1 1 18rem;
@@ -514,90 +583,17 @@ textarea {
   min-width: 8ch;
 }
 
-.inline-unlock-shell {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  width: 0;
-  opacity: 0;
-  overflow: hidden;
-  pointer-events: none;
-  transform: translateX(12px);
-}
-
-.inline-unlock-shell[aria-hidden="false"] {
-  pointer-events: auto;
-}
-
-.inline-unlock-field {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  width: min(24rem, 52vw);
-  border: 0;
-  border-left: 1px solid var(--accent);
-  border-radius: 0;
-  background: oklch(0.985 0.004 250 / 0.96);
-  box-shadow: none;
-}
-
-.inline-unlock-session {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: grid;
-  gap: 0.1rem;
-  padding: 0.55rem 0.8rem;
-}
-
-.inline-unlock-session strong,
-.inline-unlock-session span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.inline-unlock-session strong {
-  font-size: 0.75rem;
-  color: var(--text-primary);
-}
-
-.inline-unlock-session span {
-  font-size: 0.68rem;
-  color: var(--text-secondary);
-}
-
-.inline-unlock-input {
-  flex: 1 1 auto;
-  min-width: 0;
-  width: auto;
-  border: 0;
-  background: transparent;
-  color: var(--text-primary);
-  padding: 0.6rem 0.75rem;
-  font-family: ui-monospace, "SFMono-Regular", SFMono-Regular, Menlo, monospace;
-  font-size: 0.72rem;
-  outline: none;
-}
-
-.inline-unlock-actions {
-  display: flex;
-  align-items: stretch;
-  flex: 0 0 auto;
-}
-
-.inline-unlock-input:focus,
 .admin-kv-input:focus,
-.modal input:focus,
-.modal textarea:focus {
+.data-access-form input:focus {
   border-color: var(--accent);
 }
 
-.inline-unlock-action,
 .proxy-footer-back,
 .proxy-footer-submit,
 .btn-primary,
 .btn-ghost,
 .admin-auth-row button,
+.data-access-form button,
 .admin-form button,
 .admin-kv-card-actions button,
 .admin-kv-table-actions button,
@@ -614,10 +610,6 @@ textarea {
   font-size: 0.72rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-}
-
-.inline-unlock-confirm {
-  color: var(--accent);
 }
 
 .proxy-footer-form {
@@ -657,18 +649,12 @@ textarea {
   font-size: 0.92rem;
 }
 
-.inline-unlock-cancel {
-  color: var(--text-secondary);
-  font-size: 1rem;
-  line-height: 1;
-}
-
 .btn-primary {
   border-color: var(--accent);
   color: var(--accent);
 }
 
-.inline-unlock-hint {
+.control-hint {
   display: inline-flex;
   width: min(32rem, 100%);
   min-width: 18ch;
@@ -687,7 +673,7 @@ textarea {
   text-align: left;
 }
 
-.inline-unlock-hint[data-active="true"] {
+.control-hint[data-active="true"] {
   opacity: 0.72;
   transform: translateX(0);
 }
@@ -750,8 +736,7 @@ textarea {
 
 .admin-form input,
 .admin-auth-row input,
-.modal input,
-.modal textarea {
+.data-access-form input {
   width: 100%;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -1495,6 +1480,132 @@ textarea {
   outline: none;
 }
 
+.data-domain-panel {
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 1rem;
+  align-content: start;
+  view-transition-name: card-data;
+}
+
+.data-auth-panel {
+  display: grid;
+  place-items: center;
+  view-transition-name: card-data;
+}
+
+.data-access-form {
+  display: grid;
+  grid-template-columns: minmax(14rem, 24rem) auto;
+  gap: 0;
+  width: min(100%, 34rem);
+  overflow: hidden;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: oklch(0.99 0.003 250 / 0.96);
+  box-shadow: 0 14px 40px oklch(0 0 0 / 0.07);
+}
+
+.data-access-form input {
+  border: 0;
+  border-right: 1px solid var(--border);
+  background: transparent;
+  font-family: ui-monospace, "SFMono-Regular", SFMono-Regular, Menlo, monospace;
+  outline: none;
+}
+
+.data-access-form button {
+  color: var(--accent);
+}
+
+.data-access-form button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
+.data-access-status {
+  grid-column: 1 / -1;
+  margin: 0;
+  border-top: 1px solid var(--border);
+  padding: 0.55rem 0.75rem;
+  color: oklch(0.54 0.16 25);
+  font-size: 0.74rem;
+}
+
+.data-message-panel {
+  display: grid;
+  gap: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: oklch(0.99 0.003 250 / 0.94);
+  padding: 1rem;
+}
+
+.data-message-head,
+.data-message-meta {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.data-message-head h2 {
+  margin: 0.15rem 0 0;
+}
+
+.data-message-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 0.8rem;
+}
+
+.data-message-card {
+  display: grid;
+  gap: 0.65rem;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: oklch(0.995 0.002 250 / 0.92);
+  padding: 0.9rem;
+}
+
+.data-message-meta strong,
+.data-message-meta time {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.data-message-meta time {
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+}
+
+.data-message-card p,
+.data-message-empty {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.data-message-card pre {
+  max-height: 10rem;
+  overflow: auto;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: oklch(0.18 0.01 260);
+  color: oklch(0.96 0.01 250);
+  padding: 0.75rem;
+  font-family: ui-monospace, "SFMono-Regular", SFMono-Regular, Menlo, monospace;
+  font-size: 0.68rem;
+  line-height: 1.5;
+}
+
+.data-admin-auth-row {
+  margin-top: -0.15rem;
+}
+
 .mono,
 .code-block {
   font-family: ui-monospace, "SFMono-Regular", SFMono-Regular, Menlo, monospace;
@@ -1516,68 +1627,6 @@ textarea {
   background: oklch(0.18 0.01 260);
   color: oklch(0.96 0.01 250);
   padding: 1rem;
-}
-
-.modal-overlay {
-  display: none;
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  align-items: center;
-  justify-content: center;
-  background: oklch(0 0 0 / 0.25);
-  backdrop-filter: blur(3px);
-}
-
-.modal-overlay.active {
-  display: flex;
-}
-
-.modal {
-  width: 90%;
-  max-width: 380px;
-  display: grid;
-  gap: 0.8rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg);
-  padding: 2rem;
-  box-shadow: 0 20px 60px oklch(0 0 0 / 0.1);
-  font-family: "Fira Code", monospace;
-}
-
-.modal h2,
-.modal label {
-  font-family: "Space Grotesk", system-ui, sans-serif;
-}
-
-.modal textarea {
-  min-height: 75px;
-  resize: vertical;
-}
-
-.modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.5rem;
-}
-
-.modal-actions button {
-  transition: all 0.2s;
-}
-
-.btn-primary {
-  background: var(--accent);
-  color: #fff;
-}
-
-.btn-primary:hover {
-  background: var(--accent-glow);
-}
-
-.btn-ghost:hover {
-  border-color: var(--text-secondary);
-  color: var(--text-primary);
 }
 
 @media (max-width: 900px) {
@@ -1616,12 +1665,6 @@ textarea {
     font-size: clamp(4.25rem, 20.5vw, 6.35rem);
     line-height: 1.08;
     text-align: left;
-  }
-
-  .brand-word[data-brand="FENGXIAO"] {
-    font-size: clamp(3rem, 13.7vw, 3.75rem);
-    letter-spacing: 0.055em;
-    line-height: 1.08;
   }
 
   .projects-zone {
@@ -1676,25 +1719,28 @@ textarea {
     min-width: 0;
   }
 
+  .message-count {
+    min-width: 3.2rem;
+    padding-inline: 0.5rem;
+  }
+
+  .message-inline-form {
+    grid-template-columns: minmax(0, 1fr);
+    flex-basis: 0;
+  }
+
+  .message-inline-content {
+    padding-inline: 0.45rem;
+    font-size: 0.68rem;
+  }
+
   .project-command-bar .ctrl-btn {
     min-width: 5.8rem;
     padding-right: 0.85rem;
     padding-left: 1.5rem;
   }
 
-  .inline-unlock-shell {
-    justify-content: flex-end;
-  }
-
-  .inline-unlock-field {
-    width: min(20rem, 74vw);
-  }
-
-  .inline-unlock-input {
-    width: auto;
-  }
-
-  .inline-unlock-hint {
+  .control-hint {
     width: min(60vw, 20rem);
     min-width: 0;
     justify-content: flex-start;
@@ -1704,6 +1750,13 @@ textarea {
   .admin-rule-composer,
   .admin-kv-workbench {
     grid-template-columns: 1fr;
+  }
+
+  .data-message-head,
+  .data-message-meta {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.45rem;
   }
 
   .admin-rules-summary,
@@ -1734,6 +1787,10 @@ textarea {
   .admin-stats-grid,
   .admin-field-grid {
     grid-template-columns: 1fr;
+  }
+
+  .data-access-form {
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .project-column {
@@ -1783,6 +1840,10 @@ textarea {
 
 .domain-panel[data-panel-id="relay-proxy-gateway"] {
   view-transition-name: card-proxy;
+}
+
+.domain-panel[data-panel-id="openfx-data"] {
+  view-transition-name: card-data;
 }
 
 .domain-panel[data-panel-id="admin-console"] {
@@ -1986,6 +2047,10 @@ textarea {
 
 .project-card[data-card-id="relay-proxy-gateway"] {
   view-transition-name: card-proxy;
+}
+
+.project-card[data-card-id="openfx-data"] {
+  view-transition-name: card-data;
 }
 
 /* 面板打开时卡片让出 VT name，避免与面板冲突 */

@@ -15,7 +15,6 @@ import { flushSync } from "react-dom";
 
 import { DownipPage } from "../../../domains/downip/frontend/DownipPage.tsx";
 
-import { DOMAIN_CONTENT_PUBLIC } from "../domain-access.ts";
 import {
   HOMEPAGE_PROJECTS,
   type HomepageProjectCard,
@@ -24,13 +23,6 @@ import {
 import { type ActiveDomainPanel, isProjectDetailPanelId } from "../homepage-panels";
 
 type UnlockRule = {
-  key: string;
-  label: string;
-  projectIds: string[];
-  expiresAt: string;
-};
-
-type ActiveUnlockSession = {
   key: string;
   label: string;
   projectIds: string[];
@@ -58,17 +50,24 @@ type AdminKvGroup = {
   entries: AdminKvEntry[];
 };
 
+type HomepageMessage = {
+  id: string;
+  content: string;
+  createdAt: string;
+};
+
 const hiddenProjects = listHiddenHomepageProjects();
 
-type BrandName = "FENGXIAO" | "OpenFX";
-
-const BRAND_NAMES: readonly BrandName[] = ["FENGXIAO", "OpenFX"];
 const BRAND_LOCK_PADDING_PX = 4;
 
 const STORAGE_KEYS = {
-  activeUnlock: "openfx_active_unlock",
   adminKey: "openfx_admin_key",
 } as const;
+
+function getDefaultAdminKey() {
+  return localStorage.getItem(STORAGE_KEYS.adminKey) ??
+    (globalThis.location?.hostname === "localhost" ? "TEST" : "");
+}
 
 function getProjectSearchText(project: HomepageProjectCard) {
   return [
@@ -150,33 +149,6 @@ function groupKvEntriesByDomain(entries: AdminKvEntry[]): AdminKvGroup[] {
     }));
 }
 
-function parseActiveUnlock(rawValue: string | null): ActiveUnlockSession | null {
-  if (!rawValue) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(rawValue) as Partial<ActiveUnlockSession>;
-    if (
-      typeof parsed.key !== "string" ||
-      typeof parsed.label !== "string" ||
-      typeof parsed.expiresAt !== "string" ||
-      !Array.isArray(parsed.projectIds)
-    ) {
-      return null;
-    }
-
-    return {
-      key: parsed.key,
-      label: parsed.label,
-      expiresAt: parsed.expiresAt,
-      projectIds: parsed.projectIds.map((projectId) => String(projectId)),
-    };
-  } catch {
-    return null;
-  }
-}
-
 function getRemainingMs(expiresAt: string) {
   return Math.max(Date.parse(expiresAt) - Date.now(), 0);
 }
@@ -207,14 +179,6 @@ function formatRemainingTime(expiresAt: string) {
   return `${Math.max(minutes, 1)}m left`;
 }
 
-function buildUnlockButtonText(session: ActiveUnlockSession | null) {
-  if (!session) {
-    return "UNLOCK";
-  }
-
-  return `${session.label} · ${formatRemainingTime(session.expiresAt)}`;
-}
-
 function getBrowserLocationPathname() {
   return globalThis.location?.pathname ?? "/";
 }
@@ -238,7 +202,7 @@ function buildCanvasFont(style: CSSStyleDeclaration) {
   return `${stylePart}${variantPart}${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
 }
 
-function measureBrandWordWidth(wordNode: HTMLButtonElement, word: BrandName) {
+function measureBrandWordWidth(wordNode: HTMLElement, word: string) {
   const previousBrand = wordNode.dataset.brand;
 
   try {
@@ -281,10 +245,8 @@ export function navigate(pathname: string) {
 }
 
 function BrandWord(props: {
-  brand: BrandName;
   lockWidthPx: number | null;
-  switching: boolean;
-  onToggle: () => void;
+  onOpenData: () => void;
 }) {
   const style = props.lockWidthPx === null ? undefined : ({
     "--brand-lock-width": `${props.lockWidthPx}px`,
@@ -294,13 +256,13 @@ function BrandWord(props: {
     <div className="brand-zone">
       <div className="brand-shell">
         <button
-          className={`brand-word${props.switching ? " brand-switching" : ""}`}
-          data-brand={props.brand}
+          className="brand-word"
+          data-brand="OpenFX"
           id="brandWord"
           style={style}
           type="button"
-          onClick={props.onToggle}
-          aria-label="Toggle brand"
+          onClick={props.onOpenData}
+          aria-label="打开数据面板"
         >
           <span className="brand-text" id="brandText" />
         </button>
@@ -389,77 +351,47 @@ function getProjectCardClick(
 }
 
 function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
-  const currentBrandRef = useRef<BrandName>("OpenFX");
-  const brandTypewriterCleanupRef = useRef<(() => void) | null>(null);
   const primaryControlAnimationRef = useRef<JSAnimation | null>(null);
   const statusAnimationRef = useRef<JSAnimation | null>(null);
-  const busyRef = useRef(false);
   const brandWordRef = useRef<HTMLButtonElement | null>(null);
   const brandTextRef = useRef<HTMLSpanElement | null>(null);
   const primaryControlRef = useRef<HTMLButtonElement | null>(null);
   const primaryControlLabelRef = useRef<HTMLSpanElement | null>(null);
   const statusHintRef = useRef<HTMLSpanElement | null>(null);
   const statusClearTimeoutRef = useRef<number | null>(null);
-  const unlockInputRef = useRef<HTMLInputElement | null>(null);
-  const unlockShellRef = useRef<HTMLDivElement | null>(null);
-  const unlockFieldRef = useRef<HTMLDivElement | null>(null);
   const projectScrollerRef = useRef<HTMLDivElement | null>(null);
-  const [unlockKey, setUnlockKey] = useState("");
+  const messageContentInputRef = useRef<HTMLInputElement | null>(null);
   const [status, setStatus] = useState("");
-  const [uiBrand, setUiBrand] = useState<BrandName>("OpenFX");
   const [brandLockWidth, setBrandLockWidth] = useState<number | null>(null);
-  const [brandSwitching, setBrandSwitching] = useState(false);
-  const [showUnlock, setShowUnlock] = useState(false);
-  const [showMessage, setShowMessage] = useState(false);
+  const [showMessageComposer, setShowMessageComposer] = useState(false);
   const [projectQuery, setProjectQuery] = useState("");
   const [activePanel, setActivePanel] = useState<ActiveDomainPanel | null>(
     props.initialPanel ?? null,
   );
   const [proxyInput, setProxyInput] = useState("");
   const [proxyFrameUrl, setProxyFrameUrl] = useState("");
-  const [messageName, setMessageName] = useState("");
   const [messageContent, setMessageContent] = useState("");
   const [messageButtonText, setMessageButtonText] = useState("MESSAGE");
-  const [unlockButtonText, setUnlockButtonText] = useState("UNLOCK");
-  const [activeUnlock, setActiveUnlock] = useState<ActiveUnlockSession | null>(() => {
-    const session = parseActiveUnlock(localStorage.getItem(STORAGE_KEYS.activeUnlock));
-    return session && !isExpired(session.expiresAt) ? session : null;
-  });
-  const [unlockClock, setUnlockClock] = useState(() => Date.now());
 
-  const visibleProjectIds = useMemo(
-    () => new Set(activeUnlock?.projectIds ?? []),
-    [activeUnlock],
-  );
   const isPanelOpen = activePanel !== null;
-  const activeUnlockSummary = activeUnlock
-    ? formatRemainingTime(activeUnlock.expiresAt)
-    : "";
-  const currentAccessKey = activeUnlock?.key ??
-    localStorage.getItem(STORAGE_KEYS.adminKey)?.trim() ?? "";
+  const currentAccessKey = localStorage.getItem(STORAGE_KEYS.adminKey)?.trim() ?? "";
   const browsableProjectColumns = useMemo(() => {
     const query = projectQuery.trim().toLowerCase();
 
     return HOMEPAGE_PROJECTS.columns.map((column) => ({
       ...column,
       cards: column.cards.filter((card) => {
-        const isRevealed = DOMAIN_CONTENT_PUBLIC || !card.hidden ||
-          visibleProjectIds.has(card.id);
-        if (!isRevealed) return false;
         if (!query) return true;
 
         return getProjectSearchText(card).includes(query);
       }),
     }));
-  }, [projectQuery, visibleProjectIds]);
+  }, [projectQuery]);
   const totalBrowsableProjectCount = useMemo(() => {
     return HOMEPAGE_PROJECTS.columns.reduce((count, column) => {
-      return count +
-        column.cards.filter((card) =>
-          DOMAIN_CONTENT_PUBLIC || !card.hidden || visibleProjectIds.has(card.id)
-        ).length;
+      return count + column.cards.length;
     }, 0);
-  }, [visibleProjectIds]);
+  }, []);
   const filteredProjectCount = useMemo(() => {
     return browsableProjectColumns.reduce(
       (count, column) => count + column.cards.length,
@@ -471,18 +403,12 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
   }`;
 
   function isAccentChar(word: string, ch: string) {
-    return (word === "FENGXIAO" && ch === "O") ||
-      (word === "OpenFX" && (ch === "F" || ch === "X"));
+    return word === "OpenFX" && (ch === "F" || ch === "X");
   }
 
   function cancelScramble(ref: MutableRefObject<JSAnimation | null>) {
     ref.current?.cancel();
     ref.current = null;
-  }
-
-  function clearBrandTypewriter() {
-    brandTypewriterCleanupRef.current?.();
-    brandTypewriterCleanupRef.current = null;
   }
 
   function clearScheduledWork() {
@@ -491,22 +417,17 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
       statusClearTimeoutRef.current = null;
     }
 
-    clearBrandTypewriter();
-    setBrandSwitching(false);
     clearBrandTransitionProps();
     cancelScramble(primaryControlAnimationRef);
     cancelScramble(statusAnimationRef);
     if (primaryControlRef.current) {
       gsap.killTweensOf(primaryControlRef.current);
     }
-    if (unlockShellRef.current) {
-      gsap.killTweensOf(unlockShellRef.current);
-    }
   }
 
   function appendBrandChar(
     textNode: HTMLSpanElement,
-    word: BrandName,
+    word: string,
     ch: string,
     index: number,
   ) {
@@ -520,7 +441,7 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
     textNode.append(span);
   }
 
-  function setWord(word: BrandName, visibleLength = word.length) {
+  function setWord(word: string, visibleLength = word.length) {
     const textNode = brandTextRef.current;
     if (!textNode) {
       return;
@@ -533,7 +454,7 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
     }
   }
 
-  function setDocumentTitle(brand: BrandName) {
+  function setDocumentTitle(brand: string) {
     document.title = brand;
   }
 
@@ -545,9 +466,7 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
 
     try {
       const nextWidth = Math.ceil(
-        Math.max(
-          ...BRAND_NAMES.map((word) => measureBrandWordWidth(wordNode, word)),
-        ) + BRAND_LOCK_PADDING_PX,
+        measureBrandWordWidth(wordNode, "OpenFX") + BRAND_LOCK_PADDING_PX,
       );
       setBrandLockWidth((currentWidth) =>
         currentWidth === nextWidth ? currentWidth : nextWidth
@@ -620,117 +539,13 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
       return;
     }
 
-    const text = uiBrand === "OpenFX" ? unlockButtonText : messageButtonText;
+    const text = isPanelOpen ? "返回" : messageButtonText;
     primaryControlNode.setAttribute("aria-label", text);
-    primaryControlNode.classList.toggle("primary", uiBrand === "OpenFX");
+    primaryControlNode.classList.toggle("primary", !isPanelOpen);
 
-    if (!showUnlock && labelNode.textContent !== text) {
+    if (!isPanelOpen && labelNode.textContent !== text) {
       scrambleLabel(text);
     }
-  }
-
-  function openInlineUnlock() {
-    setShowUnlock(true);
-    setStatus("");
-  }
-
-  function closeInlineUnlock(resetInput = false) {
-    setShowUnlock(false);
-    if (resetInput) {
-      setUnlockKey("");
-    }
-  }
-
-  function clearActiveUnlock(options?: { message?: string; closeShell?: boolean }) {
-    localStorage.removeItem(STORAGE_KEYS.activeUnlock);
-    setActiveUnlock(null);
-    setUnlockButtonText("UNLOCK");
-    if (options?.message) {
-      setStatus(options.message);
-    }
-    if (options?.closeShell) {
-      closeInlineUnlock(true);
-    }
-  }
-
-  function animateUnlockEditing(nextOpen: boolean) {
-    const primaryNode = primaryControlRef.current;
-    const shellNode = unlockShellRef.current;
-    const fieldNode = unlockFieldRef.current;
-    if (!primaryNode || !shellNode || !fieldNode || uiBrand !== "OpenFX") {
-      return;
-    }
-
-    gsap.killTweensOf(primaryNode);
-    gsap.killTweensOf(shellNode);
-
-    if (nextOpen) {
-      const targetWidth = Math.ceil(
-        Math.max(
-          fieldNode.scrollWidth,
-          fieldNode.clientWidth,
-          fieldNode.getBoundingClientRect().width,
-          320,
-        ),
-      );
-      gsap.set(shellNode, {
-        display: "flex",
-        width: 0,
-        autoAlpha: 0,
-        x: 12,
-      });
-      gsap.set(primaryNode, { transformOrigin: "right center" });
-      gsap.to(primaryNode, {
-        duration: 0.2,
-        autoAlpha: 0,
-        scaleX: 0.92,
-        x: 10,
-        ease: "power2.inOut",
-      });
-      gsap.to(shellNode, {
-        duration: 0.26,
-        width: targetWidth,
-        autoAlpha: 1,
-        x: 0,
-        ease: "power2.out",
-        delay: 0.04,
-      });
-      return;
-    }
-
-    const currentWidth = Math.ceil(
-      shellNode.getBoundingClientRect().width ||
-        fieldNode.getBoundingClientRect().width || 320,
-    );
-    gsap.set(shellNode, {
-      display: "flex",
-      width: currentWidth,
-      autoAlpha: 1,
-      x: 0,
-    });
-    gsap.to(shellNode, {
-      duration: 0.22,
-      width: 0,
-      autoAlpha: 0,
-      x: 12,
-      ease: "power2.inOut",
-    });
-    gsap.to(primaryNode, {
-      duration: 0.24,
-      autoAlpha: 1,
-      scaleX: 1,
-      x: 0,
-      ease: "power2.out",
-      delay: 0.04,
-    });
-  }
-
-  function finishAnim(word: BrandName) {
-    setWord(word);
-    currentBrandRef.current = word;
-    setUiBrand(word);
-    setDocumentTitle(word);
-    busyRef.current = false;
   }
 
   function clearBrandTransitionProps() {
@@ -748,188 +563,54 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
     });
   }
 
-  function playBrandTypewriter(target: BrandName) {
-    const brandTextNode = brandTextRef.current;
-    const brandWordNode = brandWordRef.current;
-    if (!brandTextNode || !brandWordNode) {
-      finishAnim(target);
-      return;
-    }
-
-    clearBrandTypewriter();
-    clearBrandTransitionProps();
-
-    let finished = false;
-    const timeouts: number[] = [];
-    const source = currentBrandRef.current;
-    const complete = () => {
-      if (finished) {
-        return;
-      }
-
-      finished = true;
-      clearBrandTypewriter();
-      setBrandSwitching(false);
-      clearBrandTransitionProps();
-      finishAnim(target);
-    };
-
-    const schedule = (delayMs: number, task: () => void) => {
-      const timeoutId = globalThis.setTimeout(() => {
-        if (!finished) {
-          task();
-        }
-      }, delayMs);
-      timeouts.push(timeoutId);
-    };
-
-    brandTypewriterCleanupRef.current = () => {
-      for (const timeoutId of timeouts) {
-        clearTimeout(timeoutId);
-      }
-    };
-
-    flushSync(() => setBrandSwitching(true));
-    brandWordNode.dataset.brand = source;
-    setWord(source);
-
-    let elapsedMs = 0;
-    const eraseStepMs = 34;
-    const typeStepMs = target === "OpenFX" ? 62 : 54;
-    const pivotPauseMs = 86;
-
-    for (let length = source.length - 1; length >= 0; length -= 1) {
-      elapsedMs += eraseStepMs;
-      schedule(elapsedMs, () => setWord(source, length));
-    }
-
-    elapsedMs += pivotPauseMs;
-    schedule(elapsedMs, () => {
-      brandWordNode.dataset.brand = target;
-      setUiBrand(target);
-      setDocumentTitle(target);
-      setWord(target, 0);
-    });
-
-    for (let length = 1; length <= target.length; length += 1) {
-      elapsedMs += typeStepMs;
-      schedule(elapsedMs, () => setWord(target, length));
-    }
-
-    schedule(elapsedMs + 160, complete);
-    schedule(elapsedMs + 620, complete);
+  function openMessageComposer() {
+    setShowMessageComposer(true);
+    setMessageButtonText("SEND");
+    setStatus("");
   }
 
-  function toggleBrand() {
-    const brandTextNode = brandTextRef.current;
-    const brandWordNode = brandWordRef.current;
-    if (busyRef.current || !brandWordNode || !brandTextNode) {
-      return;
-    }
-
-    busyRef.current = true;
-    clearBrandTypewriter();
-
-    const currentWord = currentBrandRef.current;
-    const target: BrandName = currentWord === "FENGXIAO" ? "OpenFX" : "FENGXIAO";
-    const reduceMotion = globalThis.matchMedia?.(
-      "(prefers-reduced-motion: reduce)",
-    ).matches ?? false;
-
-    if (reduceMotion) {
-      brandWordNode.dataset.brand = target;
-      setBrandSwitching(false);
-      finishAnim(target);
-      return;
-    }
-
-    playBrandTypewriter(target);
+  function closeMessageComposer() {
+    setShowMessageComposer(false);
+    setMessageButtonText("MESSAGE");
+    setMessageContent("");
   }
 
-  async function handleUnlock() {
-    if (activeUnlock) {
-      clearActiveUnlock({ message: "Unlock cleared", closeShell: true });
-      return;
-    }
-
-    const key = unlockKey.trim();
-    if (!key) {
-      setStatus("Enter a key");
-      return;
-    }
-
-    try {
-      const response = await fetch("/api/unlock", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ key }),
-      });
-      const rawPayload = await response.text();
-      const payload = rawPayload
-        ? JSON.parse(rawPayload) as Record<string, unknown>
-        : {};
-
-      if (!response.ok) {
-        const error = typeof payload.error === "string" ? payload.error : "";
-        if (response.status >= 500) {
-          setStatus("Unlock service unavailable");
-          return;
-        }
-
-        setStatus(error === "invalid_key" ? "Invalid key" : error || "Unlock failed");
-        return;
-      }
-
-      if (payload.mode === "admin") {
-        localStorage.setItem(STORAGE_KEYS.adminKey, key);
-        setStatus("Admin access granted");
-        closeInlineUnlock();
-        openProjectPanel("admin-console");
-        return;
-      }
-
-      const session: ActiveUnlockSession = {
-        key: typeof payload.key === "string" ? payload.key : key,
-        label: typeof payload.label === "string" ? payload.label : "Unlocked projects",
-        expiresAt: typeof payload.expiresAt === "string"
-          ? payload.expiresAt
-          : new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-        projectIds: Array.isArray(payload.projectIds)
-          ? payload.projectIds as string[]
-          : [],
-      };
-      localStorage.setItem(STORAGE_KEYS.activeUnlock, JSON.stringify(session));
-      setActiveUnlock(session);
-      setStatus(`${session.label} active`);
-      setUnlockButtonText(buildUnlockButtonText(session));
-      setUnlockKey("");
-      setShowUnlock(false);
-    } catch {
-      setStatus("Unlock request failed");
-    }
-  }
-
-  function handleSendMessage() {
+  async function handleSendMessage() {
     const content = messageContent.trim();
     if (!content) {
+      setMessageButtonText("SEND");
+      setStatus("请输入留言");
+      messageContentInputRef.current?.focus();
       return;
     }
 
-    const name = messageName.trim() || "Anonymous";
-    const messages = JSON.parse(localStorage.getItem("fx_msgs") || "[]") as Array<
-      Record<string, string>
-    >;
-    messages.push({ name, content, time: new Date().toISOString() });
-    localStorage.setItem("fx_msgs", JSON.stringify(messages));
-    setShowMessage(false);
-    setMessageName("");
-    setMessageContent("");
-    setMessageButtonText("SENT");
-    globalThis.setTimeout(() => setMessageButtonText("MESSAGE"), 1800);
+    setMessageButtonText("SENDING");
+
+    try {
+      const response = await fetch("/api/messages", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ content }),
+      });
+      const payload = await response.json();
+      if (!response.ok || payload.ok !== true) {
+        const hint = typeof payload.hint === "string" ? payload.hint : "";
+        throw new Error(hint || "留言发送失败");
+      }
+
+      setShowMessageComposer(false);
+      setMessageContent("");
+      setStatus("留言已保存");
+      setMessageButtonText("SENT");
+      globalThis.setTimeout(() => setMessageButtonText("MESSAGE"), 1800);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "留言发送失败");
+      setMessageButtonText("SEND");
+    }
   }
 
-  function isProjectRevealed(card: HomepageProjectCard) {
-    return DOMAIN_CONTENT_PUBLIC || !card.hidden || visibleProjectIds.has(card.id);
+  function isProjectRevealed(_card: HomepageProjectCard) {
+    return true;
   }
 
   function updateProjectFocus(scroller: HTMLDivElement) {
@@ -966,18 +647,23 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
   }
 
   function openProjectPanel(panel: ActiveDomainPanel) {
-    if (document.startViewTransition) {
-      document.startViewTransition(() => flushSync(() => setActivePanel(panel)));
+    const activatePanel = () => {
+      closeMessageComposer();
+      setActivePanel(panel);
+    };
+
+    if (document.startViewTransition && document.visibilityState === "visible") {
+      document.startViewTransition(() => flushSync(activatePanel));
       return;
     }
 
-    setActivePanel(panel);
+    activatePanel();
   }
 
   function closeProjectPanel() {
     const shouldResetAdminRoute = activePanel === "admin-console" &&
       globalThis.location?.pathname === "/admin";
-    if (document.startViewTransition) {
+    if (document.startViewTransition && document.visibilityState === "visible") {
       document.startViewTransition(() =>
         flushSync(() => {
           setActivePanel(null);
@@ -1008,8 +694,7 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
       params.set("url", path);
     }
 
-    const accessKey = activeUnlock?.key ??
-      localStorage.getItem(STORAGE_KEYS.adminKey)?.trim() ?? "";
+    const accessKey = localStorage.getItem(STORAGE_KEYS.adminKey)?.trim() ?? "";
     if (accessKey) {
       params.set("unlock_key", accessKey);
     }
@@ -1085,69 +770,26 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
   }, []);
 
   useEffect(() => {
-    if (!activeUnlock) {
-      setUnlockButtonText("UNLOCK");
-      return;
-    }
-
-    if (isExpired(activeUnlock.expiresAt)) {
-      clearActiveUnlock({ message: "Unlock expired" });
-      return;
-    }
-
-    setUnlockButtonText(buildUnlockButtonText(activeUnlock));
-
-    return undefined;
-  }, [activeUnlock, unlockClock]);
-
-  useEffect(() => {
-    if (!activeUnlock) {
-      return;
-    }
-
-    const intervalId = globalThis.setInterval(() => {
-      setUnlockClock(Date.now());
-    }, 30_000);
-
-    return () => {
-      clearInterval(intervalId);
-    };
-  }, [activeUnlock]);
-
-  useEffect(() => {
     if (props.initialPanel) {
       setActivePanel(props.initialPanel);
     }
   }, [props.initialPanel]);
 
   useEffect(() => {
-    if (uiBrand !== "OpenFX" && showUnlock) {
-      setShowUnlock(false);
-    }
-  }, [showUnlock, uiBrand]);
+    renderPrimaryControl();
+  }, [isPanelOpen, messageButtonText]);
 
   useEffect(() => {
-    if (!(showUnlock && uiBrand === "OpenFX") || activeUnlock) {
+    if (!showMessageComposer || isPanelOpen) {
       return;
     }
 
     const frameId = requestAnimationFrame(() => {
-      unlockInputRef.current?.focus();
-      unlockInputRef.current?.select();
+      messageContentInputRef.current?.focus();
     });
 
-    return () => {
-      cancelAnimationFrame(frameId);
-    };
-  }, [activeUnlock, showUnlock, uiBrand]);
-
-  useEffect(() => {
-    animateUnlockEditing(showUnlock);
-  }, [showUnlock, uiBrand]);
-
-  useEffect(() => {
-    renderPrimaryControl();
-  }, [messageButtonText, showUnlock, uiBrand, unlockButtonText]);
+    return () => cancelAnimationFrame(frameId);
+  }, [isPanelOpen, showMessageComposer]);
 
   useEffect(() => {
     if (isPanelOpen) return;
@@ -1210,12 +852,7 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
       gsap.killTweensOf(cards);
       gsap.set(cards, { clearProps: "transform,opacity,visibility" });
     };
-  }, [
-    activeUnlock,
-    filteredProjectCount,
-    isPanelOpen,
-    projectQuery,
-  ]);
+  }, [filteredProjectCount, isPanelOpen, projectQuery]);
 
   useEffect(() => {
     animateStatusText(status);
@@ -1240,10 +877,8 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
   return (
     <div className="page homepage-page">
       <BrandWord
-        brand={uiBrand}
         lockWidthPx={brandLockWidth}
-        switching={brandSwitching}
-        onToggle={toggleBrand}
+        onOpenData={() => openProjectPanel("openfx-data")}
       />
 
       <div
@@ -1316,6 +951,7 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
         {activePanel === "relay-proxy-gateway"
           ? <ProxyPanel frameUrl={proxyFrameUrl} />
           : null}
+        {activePanel === "openfx-data" ? <DataPanel /> : null}
         {activePanel === "wanone-memorial"
           ? (
             <div
@@ -1325,8 +961,16 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
             >
               <iframe
                 src="/wanone/index.html"
-                title="万一"
-                style={{ width: "100%", height: "100%", border: "none", flex: 1 }}
+                title="Wanone"
+                tabIndex={-1}
+                aria-hidden="true"
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  border: "none",
+                  flex: 1,
+                  pointerEvents: "none",
+                }}
               />
             </div>
           )
@@ -1459,16 +1103,12 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
           : null}
       </div>
 
-      <div
-        className={`control-cluster${
-          uiBrand === "OpenFX" && showUnlock ? " unlock-editing" : ""
-        }`}
-      >
+      <div className="control-cluster">
         <div className="control-status">
           <span
-            className="inline-unlock-hint"
+            className="control-hint"
             data-active={status ? "true" : "false"}
-            id="unlockHint"
+            id="controlHint"
             ref={statusHintRef}
             aria-live="polite"
           />
@@ -1511,7 +1151,9 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
             )
             : null}
           <div
-            className="project-command-bar"
+            className={`project-command-bar${
+              showMessageComposer && !isPanelOpen ? " message-compose-active" : ""
+            }`}
             style={{
               display: activePanel === "relay-proxy-gateway" ? "none" : undefined,
             }}
@@ -1519,22 +1161,62 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
             {!isPanelOpen
               ? (
                 <>
-                  <span className="project-count">{projectCountLabel}</span>
-                  <input
-                    aria-label="搜索项目"
-                    className="project-search-input project-command-search"
-                    placeholder="Search"
-                    type="search"
-                    value={projectQuery}
-                    onChange={(event) => setProjectQuery(event.target.value)}
-                  />
+                  {showMessageComposer
+                    ? (
+                      <>
+                        <button
+                          aria-label="返回搜索"
+                          className="message-compose-back"
+                          type="button"
+                          onClick={closeMessageComposer}
+                        >
+                          ←
+                        </button>
+                        <span className="project-count message-count">MSG</span>
+                        <form
+                          className="message-inline-form"
+                          id="messageInlineForm"
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            void handleSendMessage();
+                          }}
+                        >
+                          <input
+                            aria-label="留言内容"
+                            className="message-inline-content"
+                            placeholder="Message"
+                            ref={messageContentInputRef}
+                            type="text"
+                            value={messageContent}
+                            onChange={(event) => setMessageContent(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Escape") {
+                                event.preventDefault();
+                                closeMessageComposer();
+                              }
+                            }}
+                          />
+                        </form>
+                      </>
+                    )
+                    : (
+                      <>
+                        <span className="project-count">{projectCountLabel}</span>
+                        <input
+                          aria-label="搜索项目"
+                          className="project-search-input project-command-search"
+                          placeholder="Search"
+                          type="search"
+                          value={projectQuery}
+                          onChange={(event) => setProjectQuery(event.target.value)}
+                        />
+                      </>
+                    )}
                 </>
               )
               : null}
             <button
-              className={`ctrl-btn${
-                uiBrand === "OpenFX" && !isPanelOpen ? " primary" : ""
-              }`}
+              className={`ctrl-btn${!isPanelOpen ? " primary" : ""}`}
               id="homepagePrimaryControl"
               ref={primaryControlRef}
               type="button"
@@ -1543,12 +1225,11 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
                   closeProjectPanel();
                   return;
                 }
-                if (uiBrand === "OpenFX") {
-                  openInlineUnlock();
+                if (showMessageComposer) {
+                  void handleSendMessage();
                   return;
                 }
-
-                setShowMessage(true);
+                openMessageComposer();
               }}
             >
               <span
@@ -1559,147 +1240,9 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
               />
               {isPanelOpen && <span className="ctrl-btn-back-text">← 返回</span>}
             </button>
-
-            <div
-              className="inline-unlock-shell"
-              id="inlineUnlockShell"
-              ref={unlockShellRef}
-              aria-hidden={showUnlock ? "false" : "true"}
-            >
-              <div className="inline-unlock-field" ref={unlockFieldRef}>
-                {activeUnlock
-                  ? (
-                    <>
-                      <div
-                        className="inline-unlock-session"
-                        role="status"
-                        aria-live="polite"
-                      >
-                        <strong>{activeUnlock.label}</strong>
-                        <span>{activeUnlockSummary}</span>
-                      </div>
-                      <div className="inline-unlock-actions">
-                        <button
-                          className="inline-unlock-action inline-unlock-confirm"
-                          id="unlockConfirmButton"
-                          type="button"
-                          onClick={() =>
-                            clearActiveUnlock({
-                              message: "Unlock cleared",
-                              closeShell: true,
-                            })}
-                        >
-                          Exit
-                        </button>
-                        <button
-                          className="inline-unlock-action inline-unlock-cancel"
-                          id="unlockCancelButton"
-                          type="button"
-                          onClick={() => closeInlineUnlock(true)}
-                          aria-label="Close unlock actions"
-                        >
-                          ×
-                        </button>
-                      </div>
-                    </>
-                  )
-                  : (
-                    <>
-                      <input
-                        autoComplete="off"
-                        className="inline-unlock-input"
-                        id="unlockKeyInput"
-                        placeholder="Enter key"
-                        ref={unlockInputRef}
-                        type="password"
-                        value={unlockKey}
-                        onChange={(event) => setUnlockKey(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") {
-                            event.preventDefault();
-                            void handleUnlock();
-                          }
-                          if (event.key === "Escape") {
-                            event.preventDefault();
-                            closeInlineUnlock(true);
-                          }
-                        }}
-                      />
-                      <div className="inline-unlock-actions">
-                        <button
-                          className="inline-unlock-action inline-unlock-confirm"
-                          id="unlockConfirmButton"
-                          type="button"
-                          onClick={() => void handleUnlock()}
-                        >
-                          OK
-                        </button>
-                        <button
-                          className="inline-unlock-action inline-unlock-cancel"
-                          id="unlockCancelButton"
-                          type="button"
-                          onClick={() => closeInlineUnlock(true)}
-                          aria-label="Cancel unlock"
-                        >
-                          ×
-                        </button>
-                      </div>
-                    </>
-                  )}
-              </div>
-            </div>
           </div>
         </div>
       </div>
-
-      {showMessage
-        ? (
-          <div
-            className={`modal-overlay${showMessage ? " active" : ""}`}
-            id="messageModal"
-            onClick={(event) => {
-              if (event.target === event.currentTarget) {
-                setShowMessage(false);
-              }
-            }}
-          >
-            <div className="modal">
-              <h2>MESSAGE</h2>
-              <label htmlFor="messageName">Name</label>
-              <input
-                id="messageName"
-                type="text"
-                value={messageName}
-                onChange={(event) => setMessageName(event.target.value)}
-                placeholder="Optional"
-              />
-              <label htmlFor="messageContent">Message</label>
-              <textarea
-                id="messageContent"
-                value={messageContent}
-                onChange={(event) => setMessageContent(event.target.value)}
-                placeholder="Collaboration, feedback, or just say hi..."
-              />
-              <div className="modal-actions">
-                <button
-                  className="btn-ghost"
-                  type="button"
-                  onClick={() => setShowMessage(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  className="btn-primary"
-                  type="button"
-                  onClick={handleSendMessage}
-                >
-                  Send
-                </button>
-              </div>
-            </div>
-          </div>
-        )
-        : null}
     </div>
   );
 }
@@ -1707,10 +1250,7 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
 type AdminStatusTone = "neutral" | "success" | "error";
 
 function AdminPage(props: { embedded?: boolean } = {}) {
-  const [adminKey] = useState(() =>
-    localStorage.getItem(STORAGE_KEYS.adminKey) ??
-      (globalThis.location?.hostname === "localhost" ? "TEST" : "")
-  );
+  const [adminKey, setAdminKey] = useState(getDefaultAdminKey);
   const [rules, setRules] = useState<UnlockRule[]>([]);
   const [status, setStatus] = useState("管理数据准备就绪");
   const [statusTone, setStatusTone] = useState<AdminStatusTone>("neutral");
@@ -1722,22 +1262,6 @@ function AdminPage(props: { embedded?: boolean } = {}) {
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
-  const [kvPrefixInput, setKvPrefixInput] = useState(formatJson([]));
-  const [kvKeyInput, setKvKeyInput] = useState(formatJson([
-    "domains",
-    "downip",
-    "home",
-  ]));
-  const [kvValueInput, setKvValueInput] = useState(formatJson({
-    ipv6: "2001:db8::1",
-    port: 3000,
-  }));
-  const [kvEntries, setKvEntries] = useState<AdminKvEntry[]>([]);
-  const [kvSearch, setKvSearch] = useState("");
-  const [selectedKvKey, setSelectedKvKey] = useState("");
-  const [isKvLoading, setIsKvLoading] = useState(false);
-  const [isKvSaving, setIsKvSaving] = useState(false);
-  const [deletingKvKey, setDeletingKvKey] = useState<string | null>(null);
 
   const hiddenProjectLookup = useMemo(
     () => new Map(hiddenProjects.map((project) => [project.id, project.name])),
@@ -1750,32 +1274,6 @@ function AdminPage(props: { embedded?: boolean } = {}) {
       ),
     [form.projectIds, hiddenProjectLookup],
   );
-  const filteredKvEntries = useMemo(() => {
-    const query = kvSearch.trim().toLowerCase();
-    if (!query) return kvEntries;
-
-    return kvEntries.filter((entry) =>
-      formatJson(entry.key).toLowerCase().includes(query) ||
-      getKvDomainLabel(entry).toLowerCase().includes(query)
-    );
-  }, [kvEntries, kvSearch]);
-  const kvGroups = useMemo(
-    () => groupKvEntriesByDomain(filteredKvEntries),
-    [filteredKvEntries],
-  );
-  const selectedKvEntry = useMemo(() => {
-    return kvEntries.find((entry) => formatJson(entry.key) === selectedKvKey) ??
-      kvEntries[0] ?? null;
-  }, [kvEntries, selectedKvKey]);
-  const selectedKvKeyParts = useMemo(() => {
-    if (selectedKvEntry) return selectedKvEntry.key;
-
-    try {
-      return parseKvKeyInput(kvKeyInput);
-    } catch {
-      return [] as JsonKvKeyPart[];
-    }
-  }, [kvKeyInput, selectedKvEntry]);
 
   function reportStatus(message: string, tone: AdminStatusTone) {
     setStatus(message);
@@ -1882,147 +1380,12 @@ function AdminPage(props: { embedded?: boolean } = {}) {
     }
   }
 
-  async function loadKvEntries() {
-    const key = adminKey.trim();
-    if (!key) {
-      reportStatus("请先输入管理密钥再读取 KV", "error");
-      return;
-    }
-
-    let prefix: JsonKvKeyPart[];
-    try {
-      prefix = parseKvPrefixInput(kvPrefixInput);
-    } catch {
-      reportStatus(
-        "KV prefix 必须是 JSON 数组，元素仅支持 string/number/boolean",
-        "error",
-      );
-      return;
-    }
-
-    setIsKvLoading(true);
-
-    try {
-      const params = new URLSearchParams({
-        prefix: formatJson(prefix),
-        limit: "1000",
-      });
-      const response = await fetch(`/api/admin/kv?${params.toString()}`, {
-        headers: { "x-openfx-admin-key": key },
-      });
-      const payload = await response.json();
-      if (!response.ok) {
-        reportStatus(payload.error ?? "KV 读取失败", "error");
-        return;
-      }
-
-      const entries = Array.isArray(payload.entries)
-        ? payload.entries as AdminKvEntry[]
-        : [];
-      const nextSelectedEntry = entries.find((entry) =>
-        formatJson(entry.key) === selectedKvKey
-      ) ??
-        entries[0] ?? null;
-      localStorage.setItem(STORAGE_KEYS.adminKey, key);
-      setKvEntries(entries);
-      setSelectedKvKey(nextSelectedEntry ? formatJson(nextSelectedEntry.key) : "");
-      if (nextSelectedEntry) {
-        setKvKeyInput(formatJson(nextSelectedEntry.key));
-        setKvValueInput(formatJson(nextSelectedEntry.value));
-      }
-      reportStatus(`已读取 ${entries.length} 条 KV 记录`, "success");
-    } finally {
-      setIsKvLoading(false);
-    }
-  }
-
-  async function saveKvEntry(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    const key = adminKey.trim();
-    if (!key) {
-      reportStatus("请先输入管理密钥再写入 KV", "error");
-      return;
-    }
-
-    let kvKey: JsonKvKeyPart[];
-    let kvValue: unknown;
-    try {
-      kvKey = parseKvKeyInput(kvKeyInput);
-      kvValue = JSON.parse(kvValueInput) as unknown;
-    } catch {
-      reportStatus("KV key/value 必须是合法 JSON；key 需要非空数组", "error");
-      return;
-    }
-
-    setIsKvSaving(true);
-
-    try {
-      const response = await fetch("/api/admin/kv", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-openfx-admin-key": key,
-        },
-        body: JSON.stringify({ key: kvKey, value: kvValue }),
-      });
-      const payload = await response.json();
-      if (!response.ok) {
-        reportStatus(payload.error ?? "KV 保存失败", "error");
-        return;
-      }
-
-      localStorage.setItem(STORAGE_KEYS.adminKey, key);
-      await loadKvEntries();
-      reportStatus(`KV ${formatJson(kvKey)} 已保存`, "success");
-    } finally {
-      setIsKvSaving(false);
-    }
-  }
-
-  async function removeKvEntry(key: JsonKvKeyPart[]) {
-    const providedKey = adminKey.trim();
-    if (!providedKey) {
-      reportStatus("请先输入管理密钥再删除 KV", "error");
-      return;
-    }
-
-    const encodedKey = formatJson(key);
-    setDeletingKvKey(encodedKey);
-
-    try {
-      const params = new URLSearchParams({ key: encodedKey });
-      const response = await fetch(`/api/admin/kv?${params.toString()}`, {
-        method: "DELETE",
-        headers: { "x-openfx-admin-key": providedKey },
-      });
-      const payload = await response.json();
-      if (!response.ok) {
-        reportStatus(payload.error ?? "KV 删除失败", "error");
-        return;
-      }
-
-      await loadKvEntries();
-      reportStatus(`KV ${encodedKey} 已删除`, "success");
-    } finally {
-      setDeletingKvKey(null);
-    }
-  }
-
-  function editKvEntry(entry: AdminKvEntry) {
-    setSelectedKvKey(formatJson(entry.key));
-    setKvKeyInput(formatJson(entry.key));
-    setKvValueInput(formatJson(entry.value));
-    reportStatus("KV 记录已回填到编辑区", "neutral");
-  }
-
   useEffect(() => {
     if (!adminKey.trim()) {
       return;
     }
 
     void loadRules();
-    void loadKvEntries();
   }, []);
 
   return (
@@ -2036,6 +1399,35 @@ function AdminPage(props: { embedded?: boolean } = {}) {
           返回首页
         </button>
       )}
+
+      <section className="admin-panel admin-auth-stack">
+        <div className="admin-panel-head">
+          <div>
+            <p className="admin-panel-kicker">admin key</p>
+            <h2>管理密钥</h2>
+          </div>
+          <span className={`admin-status-badge tone-${statusTone}`}>{status}</span>
+        </div>
+        <div className="admin-auth-row">
+          <input
+            aria-label="管理密钥"
+            autoComplete="off"
+            placeholder="OPENFX_ADMIN_KEY"
+            type="password"
+            value={adminKey}
+            onChange={(event) =>
+              setAdminKey(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                void loadRules();
+              }
+            }}
+          />
+          <button disabled={isLoading} type="button" onClick={() => void loadRules()}>
+            {isLoading ? "连接中" : "连接"}
+          </button>
+        </div>
+      </section>
 
       <details className="admin-panel admin-rules-panel">
         <summary className="admin-rules-summary">
@@ -2232,166 +1624,577 @@ function AdminPage(props: { embedded?: boolean } = {}) {
         </div>
       </details>
 
-      <section className="admin-panel admin-kv-console-panel">
-        <div className="admin-kv-console-head">
-          <div>
-            <p className="admin-panel-kicker">deno kv</p>
-            <h2>数据库</h2>
-          </div>
+      <KvConsole
+        adminKey={adminKey}
+        onAdminKeyChange={setAdminKey}
+        showAuth={false}
+      />
+    </div>
+  );
+}
+
+function KvConsole(props: {
+  adminKey: string;
+  onAdminKeyChange: (value: string) => void;
+  showAuth?: boolean;
+}) {
+  const [status, setStatus] = useState("KV 控制台准备就绪");
+  const [statusTone, setStatusTone] = useState<AdminStatusTone>("neutral");
+  const [kvPrefixInput, setKvPrefixInput] = useState(formatJson([]));
+  const [kvKeyInput, setKvKeyInput] = useState(formatJson([
+    "domains",
+    "downip",
+    "home",
+  ]));
+  const [kvValueInput, setKvValueInput] = useState(formatJson({
+    ipv6: "2001:db8::1",
+    port: 3000,
+  }));
+  const [kvEntries, setKvEntries] = useState<AdminKvEntry[]>([]);
+  const [kvSearch, setKvSearch] = useState("");
+  const [selectedKvKey, setSelectedKvKey] = useState("");
+  const [isKvLoading, setIsKvLoading] = useState(false);
+  const [isKvSaving, setIsKvSaving] = useState(false);
+  const [deletingKvKey, setDeletingKvKey] = useState<string | null>(null);
+
+  const filteredKvEntries = useMemo(() => {
+    const query = kvSearch.trim().toLowerCase();
+    if (!query) return kvEntries;
+
+    return kvEntries.filter((entry) =>
+      formatJson(entry.key).toLowerCase().includes(query) ||
+      getKvDomainLabel(entry).toLowerCase().includes(query)
+    );
+  }, [kvEntries, kvSearch]);
+  const kvGroups = useMemo(
+    () => groupKvEntriesByDomain(filteredKvEntries),
+    [filteredKvEntries],
+  );
+  const selectedKvEntry = useMemo(() => {
+    return kvEntries.find((entry) => formatJson(entry.key) === selectedKvKey) ??
+      kvEntries[0] ?? null;
+  }, [kvEntries, selectedKvKey]);
+  const selectedKvKeyParts = useMemo(() => {
+    if (selectedKvEntry) return selectedKvEntry.key;
+
+    try {
+      return parseKvKeyInput(kvKeyInput);
+    } catch {
+      return [] as JsonKvKeyPart[];
+    }
+  }, [kvKeyInput, selectedKvEntry]);
+
+  function reportKvStatus(message: string, tone: AdminStatusTone) {
+    setStatus(message);
+    setStatusTone(tone);
+  }
+
+  function rememberAdminKey(key: string) {
+    localStorage.setItem(STORAGE_KEYS.adminKey, key);
+    props.onAdminKeyChange(key);
+  }
+
+  async function loadKvEntries() {
+    const key = props.adminKey.trim();
+    if (!key) {
+      reportKvStatus("请先输入管理密钥再读取 KV", "error");
+      return;
+    }
+
+    let prefix: JsonKvKeyPart[];
+    try {
+      prefix = parseKvPrefixInput(kvPrefixInput);
+    } catch {
+      reportKvStatus(
+        "KV prefix 必须是 JSON 数组，元素仅支持 string/number/boolean",
+        "error",
+      );
+      return;
+    }
+
+    setIsKvLoading(true);
+
+    try {
+      const params = new URLSearchParams({
+        prefix: formatJson(prefix),
+        limit: "1000",
+      });
+      const response = await fetch(`/api/admin/kv?${params.toString()}`, {
+        headers: { "x-openfx-admin-key": key },
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        reportKvStatus(payload.error ?? "KV 读取失败", "error");
+        return;
+      }
+
+      const entries = Array.isArray(payload.entries)
+        ? payload.entries as AdminKvEntry[]
+        : [];
+      const nextSelectedEntry = entries.find((entry) =>
+        formatJson(entry.key) === selectedKvKey
+      ) ??
+        entries[0] ?? null;
+      rememberAdminKey(key);
+      setKvEntries(entries);
+      setSelectedKvKey(nextSelectedEntry ? formatJson(nextSelectedEntry.key) : "");
+      if (nextSelectedEntry) {
+        setKvKeyInput(formatJson(nextSelectedEntry.key));
+        setKvValueInput(formatJson(nextSelectedEntry.value));
+      }
+      reportKvStatus(`已读取 ${entries.length} 条 KV 记录`, "success");
+    } finally {
+      setIsKvLoading(false);
+    }
+  }
+
+  async function saveKvEntry(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const key = props.adminKey.trim();
+    if (!key) {
+      reportKvStatus("请先输入管理密钥再写入 KV", "error");
+      return;
+    }
+
+    let kvKey: JsonKvKeyPart[];
+    let kvValue: unknown;
+    try {
+      kvKey = parseKvKeyInput(kvKeyInput);
+      kvValue = JSON.parse(kvValueInput) as unknown;
+    } catch {
+      reportKvStatus("KV key/value 必须是合法 JSON；key 需要非空数组", "error");
+      return;
+    }
+
+    setIsKvSaving(true);
+
+    try {
+      const response = await fetch("/api/admin/kv", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-openfx-admin-key": key,
+        },
+        body: JSON.stringify({ key: kvKey, value: kvValue }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        reportKvStatus(payload.error ?? "KV 保存失败", "error");
+        return;
+      }
+
+      rememberAdminKey(key);
+      await loadKvEntries();
+      reportKvStatus(`KV ${formatJson(kvKey)} 已保存`, "success");
+    } finally {
+      setIsKvSaving(false);
+    }
+  }
+
+  async function removeKvEntry(key: JsonKvKeyPart[]) {
+    const providedKey = props.adminKey.trim();
+    if (!providedKey) {
+      reportKvStatus("请先输入管理密钥再删除 KV", "error");
+      return;
+    }
+
+    const encodedKey = formatJson(key);
+    setDeletingKvKey(encodedKey);
+
+    try {
+      const params = new URLSearchParams({ key: encodedKey });
+      const response = await fetch(`/api/admin/kv?${params.toString()}`, {
+        method: "DELETE",
+        headers: { "x-openfx-admin-key": providedKey },
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        reportKvStatus(payload.error ?? "KV 删除失败", "error");
+        return;
+      }
+
+      await loadKvEntries();
+      reportKvStatus(`KV ${encodedKey} 已删除`, "success");
+    } finally {
+      setDeletingKvKey(null);
+    }
+  }
+
+  function editKvEntry(entry: AdminKvEntry) {
+    setSelectedKvKey(formatJson(entry.key));
+    setKvKeyInput(formatJson(entry.key));
+    setKvValueInput(formatJson(entry.value));
+    reportKvStatus("KV 记录已回填到编辑区", "neutral");
+  }
+
+  useEffect(() => {
+    if (!props.adminKey.trim()) {
+      return;
+    }
+
+    void loadKvEntries();
+  }, []);
+
+  return (
+    <section className="admin-panel admin-kv-console-panel">
+      <div className="admin-kv-console-head">
+        <div>
+          <p className="admin-panel-kicker">deno kv</p>
+          <h2>数据库</h2>
+        </div>
+        <div className="admin-panel-actions">
           <span>
             {kvEntries.length === 0 ? "空列表" : `${kvEntries.length} 条记录`}
           </span>
+          <span className={`admin-status-badge tone-${statusTone}`}>
+            {status}
+          </span>
+        </div>
+      </div>
+
+      {props.showAuth === false
+        ? null
+        : (
+          <div className="admin-auth-row data-admin-auth-row">
+            <input
+              aria-label="Deno KV 管理密钥"
+              autoComplete="off"
+              placeholder="OPENFX_ADMIN_KEY"
+              type="password"
+              value={props.adminKey}
+              onChange={(event) => props.onAdminKeyChange(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  void loadKvEntries();
+                }
+              }}
+            />
+            <button
+              disabled={isKvLoading}
+              type="button"
+              onClick={() => void loadKvEntries()}
+            >
+              {isKvLoading ? "连接中" : "连接"}
+            </button>
+          </div>
+        )}
+
+      <div className="admin-kv-workbench">
+        <div className="admin-kv-browser-panel">
+          <div className="admin-kv-browser-head">
+            <div>
+              <p className="admin-panel-kicker">browser</p>
+              <h2>Key</h2>
+            </div>
+            <span>{filteredKvEntries.length} / {kvEntries.length}</span>
+          </div>
+
+          <div className="admin-kv-filter-row">
+            <input
+              aria-label="搜索 KV key"
+              placeholder="搜索 key 或 domain"
+              type="search"
+              value={kvSearch}
+              onChange={(event) => setKvSearch(event.target.value)}
+            />
+            <button
+              disabled={isKvLoading}
+              type="button"
+              onClick={() => void loadKvEntries()}
+            >
+              {isKvLoading ? "刷新中" : "刷新"}
+            </button>
+          </div>
+
+          <details className="admin-kv-prefix-filter">
+            <summary>Prefix filter</summary>
+            <textarea
+              className="admin-kv-input"
+              spellCheck={false}
+              value={kvPrefixInput}
+              onChange={(event) => setKvPrefixInput(event.target.value)}
+            />
+          </details>
+
+          <div className="admin-kv-key-list" role="listbox" aria-label="KV keys">
+            {kvGroups.length === 0
+              ? (
+                <div className="admin-empty-state">
+                  <strong>暂无 KV 记录</strong>
+                  <p>输入 admin key 后刷新，或调整 prefix filter。</p>
+                </div>
+              )
+              : kvGroups.map((group) => (
+                <div className="admin-kv-key-group" key={group.id}>
+                  <div className="admin-kv-key-group-head">
+                    <span>{group.label}</span>
+                    <em>{group.entries.length}</em>
+                  </div>
+                  {group.entries.map((entry) => {
+                    const encodedKey = formatJson(entry.key);
+                    const active = encodedKey === formatJson(selectedKvEntry?.key);
+                    return (
+                      <button
+                        className={`admin-kv-key-row${active ? " active" : ""}`}
+                        key={encodedKey}
+                        role="option"
+                        aria-selected={active}
+                        type="button"
+                        onClick={() => editKvEntry(entry)}
+                      >
+                        <code>{entry.key.join(" / ")}</code>
+                        <span>{typeof entry.value}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+          </div>
         </div>
 
-        <div className="admin-kv-workbench">
-          <div className="admin-kv-browser-panel">
-            <div className="admin-kv-browser-head">
+        <div className="admin-kv-detail-panel">
+          <form className="admin-kv-detail-form" onSubmit={saveKvEntry}>
+            <div className="admin-kv-detail-head">
               <div>
-                <p className="admin-panel-kicker">browser</p>
-                <h2>Key</h2>
+                <p className="admin-panel-kicker">value</p>
+                <h2>
+                  {selectedKvEntry ? getKvDomainLabel(selectedKvEntry) : "新记录"}
+                </h2>
               </div>
-              <span>{filteredKvEntries.length} / {kvEntries.length}</span>
+              <div className="admin-kv-detail-actions">
+                <button type="button" onClick={() => void loadKvEntries()}>
+                  刷新
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    try {
+                      setKvValueInput(formatJson(JSON.parse(kvValueInput)));
+                    } catch {
+                      reportKvStatus("Value 不是合法 JSON，无法格式化", "error");
+                    }
+                  }}
+                >
+                  格式化
+                </button>
+                <button
+                  disabled={!selectedKvEntry || deletingKvKey === selectedKvKey}
+                  type="button"
+                  onClick={() =>
+                    selectedKvEntry && void removeKvEntry(selectedKvEntry.key)}
+                >
+                  {deletingKvKey === selectedKvKey ? "删除中" : "删除"}
+                </button>
+                <button disabled={isKvSaving} type="submit">
+                  {isKvSaving ? "保存中" : "保存"}
+                </button>
+              </div>
             </div>
 
-            <div className="admin-kv-filter-row">
-              <input
-                aria-label="搜索 KV key"
-                placeholder="搜索 key 或 domain"
-                type="search"
-                value={kvSearch}
-                onChange={(event) =>
-                  setKvSearch(event.target.value)}
-              />
-              <button
-                disabled={isKvLoading}
-                type="button"
-                onClick={() => void loadKvEntries()}
-              >
-                {isKvLoading ? "刷新中" : "刷新"}
-              </button>
+            <div className="admin-kv-breadcrumbs" aria-label="当前 KV key">
+              {selectedKvKeyParts.length > 0
+                ? selectedKvKeyParts.map((part, index) => (
+                  <span key={`${String(part)}-${index}`}>{String(part)}</span>
+                ))
+                : <span>未选择 key</span>}
             </div>
 
-            <details className="admin-kv-prefix-filter">
-              <summary>Prefix filter</summary>
+            <label className="admin-field admin-kv-key-editor">
+              <span>Full key</span>
               <textarea
                 className="admin-kv-input"
                 spellCheck={false}
-                value={kvPrefixInput}
-                onChange={(event) => setKvPrefixInput(event.target.value)}
+                value={kvKeyInput}
+                onChange={(event) => setKvKeyInput(event.target.value)}
               />
-            </details>
+            </label>
 
-            <div className="admin-kv-key-list" role="listbox" aria-label="KV keys">
-              {kvGroups.length === 0
-                ? (
-                  <div className="admin-empty-state">
-                    <strong>暂无 KV 记录</strong>
-                    <p>输入 admin key 后刷新，或调整 prefix filter。</p>
-                  </div>
-                )
-                : kvGroups.map((group) => (
-                  <div className="admin-kv-key-group" key={group.id}>
-                    <div className="admin-kv-key-group-head">
-                      <span>{group.label}</span>
-                      <em>{group.entries.length}</em>
-                    </div>
-                    {group.entries.map((entry) => {
-                      const encodedKey = formatJson(entry.key);
-                      const active = encodedKey === formatJson(selectedKvEntry?.key);
-                      return (
-                        <button
-                          className={`admin-kv-key-row${active ? " active" : ""}`}
-                          key={encodedKey}
-                          role="option"
-                          aria-selected={active}
-                          type="button"
-                          onClick={() => editKvEntry(entry)}
-                        >
-                          <code>{entry.key.join(" / ")}</code>
-                          <span>{typeof entry.value}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                ))}
+            <div className="admin-kv-meta-row">
+              <span>Versionstamp</span>
+              <code>{selectedKvEntry?.versionstamp ?? "new"}</code>
             </div>
-          </div>
 
-          <div className="admin-kv-detail-panel">
-            <form className="admin-kv-detail-form" onSubmit={saveKvEntry}>
-              <div className="admin-kv-detail-head">
-                <div>
-                  <p className="admin-panel-kicker">value</p>
-                  <h2>
-                    {selectedKvEntry ? getKvDomainLabel(selectedKvEntry) : "新记录"}
-                  </h2>
-                </div>
-                <div className="admin-kv-detail-actions">
-                  <button type="button" onClick={() => void loadKvEntries()}>
-                    刷新
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      try {
-                        setKvValueInput(formatJson(JSON.parse(kvValueInput)));
-                      } catch {
-                        reportStatus("Value 不是合法 JSON，无法格式化", "error");
-                      }
-                    }}
-                  >
-                    格式化
-                  </button>
-                  <button
-                    disabled={!selectedKvEntry || deletingKvKey === selectedKvKey}
-                    type="button"
-                    onClick={() =>
-                      selectedKvEntry && void removeKvEntry(selectedKvEntry.key)}
-                  >
-                    {deletingKvKey === selectedKvKey ? "删除中" : "删除"}
-                  </button>
-                  <button disabled={isKvSaving} type="submit">
-                    {isKvSaving ? "保存中" : "保存"}
-                  </button>
-                </div>
-              </div>
-
-              <div className="admin-kv-breadcrumbs" aria-label="当前 KV key">
-                {selectedKvKeyParts.length > 0
-                  ? selectedKvKeyParts.map((part, index) => (
-                    <span key={`${String(part)}-${index}`}>{String(part)}</span>
-                  ))
-                  : <span>未选择 key</span>}
-              </div>
-
-              <label className="admin-field admin-kv-key-editor">
-                <span>Full key</span>
-                <textarea
-                  className="admin-kv-input"
-                  spellCheck={false}
-                  value={kvKeyInput}
-                  onChange={(event) => setKvKeyInput(event.target.value)}
-                />
-              </label>
-
-              <div className="admin-kv-meta-row">
-                <span>Versionstamp</span>
-                <code>{selectedKvEntry?.versionstamp ?? "new"}</code>
-              </div>
-
-              <label className="admin-field admin-kv-json-editor">
-                <span>Formatted JSON value</span>
-                <textarea
-                  className="admin-kv-json-textarea"
-                  spellCheck={false}
-                  value={kvValueInput}
-                  onChange={(event) => setKvValueInput(event.target.value)}
-                />
-              </label>
-            </form>
-          </div>
+            <label className="admin-field admin-kv-json-editor">
+              <span>Formatted JSON value</span>
+              <textarea
+                className="admin-kv-json-textarea"
+                spellCheck={false}
+                value={kvValueInput}
+                onChange={(event) => setKvValueInput(event.target.value)}
+              />
+            </label>
+          </form>
         </div>
+      </div>
+    </section>
+  );
+}
+
+function formatMessageDate(value: string) {
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) {
+    return value;
+  }
+
+  return new Date(timestamp).toLocaleString();
+}
+
+function MessageBoard(props: { adminKey: string }) {
+  const [messages, setMessages] = useState<HomepageMessage[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  async function loadMessages() {
+    setIsLoading(true);
+    setError("");
+
+    try {
+      const response = await fetch("/api/messages?limit=8", {
+        headers: { "x-openfx-admin-key": props.adminKey },
+      });
+      const payload = await response.json();
+      if (!response.ok || payload.ok !== true) {
+        const hint = typeof payload.hint === "string" ? payload.hint : "";
+        throw new Error(hint || "留言读取失败");
+      }
+
+      setMessages(Array.isArray(payload.messages) ? payload.messages : []);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "留言读取失败");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadMessages();
+  }, [props.adminKey]);
+
+  return (
+    <section className="data-message-panel">
+      <div className="data-message-head">
+        <div>
+          <p className="admin-panel-kicker">message</p>
+          <h2>留言</h2>
+        </div>
+        <div className="admin-panel-actions">
+          <span>{isLoading ? "读取中" : `${messages.length} 条`}</span>
+          <button
+            disabled={isLoading}
+            type="button"
+            onClick={() => void loadMessages()}
+          >
+            {isLoading ? "刷新中" : "刷新"}
+          </button>
+        </div>
+      </div>
+
+      {error
+        ? <p className="data-message-empty">{error}</p>
+        : messages.length === 0
+        ? <p className="data-message-empty">暂无 MESSAGE 留言。</p>
+        : (
+          <div className="data-message-list">
+            {messages.map((message) => (
+              <article className="data-message-card" key={message.id}>
+                <div className="data-message-meta">
+                  <strong>MESSAGE</strong>
+                  <time dateTime={message.createdAt}>
+                    {formatMessageDate(message.createdAt)}
+                  </time>
+                </div>
+                <p>{message.content}</p>
+                <pre>{formatJson(message)}</pre>
+              </article>
+            ))}
+          </div>
+        )}
+    </section>
+  );
+}
+
+function DataPanel() {
+  const [adminKey, setAdminKey] = useState("");
+  const [adminKeyInput, setAdminKeyInput] = useState("");
+  const [isAuthorized, setIsAuthorized] = useState(false);
+  const [isCheckingAccess, setIsCheckingAccess] = useState(false);
+  const [accessStatus, setAccessStatus] = useState("");
+
+  async function submitAccess(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const key = adminKeyInput.trim();
+    if (!key) {
+      setAccessStatus("请输入服务端管理密码");
+      return;
+    }
+
+    setIsCheckingAccess(true);
+    setAccessStatus("");
+
+    try {
+      const response = await fetch("/api/admin/access", {
+        headers: { "x-openfx-admin-key": key },
+      });
+      const payload = await response.json();
+      if (!response.ok || payload.ok !== true) {
+        throw new Error("密码无效");
+      }
+
+      localStorage.setItem(STORAGE_KEYS.adminKey, key);
+      setAdminKey(key);
+      setIsAuthorized(true);
+      setAccessStatus("");
+    } catch (error) {
+      setAdminKey("");
+      setIsAuthorized(false);
+      setAccessStatus(error instanceof Error ? error.message : "密码无效");
+    } finally {
+      setIsCheckingAccess(false);
+    }
+  }
+
+  if (!isAuthorized) {
+    return (
+      <div className="domain-panel data-auth-panel" data-panel-id="openfx-data">
+        <form className="data-access-form" onSubmit={submitAccess}>
+          <input
+            aria-label="数据面板管理密码"
+            autoComplete="off"
+            placeholder="OPENFX_ADMIN_KEY"
+            type="password"
+            value={adminKeyInput}
+            onChange={(event) => setAdminKeyInput(event.target.value)}
+          />
+          <button disabled={isCheckingAccess} type="submit">
+            {isCheckingAccess ? "验证中" : "进入"}
+          </button>
+          {accessStatus
+            ? (
+              <p className="data-access-status" role="status">
+                {accessStatus}
+              </p>
+            )
+            : null}
+        </form>
+      </div>
+    );
+  }
+
+  return (
+    <div className="domain-panel data-domain-panel" data-panel-id="openfx-data">
+      <section className="domain-panel-hero">
+        <p className="eyebrow">deno deploy</p>
+        <h1>数据</h1>
+        <p>Deno KV 的可视化操作面板，并展示首页 MESSAGE 提交的留言。</p>
       </section>
+      <MessageBoard adminKey={adminKey} />
+      <KvConsole
+        adminKey={adminKey}
+        onAdminKeyChange={setAdminKey}
+        showAuth={false}
+      />
     </div>
   );
 }

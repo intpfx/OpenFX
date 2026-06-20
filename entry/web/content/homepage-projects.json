@@ -11,7 +11,6 @@
           "id": "ipv6-sync-suite",
           "type": "project",
           "variant": "lg",
-          "hidden": true,
           "name": "IPv6 Sync Suite",
           "description": "把桌面端的定时 IPv6 上报、Web 端的映射更新和按 key 重定向串成同一条可部署业务链路。",
           "tech": ["Perry", "Nitro", "IPv6"],
@@ -31,14 +30,7 @@
           "name": "BewlyScript",
           "description": "面向 Safari Userscripts 与 Tampermonkey 的 B 站体验优化脚本，保留 BewlyCat 桌面体验，并为 m.bilibili.com 做移动优先适配。",
           "tech": ["Userscript", "Vue", "Bilibili", "Mobile"],
-          "sourcePath": "domains/BewlyScript/ · dist/BewlyScript.user.js",
-          "links": [
-            {
-              "label": "下载脚本",
-              "href": "/bewlyscript/BewlyScript.user.js",
-              "download": "BewlyScript.user.js"
-            }
-          ]
+          "sourcePath": "domains/BewlyScript/ · dist/BewlyScript.user.js"
         },
         {
           "id": "gasmap",
@@ -87,15 +79,14 @@
         {
           "id": "wanone-memorial",
           "type": "project",
-          "name": "万一",
-          "description": "你编程生涯的第一个项目。全屏视频背景的暗色企业官网骨架，纯 HTML+CSS 无 JavaScript，纪念你 2020 年写下的第一行代码。",
-          "tech": ["HTML", "CSS", "纪念"],
+          "name": "Wanone",
+          "description": "纯静态 HTML/CSS 站点，以视频背景、iframe 内容区和右侧导航组成暗色企业官网原型。",
+          "tech": ["HTML", "CSS", "Static Site"],
           "sourcePath": "domains/wanone/ · /wanone/index.html"
         },
         {
           "id": "relay-proxy-gateway",
           "type": "project",
-          "hidden": true,
           "name": "Relay Gateway",
           "description": "按需启用的 HTTP 中继业务，把上游站点挂到 Nitro 路由下并统一做请求头与响应头改写。",
           "tech": ["Proxy", "CORS", "Upstream"],

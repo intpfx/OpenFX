@@ -7,6 +7,7 @@ import { defineConfig } from "vite-plus";
 const rootDir = fileURLToPath(new URL("./", import.meta.url));
 const clientDistDir = fileURLToPath(new URL("./.client-dist", import.meta.url));
 const nitroDevPort = Number(process.env.OPENFX_NITRO_DEV_PORT ?? "3000");
+const nitroDevOrigin = `http://localhost:${nitroDevPort}`;
 
 export default defineConfig({
   root: rootDir,
@@ -22,8 +23,14 @@ export default defineConfig({
     port: 5501,
     strictPort: true,
     proxy: {
-      "/api": `http://localhost:${nitroDevPort}`,
-      "/update": `http://localhost:${nitroDevPort}`,
+      "/api": nitroDevOrigin,
+      "/update": nitroDevOrigin,
+      "/bewlyscript": nitroDevOrigin,
+      "/costing-assistant": nitroDevOrigin,
+      "/finlyzer": nitroDevOrigin,
+      "/gasmap": nitroDevOrigin,
+      "/how-much": nitroDevOrigin,
+      "/wanone": nitroDevOrigin,
     },
   },
   build: {

@@ -1,8 +1,28 @@
 import { expect } from "@std/expect";
 
+import { checkAdminAccessHandler } from "../server/routes/api/admin/access.get.ts";
 import { deleteAdminKvHandler } from "../server/routes/api/admin/kv.delete.ts";
 import { listAdminKvHandler } from "../server/routes/api/admin/kv.get.ts";
 import { saveAdminKvHandler } from "../server/routes/api/admin/kv.post.ts";
+
+Deno.test("admin access check validates the server-side admin key", async () => {
+  const rejected = checkAdminAccessHandler(
+    new Request("http://localhost/api/admin/access"),
+  );
+  expect(rejected.status).toBe(401);
+  await expect(rejected.json()).resolves.toMatchObject({
+    ok: false,
+    error: "unauthorized",
+  });
+
+  const accepted = checkAdminAccessHandler(
+    new Request("http://localhost/api/admin/access", {
+      headers: { "x-openfx-admin-key": "TEST" },
+    }),
+  );
+  expect(accepted.status).toBe(200);
+  await expect(accepted.json()).resolves.toMatchObject({ ok: true });
+});
 
 Deno.test("admin KV list rejects requests without the admin key", async () => {
   const response = await listAdminKvHandler(

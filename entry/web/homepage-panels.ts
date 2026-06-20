@@ -2,6 +2,7 @@ export const PROJECT_DETAIL_PANEL_IDS = [
   "ipv6-sync-suite",
   "how-much-this",
   "relay-proxy-gateway",
+  "openfx-data",
   "wanone-memorial",
   "chinagas-wms-qrcode",
   "bewlyscript",
