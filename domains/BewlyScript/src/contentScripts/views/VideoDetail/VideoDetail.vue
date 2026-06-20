@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { useEventListener, useTitle } from '@vueuse/core'
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { parseDanmakuXml, parseMobileVideoUrl, selectPlayableVideoUrl, type MobileDanmakuItem } from '~/userscript/mobile-video'
 import api from '~/utils/api'
 
 const loading = ref(false)
 const error = ref('')
+const commentsLoading = ref(false)
+const commentsError = ref('')
 const videoInfo = ref<any>()
 const comments = ref<any[]>([])
 const danmakuItems = ref<MobileDanmakuItem[]>([])
@@ -22,6 +24,9 @@ const muted = ref(false)
 const duration = ref(0)
 const currentTime = ref(0)
 const playbackRate = ref(1)
+const playerControlsVisible = ref(true)
+const playerLoading = ref(false)
+const playerError = ref('')
 const danmakuEnabled = ref(true)
 const danmakuOpacity = ref(0.86)
 const danmakuSize = ref(14)
@@ -40,6 +45,7 @@ const visibleDanmaku = computed(() => {
     .filter(item => item.time <= currentTime.value && currentTime.value - item.time <= 4)
     .slice(-10)
 })
+let playerControlsHideTimer: ReturnType<typeof setTimeout> | undefined
 
 useTitle(computed(() => `${title.value} - BewlyScript`))
 
@@ -101,6 +107,9 @@ async function loadPlayUrl() {
 
   const previousTime = currentTime.value
   playUrl.value = ''
+  playerError.value = ''
+  playerLoading.value = true
+  playerControlsVisible.value = true
   const response = await api.video.getVideoPreview({
     bvid: currentBvid.value,
     cid: selectedCid.value,
@@ -142,19 +151,33 @@ async function loadDanmaku() {
 }
 
 async function loadComments() {
-  const aid = videoInfo.value?.aid
+  const aid = Number(videoInfo.value?.aid ?? videoInfo.value?.stat?.aid ?? videoInfo.value?.aid_str)
   if (!aid)
     return
 
+  commentsLoading.value = true
+  commentsError.value = ''
   try {
-    const response = await api.video.getVideoComments({ oid: aid, type: 1, pn: 1, ps: 12 })
-    comments.value = [
+    const response = await api.video.getVideoComments({ oid: aid, type: 1, pn: 1, ps: 20, sort: 2 })
+    if (response?.code !== 0)
+      throw new Error(response?.message || '评论加载失败')
+
+    const topReplies = [
+      response?.data?.top?.upper,
+      response?.data?.top?.admin,
       ...(response?.data?.hots ?? []),
+    ].filter(Boolean)
+    comments.value = [
+      ...topReplies,
       ...(response?.data?.replies ?? []),
-    ].slice(0, 12)
+    ].slice(0, 20)
   }
-  catch {
+  catch (err) {
     comments.value = []
+    commentsError.value = err instanceof Error ? err.message : '评论加载失败'
+  }
+  finally {
+    commentsLoading.value = false
   }
 }
 
@@ -170,14 +193,77 @@ async function changeQuality() {
   await loadPlayUrl()
 }
 
+function clearPlayerControlsHideTimer() {
+  if (playerControlsHideTimer) {
+    clearTimeout(playerControlsHideTimer)
+    playerControlsHideTimer = undefined
+  }
+}
+
+function schedulePlayerControlsHide() {
+  clearPlayerControlsHideTimer()
+  if (!playing.value || playerLoading.value || playerError.value)
+    return
+
+  playerControlsHideTimer = setTimeout(() => {
+    playerControlsVisible.value = false
+  }, 3200)
+}
+
+function showPlayerControlsTemporarily() {
+  playerControlsVisible.value = true
+  schedulePlayerControlsHide()
+}
+
+function handlePlayerPlay() {
+  playing.value = true
+  playerLoading.value = false
+  playerError.value = ''
+  showPlayerControlsTemporarily()
+}
+
+function handlePlayerPause() {
+  playing.value = false
+  playerControlsVisible.value = true
+  clearPlayerControlsHideTimer()
+}
+
+function handlePlayerWaiting() {
+  playerLoading.value = true
+  playerControlsVisible.value = true
+}
+
+function handlePlayerCanPlay() {
+  playerLoading.value = false
+  showPlayerControlsTemporarily()
+}
+
+function handlePlayerError() {
+  playerLoading.value = false
+  playerError.value = '视频加载失败'
+  playerControlsVisible.value = true
+  clearPlayerControlsHideTimer()
+}
+
+function handleLoadedMetadata() {
+  duration.value = videoRef.value?.duration || 0
+  playerLoading.value = false
+}
+
 function togglePlayback() {
   const video = videoRef.value
   if (!video)
     return
-  if (video.paused)
-    void video.play()
-  else
+  showPlayerControlsTemporarily()
+  if (video.paused) {
+    void video.play().catch(() => {
+      playerError.value = '播放被浏览器拦截'
+      playerControlsVisible.value = true
+    })
+  }
+  else {
     video.pause()
+  }
 }
 
 function seek(event: Event) {
@@ -186,6 +272,8 @@ function seek(event: Event) {
   if (!video || !Number.isFinite(value))
     return
   video.currentTime = value / 100 * (duration.value || 0)
+  currentTime.value = video.currentTime
+  showPlayerControlsTemporarily()
 }
 
 function setRate(event: Event) {
@@ -194,6 +282,7 @@ function setRate(event: Event) {
     return
   playbackRate.value = rate
   videoRef.value.playbackRate = rate
+  showPlayerControlsTemporarily()
 }
 
 function toggleMute() {
@@ -201,16 +290,19 @@ function toggleMute() {
     return
   videoRef.value.muted = !videoRef.value.muted
   muted.value = videoRef.value.muted
+  showPlayerControlsTemporarily()
 }
 
 async function enterFullscreen() {
   const target = shellRef.value ?? videoRef.value
+  showPlayerControlsTemporarily()
   if (target?.requestFullscreen)
     await target.requestFullscreen()
 }
 
 async function enterPictureInPicture() {
   const video = videoRef.value
+  showPlayerControlsTemporarily()
   if (video && document.pictureInPictureEnabled && !video.disablePictureInPicture)
     await video.requestPictureInPicture()
 }
@@ -237,7 +329,19 @@ watch(selectedCid, () => {
   history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
 })
 
+watch(playUrl, (url) => {
+  if (!url)
+    return
+
+  playerLoading.value = true
+  playerError.value = ''
+  playerControlsVisible.value = true
+})
+
 onMounted(loadVideoDetail)
+onBeforeUnmount(() => {
+  clearPlayerControlsHideTimer()
+})
 </script>
 
 <template>
@@ -266,20 +370,40 @@ onMounted(loadVideoDetail)
     </div>
 
     <template v-else>
-      <div ref="shellRef" class="mobile-video-player">
+      <div
+        ref="shellRef"
+        class="mobile-video-player"
+        @pointermove="showPlayerControlsTemporarily"
+        @touchstart.passive="showPlayerControlsTemporarily"
+      >
         <video
           ref="videoRef"
           class="mobile-video-player__media"
           :src="playUrl"
           playsinline
-          preload="metadata"
-          @play="playing = true"
-          @pause="playing = false"
-          @loadedmetadata="duration = videoRef?.duration || 0"
+          preload="auto"
+          @play="handlePlayerPlay"
+          @pause="handlePlayerPause"
+          @waiting="handlePlayerWaiting"
+          @canplay="handlePlayerCanPlay"
+          @error="handlePlayerError"
+          @loadedmetadata="handleLoadedMetadata"
           @timeupdate="currentTime = videoRef?.currentTime || 0"
           @volumechange="muted = !!videoRef?.muted"
           @click="togglePlayback"
         />
+
+        <Transition name="fade">
+          <div v-if="playerLoading" class="mobile-video-player__loading">
+            <span />
+          </div>
+        </Transition>
+
+        <Transition name="fade">
+          <div v-if="playerError" class="mobile-video-player__error">
+            {{ playerError }}
+          </div>
+        </Transition>
 
         <div v-if="danmakuEnabled" class="mobile-danmaku-layer" :style="{ '--danmaku-opacity': danmakuOpacity, '--danmaku-size': `${danmakuSize}px` }">
           <div
@@ -292,32 +416,37 @@ onMounted(loadVideoDetail)
           </div>
         </div>
 
-        <div class="mobile-video-controls">
+        <div
+          v-show="playerControlsVisible"
+          class="mobile-video-controls"
+          @click.stop
+          @pointerdown.stop
+        >
           <div class="mobile-video-controls__row">
-            <button type="button" class="control-button" @click="togglePlayback">
+            <button type="button" class="control-button" @click.stop="togglePlayback">
               <div :class="playing ? 'i-mingcute:pause-fill' : 'i-mingcute:play-fill'" />
             </button>
             <span class="time-label">{{ formatTime(currentTime) }} / {{ formatTime(duration) }}</span>
-            <button type="button" class="control-button" @click="toggleMute">
+            <button type="button" class="control-button" @click.stop="toggleMute">
               <div :class="muted ? 'i-mingcute:volume-mute-fill' : 'i-mingcute:volume-fill'" />
             </button>
-            <button type="button" class="control-button" @click="enterPictureInPicture">
+            <button type="button" class="control-button" @click.stop="enterPictureInPicture">
               <div i-mingcute:pic-line />
             </button>
-            <button type="button" class="control-button" @click="enterFullscreen">
+            <button type="button" class="control-button" @click.stop="enterFullscreen">
               <div i-mingcute:fullscreen-line />
             </button>
           </div>
 
-          <input class="progress-range" type="range" min="0" max="100" step="0.1" :value="progress" @input="seek">
+          <input class="progress-range" type="range" min="0" max="100" step="0.1" :value="progress" @pointerdown.stop @input="seek">
 
           <div class="mobile-video-controls__row mobile-video-controls__row--settings">
-            <select v-model.number="selectedQuality" class="mobile-select" @change="changeQuality">
+            <select v-model.number="selectedQuality" class="mobile-select" @click.stop @change="changeQuality">
               <option v-for="quality in qualityOptions" :key="quality.quality" :value="quality.quality">
                 {{ quality.label }}
               </option>
             </select>
-            <select class="mobile-select" :value="playbackRate" @change="setRate">
+            <select class="mobile-select" :value="playbackRate" @click.stop @change="setRate">
               <option :value="0.75">0.75x</option>
               <option :value="1">1.0x</option>
               <option :value="1.25">1.25x</option>
@@ -367,7 +496,13 @@ onMounted(loadVideoDetail)
 
       <section class="mobile-video-comments">
         <h2>评论</h2>
-        <div v-if="comments.length === 0" class="mobile-empty">
+        <div v-if="commentsLoading" class="mobile-empty">
+          正在加载评论
+        </div>
+        <div v-else-if="commentsError" class="mobile-empty">
+          {{ commentsError }}
+        </div>
+        <div v-else-if="comments.length === 0" class="mobile-empty">
           暂无评论数据
         </div>
         <article v-for="comment in comments" :key="comment.rpid || comment.ctime" class="mobile-comment">
@@ -455,6 +590,38 @@ onMounted(loadVideoDetail)
   display: block;
   background: #000;
   object-fit: contain;
+}
+
+.mobile-video-player__loading,
+.mobile-video-player__error {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  color: #f2f3f5;
+  background: rgba(0, 0, 0, 0.24);
+}
+
+.mobile-video-player__loading span {
+  width: 34px;
+  height: 34px;
+  border: 3px solid rgba(255, 255, 255, 0.24);
+  border-top-color: #00a1d6;
+  border-radius: 50%;
+  animation: mobile-video-spin 0.8s linear infinite;
+}
+
+.mobile-video-player__error {
+  padding: 18px;
+  text-align: center;
+  font-size: 14px;
+}
+
+@keyframes mobile-video-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .mobile-danmaku-layer {

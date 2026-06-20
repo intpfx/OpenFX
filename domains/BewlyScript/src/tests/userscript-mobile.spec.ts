@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
+import apiVideoSource from '../background/messageListeners/api/video.ts?raw'
 import topBarSearchSource from '../components/TopBar/components/TopBarSearch.vue?raw'
+import videoCardAuthorAvatarSource from '../components/VideoCard/VideoCardAuthor/components/VideoCardAuthorAvatar.vue?raw'
+import videoCardAuthorNameSource from '../components/VideoCard/VideoCardAuthor/components/VideoCardAuthorName.vue?raw'
 import videoCardCoverSource from '../components/VideoCard/components/VideoCardCover.vue?raw'
+import mobileVideoDetailSource from '../contentScripts/views/VideoDetail/VideoDetail.vue?raw'
 import { AppPage } from '../enums/appEnums'
 import {
   classifyMobileBilibiliPage,
@@ -252,12 +256,40 @@ describe('mobile userscript support', () => {
 
     expect(pointerDownHandler).toContain('event.stopPropagation()')
     expect(pointerDownHandler).not.toContain('event.preventDefault()')
+    expect(topBarSearchSource).toContain('showMobileLoginPanel.value = true')
+    expect(topBarSearchSource).toContain('class="mobile-login-panel"')
+    expect(topBarSearchSource).toContain(':src="BILIBILI_LOGIN_URL"')
+  })
+
+  it('keeps mobile author taps from falling through to the video card link', () => {
+    expect(videoCardAuthorAvatarSource).toContain(":is=\"isMobileUserscriptPage ? 'span' : 'a'\"")
+    expect(videoCardAuthorAvatarSource).toContain('@pointerdown.stop')
+    expect(videoCardAuthorAvatarSource).toContain('@click.stop="handleAuthorClick')
+    expect(videoCardAuthorNameSource).toContain(":is=\"isMobileUserscriptPage ? 'span' : 'a'\"")
+    expect(videoCardAuthorNameSource).toContain('@click.stop="handleAuthorClick')
   })
 
   it('uses the custom inline player for mobile video-card previews', () => {
     expect(videoCardCoverSource).toContain('playsinline')
     expect(videoCardCoverSource).toContain('webkit-playsinline')
     expect(videoCardCoverSource).toContain('data-bewly-video-card-player="custom"')
+    expect(videoCardCoverSource).toContain('@click.prevent.stop="togglePreviewPlayback"')
+    expect(videoCardCoverSource).toContain('if (!previewPlaying.value || isLoadingStream.value || isPreviewFullscreen.value)')
     expect(videoCardCoverSource).not.toContain(':controls=')
+  })
+
+  it('loads mobile video detail comments with the currently populated reply mode', () => {
+    expect(apiVideoSource).toContain('sort: 2')
+    expect(apiVideoSource).toContain("'User-Agent': 'Mozilla/5.0")
+    expect(mobileVideoDetailSource).toContain('commentsLoading')
+    expect(mobileVideoDetailSource).toContain('commentsError')
+    expect(mobileVideoDetailSource).toContain('sort: 2')
+  })
+
+  it('keeps mobile video detail player controls usable on touch screens', () => {
+    expect(mobileVideoDetailSource).toContain('playerControlsVisible')
+    expect(mobileVideoDetailSource).toContain('playerLoading')
+    expect(mobileVideoDetailSource).toContain('showPlayerControlsTemporarily')
+    expect(mobileVideoDetailSource).toContain('@pointermove="showPlayerControlsTemporarily"')
   })
 })

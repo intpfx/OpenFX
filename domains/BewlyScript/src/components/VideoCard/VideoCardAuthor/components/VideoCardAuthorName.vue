@@ -8,24 +8,33 @@ defineProps<{
   author?: Author | Author[]
 }>()
 
-function handleAuthorClick(event: MouseEvent, url: string) {
-  if (openMobileUrlInCurrentPage(url)) {
-    event.preventDefault()
-    event.stopPropagation()
-  }
+const isMobileUserscriptPage = computed(() => isMobileUserscriptRuntimePage())
+
+function handleAuthorClick(event: MouseEvent | KeyboardEvent, url: string) {
+  if (!isMobileUserscriptPage.value)
+    return
+
+  event.preventDefault()
+  event.stopPropagation()
+  openMobileUrlInCurrentPage(url)
 }
 
-const authorLinkTarget = computed(() => isMobileUserscriptRuntimePage() ? '_self' : '_blank')
+const authorLinkTarget = computed(() => isMobileUserscriptPage.value ? undefined : '_blank')
 </script>
 
 <template>
-  <a
+  <component
+    :is="isMobileUserscriptPage ? 'span' : 'a'"
     class="channel-name"
     cursor-pointer mr-4
-    :href="getAuthorJumpUrl(Array.isArray(author) ? author[0] : author)"
+    :href="isMobileUserscriptPage ? undefined : getAuthorJumpUrl(Array.isArray(author) ? author[0] : author)"
     :target="authorLinkTarget"
+    :role="isMobileUserscriptPage ? 'link' : undefined"
+    :tabindex="isMobileUserscriptPage ? 0 : undefined"
     @click.stop="handleAuthorClick($event, getAuthorJumpUrl(Array.isArray(author) ? author[0] : author))"
-    @auxclick="handleAuthorClick($event, getAuthorJumpUrl(Array.isArray(author) ? author[0] : author))"
+    @auxclick.stop="handleAuthorClick($event, getAuthorJumpUrl(Array.isArray(author) ? author[0] : author))"
+    @keydown.enter.stop="handleAuthorClick($event, getAuthorJumpUrl(Array.isArray(author) ? author[0] : author))"
+    @keydown.space.stop="handleAuthorClick($event, getAuthorJumpUrl(Array.isArray(author) ? author[0] : author))"
   >
     <span>
       <span v-if="Array.isArray(author) && author.length > 1">
@@ -35,7 +44,7 @@ const authorLinkTarget = computed(() => isMobileUserscriptRuntimePage() ? '_self
         {{ Array.isArray(author) ? author[0].name : author?.name }}
       </span>
     </span>
-  </a>
+  </component>
 </template>
 
 <style scoped>

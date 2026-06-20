@@ -62,6 +62,7 @@ const liveBadgeStyle = computed(() => ({
   top: `${singleAvatarSize.value - 16}px`,
   left: `${singleAvatarSize.value - 12}px`,
 }))
+const isMobileUserscriptPage = computed(() => isMobileUserscriptRuntimePage())
 
 // 检查是否是课堂类型（使用特殊标记）
 const isKetang = computed(() => {
@@ -70,14 +71,16 @@ const isKetang = computed(() => {
   return props.author?.authorFace === '__ketang_icon__'
 })
 
-function handleAuthorClick(event: MouseEvent, url: string) {
-  if (openMobileUrlInCurrentPage(url)) {
-    event.preventDefault()
-    event.stopPropagation()
-  }
+function handleAuthorClick(event: MouseEvent | KeyboardEvent, url: string) {
+  if (!isMobileUserscriptPage.value)
+    return
+
+  event.preventDefault()
+  event.stopPropagation()
+  openMobileUrlInCurrentPage(url)
 }
 
-const authorLinkTarget = computed(() => isMobileUserscriptRuntimePage() ? '_self' : '_blank')
+const authorLinkTarget = computed(() => isMobileUserscriptPage.value ? undefined : '_blank')
 </script>
 
 <template>
@@ -111,11 +114,15 @@ const authorLinkTarget = computed(() => isMobileUserscriptRuntimePage() ? '_self
     pos="relative"
     shrink-0
   >
-    <a
+    <component
+      :is="isMobileUserscriptPage ? 'span' : 'a'"
       v-for="(item, index) in displayedAvatars"
       :key="index"
-      :href="getAuthorJumpUrl(item)"
+      :href="isMobileUserscriptPage ? undefined : getAuthorJumpUrl(item)"
       :target="authorLinkTarget"
+      :role="isMobileUserscriptPage ? 'link' : undefined"
+      :tabindex="isMobileUserscriptPage ? 0 : undefined"
+      :aria-label="item.name ? `进入 ${item.name} 的空间` : '进入 UP 主空间'"
       rounded="1/2"
       object="center cover" bg="$bew-skeleton" cursor="pointer"
       position-absolute top-0 inline-block
@@ -123,8 +130,13 @@ const authorLinkTarget = computed(() => isMobileUserscriptRuntimePage() ? '_self
         ...getAvatarItemStyle(index),
       }"
       :class="{ live: isLive }"
+      @pointerdown.stop
+      @mousedown.stop
+      @touchstart.stop
       @click.stop="handleAuthorClick($event, getAuthorJumpUrl(item))"
-      @auxclick="handleAuthorClick($event, getAuthorJumpUrl(item))"
+      @auxclick.stop="handleAuthorClick($event, getAuthorJumpUrl(item))"
+      @keydown.enter.stop="handleAuthorClick($event, getAuthorJumpUrl(item))"
+      @keydown.space.stop="handleAuthorClick($event, getAuthorJumpUrl(item))"
     >
       <!-- Avatar -->
       <Picture
@@ -158,7 +170,7 @@ const authorLinkTarget = computed(() => isMobileUserscriptRuntimePage() ? '_self
       >
         <div color-white text-sm class="i-svg-spinners:pulse-3 w-12px h-12px" />
       </div>
-    </a>
+    </component>
 
     <!-- More avatars not shown -->
     <span

@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { storeToRefs } from 'pinia'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 
 import { settings } from '~/logic'
 import { useTopBarStore } from '~/stores/topBarStore'
-import { isMobileUserscriptRuntimePage, normalizeBilibiliUrlForCurrentSurface, openBilibiliLoginPage, openMobileUrlInCurrentPage } from '~/userscript/mobile'
+import { BILIBILI_LOGIN_URL, isMobileUserscriptRuntimePage, normalizeBilibiliUrlForCurrentSurface, openBilibiliLoginPage, openMobileUrlInCurrentPage } from '~/userscript/mobile'
 import { getUserID, isHomePage, removeHttpFromUrl } from '~/utils/main'
 
 import { useTopBarInteraction } from '../composables/useTopBarInteraction'
@@ -13,6 +13,7 @@ const { showSearchBar, forceWhiteIcon } = useTopBarInteraction()
 const topBarStore = useTopBarStore()
 const { isLogin, searchKeyword, userInfo } = storeToRefs(topBarStore)
 const mid = getUserID() || ''
+const showMobileLoginPanel = ref(false)
 const props = withDefaults(defineProps<{
   mobileBottom?: boolean
 }>(), {
@@ -112,6 +113,21 @@ function handleMobileLoginClick(event: MouseEvent) {
 
   event.preventDefault()
   event.stopPropagation()
+
+  if (isMobileUserscriptPage.value) {
+    showMobileLoginPanel.value = true
+    return
+  }
+
+  openBilibiliLoginPage()
+}
+
+function closeMobileLoginPanel() {
+  showMobileLoginPanel.value = false
+}
+
+function openFullMobileLoginPage() {
+  showMobileLoginPanel.value = false
   openBilibiliLoginPage()
 }
 
@@ -185,6 +201,60 @@ function handleMobileAvatarClick(event: MouseEvent) {
             </button>
           </template>
         </SearchBar>
+
+        <Transition name="mobile-login-panel">
+          <div
+            v-if="showMobileLoginPanel"
+            class="mobile-login-panel"
+            @pointerdown.stop
+            @mousedown.stop
+            @touchstart.stop
+            @click.stop
+          >
+            <button
+              type="button"
+              class="mobile-login-panel__backdrop"
+              aria-label="关闭登录窗口"
+              @click="closeMobileLoginPanel"
+            />
+
+            <section
+              class="mobile-login-panel__dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-label="登录 Bilibili"
+            >
+              <header class="mobile-login-panel__header">
+                <strong>登录 Bilibili</strong>
+                <div class="mobile-login-panel__actions">
+                  <button
+                    type="button"
+                    aria-label="打开完整登录页"
+                    title="打开完整登录页"
+                    @click="openFullMobileLoginPage"
+                  >
+                    <div i-mingcute:external-link-line />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="关闭"
+                    title="关闭"
+                    @click="closeMobileLoginPanel"
+                  >
+                    <div i-mingcute:close-line />
+                  </button>
+                </div>
+              </header>
+
+              <iframe
+                class="mobile-login-panel__frame"
+                :src="BILIBILI_LOGIN_URL"
+                title="Bilibili 登录"
+                referrerpolicy="no-referrer-when-downgrade"
+              />
+            </section>
+          </div>
+        </Transition>
       </div>
     </Transition>
   </div>
@@ -254,6 +324,95 @@ function handleMobileAvatarClick(event: MouseEvent) {
 
 .mobile-search-account-button--avatar .mobile-search-account-button__fallback {
   opacity: v-bind('mobileAvatarUrl ? 0 : 1');
+}
+
+.mobile-login-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 1010;
+  display: grid;
+  align-items: end;
+  pointer-events: auto;
+}
+
+.mobile-login-panel__backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(0, 0, 0, 0.48);
+  backdrop-filter: blur(12px);
+}
+
+.mobile-login-panel__dialog {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
+  height: min(76dvh, 680px);
+  min-height: 420px;
+  overflow: hidden;
+  color: var(--bew-text-1);
+  border: 1px solid color-mix(in oklab, var(--bew-border-color), transparent 46%);
+  border-bottom: 0;
+  border-radius: 22px 22px 0 0;
+  background: var(--bew-elevated-solid);
+  box-shadow: 0 -18px 46px rgba(0, 0, 0, 0.34);
+}
+
+.mobile-login-panel__header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 54px;
+  padding: 0 10px 0 16px;
+  border-bottom: 1px solid color-mix(in oklab, var(--bew-border-color), transparent 40%);
+}
+
+.mobile-login-panel__header strong {
+  font-size: 15px;
+}
+
+.mobile-login-panel__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.mobile-login-panel__actions button {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  color: var(--bew-text-1);
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  font-size: 20px;
+}
+
+.mobile-login-panel__actions button:active,
+.mobile-login-panel__actions button:focus-visible {
+  background: var(--bew-fill-2);
+}
+
+.mobile-login-panel__frame {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  background: #fff;
+}
+
+.mobile-login-panel-enter-active,
+.mobile-login-panel-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.mobile-login-panel-enter-from,
+.mobile-login-panel-leave-to {
+  opacity: 0;
 }
 
 @media (max-width: 700px) {

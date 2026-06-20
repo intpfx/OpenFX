@@ -130,12 +130,16 @@ const API_VIDEO = {
     url: 'https://api.bilibili.com/x/v2/reply',
     _fetch: {
       method: 'get',
+      headers: {
+        Referer: 'https://www.bilibili.com/',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+      },
     },
     params: {
       csrf: '',
       type: 1,
       oid: 0,
-      sort: 0,
+      sort: 2,
       nohot: 0,
       pn: 1,
       ps: 20,

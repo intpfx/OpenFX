@@ -88,6 +88,9 @@ function clearControlsHideTimeout() {
 
 function scheduleControlsHide() {
   clearControlsHideTimeout()
+  if (!previewPlaying.value || isLoadingStream.value || isPreviewFullscreen.value)
+    return
+
   controlsHideTimeout = window.setTimeout(() => {
     showVideoControls.value = false
   }, 3000)
@@ -209,6 +212,29 @@ function togglePreviewPlayback() {
   }
 
   videoEl.pause()
+  showVideoControls.value = true
+}
+
+function handlePreviewPlay() {
+  previewPlaying.value = true
+  isLoadingStream.value = false
+  showControlsTemporarily()
+}
+
+function handlePreviewPause() {
+  previewPlaying.value = false
+  showVideoControls.value = true
+  clearControlsHideTimeout()
+}
+
+function handlePreviewWaiting() {
+  isLoadingStream.value = true
+  showVideoControls.value = true
+}
+
+function handlePreviewCanPlay() {
+  isLoadingStream.value = false
+  showControlsTemporarily()
 }
 
 function handlePreviewSeek(event: Event) {
@@ -509,15 +535,18 @@ onBeforeUnmount(() => {
             playsinline
             webkit-playsinline
             class="video-card-preview-media"
-            :style="{ pointerEvents: showVideoControls ? 'auto' : 'none' }"
+            :style="{ pointerEvents: shouldEnableVideoControls ? 'auto' : 'none' }"
             w-full h-full
-            @play="previewPlaying = true"
-            @pause="previewPlaying = false"
+            @play="handlePreviewPlay"
+            @pause="handlePreviewPause"
+            @waiting="handlePreviewWaiting"
+            @canplay="handlePreviewCanPlay"
             @loadedmetadata="syncPreviewMediaState"
             @durationchange="syncPreviewMediaState"
             @timeupdate="syncPreviewMediaState"
             @volumechange="syncPreviewMediaState"
-            @click.prevent.stop="showControlsTemporarily"
+            @click.prevent.stop="togglePreviewPlayback"
+            @dblclick.prevent.stop="enterPreviewFullscreen"
           />
 
           <Transition name="fade">
