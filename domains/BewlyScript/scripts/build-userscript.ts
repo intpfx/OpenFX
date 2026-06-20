@@ -11,6 +11,7 @@ import { r } from './utils'
 
 const buildDir = r('dist/.build/contentScripts')
 const outputFile = r('dist/BewlyScript.user.js')
+const publicOutputFile = r('public/bewlyscript/BewlyScript.user.js')
 
 async function readText(path: string): Promise<string> {
   return await readFile(path, 'utf8')
@@ -78,19 +79,26 @@ ${options.contentCode}
 })();`
 }
 
+function stripTrailingWhitespace(text: string): string {
+  return text.replace(/[ \t]+$/gm, '')
+}
+
 async function main(): Promise<void> {
   await buildBundles()
 
   const contentCode = await readText(join(buildDir, 'content.global.js'))
   const injectCode = await readText(join(buildDir, 'inject.global.js'))
   const styleCss = await readText(join(buildDir, 'style.css'))
-  const userscript = sanitizeInlineSvg(assembleUserscript({ contentCode, injectCode, styleCss }))
+  const userscript = stripTrailingWhitespace(sanitizeInlineSvg(assembleUserscript({ contentCode, injectCode, styleCss })))
   if (hasExternalExtensionUrl(userscript))
     throw new Error('Refusing to write userscript with external extension URLs')
 
   await mkdir(r('dist'), { recursive: true })
+  await mkdir(r('public/bewlyscript'), { recursive: true })
   await writeFile(outputFile, userscript)
+  await writeFile(publicOutputFile, userscript)
   console.log(`Wrote ${outputFile}`)
+  console.log(`Wrote ${publicOutputFile}`)
 }
 
 main().catch((error) => {

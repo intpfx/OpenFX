@@ -103,7 +103,6 @@ function handleSearch(keyword: string) {
 }
 
 function handleMobileAccountPointerDown(event: Event) {
-  event.preventDefault()
   event.stopPropagation()
 }
 

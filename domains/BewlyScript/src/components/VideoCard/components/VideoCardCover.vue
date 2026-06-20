@@ -50,18 +50,34 @@ const emit = defineEmits<{
   imageLoaded: []
 }>()
 
+const previewShellRef = ref<HTMLElement | null>(null)
 const videoRef = ref<HTMLVideoElement | null>(null)
 const isLoadingStream = ref<boolean>(false)
 const isPreviewFullscreen = ref<boolean>(false)
 const showVideoControls = ref<boolean>(false)
+const previewPlaying = ref<boolean>(false)
+const previewMuted = ref<boolean>(true)
+const previewDuration = ref<number>(0)
+const previewCurrentTime = ref<number>(0)
 const preferTouchMode = computed(() => shouldPreferTouchMode(settings.value.touchScreenOptimization))
 const hoverInteractionsEnabled = computed(() => shouldEnableHoverInteractions(settings.value.touchScreenOptimization))
 const shouldEnableVideoControls = computed(() => settings.value.enableVideoCtrlBarOnVideoCard && !props.video?.roomid)
 const coverTopLeftVisible = computed(() => preferTouchMode.value || Boolean(props.coverTopLeftAlwaysVisible))
 const watchLaterButtonStyle = computed(() => ({}))
+const previewProgress = computed(() => previewDuration.value > 0 ? previewCurrentTime.value / previewDuration.value * 100 : 0)
+const previewTimeLabel = computed(() => `${formatPreviewTime(previewCurrentTime.value)} / ${formatPreviewTime(previewDuration.value)}`)
 let hls: Hls | null = null
 let flvPlayer: flvjs.Player | null = null
 let controlsHideTimeout: number | null = null
+
+function formatPreviewTime(value: number) {
+  if (!Number.isFinite(value) || value <= 0)
+    return '00:00'
+
+  const minutes = Math.floor(value / 60)
+  const seconds = Math.floor(value % 60)
+  return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+}
 
 function clearControlsHideTimeout() {
   if (controlsHideTimeout !== null) {
@@ -104,6 +120,9 @@ function resetVideoElement(videoEl: HTMLVideoElement) {
   videoEl.pause()
   videoEl.removeAttribute('src')
   videoEl.load()
+  previewPlaying.value = false
+  previewCurrentTime.value = 0
+  previewDuration.value = 0
 }
 
 function stopPreview(videoEl: HTMLVideoElement) {
@@ -122,7 +141,11 @@ function getFullscreenElement() {
 }
 
 function syncPreviewFullscreenState() {
-  const isFullscreen = Boolean(videoRef.value && getFullscreenElement() === videoRef.value)
+  const fullscreenElement = getFullscreenElement()
+  const isFullscreen = Boolean(
+    (previewShellRef.value && fullscreenElement === previewShellRef.value)
+    || (videoRef.value && fullscreenElement === videoRef.value),
+  )
 
   if (isPreviewFullscreen.value === isFullscreen)
     return
@@ -159,6 +182,72 @@ function cleanupPlayers() {
     flvPlayer = null
   }
   isLoadingStream.value = false
+}
+
+function syncPreviewMediaState() {
+  const videoEl = videoRef.value
+  if (!videoEl)
+    return
+
+  previewPlaying.value = !videoEl.paused
+  previewMuted.value = videoEl.muted
+  previewDuration.value = Number.isFinite(videoEl.duration) ? videoEl.duration : 0
+  previewCurrentTime.value = Number.isFinite(videoEl.currentTime) ? videoEl.currentTime : 0
+}
+
+function togglePreviewPlayback() {
+  const videoEl = videoRef.value
+  if (!videoEl)
+    return
+
+  showControlsTemporarily()
+  if (videoEl.paused) {
+    videoEl.play().catch(() => {
+      // Ignore autoplay errors
+    })
+    return
+  }
+
+  videoEl.pause()
+}
+
+function handlePreviewSeek(event: Event) {
+  event.stopPropagation()
+  const videoEl = videoRef.value
+  const nextProgress = Number((event.target as HTMLInputElement).value)
+  if (!videoEl || !Number.isFinite(nextProgress) || previewDuration.value <= 0)
+    return
+
+  videoEl.currentTime = nextProgress / 100 * previewDuration.value
+  previewCurrentTime.value = videoEl.currentTime
+  showControlsTemporarily()
+}
+
+function togglePreviewMute() {
+  const videoEl = videoRef.value
+  if (!videoEl)
+    return
+
+  videoEl.muted = !videoEl.muted
+  previewMuted.value = videoEl.muted
+  showControlsTemporarily()
+}
+
+async function enterPreviewFullscreen() {
+  const shell = previewShellRef.value
+  const videoEl = videoRef.value as (HTMLVideoElement & {
+    webkitEnterFullscreen?: () => void
+  }) | null
+  const fullscreenTarget = shell ?? videoEl
+
+  showControlsTemporarily()
+
+  if (fullscreenTarget?.requestFullscreen) {
+    await fullscreenTarget.requestFullscreen()
+    return
+  }
+
+  videoEl?.webkitEnterFullscreen?.()
 }
 
 async function setupPreviewVideo(url: string, videoEl: HTMLVideoElement) {
@@ -407,16 +496,83 @@ onBeforeUnmount(() => {
       <Transition v-if="!removed && settings.enableVideoPreview" name="fade">
         <div
           v-if="previewVideoUrl && previewActive"
+          ref="previewShellRef"
+          class="video-card-preview-shell"
           pos="absolute top-0 left-0" w-full aspect-video rounded="$bew-radius" bg-black
           @mousemove="handlePreviewMouseMove"
+          @pointermove="handlePreviewMouseMove"
         >
           <video
             ref="videoRef"
-            autoplay muted
-            :controls="showVideoControls"
+            autoplay
+            muted
+            playsinline
+            webkit-playsinline
+            class="video-card-preview-media"
             :style="{ pointerEvents: showVideoControls ? 'auto' : 'none' }"
             w-full h-full
+            @play="previewPlaying = true"
+            @pause="previewPlaying = false"
+            @loadedmetadata="syncPreviewMediaState"
+            @durationchange="syncPreviewMediaState"
+            @timeupdate="syncPreviewMediaState"
+            @volumechange="syncPreviewMediaState"
+            @click.prevent.stop="showControlsTemporarily"
           />
+
+          <Transition name="fade">
+            <div
+              v-if="shouldEnableVideoControls && showVideoControls"
+              class="video-card-preview-controls"
+              data-bewly-video-card-player="custom"
+              @click.stop
+              @pointerdown.stop
+              @pointermove.stop
+              @mousemove.stop
+            >
+              <button
+                type="button"
+                class="video-card-preview-control-button"
+                :aria-label="previewPlaying ? '暂停' : '播放'"
+                @click.prevent.stop="togglePreviewPlayback"
+              >
+                <Icon :icon="previewPlaying ? 'mingcute:pause-fill' : 'mingcute:play-fill'" />
+              </button>
+
+              <span class="video-card-preview-time">{{ previewTimeLabel }}</span>
+
+              <input
+                class="video-card-preview-range"
+                type="range"
+                min="0"
+                max="100"
+                step="0.1"
+                :value="previewProgress"
+                aria-label="预览进度"
+                @input="handlePreviewSeek"
+                @click.stop
+                @pointerdown.stop
+              >
+
+              <button
+                type="button"
+                class="video-card-preview-control-button"
+                :aria-label="previewMuted ? '取消静音' : '静音'"
+                @click.prevent.stop="togglePreviewMute"
+              >
+                <Icon :icon="previewMuted ? 'mingcute:volume-mute-fill' : 'mingcute:volume-fill'" />
+              </button>
+
+              <button
+                type="button"
+                class="video-card-preview-control-button"
+                aria-label="全屏"
+                @click.prevent.stop="enterPreviewFullscreen"
+              >
+                <Icon icon="mingcute:fullscreen-line" />
+              </button>
+            </div>
+          </Transition>
 
           <!-- Loading indicator -->
           <Transition name="fade">
@@ -578,6 +734,106 @@ onBeforeUnmount(() => {
 </template>
 
 <style lang="scss" scoped>
+.video-card-preview-shell {
+  overflow: hidden;
+}
+
+.video-card-preview-media {
+  display: block;
+  background: #000;
+  object-fit: cover;
+}
+
+.video-card-preview-controls {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  left: 8px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 8px;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(8, 10, 14, 0.74);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(14px) saturate(1.28);
+  pointer-events: auto;
+}
+
+.video-card-preview-control-button {
+  display: grid;
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  color: currentColor;
+  border: 0;
+  border-radius: 999px;
+  outline: none;
+  background: rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  transition:
+    background-color 0.16s ease,
+    transform 0.16s ease;
+}
+
+.video-card-preview-control-button:hover,
+.video-card-preview-control-button:focus-visible {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.video-card-preview-control-button:active {
+  transform: scale(0.94);
+}
+
+.video-card-preview-control-button :deep(svg) {
+  width: 17px;
+  height: 17px;
+}
+
+.video-card-preview-time {
+  flex: 0 0 auto;
+  min-width: 70px;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.video-card-preview-range {
+  flex: 1 1 auto;
+  min-width: 42px;
+  height: 18px;
+  accent-color: var(--bew-theme-color);
+  cursor: pointer;
+}
+
+@media (max-width: 700px) {
+  .video-card-preview-controls {
+    right: 6px;
+    bottom: 6px;
+    left: 6px;
+    gap: 6px;
+    padding: 6px;
+  }
+
+  .video-card-preview-time {
+    min-width: 62px;
+    font-size: 10px;
+  }
+
+  .video-card-preview-control-button {
+    flex-basis: 24px;
+    width: 24px;
+    height: 24px;
+  }
+}
+
 .video-card-cover-stats {
   position: absolute;
   left: 0;

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
+import topBarSearchSource from '../components/TopBar/components/TopBarSearch.vue?raw'
+import videoCardCoverSource from '../components/VideoCard/components/VideoCardCover.vue?raw'
 import { AppPage } from '../enums/appEnums'
 import {
   classifyMobileBilibiliPage,
@@ -243,5 +245,19 @@ describe('mobile userscript support', () => {
   it('forces touch mode for mobile userscript pages even if settings are off', () => {
     expect(shouldPreferTouchMode(false, { canHover: true, finePointer: true }, true)).toBe(true)
     expect(shouldEnableHoverInteractions(false, { canHover: true, finePointer: true }, true)).toBe(false)
+  })
+
+  it('keeps mobile account taps clickable instead of swallowing the follow-up click', () => {
+    const pointerDownHandler = topBarSearchSource.match(/function handleMobileAccountPointerDown\(event: Event\) \{[\s\S]*?\n\}/)?.[0] ?? ''
+
+    expect(pointerDownHandler).toContain('event.stopPropagation()')
+    expect(pointerDownHandler).not.toContain('event.preventDefault()')
+  })
+
+  it('uses the custom inline player for mobile video-card previews', () => {
+    expect(videoCardCoverSource).toContain('playsinline')
+    expect(videoCardCoverSource).toContain('webkit-playsinline')
+    expect(videoCardCoverSource).toContain('data-bewly-video-card-player="custom"')
+    expect(videoCardCoverSource).not.toContain(':controls=')
   })
 })
