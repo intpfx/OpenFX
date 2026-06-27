@@ -385,10 +385,16 @@ async function releaseIframeResources() {
 function handleOpenInNewTab() {
   if (iframeRef.value) {
     const href = iframeRef.value.contentWindow?.location.href.replace(/\/$/, '')
+    if (!href) {
+      handleClose()
+      return
+    }
+
     if (isMobileUserscriptPage && href)
       openMobileUrlInCurrentPage(href)
     else
-      window.open(href, '_blank')
+      window.location.href = href
+
     handleClose()
   }
 }
@@ -667,7 +673,6 @@ watchEffect(() => {
     transform: translateX(-50%);
     pointer-events: none;
   }
-
 }
 
 .iframe-drawer-mobile-return {

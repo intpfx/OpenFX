@@ -2,8 +2,6 @@
 import { useBewlyApp } from '~/composables/useAppProvider'
 import { settings } from '~/logic'
 import { isMobileUserscriptRuntimePage, MOBILE_LINK_MANAGED_ATTR, openMobileUrlInCurrentPage, shouldPreferTouchMode } from '~/userscript/mobile'
-import { isHomePage, isInIframe } from '~/utils/main'
-import { openLinkInBackground } from '~/utils/tabs'
 
 const props = defineProps<{
   href?: string
@@ -30,23 +28,6 @@ const processedHref = computed(() => {
   return props.href
 })
 
-const openMode = computed(() => {
-  if (isMobileUserscriptPage.value) {
-    if (props.type === 'videoCard')
-      return 'drawer'
-
-    return 'currentTab'
-  }
-
-  if (props.type === 'topBar')
-    return settings.value.topBarLinkOpenMode
-  else if (props.type === 'videoCard')
-    return settings.value.videoCardLinkOpenMode
-  else if (props.type === 'searchBar')
-    return settings.value.searchBarLinkOpenMode
-  return 'newTab'
-})
-
 const preferTouchMode = computed(() => shouldPreferTouchMode(settings.value.touchScreenOptimization))
 
 // Since BewlyBewly sometimes uses an iframe to open the original Bilibili page in the current tab
@@ -55,19 +36,6 @@ const target = computed(() => {
   if (isMobileUserscriptPage.value)
     return '_self'
 
-  if (openMode.value === 'newTab') {
-    return '_blank'
-  }
-  if (openMode.value === 'currentTabIfNotHomepage') {
-    // When in iframe, treat as homepage by default
-    if (isInIframe()) {
-      return '_blank'
-    }
-    return isHomePage() ? '_blank' : '_top'
-  }
-  if (openMode.value === 'currentTab') {
-    return '_top'
-  }
   return '_top'
 })
 
@@ -119,17 +87,11 @@ function handleClick(event: MouseEvent) {
     }
   }
 
-  if (openMode.value === 'drawer') {
+  if (props.type === 'videoCard' && !event.ctrlKey && !event.metaKey && !event.altKey) {
     event.preventDefault()
     if (props.href) {
       openIframeDrawer(processedHref.value)
     }
-    return
-  }
-
-  if (openMode.value === 'background' && props.href) {
-    event.preventDefault()
-    openLinkInBackground(processedHref.value)
   }
 }
 

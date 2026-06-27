@@ -1,17 +1,15 @@
 import type { CSSProperties } from 'vue'
 import { useToast } from 'vue-toastification'
 
-import { useBewlyApp } from '~/composables/useAppProvider'
 import { appAuthTokens, settings } from '~/logic'
 import type { VideoInfo } from '~/models/video/videoInfo'
 import type { VideoPreviewResult } from '~/models/video/videoPreview'
 import { useTopBarStore } from '~/stores/topBarStore'
-import { DESKTOP_BILIBILI_HOST, isMobileUserscriptRuntimePage, normalizeBilibiliUrlForCurrentSurface, openMobileUrlInCurrentPage, shouldEnableHoverInteractions } from '~/userscript/mobile'
+import { normalizeBilibiliUrlForCurrentSurface, openMobileUrlInCurrentPage, shouldEnableHoverInteractions } from '~/userscript/mobile'
 import api from '~/utils/api'
 import { getTvSign, TVAppKey } from '~/utils/authProvider'
 import { parseStatNumber } from '~/utils/dataFormatter'
 import { getCSRF, removeHttpFromUrl } from '~/utils/main'
-import { openLinkInBackground } from '~/utils/tabs'
 
 import type { Video } from '../types'
 import { getCurrentVideoUrl } from '../utils'
@@ -49,7 +47,6 @@ function createAppFeedFeedbackParams(video: Video, selection?: AppFeedFeedbackSe
 
 export function useVideoCardLogic(propsOrGetter: MaybeRefOrGetter<VideoCardProps>) {
   const toast = useToast()
-  const { openIframeDrawer } = useBewlyApp()
   const topBarStore = useTopBarStore()
 
   // 将传入的 props 转换为 computed，确保响应式
@@ -115,9 +112,7 @@ export function useVideoCardLogic(propsOrGetter: MaybeRefOrGetter<VideoCardProps
     else
       return ''
 
-    const normalizedUrl = effectiveVideoCardOpenMode.value === 'drawer'
-      ? normalizeBilibiliUrlForCurrentSurface(url, `https://${DESKTOP_BILIBILI_HOST}/`)
-      : normalizeBilibiliUrlForCurrentSurface(url)
+    const normalizedUrl = normalizeBilibiliUrlForCurrentSurface(url)
 
     try {
       const urlObj = new URL(normalizedUrl)
@@ -150,20 +145,12 @@ export function useVideoCardLogic(propsOrGetter: MaybeRefOrGetter<VideoCardProps
   })
 
   const hoverInteractionsEnabled = computed(() => shouldEnableHoverInteractions(settings.value.touchScreenOptimization))
-  const effectiveVideoCardOpenMode = computed(() => {
-    if (isMobileUserscriptRuntimePage())
-      return 'drawer'
-
-    return settings.value.videoCardLinkOpenMode
-  })
-
   const previewRequested = computed(() => {
     return isHover.value || Boolean(
       props.value.autoPreviewActive
       && props.value.showPreview
       && settings.value.enableVideoPreview
-      && !hoverInteractionsEnabled.value
-      && effectiveVideoCardOpenMode.value === 'drawer',
+      && !hoverInteractionsEnabled.value,
     )
   })
 
@@ -277,11 +264,11 @@ export function useVideoCardLogic(propsOrGetter: MaybeRefOrGetter<VideoCardProps
     retainVideoPreviewCacheEntry(previewCacheKey, clearPreviewVideoUrl, active)
   }, { immediate: true })
 
-  watch([() => props.value.showPreview, () => settings.value.enableVideoPreview, hoverInteractionsEnabled, effectiveVideoCardOpenMode], ([showPreview, enableVideoPreview, hoverEnabled, openMode]) => {
+  watch([() => props.value.showPreview, () => settings.value.enableVideoPreview, hoverInteractionsEnabled], ([showPreview, enableVideoPreview, hoverEnabled]) => {
     if (showPreview && enableVideoPreview && hoverEnabled)
       return
 
-    if (showPreview && enableVideoPreview && !hoverEnabled && openMode === 'drawer')
+    if (showPreview && enableVideoPreview && !hoverEnabled)
       return
 
     previewVideoUrl.value = ''
@@ -384,14 +371,9 @@ export function useVideoCardLogic(propsOrGetter: MaybeRefOrGetter<VideoCardProps
       return
     }
 
-    if (effectiveVideoCardOpenMode.value === 'background' && videoUrl.value && !event.ctrlKey && !event.metaKey) {
+    if (videoUrl.value && !event.ctrlKey && !event.metaKey && !event.altKey) {
       event.preventDefault()
-      openLinkInBackground(videoUrl.value)
-      return
-    }
-    if (effectiveVideoCardOpenMode.value === 'drawer' && videoUrl.value && !event.ctrlKey && !event.metaKey) {
-      event.preventDefault()
-      openIframeDrawer(videoUrl.value)
+      window.location.href = videoUrl.value
     }
   }
 
@@ -469,7 +451,6 @@ export function useVideoCardLogic(propsOrGetter: MaybeRefOrGetter<VideoCardProps
     videoStatNumbers,
     shouldHideOverlayElements,
     previewRequested,
-    effectiveVideoCardOpenMode,
 
     // Methods
     toggleWatchLater,

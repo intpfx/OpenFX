@@ -7,12 +7,12 @@ import { settings } from '~/logic'
 import { isMobileUserscriptRuntimePage, shouldEnableHoverInteractions } from '~/userscript/mobile'
 import { calcCurrentTime, calcTimeSince, numFormatter } from '~/utils/dataFormatter'
 
-import VideoCardAuthorAvatar from './VideoCardAuthor/components/VideoCardAuthorAvatar.vue'
 import VideoCardCover from './components/VideoCardCover.vue'
 import VideoCardInfo from './components/VideoCardInfo.vue'
 import { registerAutoPreviewCandidate } from './composables/autoPreviewCoordinator'
 import { useVideoCardLogic } from './composables/useVideoCardLogic'
 import type { Video } from './types'
+import VideoCardAuthorAvatar from './VideoCardAuthor/components/VideoCardAuthorAvatar.vue'
 import VideoCardContextMenu from './VideoCardContextMenu/VideoCardContextMenu.vue'
 
 const props = withDefaults(defineProps<Props>(), {
@@ -130,9 +130,9 @@ const hasCoverStats = computed(() => {
 })
 
 const hoverInteractionsEnabled = computed(() => shouldEnableHoverInteractions(settings.value.touchScreenOptimization))
-const isMobileUserscriptPage = computed(() => isMobileUserscriptRuntimePage())
+const isMobileUserscriptPage = isMobileUserscriptRuntimePage()
 const showMobileCoverAuthorAvatar = computed(() =>
-  isMobileUserscriptPage.value
+  isMobileUserscriptPage
   && !props.hideAuthor
   && !slots.coverTopLeft
   && Boolean(props.video?.author),
@@ -188,7 +188,6 @@ function setupAutoPreviewObserver() {
   if (!props.showPreview
     || !settings.value.enableVideoPreview
     || hoverInteractionsEnabled.value
-    || logic.effectiveVideoCardOpenMode.value !== 'drawer'
     || !logic.cardRootRef.value) {
     return
   }
@@ -199,7 +198,7 @@ function setupAutoPreviewObserver() {
 }
 
 watch(
-  [() => props.showPreview, () => settings.value.enableVideoPreview, hoverInteractionsEnabled, logic.effectiveVideoCardOpenMode, () => logic.cardRootRef.value],
+  [() => props.showPreview, () => settings.value.enableVideoPreview, hoverInteractionsEnabled, () => logic.cardRootRef.value],
   () => {
     nextTick(() => {
       setupAutoPreviewObserver()
@@ -381,11 +380,10 @@ provide('getVideoType', () => props.type!)
 <template>
   <div
     :ref="(el) => logic.cardRootRef.value = el as HTMLElement"
-    class="video-card-container"
+    class="video-card-container mb-3"
     duration-300 ease-in-out
     rounded="$bew-radius"
     :class="[
-      'mb-3',
       skeleton ? 'video-card-container--skeleton' : 'video-card-container--interactive',
     ]"
   >
@@ -400,7 +398,7 @@ provide('getVideoType', () => props.type!)
         v-bind="coverSkeleton ? {} : {
           href: logic.videoUrl.value,
           type: 'videoCard',
-          customClickEvent: Boolean(props.customClickHandler) || logic.effectiveVideoCardOpenMode.value === 'drawer' || logic.effectiveVideoCardOpenMode.value === 'background',
+          customClickEvent: Boolean(props.customClickHandler) || isMobileUserscriptPage,
           customClickEventIncludesModifiers: Boolean(props.customClickHandler),
         }"
         v-on="coverSkeleton ? {} : linkEvents"

@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watchEffect } from 'vue'
 
 import { useBewlyApp } from '~/composables/useAppProvider'
+import { isMobileUserscriptRuntimePage, openMobileUrlInCurrentPage } from '~/userscript/mobile'
 
 interface Episode {
   id: string
@@ -66,7 +67,10 @@ function closeDropdown() {
 
 function handleEpisodeClick(url?: string) {
   if (url) {
-    window.open(url, '_blank', 'noopener')
+    if (isMobileUserscriptRuntimePage() && openMobileUrlInCurrentPage(url))
+      return
+
+    window.location.href = url
   }
   closeDropdown()
 }
@@ -143,8 +147,6 @@ watchEffect(() => {
             v-for="(episode, index) in normalizedEpisodes"
             :key="episode.id || index"
             :href="episode.url || fallbackUrl"
-            target="_blank"
-            rel="noopener"
             class="dropdown-item"
             p="x-2 y-2"
             rounded="$bew-radius"

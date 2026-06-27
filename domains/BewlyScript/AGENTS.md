@@ -18,7 +18,7 @@ BewlyScript is the OpenFX userscript build of BewlyCat. It enhances Bilibili pag
 
 This domain is userscript-only. WebExtension packaging, popup/options pages, manifest generation, CRX/XPI/ZIP packaging, and extension-store submission are intentionally not part of the active build.
 
-Keep `hls.js` and `flv.js`; they support video playback behavior. Keep `qrcode.vue` and `vuedraggable`; they support the settings login QR code and drag-and-drop settings ordering.
+Keep `hls.js` and `flv.js`; they support video playback behavior. Keep `qrcode.vue`; it supports the settings login QR code. Settings ordering uses explicit move controls, so do not reintroduce `vuedraggable` for that UI.
 
 ## Architecture Overview
 

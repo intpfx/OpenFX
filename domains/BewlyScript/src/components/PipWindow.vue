@@ -2,6 +2,7 @@
 // import { onKeyStroke } from '@vueuse/core'
 
 import { useDark } from '~/composables/useDark'
+import { isMobileUserscriptRuntimePage, openMobileUrlInCurrentPage } from '~/userscript/mobile'
 
 const props = defineProps<{
   url: string
@@ -16,6 +17,7 @@ const pipWindowEl = ref<any | null>(null)
 const iframeRef = ref<HTMLIFrameElement | null>(null)
 const currentUrl = ref<string>(props.url)
 const { isDark } = useDark()
+const isMobileUserscriptPage = computed(() => isMobileUserscriptRuntimePage())
 
 onMounted(() => {
   openPipWindow()
@@ -58,7 +60,11 @@ async function openPipWindow() {
 }
 
 function handleOpenInNewTab() {
-  window.open(currentUrl.value, '_blank')
+  if (isMobileUserscriptPage.value)
+    openMobileUrlInCurrentPage(currentUrl.value)
+  else
+    window.location.href = currentUrl.value
+
   handleClose()
 }
 

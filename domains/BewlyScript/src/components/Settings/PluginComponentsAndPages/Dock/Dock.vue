@@ -1,6 +1,5 @@
 <script lang="ts" setup>
 import { useI18n } from 'vue-i18n'
-import draggable from 'vuedraggable'
 
 import Button from '~/components/Button.vue'
 import Radio from '~/components/Radio.vue'
@@ -8,6 +7,7 @@ import Select from '~/components/Select.vue'
 import { settings } from '~/logic'
 import type { DockItem } from '~/stores/mainStore'
 import { useMainStore } from '~/stores/mainStore'
+import { moveItemByIndex } from '~/utils/reorder'
 
 import SettingsItem from '../../components/SettingsItem.vue'
 import SettingsItemGroup from '../../components/SettingsItemGroup.vue'
@@ -69,6 +69,11 @@ function handleToggleDockItem(dockItem: any) {
   else
     dockItem.visible = true
 }
+
+function moveDockItem(page: string, offset: number) {
+  const index = settings.value.dockItemsConfig.findIndex(item => item.page === page)
+  settings.value.dockItemsConfig = moveItemByIndex(settings.value.dockItemsConfig, index, offset)
+}
 </script>
 
 <template>
@@ -101,36 +106,36 @@ function handleToggleDockItem(dockItem: any) {
         </template>
 
         <template #bottom>
-          <draggable
-            v-model="settings.dockItemsConfig"
-            item-key="page"
-            :component-data="{ style: 'display: flex; gap: 0.5rem; flex-wrap: wrap; flex-direction: column;' }"
-          >
-            <template #item="{ element }">
-              <div
-                flex="~ gap-2 justify-between items-center wrap" p="x-4 y-2" bg="$bew-fill-1" rounded="$bew-radius" cursor-all-scroll
-                duration-300
-                :style="{
-                  background: element.visible ? 'var(--bew-theme-color-20)' : 'var(--bew-fill-1)',
-                  color: element.visible ? 'var(--bew-theme-color)' : 'var(--bew-text-1)',
-                }"
-                @click="handleToggleDockItem(element)"
-              >
-                <div flex="~ gap-2 items-center">
-                  <div :class="pageOptions.find((page:any) => (page.value === element.page))?.icon as string" />
-                  <div w-80px text-ellipsis>
-                    {{ pageOptions.find(option => option.value === element.page)?.label }}
-                  </div>
-                </div>
-                <div flex="~ gap-4 items-center justify-between wrap">
-                  <div flex="~ items-center">
-                    {{ $t('settings.dock_item_open_in_new_tab') }}
-                    <Radio v-model="element.openInNewTab" />
-                  </div>
+          <div flex="~ col gap-2">
+            <div
+              v-for="(element, index) in settings.dockItemsConfig"
+              :key="element.page"
+              flex="~ gap-2 justify-between items-center wrap" p="x-4 y-2" bg="$bew-fill-1" rounded="$bew-radius"
+              duration-300
+              :style="{
+                background: element.visible ? 'var(--bew-theme-color-20)' : 'var(--bew-fill-1)',
+                color: element.visible ? 'var(--bew-theme-color)' : 'var(--bew-text-1)',
+              }"
+              @click="handleToggleDockItem(element)"
+            >
+              <div flex="~ gap-2 items-center">
+                <div :class="pageOptions.find((page:any) => (page.value === element.page))?.icon as string" />
+                <div w-80px text-ellipsis>
+                  {{ pageOptions.find(option => option.value === element.page)?.label }}
                 </div>
               </div>
-            </template>
-          </draggable>
+              <div flex="~ gap-2 items-center justify-between wrap">
+                <div flex="~ items-center">
+                  {{ $t('settings.dock_item_open_in_new_tab') }}
+                  <Radio v-model="element.openInNewTab" @click.stop />
+                </div>
+                <div flex="~ gap-1 items-center" @click.stop>
+                  <Button size="small" type="secondary" :disabled="index === 0" @click="moveDockItem(element.page, -1)">↑</Button>
+                  <Button size="small" type="secondary" :disabled="index === settings.dockItemsConfig.length - 1" @click="moveDockItem(element.page, 1)">↓</Button>
+                </div>
+              </div>
+            </div>
+          </div>
         </template>
       </SettingsItem>
       <SettingsItem :title="$t('settings.disable_dock_glowing_effect')" right-width="auto">

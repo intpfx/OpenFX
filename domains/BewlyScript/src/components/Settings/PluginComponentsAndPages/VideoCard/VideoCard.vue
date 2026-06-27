@@ -22,27 +22,6 @@ const videoCardFontSizeOptions = computed(() => fontSizeOptionValues.map(value =
   value,
 })))
 
-const videoCardOpenModeOptions = computed(() => {
-  return [
-    {
-      label: t('settings.link_opening_behavior_opt.current_tab'),
-      value: 'currentTab',
-    },
-    {
-      label: t('settings.link_opening_behavior_opt.drawer'),
-      value: 'drawer',
-    },
-    {
-      label: t('settings.link_opening_behavior_opt.background'),
-      value: 'background',
-    },
-    {
-      label: t('settings.link_opening_behavior_opt.new_tab'),
-      value: 'newTab',
-    },
-  ]
-})
-
 function resetShadowSettings() {
   settings.value.videoCardShadowCurve = [...originalSettings.videoCardShadowCurve]
   settings.value.videoCardShadowHeight = originalSettings.videoCardShadowHeight
@@ -68,15 +47,8 @@ function resetColumns() {
 </script>
 
 <template>
-  <div>
+    <div>
     <SettingsItemGroup :title="$t('settings.group_link_opening_behavior')">
-      <SettingsItem :title="$t('settings.video_card_link_opening_behavior')" :desc="$t('settings.video_card_link_opening_behavior_desc')" right-width="auto">
-        <Select
-          v-model="settings.videoCardLinkOpenMode"
-          :options="videoCardOpenModeOptions"
-          w="160px"
-        />
-      </SettingsItem>
       <SettingsItem right-width="auto">
         <template #title>
           <div v-html="$t('settings.close_drawer_without_pressing_esc_again')" />

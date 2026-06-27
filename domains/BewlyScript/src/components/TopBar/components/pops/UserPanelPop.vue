@@ -10,7 +10,7 @@ import api from '~/utils/api'
 import { revokeAccessKey } from '~/utils/authProvider'
 import { numFormatter } from '~/utils/dataFormatter'
 import { LV0_ICON, LV1_ICON, LV2_ICON, LV3_ICON, LV4_ICON, LV5_ICON, LV6_ICON, LV6_LIGHTNING_ICON } from '~/utils/lvIcons'
-import { getCSRF, getUserID, isHomePage } from '~/utils/main'
+import { getCSRF, getUserID } from '~/utils/main'
 
 import type { UserInfo, UserStat } from '../../types'
 
@@ -169,18 +169,7 @@ function handleClickChannel() {
     return
   }
 
-  if (settings.value.topBarLinkOpenMode === 'newTab') {
-    window.open(spaceUrl, '_blank')
-  }
-  else if (settings.value.topBarLinkOpenMode === 'currentTabIfNotHomepage') {
-    if (isHomePage())
-      window.open(spaceUrl, '_blank')
-    else
-      window.open(spaceUrl, '_self')
-  }
-  else {
-    window.open(spaceUrl, '_self')
-  }
+  window.location.href = spaceUrl
 }
 </script>
 
@@ -303,7 +292,7 @@ function handleClickChannel() {
 
     <div grid="~ cols-3 gap-2" mb-2>
       <ALink
-        :class="['channel-info-item', { 'hover-enabled': hoverInteractionsEnabled }]"
+        class="channel-info-item" :class="[{ 'hover-enabled': hoverInteractionsEnabled }]"
         :href="`https://space.bilibili.com/${mid}/fans/follow`"
         :title="`${userStat.following}`"
         type="topBar"
@@ -314,7 +303,7 @@ function handleClickChannel() {
         <div>{{ $t('topbar.user_dropdown.following') }}</div>
       </ALink>
       <ALink
-        :class="['channel-info-item', { 'hover-enabled': hoverInteractionsEnabled }]"
+        class="channel-info-item" :class="[{ 'hover-enabled': hoverInteractionsEnabled }]"
         :href="`https://space.bilibili.com/${mid}/fans/fans`"
         :title="`${userStat.follower}`"
         type="topBar"
@@ -325,7 +314,7 @@ function handleClickChannel() {
         <div>{{ $t('topbar.user_dropdown.followers') }}</div>
       </ALink>
       <ALink
-        :class="['channel-info-item', { 'hover-enabled': hoverInteractionsEnabled }]"
+        class="channel-info-item" :class="[{ 'hover-enabled': hoverInteractionsEnabled }]"
         :href="`https://space.bilibili.com/${mid}/dynamic`"
         :title="`${userStat.dynamic_count}`"
         type="topBar"

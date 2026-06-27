@@ -72,15 +72,15 @@ const isKetang = computed(() => {
 })
 
 function handleAuthorClick(event: MouseEvent | KeyboardEvent, url: string) {
-  if (!isMobileUserscriptPage.value)
-    return
-
   event.preventDefault()
   event.stopPropagation()
-  openMobileUrlInCurrentPage(url)
+  if (isMobileUserscriptPage.value) {
+    openMobileUrlInCurrentPage(url)
+  }
+  else {
+    window.location.href = url
+  }
 }
-
-const authorLinkTarget = computed(() => isMobileUserscriptPage.value ? undefined : '_blank')
 </script>
 
 <template>
@@ -119,7 +119,6 @@ const authorLinkTarget = computed(() => isMobileUserscriptPage.value ? undefined
       v-for="(item, index) in displayedAvatars"
       :key="index"
       :href="isMobileUserscriptPage ? undefined : getAuthorJumpUrl(item)"
-      :target="authorLinkTarget"
       :role="isMobileUserscriptPage ? 'link' : undefined"
       :tabindex="isMobileUserscriptPage ? 0 : undefined"
       :aria-label="item.name ? `进入 ${item.name} 的空间` : '进入 UP 主空间'"

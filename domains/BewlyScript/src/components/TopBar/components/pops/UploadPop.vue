@@ -1,7 +1,12 @@
-<script setup>
+<script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import { isMobileUserscriptRuntimePage, openMobileUrlInCurrentPage } from '~/userscript/mobile'
+
 const { t } = useI18n()
+
+const isMobileUserscriptPage = computed(() => isMobileUserscriptRuntimePage())
 
 const list = computed(() => {
   return [
@@ -32,6 +37,20 @@ const list = computed(() => {
     },
   ]
 })
+
+function handleUploadLink(event: Event, url: string) {
+  if (!url)
+    return
+
+  if (isMobileUserscriptPage.value) {
+    event.preventDefault()
+    event.stopPropagation()
+    openMobileUrlInCurrentPage(url)
+    return
+  }
+
+  window.location.href = url
+}
 </script>
 
 <template>
@@ -52,13 +71,14 @@ const list = computed(() => {
       :key="index"
       class="upload-item"
       :href="item.url"
-      target="_blank"
       flex="~ items-center gap-2"
       p="x-4 y-2"
       bg="hover:$bew-fill-2"
       rounded="$bew-radius"
       transition="all duration-300"
       m="b-1 last:b-0"
+      @click="handleUploadLink($event, item.url)"
+      @auxclick="handleUploadLink($event, item.url)"
     >
       <i :class="item.icon" text="$bew-text-2" />
 

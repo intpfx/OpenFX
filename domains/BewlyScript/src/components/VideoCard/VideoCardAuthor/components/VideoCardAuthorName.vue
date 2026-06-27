@@ -4,22 +4,24 @@ import { isMobileUserscriptRuntimePage, openMobileUrlInCurrentPage } from '~/use
 
 import type { Author } from '../../types'
 
-defineProps<{
+const { author } = defineProps<{
   author?: Author | Author[]
 }>()
 
 const isMobileUserscriptPage = computed(() => isMobileUserscriptRuntimePage())
 
-function handleAuthorClick(event: MouseEvent | KeyboardEvent, url: string) {
-  if (!isMobileUserscriptPage.value)
-    return
+const authorJumpUrl = computed(() => getAuthorJumpUrl(Array.isArray(author) ? author[0] : author))
 
+function handleAuthorClick(event: MouseEvent | KeyboardEvent, url: string) {
   event.preventDefault()
   event.stopPropagation()
-  openMobileUrlInCurrentPage(url)
+  if (isMobileUserscriptPage.value) {
+    openMobileUrlInCurrentPage(url)
+  }
+  else {
+    window.location.href = url
+  }
 }
-
-const authorLinkTarget = computed(() => isMobileUserscriptPage.value ? undefined : '_blank')
 </script>
 
 <template>
@@ -27,18 +29,17 @@ const authorLinkTarget = computed(() => isMobileUserscriptPage.value ? undefined
     :is="isMobileUserscriptPage ? 'span' : 'a'"
     class="channel-name"
     cursor-pointer mr-4
-    :href="isMobileUserscriptPage ? undefined : getAuthorJumpUrl(Array.isArray(author) ? author[0] : author)"
-    :target="authorLinkTarget"
+    :href="isMobileUserscriptPage ? undefined : authorJumpUrl"
     :role="isMobileUserscriptPage ? 'link' : undefined"
     :tabindex="isMobileUserscriptPage ? 0 : undefined"
-    @click.stop="handleAuthorClick($event, getAuthorJumpUrl(Array.isArray(author) ? author[0] : author))"
-    @auxclick.stop="handleAuthorClick($event, getAuthorJumpUrl(Array.isArray(author) ? author[0] : author))"
-    @keydown.enter.stop="handleAuthorClick($event, getAuthorJumpUrl(Array.isArray(author) ? author[0] : author))"
-    @keydown.space.stop="handleAuthorClick($event, getAuthorJumpUrl(Array.isArray(author) ? author[0] : author))"
+    @click.stop="handleAuthorClick($event, authorJumpUrl)"
+    @auxclick.stop="handleAuthorClick($event, authorJumpUrl)"
+    @keydown.enter.stop="handleAuthorClick($event, authorJumpUrl)"
+    @keydown.space.stop="handleAuthorClick($event, authorJumpUrl)"
   >
     <span>
       <span v-if="Array.isArray(author) && author.length > 1">
-        {{ $t('video_card.group_contribution', { firstAuthor: author[0].name, num: author.length }) }}
+        {{ $t('video_card.group_contribution', { firstAuthor: author[0]?.name ?? '', num: author.length }) }}
       </span>
       <span v-else>
         {{ Array.isArray(author) ? author[0].name : author?.name }}

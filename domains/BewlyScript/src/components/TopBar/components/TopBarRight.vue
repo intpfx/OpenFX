@@ -5,7 +5,7 @@ import { storeToRefs } from 'pinia'
 import ALink from '~/components/ALink.vue'
 import { settings } from '~/logic'
 import { useTopBarStore } from '~/stores/topBarStore'
-import { BILIBILI_LOGIN_URL, isMobileUserscriptRuntimePage, openBilibiliLoginPage, shouldEnableHoverInteractions } from '~/userscript/mobile'
+import { BILIBILI_LOGIN_URL, isMobileUserscriptRuntimePage, openBilibiliLoginPage, openMobileUrlInCurrentPage, shouldEnableHoverInteractions } from '~/userscript/mobile'
 import { getUserID, removeHttpFromUrl } from '~/utils/main'
 import { isComponentVisible, shouldShowBadge, shouldShowDotBadge, shouldShowNumberBadge } from '~/utils/topBarBadge'
 
@@ -15,8 +15,6 @@ import MorePop from './pops/MorePop.vue'
 import NotificationsPop from './pops/NotificationsPop.vue'
 import UploadPop from './pops/UploadPop.vue'
 import UserPanelPop from './pops/UserPanelPop.vue'
-
-defineProps<{}>()
 
 const emit = defineEmits(['notificationsClick'])
 
@@ -149,6 +147,20 @@ function closeMobileUserPanelDrawer() {
     popupVisible.value.userPanel = false
 }
 
+function openTopBarExternalLink(event: Event, url: string) {
+  if (!url)
+    return
+
+  if (isMobileUserscriptPage.value) {
+    event.preventDefault()
+    event.stopPropagation()
+    openMobileUrlInCurrentPage(url)
+    return
+  }
+
+  window.location.href = url
+}
+
 // 判断分割线是否应该显示
 const shouldShowDivider = computed(() => {
   // 分割线左边的组件：creatorCenter
@@ -201,8 +213,9 @@ const shouldShowDivider = computed(() => {
             <a
               :class="{ 'white-icon': forceWhiteIcon }"
               href="https://member.bilibili.com/platform/home"
-              target="_blank"
               :title="$t('topbar.creative_center')"
+              @click="openTopBarExternalLink($event, 'https://member.bilibili.com/platform/home')"
+              @auxclick="openTopBarExternalLink($event, 'https://member.bilibili.com/platform/home')"
             >
               <div i-mingcute:bulb-line />
             </a>
@@ -213,7 +226,7 @@ const shouldShowDivider = computed(() => {
         <div
           ref="more"
           class="right-side-item lg:!hidden flex"
-          :class="{ active: popupVisible?.more, 'hover-enabled': hoverInteractionsEnabled }"
+          :class="{ 'active': popupVisible?.more, 'hover-enabled': hoverInteractionsEnabled }"
           @click="(event: MouseEvent) => handleClickTopBarItem(event, 'more')"
         >
           <a
@@ -247,7 +260,7 @@ const shouldShowDivider = computed(() => {
             v-if="isComponentVisible('upload')"
             ref="upload"
             class="right-side-item"
-            :class="{ active: popupVisible?.upload, 'hover-enabled': hoverInteractionsEnabled }"
+            :class="{ 'active': popupVisible?.upload, 'hover-enabled': hoverInteractionsEnabled }"
             @click="(event: MouseEvent) => handleClickTopBarItem(event, 'upload')"
           >
             <a
@@ -255,8 +268,9 @@ const shouldShowDivider = computed(() => {
               :class="{ 'white-icon': forceWhiteIcon }"
               style="backdrop-filter: var(--bew-filter-glass-1);"
               href="https://member.bilibili.com/platform/upload/video/frame"
-              target="_blank"
               :title="$t('topbar.upload')"
+              @click="openTopBarExternalLink($event, 'https://member.bilibili.com/platform/upload/video/frame')"
+              @auxclick="openTopBarExternalLink($event, 'https://member.bilibili.com/platform/upload/video/frame')"
             >
               <div i-mingcute:upload-line flex-shrink-0 />
             </a>
@@ -276,7 +290,7 @@ const shouldShowDivider = computed(() => {
             v-if="isComponentVisible('notifications')"
             ref="notifications"
             class="right-side-item"
-            :class="{ active: popupVisible?.notifications, 'hover-enabled': hoverInteractionsEnabled }"
+            :class="{ 'active': popupVisible?.notifications, 'hover-enabled': hoverInteractionsEnabled }"
             @click="(event: MouseEvent) => handleClickTopBarItem(event, 'notifications')"
           >
             <template v-if="unReadMessageCount > 0 && shouldShowBadge('notifications')">
@@ -323,7 +337,7 @@ const shouldShowDivider = computed(() => {
       <div
         v-if="isLogin"
         ref="avatar"
-        :class="{ hover: popupVisible?.userPanel && hoverInteractionsEnabled, 'hover-enabled': hoverInteractionsEnabled }"
+        :class="{ 'hover': popupVisible?.userPanel && hoverInteractionsEnabled, 'hover-enabled': hoverInteractionsEnabled }"
         class="avatar right-side-item"
         @click="(event: MouseEvent) => handleClickTopBarItem(event, 'userPanel')"
       >

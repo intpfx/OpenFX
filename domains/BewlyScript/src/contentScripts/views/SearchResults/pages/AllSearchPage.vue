@@ -12,6 +12,7 @@ import VideoCard from '~/components/VideoCard/VideoCard.vue'
 import VideoCardGrid from '~/components/VideoCardGrid.vue'
 import { useBewlyApp } from '~/composables/useAppProvider'
 import { settings } from '~/logic'
+import { openMobileUrlInCurrentPage } from '~/userscript/mobile'
 import api from '~/utils/api'
 import { LV0_ICON, LV1_ICON, LV2_ICON, LV3_ICON, LV4_ICON, LV5_ICON, LV6_ICON } from '~/utils/lvIcons'
 import { getCSRF } from '~/utils/main'
@@ -251,7 +252,10 @@ async function handleUserFollow(mid: number) {
 function openExternalLink(url?: string) {
   if (!url)
     return
-  window.open(url, '_blank', 'noopener')
+  if (openMobileUrlInCurrentPage(url))
+    return
+
+  window.location.href = url
 }
 
 // 获取当前结果长度
@@ -635,8 +639,8 @@ defineExpose({
             v-for="item in activityAndGameItems"
             :key="item.id"
             :href="item.url"
-            target="_blank"
             class="activity-card"
+            @click.prevent="openExternalLink(item.url)"
           >
             <div class="activity-cover">
               <img v-if="item.cover" :src="item.cover" :alt="item.title">
@@ -683,7 +687,7 @@ defineExpose({
               <a
                 class="media-ft-highlight-cover"
                 :href="item.goto_url || item.url || `https://www.bilibili.com/bangumi/media/md${item.media_id}`"
-                target="_blank"
+                @click.prevent="openExternalLink(item.goto_url || item.url || `https://www.bilibili.com/bangumi/media/md${item.media_id}`)"
               >
                 <img :src="item.cover" :alt="removeHighlight(item.title)">
                 <div v-if="item.badges && item.badges.length" class="media-ft-highlight-badge">
@@ -718,7 +722,7 @@ defineExpose({
                   <a
                     class="media-ft-highlight-button"
                     :href="item.goto_url || item.url || `https://www.bilibili.com/bangumi/media/md${item.media_id}`"
-                    target="_blank"
+                    @click.prevent="openExternalLink(item.goto_url || item.url || `https://www.bilibili.com/bangumi/media/md${item.media_id}`)"
                   >
                     立即观看
                   </a>
@@ -733,7 +737,7 @@ defineExpose({
               :key="bangumi.id || bangumi.title"
               class="bangumi-highlight-card"
             >
-              <a class="bangumi-highlight-cover" :href="bangumi.url" target="_blank">
+              <a class="bangumi-highlight-cover" :href="bangumi.url" @click.prevent="openExternalLink(bangumi.url)">
                 <img :src="bangumi.cover" :alt="bangumi.title">
                 <div v-if="bangumi.badge?.text || bangumi.capsuleText" class="bangumi-highlight-badge">
                   {{ bangumi.badge?.text || bangumi.capsuleText }}
@@ -764,7 +768,7 @@ defineExpose({
                   :fallback-url="bangumi.url"
                 />
                 <div class="bangumi-highlight-actions" flex items-center gap-3>
-                  <a class="bangumi-highlight-button" :href="bangumi.url" target="_blank">
+                  <a class="bangumi-highlight-button" :href="bangumi.url" @click.prevent="openExternalLink(bangumi.url)">
                     {{ bangumi.buttonText || '立即观看' }}
                   </a>
                 </div>
@@ -793,8 +797,8 @@ defineExpose({
           </div>
           <a
             :href="`https://www.bilibili.com/v/game/match/schedule?mid=${section.data[0]?.contest?.[0]?.mid || 0}&time=${Date.now()}`"
-            target="_blank"
             class="more-esports-button"
+            @click.prevent="openExternalLink(`https://www.bilibili.com/v/game/match/schedule?mid=${section.data[0]?.contest?.[0]?.mid || 0}&time=${Date.now()}`)"
           >
             {{ t('search_page.view_all_esports') }}
           </a>
@@ -823,7 +827,7 @@ defineExpose({
                     class="user-highlight-name" text="base $bew-text-1" font-medium flex items-center
                     gap-2
                   >
-                    <a :href="user.url" target="_blank">{{ user.name }}</a>
+                    <a :href="user.url" @click.prevent="openExternalLink(user.url)">{{ user.name }}</a>
                     <div
                       v-if="user.level !== undefined"
                       class="user-level-badge-icon"

@@ -27,15 +27,12 @@
     "mitt": "3.0.1",
     "pinia": "3.0.3",
     "qrcode.vue": "3.6.0",
-    "vue-i18n": "11.1.11",
-    "vue-toastification": "2.0.0-rc.5",
-    "vuedraggable": "4.1.0"
+    "vue-toastification": "2.0.0-rc.5"
   },
   "devDependencies": {
     "@antfu/eslint-config": "5.2.1",
     "@iconify/json": "2.2.376",
     "@iconify/vue": "5.0.0",
-    "@intlify/unplugin-vue-i18n": "6.0.8",
     "@rollup/plugin-replace": "6.0.2",
     "@types/md5": "2.3.5",
     "@types/node": "24.3.0",

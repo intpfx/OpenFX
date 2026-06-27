@@ -178,9 +178,6 @@ export interface Settings {
   enableVideoPreview: boolean
 
   // Link Opening Behavior
-  videoCardLinkOpenMode: 'drawer' | 'newTab' | 'currentTab' | 'background'
-  topBarLinkOpenMode: 'currentTab' | 'currentTabIfNotHomepage' | 'newTab' | 'background'
-  searchBarLinkOpenMode: 'currentTab' | 'currentTabIfNotHomepage' | 'newTab' | 'background'
   closeDrawerWithoutPressingEscAgain: boolean
 
   blockAds: boolean
@@ -356,10 +353,6 @@ export const originalSettings: Settings = {
   frostedGlassBlurIntensity: 20,
   disableShadow: false,
 
-  // Link Opening Behavior
-  videoCardLinkOpenMode: 'newTab',
-  topBarLinkOpenMode: 'currentTabIfNotHomepage',
-  searchBarLinkOpenMode: 'currentTabIfNotHomepage',
   closeDrawerWithoutPressingEscAgain: false,
 
   blockAds: false,

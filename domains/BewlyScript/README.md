@@ -51,7 +51,7 @@ dist/BewlyScript.user.js
 - 本 domain 只保留 userscript 构建链路；WebExtension 的 popup/options/manifest/商店打包发布脚本已移除。
 - `hls.js`、`flv.js` 保留，避免影响播放相关功能。
 - `qrcode.vue` 保留，用于设置页登录二维码。
-- `vuedraggable` 保留，用于 Dock 与首页设置项的拖拽排序。
+- Dock 与首页设置项保留排序能力，但改为显式移动按钮，移除 `vuedraggable` 运行时依赖。
 - `src/styles/adaptedStyles/` 保留，用于继续适配尽可能完整的 B 站页面样式。
 
 ## 移动端策略

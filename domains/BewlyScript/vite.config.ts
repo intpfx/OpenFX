@@ -2,7 +2,6 @@
 
 import process from 'node:process'
 
-import VueI18nPlugin from '@intlify/unplugin-vue-i18n/vite'
 import replace from '@rollup/plugin-replace'
 import Vue from '@vitejs/plugin-vue'
 import AutoImport from 'unplugin-auto-import/vite'
@@ -18,6 +17,7 @@ export const sharedConfig: UserConfig = {
     alias: {
       '~/': `${r('src')}/`,
       '~': r('src'),
+      'vue-i18n': r('src/utils/vue-i18n.ts'),
     },
   },
   plugins: [
@@ -32,14 +32,6 @@ export const sharedConfig: UserConfig = {
           ],
         },
       ],
-    }),
-
-    // https://github.com/intlify/bundle-tools/tree/main/packages/unplugin-vue-i18n
-    VueI18nPlugin({
-      runtimeOnly: true,
-      compositionOnly: true,
-      strictMessage: false,
-      include: [r('./src/_locales/**')],
     }),
 
     // https://github.com/unocss/unocss

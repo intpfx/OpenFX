@@ -5,14 +5,12 @@ import { useI18n } from 'vue-i18n'
 import { useBewlyApp } from '~/composables/useAppProvider'
 import { settings } from '~/logic'
 import type { List as VideoItem, WatchLaterResult } from '~/models/video/watchLater'
-import { openBilibiliLoginPage, shouldEnableHoverInteractions } from '~/userscript/mobile'
+import { isMobileUserscriptRuntimePage, openBilibiliLoginPage, openMobileUrlInCurrentPage, shouldEnableHoverInteractions } from '~/userscript/mobile'
 import api from '~/utils/api'
 import { calcCurrentTime } from '~/utils/dataFormatter'
-import { getCSRF, openLinkToNewTab, removeHttpFromUrl } from '~/utils/main'
-import { openLinkInBackground } from '~/utils/tabs'
+import { getCSRF, removeHttpFromUrl } from '~/utils/main'
 
 const { t } = useI18n()
-const { openIframeDrawer } = useBewlyApp()
 
 const isLoading = ref<boolean>()
 const noMoreContent = ref<boolean>()
@@ -151,22 +149,14 @@ function handleRemoveWatchedVideos() {
 }
 
 function handlePlayAll() {
-  openLinkToNewTab('https://www.bilibili.com/list/watchlater')
+  openInCurrentSurface('https://www.bilibili.com/list/watchlater')
 }
 
-function handleLinkClick(url: string) {
-  if (settings.value.videoCardLinkOpenMode === 'drawer') {
-    openIframeDrawer(url) // 在抽屉打开
-  }
-  else if (settings.value.videoCardLinkOpenMode === 'currentTab') {
-    window.open(url, '_self') // 在当前标签页打开
-  }
-  else if (settings.value.videoCardLinkOpenMode === 'background') {
-    openLinkInBackground(url)
-  }
-  else {
-    openLinkToNewTab(url) // 在新标签页打开
-  }
+function openInCurrentSurface(url: string) {
+  if (isMobileUserscriptRuntimePage() && openMobileUrlInCurrentPage(url))
+    return
+
+  window.location.href = url
 }
 
 function jumpToLoginPage() {
@@ -175,18 +165,7 @@ function jumpToLoginPage() {
 
 function handleVideoLinkClick(bvid: string) {
   const videoUrl = `https://www.bilibili.com/video/${bvid}/`
-  if (settings.value.videoCardLinkOpenMode === 'drawer') {
-    openIframeDrawer(videoUrl) // 在抽屉打开
-  }
-  else if (settings.value.videoCardLinkOpenMode === 'currentTab') {
-    window.open(videoUrl, '_self') // 在当前标签页打开
-  }
-  else if (settings.value.videoCardLinkOpenMode === 'background') {
-    openLinkInBackground(videoUrl)
-  }
-  else {
-    openLinkToNewTab(videoUrl) // 在新标签页打开
-  }
+  openInCurrentSurface(videoUrl)
 }
 
 function handleOpenVideoPageAndRemove(index: number, bvid: string, aid: number) {
@@ -285,7 +264,7 @@ function handleOpenVideoPageAndRemove(index: number, bvid: string, aid: number) 
                     class="keep-two-lines"
                     overflow="hidden"
                     un-text="lg overflow-ellipsis"
-                    @click.stop.prevent="handleLinkClick(`https://www.bilibili.com/list/watchlater?bvid=${item.bvid}`)"
+                    @click.stop.prevent="openInCurrentSurface(`https://www.bilibili.com/list/watchlater?bvid=${item.bvid}`)"
                   >
                     {{ item.title }}
                   </a>
@@ -343,7 +322,7 @@ function handleOpenVideoPageAndRemove(index: number, bvid: string, aid: number) 
                       :class="hoverInteractionsEnabled ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'"
                       p-2
                       duration-300
-                      @click.prevent.stop="handleLinkClick(`https://www.bilibili.com/list/watchlater?bvid=${item.bvid}`)"
+                      @click.prevent.stop="openInCurrentSurface(`https://www.bilibili.com/list/watchlater?bvid=${item.bvid}`)"
                     >
                       <div i-tabler:list-check />
                     </button>

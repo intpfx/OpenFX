@@ -8,7 +8,18 @@ import { BEWLY_MOUNTED, IFRAME_DARK_MODE_CHANGE } from '~/constants/globalEvents
 import { localSettings, settings } from '~/logic'
 import { setupApp } from '~/logic/common-setup'
 import RESET_BEWLY_CSS from '~/styles/reset.css?raw'
-import { injectMobileNativeHeaderCSS, installMobileNoNewTabGuard, isMobileUserscriptRuntimePage, isUserscriptRuntime, MOBILE_USERSCRIPT_SHADOW_CSS, MOBILE_VIDEO_DETAIL_CSS, setMobileNativeContentHidden, shouldHideMobileNativeContentForPage, shouldUseMobileVideoDetailLayout } from '~/userscript/mobile'
+import {
+  injectMobileNativeHeaderCSS,
+  installMobileNoNewTabGuard,
+  isMobileUserscriptRuntimePage,
+  isUserscriptRuntime,
+  MOBILE_USERSCRIPT_SHADOW_CSS,
+  MOBILE_VIDEO_DETAIL_CSS,
+  openMobileUrlInCurrentPage,
+  setMobileNativeContentHidden,
+  shouldHideMobileNativeContentForPage,
+  shouldUseMobileVideoDetailLayout,
+} from '~/userscript/mobile'
 import { sanitizeInlineSvg } from '~/userscript/svg-sanitizer'
 import { applyBewlyWidescreen, exitBewlyWidescreen } from '~/utils/bewlyWidescreen'
 import { cleanupBilibiliScripts } from '~/utils/bilibiliScriptCleanup'
@@ -21,7 +32,6 @@ import { applyAutoPlayByVideoType, applyDefaultDanmakuState, defaultMode, handle
 import { initRandomPlay, resetRandomPlayInitialization } from '~/utils/randomPlay'
 import { setupShortcutHandlers } from '~/utils/shortcuts'
 import { SVG_ICONS } from '~/utils/svgIcons'
-import { openLinkInBackground } from '~/utils/tabs'
 import { initVerticalVideoZoom, resetVerticalVideoZoom } from '~/utils/verticalVideoZoom'
 
 import { version } from '../../package.json'
@@ -1571,20 +1581,16 @@ else {
 
       const linkElement = target.closest('.bili-video-card a, .bili-video-card__wrap a')
 
-      if (linkElement instanceof HTMLAnchorElement) {
+        if (linkElement instanceof HTMLAnchorElement) {
         event.preventDefault()
 
         const href = linkElement.href
-        const videoCardLinkOpenMode = settings.value.videoCardLinkOpenMode
+        if (isMobileUserscriptRuntimePage()) {
+          openMobileUrlInCurrentPage(href)
+          return
+        }
 
-        if (videoCardLinkOpenMode === 'background') {
-        // 后台打开标签页
-          openLinkInBackground(href)
-        }
-        else {
-        // 默认新标签页打开
-          window.open(href, '_blank')
-        }
+        window.location.href = href
       }
     }, true)
   }

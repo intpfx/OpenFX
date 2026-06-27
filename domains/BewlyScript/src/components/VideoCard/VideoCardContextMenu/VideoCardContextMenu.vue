@@ -7,8 +7,7 @@ import { settings } from '~/logic'
 import { Type as ThreePointV2Type } from '~/models/video/appForYou'
 import { isMobileUserscriptRuntimePage, openMobileUrlInCurrentPage, shouldEnableHoverInteractions } from '~/userscript/mobile'
 import api from '~/utils/api'
-import { cleanBilibiliUrl, getCSRF, openLinkToNewTab } from '~/utils/main'
-import { openLinkInBackground } from '~/utils/tabs'
+import { cleanBilibiliUrl, getCSRF } from '~/utils/main'
 
 import type { Video } from '../types'
 import BlockUserConfirmDialog from './components/BlockUserConfirmDialog.vue'
@@ -268,31 +267,16 @@ function handleAppMoreCommand(command: ThreePointV2Type) {
 function handleCommonCommand(command: VideoOption) {
   switch (command) {
     case VideoOption.OpenInNewTab:
-      if (props.video.url && openMobileUrlInCurrentPage(props.video.url)) {
-        handleClose()
-        break
-      }
-      openLinkToNewTab(props.video.url!)
-      handleClose()
-      break
     case VideoOption.OpenInBackground:
-      if (props.video.url && openMobileUrlInCurrentPage(props.video.url)) {
-        handleClose()
-        break
-      }
-      openLinkInBackground(props.video.url!)
-      handleClose()
-      break
     case VideoOption.OpenInNewWindow:
-      if (props.video.url && openMobileUrlInCurrentPage(props.video.url)) {
-        handleClose()
-        break
-      }
-      showPipWindow.value = true
-      break
     case VideoOption.OpenInCurrentTab:
-      if (!props.video.url || !openMobileUrlInCurrentPage(props.video.url))
-        window.open(props.video.url, '_self')
+      if (props.video.url) {
+        if (openMobileUrlInCurrentPage(props.video.url)) {
+          handleClose()
+          break
+        }
+        window.location.href = props.video.url
+      }
       handleClose()
       break
     case VideoOption.OpenInDrawer:
@@ -328,7 +312,7 @@ function handleCommonCommand(command: VideoOption) {
 
     case VideoOption.ViewTheOriginalCover:
       if (!openMobileUrlInCurrentPage(props.video.cover))
-        window.open(props.video.cover, '_blank')
+        window.location.href = props.video.cover
       handleClose()
       break
 
@@ -477,93 +461,93 @@ async function unfollowUser() {
     <Transition :name="isMobileUserscriptPage ? 'context-menu-mobile' : 'fade'">
       <div
         v-if="showContextMenu"
-        :class="['context-menu-layer', { 'context-menu-layer--mobile': isMobileUserscriptPage }]"
-      >
-      <div
-        v-if="isMobileUserscriptPage"
-        class="context-menu-mask"
-        @click="handleClose"
-      />
-      <div
-        style="backdrop-filter: var(--bew-filter-glass-1); box-shadow: var(--bew-shadow-edge-glow-1), var(--bew-shadow-1);"
-        :style="isMobileUserscriptPage ? undefined : contextMenuStyles"
-        p-1 bg="$bew-elevated" rounded="$bew-radius"
-        min-w-200px m="t-4 l-[calc(-200px+1rem)]"
-        border="1 $bew-border-color"
-        :class="['context-menu-container', { 'context-menu-container--mobile': isMobileUserscriptPage }]"
-        @click.stop
+        class="context-menu-layer" :class="[{ 'context-menu-layer--mobile': isMobileUserscriptPage }]"
       >
         <div
           v-if="isMobileUserscriptPage"
-          class="context-menu-drawer-handle"
+          class="context-menu-mask"
+          @click="handleClose"
         />
-
-        <!-- 顶部滚动指示器 -->
         <div
-          v-show="canScrollUp"
-          :class="['scroll-indicator', 'scroll-indicator-top', { 'hover-enabled': hoverInteractionsEnabled }]"
-          @click="scrollToTop"
+          style="backdrop-filter: var(--bew-filter-glass-1); box-shadow: var(--bew-shadow-edge-glow-1), var(--bew-shadow-1);"
+          :style="isMobileUserscriptPage ? undefined : contextMenuStyles"
+          p-1 bg="$bew-elevated" rounded="$bew-radius"
+          min-w-200px m="t-4 l-[calc(-200px+1rem)]"
+          border="1 $bew-border-color"
+          class="context-menu-container" :class="[{ 'context-menu-container--mobile': isMobileUserscriptPage }]"
+          @click.stop
         >
-          <i class="i-mingcute:up-line" />
-        </div>
+          <div
+            v-if="isMobileUserscriptPage"
+            class="context-menu-drawer-handle"
+          />
 
-        <ul
-          ref="menuListRef"
-          flex="~ col gap-1"
-          class="context-menu-list"
-          @scroll="handleScroll"
-        >
-          <!-- 现有内容不变 -->
-          <template v-if="getVideoType() === 'appRcmd'">
-            <template v-for="option in video.threePointV2" :key="option.type">
+          <!-- 顶部滚动指示器 -->
+          <div
+            v-show="canScrollUp"
+            class="scroll-indicator scroll-indicator-top" :class="[{ 'hover-enabled': hoverInteractionsEnabled }]"
+            @click="scrollToTop"
+          >
+            <i class="i-mingcute:up-line" />
+          </div>
+
+          <ul
+            ref="menuListRef"
+            flex="~ col gap-1"
+            class="context-menu-list"
+            @scroll="handleScroll"
+          >
+            <!-- 现有内容不变 -->
+            <template v-if="getVideoType() === 'appRcmd'">
+              <template v-for="option in video.threePointV2" :key="option.type">
+                <li
+                  v-if="option.type !== ThreePointV2Type.WatchLater && option.type !== ThreePointV2Type.Feedback"
+                  class="context-menu-item" :class="[{ 'hover-enabled': hoverInteractionsEnabled }]"
+                  @click="handleAppMoreCommand(option.type)"
+                >
+                  <i class="item-icon" i-solar:confounded-circle-bold-duotone />
+                  <span v-if="option.type === ThreePointV2Type.Dislike">{{ $t('video_card.operation.not_interested') }}</span>
+                  <span v-else>{{ option.title }}</span>
+                </li>
+              </template>
+            </template>
+            <template v-else-if="getVideoType() === 'rcmd'">
               <li
-                v-if="option.type !== ThreePointV2Type.WatchLater && option.type !== ThreePointV2Type.Feedback"
-                :class="['context-menu-item', { 'hover-enabled': hoverInteractionsEnabled }]"
-                @click="handleAppMoreCommand(option.type)"
+                v-for="option in videoOptions" :key="option.id"
+                class="context-menu-item" :class="[{ 'hover-enabled': hoverInteractionsEnabled }]"
+                @click="handleMoreCommand(option.id)"
               >
                 <i class="item-icon" i-solar:confounded-circle-bold-duotone />
-                <span v-if="option.type === ThreePointV2Type.Dislike">{{ $t('video_card.operation.not_interested') }}</span>
-                <span v-else>{{ option.title }}</span>
+                {{ option.name }}
               </li>
             </template>
-          </template>
-          <template v-else-if="getVideoType() === 'rcmd'">
-            <li
-              v-for="option in videoOptions" :key="option.id"
-              :class="['context-menu-item', { 'hover-enabled': hoverInteractionsEnabled }]"
-              @click="handleMoreCommand(option.id)"
-            >
-              <i class="item-icon" i-solar:confounded-circle-bold-duotone />
-              {{ option.name }}
-            </li>
-          </template>
 
-          <div v-if="getVideoType() === 'rcmd'" class="divider" />
+            <div v-if="getVideoType() === 'rcmd'" class="divider" />
 
-          <template v-for="(optionGroup, index) in commonOptions" :key="index">
-            <li
-              v-for="option in optionGroup"
-              :key="option.command"
-              :class="['context-menu-item', option.color, { 'hover-enabled': hoverInteractionsEnabled }]"
-              @click="handleCommonCommand(option.command)"
-            >
-              <i class="item-icon" :class="[option.icon, option.color]" />
-              {{ option.name }}
-            </li>
+            <template v-for="(optionGroup, index) in commonOptions" :key="index">
+              <li
+                v-for="option in optionGroup"
+                :key="option.command"
+                class="context-menu-item" :class="[option.color, { 'hover-enabled': hoverInteractionsEnabled }]"
+                @click="handleCommonCommand(option.command)"
+              >
+                <i class="item-icon" :class="[option.icon, option.color]" />
+                {{ option.name }}
+              </li>
 
-            <div v-if="index !== commonOptions.length - 1" class="divider" />
-          </template>
-        </ul>
+              <div v-if="index !== commonOptions.length - 1" class="divider" />
+            </template>
+          </ul>
 
-        <!-- 底部滚动指示器 -->
-        <div
-          v-show="canScrollDown"
-          :class="['scroll-indicator', 'scroll-indicator-bottom', { 'hover-enabled': hoverInteractionsEnabled }]"
-          @click="scrollToBottom"
-        >
-          <i class="i-mingcute:down-line" />
+          <!-- 底部滚动指示器 -->
+          <div
+            v-show="canScrollDown"
+            class="scroll-indicator scroll-indicator-bottom" :class="[{ 'hover-enabled': hoverInteractionsEnabled }]"
+            @click="scrollToBottom"
+          >
+            <i class="i-mingcute:down-line" />
+          </div>
         </div>
-      </div>
       </div>
     </Transition>
 

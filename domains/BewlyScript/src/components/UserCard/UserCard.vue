@@ -3,6 +3,7 @@ import DOMPurify from 'dompurify'
 import { computed, ref, watch } from 'vue'
 
 import ALink from '~/components/ALink.vue'
+import { isMobileUserscriptRuntimePage, openMobileUrlInCurrentPage } from '~/userscript/mobile'
 import api from '~/utils/api'
 import { LV0_ICON, LV1_ICON, LV2_ICON, LV3_ICON, LV4_ICON, LV5_ICON, LV6_ICON } from '~/utils/lvIcons'
 import { getCSRF } from '~/utils/main'
@@ -54,6 +55,8 @@ const sampleList = computed(() => {
 
 const isFollowing = ref(props.isFollowed === 1)
 const isFollowLoading = ref(false)
+const isMobileUserscriptPage = computed(() => isMobileUserscriptRuntimePage())
+const userSpaceUrl = computed(() => `https://space.bilibili.com/${props.mid}`)
 
 // 监听 isFollowed prop 的变化
 watch(() => props.isFollowed, (newVal) => {
@@ -90,8 +93,32 @@ function formatNumber(num: number | undefined) {
   return num.toString()
 }
 
-function openUserSpace() {
-  window.open(`https://space.bilibili.com/${props.mid}`, '_blank')
+function openUserSpace(event: Event) {
+  if (!userSpaceUrl.value)
+    return
+
+  if (isMobileUserscriptPage.value) {
+    event.preventDefault()
+    event.stopPropagation()
+    openMobileUrlInCurrentPage(userSpaceUrl.value)
+    return
+  }
+
+  window.location.href = userSpaceUrl.value
+}
+
+function openSampleVideo(event: Event, sampleUrl?: string) {
+  if (!sampleUrl)
+    return
+
+  if (isMobileUserscriptPage.value) {
+    event.preventDefault()
+    event.stopPropagation()
+    openMobileUrlInCurrentPage(sampleUrl)
+    return
+  }
+
+  window.location.href = sampleUrl
 }
 
 async function handleFollowClick(e: Event) {
@@ -253,7 +280,7 @@ async function handleFollowClick(e: Event) {
       bg="$bew-elevated hover:$bew-elevated-hover"
       rounded="$bew-radius"
       cursor="pointer"
-      @click="openUserSpace()"
+      @click="openUserSpace"
     >
       <!-- 头像 -->
       <div class="avatar-wrapper" flex-shrink-0>
@@ -315,9 +342,8 @@ async function handleFollowClick(e: Event) {
             :key="sample.id"
             class="sample-card"
             :href="sample.url"
-            target="_blank"
-            rel="noopener"
-            @click.stop
+            @click.stop="openSampleVideo($event, sample.url)"
+            @auxclick.stop="openSampleVideo($event, sample.url)"
           >
             <div class="sample-cover">
               <img

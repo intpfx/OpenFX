@@ -10,8 +10,6 @@ import { useTopBarStore } from '~/stores/topBarStore'
 import { isMobileUserscriptRuntimePage, normalizeBilibiliUrlForCurrentSurface, openMobileUrlInCurrentPage, shouldEnableHoverInteractions } from '~/userscript/mobile'
 import api from '~/utils/api'
 import { findLeafActiveElement } from '~/utils/element'
-import { isHomePage } from '~/utils/main'
-import { openLinkInBackground } from '~/utils/tabs'
 
 import type { HistoryItem, SuggestionItem, SuggestionResponse } from './searchHistoryProvider'
 import {
@@ -420,22 +418,7 @@ async function navigateToSearchResultPage(rawKeyword: string) {
     return
   }
 
-  if (settings.value.searchBarLinkOpenMode === 'background') {
-    // 使用后台标签页打开
-    void openLinkInBackground(searchUrl)
-  }
-  else {
-    // 使用 window.open 打开
-    let target = '_blank'
-    if (settings.value.searchBarLinkOpenMode === 'currentTabIfNotHomepage')
-      target = isHomePage() ? '_blank' : '_self'
-    else if (settings.value.searchBarLinkOpenMode === 'currentTab')
-      target = '_self'
-    else if (settings.value.searchBarLinkOpenMode === 'newTab')
-      target = '_blank'
-
-    window.open(searchUrl, target)
-  }
+  navigateToUrlInCurrentPage(searchUrl)
 
   resetKeyboardSelection()
 }
@@ -993,7 +976,10 @@ function handleClearKeyword() {
       bottom: calc(100% + 10px);
       left: 0;
       width: 100%;
-      max-height: min(420px, calc(100dvh - var(--bew-mobile-bottom-shell-height, 120px) - env(safe-area-inset-top, 0px) - 18px)) !important;
+      max-height: min(
+        420px,
+        calc(100dvh - var(--bew-mobile-bottom-shell-height, 120px) - env(safe-area-inset-top, 0px) - 18px)
+      ) !important;
       margin-top: 0;
       border-radius: 18px;
       box-shadow:

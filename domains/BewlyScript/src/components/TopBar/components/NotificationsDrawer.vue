@@ -3,6 +3,7 @@ import { DrawerType, useBewlyApp } from '~/composables/useAppProvider'
 import { useDark } from '~/composables/useDark'
 import { IFRAME_DARK_MODE_CHANGE } from '~/constants/globalEvents'
 import { settings } from '~/logic'
+import { isMobileUserscriptRuntimePage, openMobileUrlInCurrentPage } from '~/userscript/mobile'
 import { lockPageScroll, unlockPageScroll } from '~/utils/pageScrollLock'
 
 // TODO: support shortcuts like `Ctrl+Alt+T` to open in new tab, `Esc` to close
@@ -21,6 +22,7 @@ const { isDark } = useDark()
 const show = ref(false)
 const iframeRef = ref<HTMLIFrameElement | null>(null)
 const drawerRef = ref<HTMLElement | null>(null)
+const isMobileUserscriptPage = computed(() => isMobileUserscriptRuntimePage())
 const currentUrl = ref<string>(props.url || 'https://message.bilibili.com/')
 const showIframe = ref(false)
 const isIframeLoaded = ref(false)
@@ -192,12 +194,25 @@ async function releaseIframeResources() {
 
 function handleOpenInNewTab() {
   if (iframeRef.value) {
+    let iframeUrl = 'https://message.bilibili.com/'
+
     try {
-      window.open(iframeRef.value.contentWindow?.location.href.replace(/\/$/, ''), '_blank')
+      const currentHref = iframeRef.value.contentWindow?.location.href
+      if (currentHref)
+        iframeUrl = currentHref.replace(/\/$/, '')
     }
     catch {
-      window.open('https://message.bilibili.com/', '_blank')
+      // Cross-origin iframe access is expected sometimes; fallback to default message page.
     }
+
+    if (!iframeUrl)
+      iframeUrl = 'https://message.bilibili.com/'
+
+    if (isMobileUserscriptPage.value)
+      openMobileUrlInCurrentPage(iframeUrl)
+    else
+      window.location.href = iframeUrl
+
     handleClose()
   }
 }
