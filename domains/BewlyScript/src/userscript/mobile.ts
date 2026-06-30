@@ -380,6 +380,7 @@ export function removeMobileNativeHeaderCSS(styleEl: HTMLStyleElement | undefine
 
 export const MOBILE_BILIBILI_HOST = 'm.bilibili.com'
 export const DESKTOP_BILIBILI_HOST = 'www.bilibili.com'
+export const SPACE_BILIBILI_HOST = 'space.bilibili.com'
 
 export function isMobileBilibiliPage(url: string = location.href): boolean {
   try {
@@ -536,6 +537,14 @@ export function shouldUseMobileVideoDetailLayout(url: string = location.href): b
 export function normalizeBilibiliUrlForCurrentSurface(targetUrl: string, currentUrl: string = location.href): string {
   try {
     const parsedTarget = new URL(targetUrl, currentUrl)
+
+    if (parsedTarget.hostname === SPACE_BILIBILI_HOST) {
+      const spacePath = parsedTarget.pathname.replace(/^\/+/, '')
+      parsedTarget.protocol = 'https:'
+      parsedTarget.hostname = DESKTOP_BILIBILI_HOST
+      parsedTarget.pathname = spacePath ? `/space/${spacePath}` : '/space'
+      return parsedTarget.toString()
+    }
 
     if (parsedTarget.hostname !== MOBILE_BILIBILI_HOST && parsedTarget.hostname !== DESKTOP_BILIBILI_HOST)
       return parsedTarget.toString()

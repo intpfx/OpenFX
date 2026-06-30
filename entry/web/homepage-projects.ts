@@ -9,7 +9,17 @@ export type HomepageProjectCard = {
   description: string;
   tech: string[];
   sourcePath: string;
+  provenance?: HomepageProjectProvenance;
   links?: HomepageProjectLink[];
+};
+
+export type HomepageProjectProvenance = {
+  origin: {
+    label: string;
+    href: string;
+  };
+  changes: string;
+  differences: string;
 };
 
 export type HomepageProjectLink = {

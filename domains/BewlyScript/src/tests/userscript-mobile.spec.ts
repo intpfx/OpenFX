@@ -323,6 +323,9 @@ describe('mobile userscript support', () => {
     expect(normalizeBilibiliUrlForCurrentSurface('https://www.bilibili.com/video/BV123', 'https://m.bilibili.com/')).toBe('https://www.bilibili.com/video/BV123')
     expect(normalizeBilibiliUrlForCurrentSurface('https://m.bilibili.com/video/BV123', 'https://www.bilibili.com/')).toBe('https://www.bilibili.com/video/BV123')
     expect(normalizeBilibiliUrlForCurrentSurface('https://m.bilibili.com/video/BV123?t=8&p=2', 'https://www.bilibili.com/')).toBe('https://www.bilibili.com/video/BV123?t=8&p=2')
+    expect(normalizeBilibiliUrlForCurrentSurface('https://space.bilibili.com/123', 'https://www.bilibili.com/')).toBe('https://www.bilibili.com/space/123')
+    expect(normalizeBilibiliUrlForCurrentSurface('https://space.bilibili.com/123/dynamic?spm_id_from=333#reply', 'https://www.bilibili.com/')).toBe('https://www.bilibili.com/space/123/dynamic?spm_id_from=333#reply')
+    expect(parseMobileRoute(normalizeBilibiliUrlForCurrentSurface('https://space.bilibili.com/123', 'https://www.bilibili.com/'))).toMatchObject({ kind: 'space', page: AppPage.Space, mid: '123' })
   })
 
   it('normalizes protocol-relative and relative URLs before mobile drawer routing', () => {
@@ -353,6 +356,11 @@ describe('mobile userscript support', () => {
     expect(pointerDownHandler).not.toContain('event.preventDefault()')
     expect(topBarSearchSource).toContain('showMobileLoginPanel.value = true')
     expect(topBarSearchSource).toContain('class="mobile-login-panel"')
+    expect(topBarSearchSource).toContain('class="mobile-login-panel__drag-handle"')
+    expect(topBarSearchSource).toContain('function handleMobileLoginDragStart(event: PointerEvent)')
+    expect(topBarSearchSource).toContain('mobileLoginDragOffset')
+    expect(topBarSearchSource).toContain('aria-label="Bilibili 登录 / 注册"')
+    expect(topBarSearchSource).toContain('<strong>登录 / 注册</strong>')
     expect(topBarSearchSource).toContain(':src="BILIBILI_LOGIN_URL"')
   })
 

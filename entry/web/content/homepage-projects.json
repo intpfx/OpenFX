@@ -28,9 +28,31 @@
           "id": "bewlyscript",
           "type": "project",
           "name": "BewlyScript",
-          "description": "面向 Safari Userscripts 与 Tampermonkey 的 B 站体验优化脚本，保留 BewlyCat 桌面体验，并为 m.bilibili.com 做移动优先适配。",
-          "tech": ["Userscript", "Vue", "Bilibili", "Mobile"],
-          "sourcePath": "domains/BewlyScript/ · dist/BewlyScript.user.js"
+          "description": "基于 keleus/BewlyCat 的 OpenFX userscript 版，专注 B 站桌面原站美化，并在 m 站提示用户访问桌面版。",
+          "tech": ["Userscript", "Vue", "Bilibili", "Desktop"],
+          "sourcePath": "domains/BewlyScript/ · dist/BewlyScript.user.js",
+          "provenance": {
+            "origin": {
+              "label": "keleus/BewlyCat",
+              "href": "https://github.com/keleus/BewlyCat"
+            },
+            "changes": "单文件 userscript、GM/browser shim、m 站 document-start 提示。",
+            "differences": "上游是浏览器扩展；本版只交付油猴脚本，完整体验在 www 桌面原站。"
+          }
+        },
+        {
+          "id": "smartisax",
+          "type": "project",
+          "name": "Smartisax",
+          "description": "公开的 Smartisan R2 hard-ROM 改造工作区，覆盖镜像重建、Portal 远程控制和实机验证链路。",
+          "tech": ["Shell", "Android", "ROM", "WebRTC"],
+          "sourcePath": "github.com/intpfx/Smartisax · public",
+          "links": [
+            {
+              "label": "GitHub",
+              "href": "https://github.com/intpfx/Smartisax"
+            }
+          ]
         },
         {
           "id": "gasmap",
@@ -61,6 +83,36 @@
           "description": "导入字典与竣工量 Excel，在浏览器本地完成匹配、计价、OCR 辅助导入和结果导出。",
           "tech": ["React", "Ant Design", "Excel", "OCR"],
           "sourcePath": "domains/costing-assistant/"
+        },
+        {
+          "id": "live-system",
+          "type": "project",
+          "name": "LiveSystem",
+          "description": "私有的工程实时管理系统，覆盖材料、库存、进度、财务、LiveDock 和内嵌 Agent 助手。",
+          "tech": ["TypeScript", "Bun", "Elysia", "React"],
+          "sourcePath": "github.com/intpfx/LiveSystem · private",
+          "links": [
+            {
+              "label": "GitHub",
+              "href": "https://github.com/intpfx/LiveSystem"
+            }
+          ]
+        },
+        {
+          "id": "map-poster",
+          "type": "project",
+          "name": "Map Poster",
+          "description": "基于 originalankur/maptoposter 的 OpenFX 改造版，从 OpenStreetMap 数据生成 SVG/PNG 地图海报。",
+          "tech": ["Bun", "OSM", "SVG", "Sharp"],
+          "sourcePath": "domains/map-poster/",
+          "provenance": {
+            "origin": {
+              "label": "originalankur/maptoposter",
+              "href": "https://github.com/originalankur/maptoposter"
+            },
+            "changes": "重写为 TS/Deno Web、SVG renderer、预览下载。",
+            "differences": "原项目 Python CLI；本版地图点选生成。"
+          }
         }
       ]
     },
@@ -83,6 +135,20 @@
           "description": "纯静态 HTML/CSS 站点，以视频背景、iframe 内容区和右侧导航组成暗色企业官网原型。",
           "tech": ["HTML", "CSS", "Static Site"],
           "sourcePath": "domains/wanone/ · /wanone/index.html"
+        },
+        {
+          "id": "wandering-plan",
+          "type": "project",
+          "name": "WanderingPlan",
+          "description": "公开的 HaaS600 / AliOS Things 智能柜体毕设项目，包含固件、业务接口、结构模型和文档。",
+          "tech": ["C", "AliOS Things", "HaaS600", "IoT"],
+          "sourcePath": "github.com/intpfx/WanderingPlan · public",
+          "links": [
+            {
+              "label": "GitHub",
+              "href": "https://github.com/intpfx/WanderingPlan"
+            }
+          ]
         },
         {
           "id": "relay-proxy-gateway",

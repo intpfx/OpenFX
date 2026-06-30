@@ -20,7 +20,6 @@ interface VideoCardProps {
   video?: Video
   type?: 'rcmd' | 'appRcmd' | 'bangumi' | 'common'
   showWatcherLater?: boolean
-  horizontal?: boolean
   showPreview?: boolean
   moreBtn?: boolean
   autoPreviewActive?: boolean

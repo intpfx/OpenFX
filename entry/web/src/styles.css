@@ -350,6 +350,43 @@ textarea {
   font-size: 0.82rem;
 }
 
+.pc-provenance {
+  display: grid;
+  gap: 0.18rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.42rem;
+}
+
+.pc-provenance p {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr);
+  gap: 0.34rem;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.62rem;
+  line-height: 1.32;
+}
+
+.pc-provenance span {
+  color: var(--accent);
+  font-family: ui-monospace, "SFMono-Regular", SFMono-Regular, Menlo, monospace;
+  font-size: 0.58rem;
+  text-transform: uppercase;
+}
+
+.pc-provenance a {
+  color: var(--text-primary);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+.pc-provenance a:hover,
+.pc-provenance a:focus-visible {
+  color: var(--accent);
+  outline: none;
+}
+
 .pc-tech {
   display: flex;
   flex-wrap: wrap;
@@ -525,8 +562,33 @@ textarea {
 .control-status {
   display: flex;
   flex: 1 1 18rem;
+  flex-wrap: wrap;
   min-width: 12rem;
   align-items: center;
+  gap: 0.55rem 0.85rem;
+}
+
+.build-version {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  color: var(--text-secondary);
+  font-family: ui-monospace, "SFMono-Regular", SFMono-Regular, Menlo, monospace;
+  font-size: 0.64rem;
+  line-height: 1.25;
+  opacity: 0.68;
+  white-space: nowrap;
+}
+
+.build-version > span:first-child {
+  color: var(--accent);
+  opacity: 0.76;
+}
+
+.build-version time {
+  font-variant-numeric: tabular-nums;
 }
 
 .ctrl-btn {
@@ -1702,6 +1764,12 @@ textarea {
   .control-status {
     flex: 1 1 100%;
     min-width: 0;
+    justify-content: space-between;
+  }
+
+  .build-version {
+    max-width: 100%;
+    white-space: normal;
   }
 
   .control-actions {
@@ -1842,6 +1910,15 @@ textarea {
   view-transition-name: card-proxy;
 }
 
+.domain-panel[data-panel-id="map-poster"] {
+  view-transition-name: card-map-poster;
+}
+
+.domain-panel[data-panel-id="map-poster"] .domain-panel-grid {
+  grid-template-columns: minmax(18rem, 0.88fr) minmax(24rem, 1.35fr);
+  align-items: stretch;
+}
+
 .domain-panel[data-panel-id="openfx-data"] {
   view-transition-name: card-data;
 }
@@ -1934,6 +2011,423 @@ textarea {
 .domain-panel-section code {
   color: var(--accent);
   font-size: 0.72rem;
+}
+
+.map-poster-tool-section,
+.map-poster-live-section {
+  min-height: 0;
+}
+
+.map-poster-tool-section {
+  background:
+    linear-gradient(180deg, oklch(1 0 0 / 0.72), transparent 34%),
+    var(--surface);
+}
+
+.map-poster-form {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.map-poster-form-head,
+.map-poster-preview-head,
+.map-poster-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.map-poster-form-head {
+  align-items: flex-start;
+}
+
+.map-poster-form-head > div:first-child {
+  display: grid;
+  min-width: 0;
+  gap: 0.28rem;
+}
+
+.map-poster-action-row {
+  flex: 0 0 auto;
+}
+
+.map-poster-state,
+.map-poster-preview-head span,
+.map-poster-download-status {
+  color: var(--text-secondary);
+  font-family: ui-monospace, "SFMono-Regular", SFMono-Regular, Menlo, monospace;
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.map-poster-state.ready {
+  color: var(--accent);
+}
+
+.map-poster-state.error,
+.map-poster-download-status {
+  color: oklch(0.56 0.2 28);
+}
+
+.map-poster-origin-note {
+  display: grid;
+  gap: 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: oklch(0.985 0.004 250 / 0.74);
+  padding: 0.72rem;
+}
+
+.map-poster-origin-note h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 0.82rem;
+}
+
+.map-poster-origin-note dl {
+  display: grid;
+  gap: 0.38rem;
+  margin: 0;
+}
+
+.map-poster-origin-note div {
+  display: grid;
+  grid-template-columns: 2.4rem minmax(0, 1fr);
+  gap: 0.5rem;
+}
+
+.map-poster-origin-note dt {
+  color: var(--accent);
+  font-family: ui-monospace, "SFMono-Regular", SFMono-Regular, Menlo, monospace;
+  font-size: 0.64rem;
+  text-transform: uppercase;
+}
+
+.map-poster-origin-note dd {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.55rem;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+
+.map-poster-origin-note a {
+  color: var(--text-primary);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+.map-poster-origin-note a:hover,
+.map-poster-origin-note a:focus-visible {
+  color: var(--accent);
+  outline: none;
+}
+
+.map-poster-picker {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.map-poster-map-head,
+.map-poster-map-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.map-poster-map-head > div:first-child {
+  display: grid;
+  min-width: 0;
+  gap: 0.18rem;
+}
+
+.map-poster-map-head span {
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+}
+
+.map-poster-map-head strong,
+.map-poster-map-controls span {
+  color: var(--text-primary);
+  font-family: ui-monospace, "SFMono-Regular", SFMono-Regular, Menlo, monospace;
+  font-size: 0.72rem;
+}
+
+.map-poster-map-controls {
+  flex: 0 0 auto;
+  justify-content: flex-end;
+}
+
+.map-poster-map-controls button {
+  display: inline-grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: oklch(0.99 0.002 250 / 0.9);
+  color: var(--text-primary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.map-poster-map-controls button:hover,
+.map-poster-map-controls button:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+  outline: none;
+}
+
+.map-poster-picker-map {
+  position: relative;
+  height: 17rem;
+  min-height: 14rem;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, oklch(0.93 0.015 190), oklch(0.98 0.004 250));
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+}
+
+.map-poster-picker-map:active {
+  cursor: grabbing;
+}
+
+.map-poster-picker-map:focus-visible {
+  box-shadow: 0 0 0 3px oklch(0.55 0.2 250 / 0.12);
+  outline: none;
+}
+
+.map-poster-map-tile {
+  position: absolute;
+  width: 256px;
+  height: 256px;
+  max-width: none;
+  pointer-events: none;
+  user-select: none;
+}
+
+.map-poster-map-marker {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 1.15rem;
+  height: 1.15rem;
+  border: 2px solid var(--accent);
+  border-radius: 999px;
+  box-shadow: 0 0 0 3px oklch(1 0 0 / 0.72), 0 0.3rem 0.8rem oklch(0.2 0.04 250 / 0.22);
+  transform: translate(-50%, -50%);
+}
+
+.map-poster-map-marker::before,
+.map-poster-map-marker::after {
+  position: absolute;
+  content: "";
+  background: var(--accent);
+}
+
+.map-poster-map-marker::before {
+  top: 50%;
+  left: -0.45rem;
+  width: calc(100% + 0.9rem);
+  height: 2px;
+  transform: translateY(-50%);
+}
+
+.map-poster-map-marker::after {
+  top: -0.45rem;
+  left: 50%;
+  width: 2px;
+  height: calc(100% + 0.9rem);
+  transform: translateX(-50%);
+}
+
+.map-poster-map-attribution {
+  position: absolute;
+  right: 0.45rem;
+  bottom: 0.38rem;
+  border: 1px solid oklch(0.82 0.01 250 / 0.7);
+  border-radius: 4px;
+  background: oklch(1 0 0 / 0.82);
+  color: var(--text-secondary);
+  font-size: 0.58rem;
+  line-height: 1;
+  padding: 0.24rem 0.34rem;
+}
+
+.map-poster-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.map-poster-field {
+  display: grid;
+  min-width: 0;
+  gap: 0.35rem;
+}
+
+.map-poster-field-wide {
+  grid-column: 1 / -1;
+}
+
+.map-poster-field span {
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+}
+
+.map-poster-field input,
+.map-poster-field select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: oklch(0.99 0.002 250 / 0.92);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 0.58rem 0.62rem;
+}
+
+.map-poster-field input:focus,
+.map-poster-field select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px oklch(0.55 0.2 250 / 0.1);
+  outline: none;
+}
+
+.map-poster-theme-strip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.map-poster-theme-strip span {
+  min-height: 1.45rem;
+}
+
+.map-poster-primary,
+.map-poster-secondary {
+  display: inline-flex;
+  min-width: 7.25rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.68rem 0.9rem;
+  transition: opacity 0.18s ease, transform 0.18s ease, background-color 0.18s ease;
+}
+
+.map-poster-primary {
+  background: var(--accent);
+  color: white;
+}
+
+.map-poster-secondary {
+  background: transparent;
+  color: var(--accent);
+}
+
+.map-poster-primary:hover,
+.map-poster-secondary:hover {
+  transform: translateY(-1px);
+}
+
+.map-poster-primary:disabled,
+.map-poster-secondary:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+  transform: none;
+}
+
+.map-poster-live-section {
+  gap: 0.85rem;
+}
+
+.map-poster-live-frame {
+  position: relative;
+  display: grid;
+  flex: 1 1 auto;
+  min-height: 26rem;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(45deg, oklch(0.96 0.004 250) 25%, transparent 25%),
+    linear-gradient(-45deg, oklch(0.96 0.004 250) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, oklch(0.96 0.004 250) 75%),
+    linear-gradient(-45deg, transparent 75%, oklch(0.96 0.004 250) 75%);
+  background-color: oklch(0.985 0.002 250);
+  background-position: 0 0, 0 0.5rem, 0.5rem -0.5rem, -0.5rem 0;
+  background-size: 1rem 1rem;
+}
+
+.map-poster-live-frame[data-loading="true"] .map-poster-live-image {
+  opacity: 0.5;
+}
+
+.map-poster-live-image {
+  width: 100%;
+  height: 100%;
+  max-height: min(58vh, 42rem);
+  object-fit: contain;
+  transition: opacity 0.2s ease;
+}
+
+.map-poster-loading {
+  position: absolute;
+  inset: auto 1rem 1rem auto;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: oklch(1 0 0 / 0.86);
+  color: var(--accent);
+  font-size: 0.72rem;
+  padding: 0.38rem 0.62rem;
+}
+
+.map-poster-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin: 0;
+}
+
+.map-poster-meta-grid div {
+  min-width: 0;
+  border-top: 1px solid var(--border);
+  padding-top: 0.55rem;
+}
+
+.map-poster-meta-grid dt {
+  color: var(--text-secondary);
+  font-size: 0.64rem;
+}
+
+.map-poster-meta-grid dd {
+  margin: 0.2rem 0 0;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+  font-family: ui-monospace, "SFMono-Regular", SFMono-Regular, Menlo, monospace;
+  font-size: 0.7rem;
 }
 
 .panel-download-link {
@@ -2049,6 +2543,10 @@ textarea {
   view-transition-name: card-proxy;
 }
 
+.project-card[data-card-id="map-poster"] {
+  view-transition-name: card-map-poster;
+}
+
 .project-card[data-card-id="openfx-data"] {
   view-transition-name: card-data;
 }
@@ -2065,6 +2563,44 @@ textarea {
 
   .domain-panel-grid {
     grid-template-columns: 1fr;
+  }
+
+  .domain-panel[data-panel-id="map-poster"] .domain-panel-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .map-poster-field-grid,
+  .map-poster-meta-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .map-poster-form-head,
+  .map-poster-preview-head,
+  .map-poster-action-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .map-poster-map-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .map-poster-map-controls {
+    justify-content: space-between;
+  }
+
+  .map-poster-picker-map {
+    height: 14.5rem;
+  }
+
+  .map-poster-primary,
+  .map-poster-secondary {
+    width: 100%;
+  }
+
+  .map-poster-live-frame {
+    min-height: 20rem;
   }
 
   .downip-live-section {

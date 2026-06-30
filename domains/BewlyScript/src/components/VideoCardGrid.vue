@@ -8,7 +8,6 @@ import { useVideoCardShadowStyle } from '~/composables/useVideoCardShadowStyle'
 import { OVERLAY_SCROLL_BAR_SCROLL } from '~/constants/globalEvents'
 import type { GridLayoutType } from '~/logic'
 import { settings } from '~/logic'
-import { isMobileUserscriptRuntimePage } from '~/userscript/mobile'
 import emitter from '~/utils/mitt'
 
 import SmoothLoading from './SmoothLoading.vue'
@@ -74,12 +73,6 @@ interface VideoCardGridProps<T = any> {
    * 自定义卡片点击处理。未传入时 VideoCard 使用设置中的默认打开行为。
    */
   cardClickHandler?: (item: T, event: MouseEvent) => void
-
-  /**
-   * 是否让封面左上角插槽常驻显示。
-   * @default false
-   */
-  coverTopLeftAlwaysVisible?: boolean
 
   /**
    * 生成唯一ID的函数（可选接收 index 参数以确保唯一性）
@@ -554,8 +547,6 @@ onUnmounted(() => {
   resetTransformCaches()
 })
 
-const isHorizontal = computed(() => false)
-
 // 合并 shadow 样式变量和 grid 列数变量
 const gridContainerStyle = computed(() => ({
   ...shadowStyleVars.value,
@@ -644,8 +635,8 @@ function getCurrentColumnCount(width: number): number {
   return getAdaptiveGridColumns(width)
 }
 
-function getGridGap(): number {
-  return isMobileUserscriptRuntimePage() ? 12 : 20
+function getGridGap(width = 0): number {
+  return width > 0 && width <= 700 ? 12 : 20
 }
 
 function getEstimatedRowSpan(): number {
@@ -660,15 +651,15 @@ function getEstimatedAdaptiveRowHeight(width: number, columns: number): number {
   if (width <= 0 || columns <= 0)
     return getFallbackEstimatedRowHeight()
 
-  const gap = getGridGap()
+  const gap = getGridGap(width)
   const cardWidth = Math.max(1, (width - gap * (columns - 1)) / columns)
   const coverHeight = cardWidth * 9 / 16
 
   // Keep the first virtual pass close to the actual modern card height so rows
   // do not render with a large temporary gap before ResizeObserver catches up.
-  // Mobile takeover cards render title/author/actions as cover overlays, so the
-  // row height is just the cover height plus the virtual gap.
-  return coverHeight + (isMobileUserscriptRuntimePage() ? 0 : 112)
+  // Video cards render title/author/actions inside the cover, so the row height
+  // is just the cover height plus the virtual grid gap.
+  return coverHeight
 }
 
 const resolvedContainerWidth = computed(() => {
@@ -688,7 +679,7 @@ const currentColumnCount = computed(() =>
   getCurrentColumnCount(resolvedContainerWidth.value),
 )
 
-const currentGridGap = computed(() => getGridGap())
+const currentGridGap = computed(() => getGridGap(resolvedContainerWidth.value))
 
 const VIRTUAL_RETAIN_SCREENS = 2
 
@@ -1025,11 +1016,9 @@ function getUniqueKey(item: T, index: number): string | number {
             :video="renderItem.video"
             :show-preview="showPreview"
             :show-watcher-later="showWatchLater"
-            :horizontal="isHorizontal"
             :more-btn="moreBtn"
             :is-following-page="props.isFollowingPage"
             :custom-click-handler="props.cardClickHandler ? (event: MouseEvent) => props.cardClickHandler?.(renderItem.item, event) : undefined"
-            :cover-top-left-always-visible="props.coverTopLeftAlwaysVisible"
           >
             <template v-for="(_, name) in $slots" #[name]>
               <slot :name="name" :item="renderItem.item" />

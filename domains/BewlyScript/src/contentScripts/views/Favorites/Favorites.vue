@@ -882,7 +882,6 @@ function transformFavoriteItem(item: FavoriteItem): Video {
         :empty-description="$t('common.no_more_content')"
         :more-btn="!isBatchManaging"
         :card-click-handler="isBatchManaging ? handleFavoriteCardClick : undefined"
-        :cover-top-left-always-visible="isBatchManaging"
         enable-row-padding
         @refresh="() => handlePageRefresh?.()"
       >

@@ -25,5 +25,13 @@ jobs:
         run: deno task guard:deno-only
       - name: Test
         run: deno task test
+      - name: Prepare web build metadata
+        id: web-build-meta
+        run: |
+          echo "time=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
+          echo "hash=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
       - name: Build web app
+        env:
+          VITE_OPENFX_BUILD_HASH: ${{ steps.web-build-meta.outputs.hash }}
+          VITE_OPENFX_BUILD_TIME: ${{ steps.web-build-meta.outputs.time }}
         run: deno task --config entry/web/deno.json build

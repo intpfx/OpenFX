@@ -4,10 +4,12 @@
 
 ## 并入 OpenFX
 
-本 domain 以 `keleus/BewlyCat` 上游为基线，新增移动优先的 userscript 构建层：
+本 domain 以 `keleus/BewlyCat` 上游为基线，新增 OpenFX userscript 单文件构建层，并将当前产品边界收敛为 B
+站桌面原站美化：
 
 - 上游仓库：`https://github.com/keleus/BewlyCat`
 - 上游基线：`f8345485a884dfa83ef22a68cb8bd83eecfa4a48`（BewlyCat `v1.6.6`）
+- 上游来源：BewlyCat 基于 `https://github.com/BewlyBewly/BewlyBewly` 开发
 - 旧本地项目：`/Users/siaovon/Documents/Projects/BewlyScript`（已删除）
 - 旧云端仓库：`https://github.com/intpfx/BewlyScript`（已删除）
 - 并入时间：2026-06-06
@@ -15,6 +17,15 @@
 旧 `BewlyScript` 是 `keleus/BewlyCat` 的公开 fork，停留在 `v1.4.2`，且本地有未提交的临时
 userscript 产物。用户已确认直接硬删旧本地与云端项目，并以当前上游重新构建 OpenFX 内的
 userscript 版本。
+
+## 与上游的差异
+
+- BewlyCat 上游仍以浏览器扩展形态为主；OpenFX 版只维护 Safari Userscripts / Tampermonkey
+  可安装的单文件 `.user.js`。
+- OpenFX 版通过 `src/userscript/browser-shim.ts`、同进程 API dispatcher 和 GM 请求适配复用上游逻辑。
+- OpenFX 版移除 WebExtension popup/options/manifest/商店打包发布链路，不再交付 CRX/XPI/ZIP。
+- 完整美化体验以 `www.bilibili.com` 桌面原站为唯一功能基准，并在同一套桌面原站页面上支持横版与竖版布局。
+- `m.bilibili.com` 只保留 metadata 覆盖，用于 document-start 提示用户开启“请求桌面网站”，不会挂载 Vue 主应用。
 
 ## 安装目标
 
@@ -49,12 +60,12 @@ dist/BewlyScript.user.js
 ## 瘦身边界
 
 - 本 domain 只保留 userscript 构建链路；WebExtension 的 popup/options/manifest/商店打包发布脚本已移除。
-- `hls.js`、`flv.js` 保留，避免影响播放相关功能。
+- `hls.js`、`flv.js` 已移除，卡片预览只使用浏览器原生视频能力，避免把第三方播放器库内联进 userscript 产物。
 - `qrcode.vue` 保留，用于设置页登录二维码。
 - Dock 与首页设置项保留排序能力，但改为显式移动按钮，移除 `vuedraggable` 运行时依赖。
-- `src/styles/adaptedStyles/` 保留，用于继续适配尽可能完整的 B 站页面样式。
+- `src/styles/adaptedStyles/` 保留，用于继续适配尽可能完整的 B 站桌面原站页面样式。
 
-## 移动端策略
+## 桌面原站与 m 站策略
 
 BewlyScript 的完整体验以 B 站桌面原站 `www.bilibili.com` 为唯一功能基准，并在同一套原站页面上支持横版与竖版布局：
 

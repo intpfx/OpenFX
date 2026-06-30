@@ -5,7 +5,6 @@ import { useBewlyApp } from '~/composables/useAppProvider'
 import { useVideoCardSharedStyles } from '~/composables/useVideoCardSharedStyles'
 import { settings } from '~/logic'
 import { isMobileUserscriptRuntimePage, shouldEnableHoverInteractions } from '~/userscript/mobile'
-import { calcCurrentTime, calcTimeSince, numFormatter } from '~/utils/dataFormatter'
 
 import VideoCardCover from './components/VideoCardCover.vue'
 import VideoCardInfo from './components/VideoCardInfo.vue'
@@ -26,13 +25,11 @@ interface Props {
   video?: Video
   type?: 'rcmd' | 'appRcmd' | 'bangumi' | 'common'
   showWatcherLater?: boolean
-  horizontal?: boolean
   showPreview?: boolean
   moreBtn?: boolean
   hideAuthor?: boolean
   isFollowingPage?: boolean
   customClickHandler?: (event: MouseEvent) => void
-  coverTopLeftAlwaysVisible?: boolean
 }
 
 const autoPreviewActive = ref(false)
@@ -46,104 +43,15 @@ const logic = useVideoCardLogic(() => ({
 const { mainAppRef } = useBewlyApp()
 
 // 使用共享样式（避免每个卡片重复计算）
-const { titleFontSizeClass, titleStyle, authorFontSizeClass, metaFontSizeClass } = useVideoCardSharedStyles()
-
-// Modern layout specific: cover stats calculation
-const statSuffixPattern = /(播放量?|观看|弹幕|点赞|views?|likes?|danmakus?|comments?|回复|人气|转发|分享|[次条人])/gi
-const statSeparatorPattern = /[•·]/g
-
-function formatStatValue(count?: number, countStr?: string) {
-  if (typeof count === 'number')
-    return numFormatter(count).trim()
-  if (!countStr)
-    return ''
-  const sanitized = countStr
-    .replace(statSuffixPattern, '')
-    .replace(statSeparatorPattern, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-  return sanitized || countStr.trim()
-}
-
-const coverStatValues = computed(() => {
-  if (!props.video) {
-    return {
-      view: '',
-      danmaku: '',
-      like: '',
-      duration: '',
-      published: '',
-    }
-  }
-
-  const stats = logic.videoStatNumbers.value
-
-  return {
-    view: formatStatValue(stats.view, props.video.viewStr),
-    danmaku: formatStatValue(stats.danmaku, props.video.danmakuStr),
-    like: formatStatValue(stats.like, props.video.likeStr),
-    duration: props.video.duration
-      ? calcCurrentTime(props.video.duration)
-      : props.video.durationStr ?? '',
-    published: props.video.publishedTimestamp
-      ? calcTimeSince(props.video.publishedTimestamp * 1000)
-      : props.video.capsuleText?.trim() ?? '',
-  }
-})
-
-const coverStatsVisibility = computed(() => {
-  const { view, danmaku, like, duration } = coverStatValues.value
-
-  // 无用户信息模式下，只显示播放量和时长
-  if (props.hideAuthor) {
-    return {
-      view: Boolean(view),
-      danmaku: false,
-      like: false,
-      duration: Boolean(duration),
-      published: false,
-    }
-  }
-
-  // 所有统计项默认显示，由 CSS Container Query 控制响应式隐藏
-  // 这避免了 JS 监听宽度变化带来的性能问题
-  return {
-    view: Boolean(view),
-    danmaku: Boolean(danmaku),
-    like: Boolean(like),
-    duration: Boolean(duration),
-    published: false,
-  }
-})
-
-const hasCoverStats = computed(() => {
-  const visibility = coverStatsVisibility.value
-  const values = coverStatValues.value
-
-  return (
-    (visibility.view && values.view)
-    || (visibility.danmaku && values.danmaku)
-    || (visibility.like && values.like)
-    || (visibility.duration && values.duration)
-    || (visibility.published && values.published)
-  )
-})
+const { titleFontSizeClass, titleStyle, metaFontSizeClass } = useVideoCardSharedStyles()
 
 const hoverInteractionsEnabled = computed(() => shouldEnableHoverInteractions(settings.value.touchScreenOptimization))
 const isMobileUserscriptPage = isMobileUserscriptRuntimePage()
-const showMobileCoverAuthorAvatar = computed(() =>
-  isMobileUserscriptPage
-  && !props.hideAuthor
+
+const showCoverAuthorAvatar = computed(() =>
+  !props.hideAuthor
   && !slots.coverTopLeft
   && Boolean(props.video?.author),
-)
-
-const shouldHideCoverStats = computed(() =>
-  props.showPreview
-  && settings.value.enableVideoPreview
-  && logic.previewRequested.value
-  && logic.previewVideoUrl.value
-  && (hoverInteractionsEnabled.value ? logic.shouldHideOverlayElements.value : true),
 )
 
 const hoverPreviewOnCoverOnly = computed(() =>
@@ -222,9 +130,6 @@ const primaryTags = computed(() => {
     return tag.filter(Boolean)
   return [tag]
 })
-
-// 使用 CSS 变量定义，让浏览器通过 CSS 容器查询自动响应
-const coverStatsStyle = computed(() => ({}))
 
 // Highlight tags calculation - 使用查找表优化性能
 const LIKE_RATIO_THRESHOLDS = [
@@ -381,10 +286,12 @@ provide('getVideoType', () => props.type!)
   <div
     :ref="(el) => logic.cardRootRef.value = el as HTMLElement"
     class="video-card-container mb-3"
+    :style="{ minHeight: '0px' }"
     duration-300 ease-in-out
     rounded="$bew-radius"
     :class="[
       skeleton ? 'video-card-container--skeleton' : 'video-card-container--interactive',
+      'video-card-container--overlay',
     ]"
   >
     <div
@@ -394,7 +301,6 @@ provide('getVideoType', () => props.type!)
     >
       <component
         :is="coverSkeleton ? 'div' : 'ALink'"
-        :style="{ display: horizontal ? 'flex' : 'block', gap: horizontal ? '1.5rem' : '0' }"
         v-bind="coverSkeleton ? {} : {
           href: logic.videoUrl.value,
           type: 'videoCard',
@@ -405,26 +311,18 @@ provide('getVideoType', () => props.type!)
       >
         <!-- Cover -->
         <div
-          :class="horizontal ? 'horizontal-card-cover' : 'vertical-card-cover'"
+          class="vertical-card-cover"
           v-on="coverSkeleton ? {} : coverEvents"
         >
           <VideoCardCover
             :skeleton="coverSkeleton"
             :video="props.video"
-            :horizontal="horizontal"
             :removed="logic.removed.value"
-            :is-hover="logic.isHover.value"
             :preview-active="logic.previewRequested.value"
             :preview-video-url="logic.previewVideoUrl.value || ''"
             :is-in-watch-later="logic.isInWatchLater.value"
             :show-watcher-later="showWatcherLater"
-            :cover-top-left-always-visible="coverTopLeftAlwaysVisible"
             :cover-image-url="coverImageUrl"
-            :cover-stat-values="coverStatValues"
-            :cover-stats-visibility="coverStatsVisibility"
-            :has-cover-stats="Boolean(hasCoverStats)"
-            :should-hide-cover-stats="Boolean(shouldHideCoverStats)"
-            :cover-stats-style="coverStatsStyle as Record<string, string>"
             @toggle-watch-later="logic.toggleWatchLater"
             @undo="logic.handleUndo"
             @image-loaded="handleImageLoaded"
@@ -432,11 +330,11 @@ provide('getVideoType', () => props.type!)
             <template #coverTopLeft>
               <slot name="coverTopLeft" />
               <VideoCardAuthorAvatar
-                v-if="showMobileCoverAuthorAvatar && props.video?.author"
+                v-if="showCoverAuthorAvatar && props.video?.author"
                 class="video-card-cover-author-avatar"
                 :author="props.video.author"
                 :is-live="props.video.liveStatus === 1"
-                :size="44"
+                :size="50"
                 compact
               />
             </template>
@@ -445,17 +343,14 @@ provide('getVideoType', () => props.type!)
 
         <!-- Other Information -->
         <VideoCardInfo
-          v-if="!logic.removed.value"
+          v-if="!logic.removed.value && !infoSkeleton"
           ref="infoComponentRef"
-          :skeleton="infoSkeleton"
           :video="props.video"
-          :horizontal="horizontal || false"
           :video-url="logic.videoUrl.value"
           :more-btn="moreBtn"
           :show-video-options="logic.showVideoOptions.value"
           :title-font-size-class="titleFontSizeClass"
           :title-style="titleStyle"
-          :author-font-size-class="authorFontSizeClass"
           :meta-font-size-class="metaFontSizeClass"
           :highlight-tags="highlightTags"
           :hide-author="hideAuthor"
@@ -518,6 +413,12 @@ provide('getVideoType', () => props.type!)
   margin-bottom: 6px !important;
 }
 
+.video-card-container--overlay {
+  content-visibility: visible;
+  contain-intrinsic-size: auto;
+  min-height: 0;
+}
+
 :global(.bewly-page-content--mobile) .video-card {
   overflow: hidden;
   border-radius: var(--bew-radius);
@@ -564,10 +465,6 @@ provide('getVideoType', () => props.type!)
   box-shadow: 0 0 0 6px var(--bew-fill-3);
 }
 
-.horizontal-card-cover {
-  --uno: "w-full max-w-400px aspect-video";
-}
-
 .vertical-card-cover {
   --uno: "w-full";
 }
@@ -584,17 +481,4 @@ provide('getVideoType', () => props.type!)
   border-radius: var(--bew-radius);
 }
 
-.video-card-title {
-  min-height: calc(var(--bew-title-line-height, 1.35) * 2em);
-  /* 确保两行高度固定 */
-  max-height: calc(var(--bew-title-line-height, 1.35) * 2em);
-  overflow: hidden;
-}
-
-/* 使用固定样式变量 */
-:deep(.video-card-stats) {
-  --video-card-stats-font-size: 0.75rem;
-  --video-card-stats-overlay-scale: 1.4;
-  --video-card-stats-icon-size: 0.825rem;
-}
 </style>

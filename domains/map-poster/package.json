@@ -1,0 +1,21 @@
+{
+  "name": "map-poster",
+  "displayName": "Map Poster",
+  "type": "module",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "bun@1.3.14",
+  "description": "Generate beautiful minimalist map posters from OpenStreetMap data",
+  "scripts": {
+    "generate": "bun run src/cli.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "sharp": "^0.34.1"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "typescript": "^5.9.2"
+  }
+}

@@ -27,12 +27,29 @@ and public readability.
 ## Preferred Workflow
 
 1. Read `README.md` before making structural changes.
-2. Load `.agents/skills/openfx-repo/SKILL.md` — the single project-level skill covering
-   repo architecture, migration workflow, frontend patterns, deployment, and known
-   pitfalls.
-3. Update docs together with behavior changes.
-4. Add or update tests when modifying `domains/downip`, `domains/proxy`, `domains/e`,
+2. Load `.agents/skills/openfx-repo/SKILL.md` — the project-level skill router and
+   global guardrail layer.
+3. Load the matching task skill from `.agents/skills/` before making code or docs
+   changes.
+4. Update docs together with behavior changes.
+5. Add or update tests when modifying `domains/downip`, `domains/proxy`, `domains/e`,
    `domains/how-much`, or `domains/_shared/tests`.
+
+## Project Skills
+
+Task-specific details live in project skills. Choose the smallest matching set:
+
+| Task                                                         | Skill                                             |
+| ------------------------------------------------------------ | ------------------------------------------------- |
+| Repository routing, global guardrails, validation baseline   | `.agents/skills/openfx-repo/SKILL.md`             |
+| Web homepage, cards, panels, React, CSS, browser checks      | `.agents/skills/openfx-web-change/SKILL.md`       |
+| Nitro routes, Deno Deploy, server handlers, shared runtime   | `.agents/skills/openfx-deno-nitro/SKILL.md`       |
+| Old project migration into `domains/` or `_shared/`          | `.agents/skills/openfx-domain-migration/SKILL.md` |
+| BewlyScript userscript, Bilibili boundaries, GM/browser shim | `.agents/skills/openfx-bewlyscript/SKILL.md`      |
+| Map Poster renderer, map picking UI, OSM/poster API          | `.agents/skills/openfx-map-poster/SKILL.md`       |
+| CI, Deno Deploy, build metadata, push/deploy verification    | `.agents/skills/openfx-release-deploy/SKILL.md`   |
+| Repo structure, domain inventory, module boundaries          | `.agents/skills/openfx-repo-navigation/SKILL.md`  |
+| `domains/e` agent framework core/app/foreground work         | `.agents/skills/openfx-agent-framework/SKILL.md`  |
 
 ## Stack Boundaries
 

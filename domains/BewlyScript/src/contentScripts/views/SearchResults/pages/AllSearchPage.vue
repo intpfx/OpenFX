@@ -885,7 +885,6 @@ defineExpose({
                       capsuleText: sample.badge,
                       threePointV2: [],
                     }"
-                    :horizontal="false"
                     :show-preview="true"
                     :hide-author="true"
                   />

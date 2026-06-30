@@ -9,6 +9,10 @@ export const PROJECT_DETAIL_PANEL_IDS = [
   "gasmap",
   "finlyzer",
   "costing-assistant",
+  "map-poster",
+  "smartisax",
+  "live-system",
+  "wandering-plan",
 ] as const;
 
 export type ProjectDetailPanelId = typeof PROJECT_DETAIL_PANEL_IDS[number];

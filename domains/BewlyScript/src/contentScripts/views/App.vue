@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { onKeyStroke, useEventListener, useIntersectionObserver, useThrottleFn, useToggle } from '@vueuse/core'
+import { onKeyStroke, useEventListener, useIntersectionObserver, useThrottleFn, useToggle, useWindowSize } from '@vueuse/core'
 import type { Ref } from 'vue'
-import { provide, ref } from 'vue'
+import { computed, nextTick, onMounted, provide, ref, watch } from 'vue'
 
 import TopBarSearch from '~/components/TopBar/components/TopBarSearch.vue'
 import type { BewlyAppProvider } from '~/composables/useAppProvider'
@@ -28,11 +28,16 @@ function isFestivalPage(): boolean {
 
 const mainStore = useMainStore()
 const topBarStore = useTopBarStore()
-const isMobileUserscriptPage = isMobileUserscriptRuntimePage() && !isInIframe()
 const currentRouteUrl = ref(window.location.href)
+const { width: viewportWidth } = useWindowSize()
+const isMobileUserscriptPage = computed(() => {
+  // Subscribe to viewport width so structural shell layout updates on resize.
+  void viewportWidth.value
+  return isMobileUserscriptRuntimePage(currentRouteUrl.value) && !isInIframe()
+})
 
 function isBewlyHomePage(url: string = window.location.href): boolean {
-  return isHomePage(url) || (isMobileUserscriptPage && isMobileBilibiliHomePage(url))
+  return isHomePage(url) || (isMobileUserscriptPage.value && isMobileBilibiliHomePage(url))
 }
 
 function getBewlyPageUrl(page: AppPage): string {
@@ -63,7 +68,7 @@ function getPageParam(): AppPage | null {
 }
 
 function getCurrentAppPage(): AppPage {
-  const mobileRoutePage = isMobileUserscriptPage ? getMobileRouteAppPage(window.location.href) : undefined
+  const mobileRoutePage = isMobileUserscriptPage.value ? getMobileRouteAppPage(window.location.href) : undefined
   return mobileRoutePage || getPageParam() || (settings.value.dockItemsConfig.find(e => e.visible === true)?.page || AppPage.Home)
 }
 
@@ -82,6 +87,14 @@ useEventListener(window, 'popstate', syncRouteFromUrl)
 useEventListener(window, 'replacestate', () => {
   currentRouteUrl.value = window.location.href
 })
+
+watch(
+  isMobileUserscriptPage,
+  () => {
+    syncRouteFromUrl()
+  },
+  { flush: 'post' },
+)
 
 // 清理搜索相关的URL参数（仅在首页生效）
 function clearSearchParamsFromUrl() {
@@ -216,8 +229,8 @@ const activeDrawer = ref<DrawerType>(DrawerType.None)
 function setActiveDrawer(drawer: DrawerType) {
   activeDrawer.value = drawer
 }
-const hideShellForMobileIframeDrawer = computed(() => isMobileUserscriptPage && activeDrawer.value === DrawerType.IframeDrawer)
-const hideShellForMobileVideoDetail = computed(() => isMobileUserscriptPage && activatedPage.value === AppPage.VideoDetail)
+const hideShellForMobileIframeDrawer = computed(() => isMobileUserscriptPage.value && activeDrawer.value === DrawerType.IframeDrawer)
+const hideShellForMobileVideoDetail = computed(() => isMobileUserscriptPage.value && activatedPage.value === AppPage.VideoDetail)
 const hideMobileShell = computed(() => hideShellForMobileIframeDrawer.value || hideShellForMobileVideoDetail.value)
 
 // 用于控制当iframe内打开图片预览时隐藏顶栏和Dock
@@ -292,7 +305,7 @@ useEventListener(window, 'message', ({ data, source }) => {
 }, { passive: true })
 const iframePageURL = computed((): string => {
   // If the iframe is not the BiliBili homepage or in iframe, then don't show the iframe page
-  if (isMobileUserscriptPage)
+  if (isMobileUserscriptPage.value)
     return ''
 
   if (!isHomePage(window.self.location.href) || isInIframe())
@@ -307,7 +320,7 @@ const showBewlyPage = computed((): boolean => {
   if (isInIframe())
     return false
 
-  if (isMobileUserscriptPage)
+  if (isMobileUserscriptPage.value)
     return isCoreMobileRoute(currentRouteUrl.value)
 
   // SearchResults 页面是虚拟页面，不在 dockItems 中，但应该显示
@@ -324,8 +337,8 @@ const showBewlyPage = computed((): boolean => {
 
   return isBewlyHomePage()
 })
-const showMobileBottomShell = computed(() => isMobileUserscriptPage && showBewlyPage.value && !hideMobileShell.value)
-const activePageKey = computed(() => isMobileUserscriptPage ? `${activatedPage.value}:${currentRouteUrl.value}` : activatedPage.value)
+const showMobileBottomShell = computed(() => isMobileUserscriptPage.value && showBewlyPage.value && !hideMobileShell.value)
+const activePageKey = computed(() => isMobileUserscriptPage.value ? `${activatedPage.value}:${currentRouteUrl.value}` : activatedPage.value)
 const showTopBar = computed((): boolean => {
   // When using the open in drawer feature, the iframe inside the page will hide the top bar
   if (isVideoOrBangumiPage() && isInIframe())
@@ -372,7 +385,7 @@ const isFirstTimeActivatedPageChange = ref<boolean>(true)
 watch(
   () => activatedPage.value,
   () => {
-    if (!isFirstTimeActivatedPageChange.value && !isMobileUserscriptPage) {
+    if (!isFirstTimeActivatedPageChange.value && !isMobileUserscriptPage.value) {
       // Update the URL query parameter when activatedPage changes
       const url = new URL(window.location.href)
       url.searchParams.set('page', activatedPage.value)
@@ -460,11 +473,11 @@ onMounted(() => {
 
 function handleDockItemClick(dockItem: DockItem) {
   // Opening in a new tab while still on the current tab doesn't require changing the `activatedPage`
-  if (dockItem.openInNewTab && !isMobileUserscriptPage) {
+  if (dockItem.openInNewTab && !isMobileUserscriptPage.value) {
     openLinkToNewTab(dockItem.hasBewlyPage ? getBewlyPageUrl(dockItem.page) : dockItem.url)
   }
   else {
-    if (isMobileUserscriptPage && dockItem.hasBewlyPage) {
+    if (isMobileUserscriptPage.value && dockItem.hasBewlyPage) {
       openMobileUrlInPage(getBewlyPageUrl(dockItem.page))
       activatedPage.value = dockItem.page
       return
@@ -476,7 +489,7 @@ function handleDockItemClick(dockItem: DockItem) {
       }
       else {
         const url = getBewlyPageUrl(dockItem.page)
-        if (isMobileUserscriptPage)
+        if (isMobileUserscriptPage.value)
           openMobileUrlInPage(url)
         else
           location.href = url
@@ -485,13 +498,13 @@ function handleDockItemClick(dockItem: DockItem) {
     else {
       if (!isBewlyHomePage()) {
         const url = getBewlyPageUrl(dockItem.page)
-        if (isMobileUserscriptPage)
+        if (isMobileUserscriptPage.value)
           openMobileUrlInPage(url)
         else
           location.href = url
       }
       else if (dockItem.url) {
-        if (isMobileUserscriptPage)
+        if (isMobileUserscriptPage.value)
           openMobileUrlInPage(dockItem.url)
         else
           location.href = dockItem.url
@@ -613,13 +626,13 @@ function openIframeDrawer(url: string) {
   try {
     destination = new URL(normalizeBilibiliUrlForCurrentSurface(url), location.href)
 
-    if (!isMobileUserscriptPage && !isSameOrigin(currentUrl, destination)) {
+    if (!isMobileUserscriptPage.value && !isSameOrigin(currentUrl, destination)) {
       openLinkToNewTab(destination.toString())
       return
     }
   }
   catch {
-    if (!isMobileUserscriptPage)
+    if (!isMobileUserscriptPage.value)
       openLinkToNewTab(url)
     return
   }
@@ -655,7 +668,7 @@ function openMobileUrlInPage(url: string) {
 }
 
 function handleMobileOpenInPage(event: Event) {
-  if (!isMobileUserscriptPage)
+  if (!isMobileUserscriptPage.value)
     return
 
   const url = (event as CustomEvent<{ url?: string }>).detail?.url
