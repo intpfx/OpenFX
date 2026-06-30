@@ -5,78 +5,78 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>这个好多?</title>
     <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family:
+        -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+        sans-serif;
+      width: 100dvw;
+      height: 100dvh;
+      display: grid;
+      overflow: hidden;
+      position: relative;
+      background-color: #f5f8fa;
+    }
+
+    @supports not (width: 100dvw) {
       body {
-        margin: 0;
-        padding: 0;
-        font-family:
-          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
-          sans-serif;
-        width: 100dvw;
-        height: 100dvh;
-        display: grid;
-        overflow: hidden;
-        position: relative;
-        background-color: #f5f8fa;
+        width: 100vw;
+        height: 100vh;
       }
+    }
 
-      @supports not (width: 100dvw) {
-        body {
-          width: 100vw;
-          height: 100vh;
-        }
-      }
-
-      @supports not (width: 100vw) {
-        body {
-          width: 100%;
-          height: 100%;
-        }
-      }
-
-      vector-map {
+    @supports not (width: 100vw) {
+      body {
         width: 100%;
         height: 100%;
-        position: absolute;
-        top: 0;
-        left: 0;
-        z-index: 1;
       }
+    }
 
+    vector-map {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 1;
+    }
+
+    dynamic-capsule {
+      position: fixed;
+      z-index: 10;
+      /* 默认垂直/竖屏设置 - 水平居中 */
+      left: 50%;
+      transform: translateX(-50%);
+      width: 92%;
+      max-width: 24rem;
+      /* 与组件内部样式同步 */
+    }
+
+    /* 横屏模式 */
+    @media (orientation: landscape) {
       dynamic-capsule {
-        position: fixed;
-        z-index: 10;
-        /* 默认垂直/竖屏设置 - 水平居中 */
-        left: 50%;
-        transform: translateX(-50%);
-        width: 92%;
+        left: 1.5rem;
+        /* 横屏时靠左显示，增加了一点间距 */
+        transform: none;
         max-width: 24rem;
+      }
+    }
+
+    /* 大屏幕适配 */
+    @media (min-width: 768px) {
+      dynamic-capsule {
+        max-width: 28rem;
         /* 与组件内部样式同步 */
       }
 
-      /* 横屏模式 */
+      /* 横屏大屏幕可以留出更多边距 */
       @media (orientation: landscape) {
         dynamic-capsule {
-          left: 1.5rem;
-          /* 横屏时靠左显示，增加了一点间距 */
-          transform: none;
-          max-width: 24rem;
+          left: 2.5rem;
         }
       }
-
-      /* 大屏幕适配 */
-      @media (min-width: 768px) {
-        dynamic-capsule {
-          max-width: 28rem;
-          /* 与组件内部样式同步 */
-        }
-
-        /* 横屏大屏幕可以留出更多边距 */
-        @media (orientation: landscape) {
-          dynamic-capsule {
-            left: 2.5rem;
-          }
-        }
-      }
+    }
     </style>
     <script src="vector-map.js" defer></script>
     <script src="dynamic-capsule.js" defer></script>

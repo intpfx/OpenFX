@@ -88,7 +88,8 @@ kill <多余PID>
 
 ```css
 /* ❌ 错误：shorthand + !important 吃掉 background-size */
-html, body {
+html,
+body {
   background: var(--bg) !important; /* 包含 background-size: initial !important */
   background-size: 80px 80px; /* 无效！被上一行 !important 覆盖 */
 }
@@ -98,9 +99,10 @@ html, body {
 
 ```css
 /* ✅ 正确：只用需要的子属性 + !important */
-html, body {
+html,
+body {
   background-color: var(--bg) !important;
-  background-image:  /* grid */ !important;
+  background-image: /* grid */ !important;
   background-size: 80px 80px; /* 正常生效 */
   background-position: -1px -1px;
 }
