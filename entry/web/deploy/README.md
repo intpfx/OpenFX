@@ -16,8 +16,9 @@
 - 如果需要持久化 DownIP 映射，请为应用关联 Deno KV
 - 如果需要代理功能，请设置环境变量 `OPENFX_PROXY_UPSTREAM`
 - 可选环境变量：`DOWNIP_REDIRECT_SCHEME`、`DOWNIP_REDIRECT_PORT`
-- CI 构建会注入 `VITE_OPENFX_BUILD_TIME` 和
-  `VITE_OPENFX_BUILD_HASH`，用于页脚展示构建时间和短哈希。
+- Web 构建脚本会注入 `VITE_OPENFX_BUILD_TIME` 和
+  `VITE_OPENFX_BUILD_HASH`，用于页脚展示构建时间和短哈希；Deno Deploy 自己重新构建时也会
+  走同一套元数据生成逻辑。
 
 ## Deno Deploy console template
 

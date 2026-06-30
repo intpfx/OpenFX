@@ -26,9 +26,9 @@ Do not reintroduce `hls.js` or `flv.js` for the userscript bundle unless the use
 - `src/inject/` contains scripts injected into the page context.
 - `src/userscript/` contains metadata, GM/request adapters, browser-polyfill shim, and userscript-only host handling.
 - `m.bilibili.com` is metadata coverage only: it must show the desktop-site fallback prompt at document-start and must not mount the Vue app shell.
-- Complete mobile/portrait beautification is based on narrow `www.bilibili.com`, not the native m-site DOM.
+- Complete mobile/portrait beautification is based on portrait-oriented `www.bilibili.com`, not the native m-site DOM.
 - Reuse the old mobile work as responsive `www` behavior: safe-area chrome, bottom search/Dock, touch-first cards, mobile iframe drawers, and native desktop video-detail reflow.
-- Do not route narrow `www.bilibili.com/video/...` into the old self-drawn `VideoDetail.vue`; keep the Bilibili desktop player and use `MOBILE_VIDEO_DETAIL_CSS` plus structure markers for layout.
+- Do not route portrait `www.bilibili.com/video/...` into the old self-drawn `VideoDetail.vue`; keep the Bilibili desktop player and use `MOBILE_VIDEO_DETAIL_CSS` plus structure markers for layout.
 - `src/background/messageListeners/`, `src/background/utils.ts`, and `src/background/wbiSign.ts` are reused by the userscript API dispatcher and should not be treated as removable extension-only code.
 - `src/components/Settings/` is the in-page settings surface.
 - `src/styles/adaptedStyles/` contains Bilibili page adaptation styles and should be preserved for broad Bilibili page compatibility.

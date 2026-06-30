@@ -43,12 +43,14 @@ deno task --config entry/web/deno.json preview
 
 ## 构建版本信息
 
-Web 页底部会展示构建版本。CI 构建时会自动注入：
+Web 页底部会展示构建版本。`deno task build` 会自动补齐：
 
 - `VITE_OPENFX_BUILD_TIME`：UTC 构建时间，格式为 `YYYY-MM-DDTHH:mm:ssZ`
 - `VITE_OPENFX_BUILD_HASH`：当前提交的 7 位短哈希
 
-本地构建未提供这两个变量时，页面会显示 `local build`。
+如果 CI 或手动命令已经提供这两个变量，构建脚本会保留显式值；否则会用当前 UTC 时间和
+`git rev-parse --short=7 HEAD` 生成。没有 Git 元数据时，会退回到 Deno Deploy build id
+的短前缀；这些来源都不可用时才显示 `unknown`。
 
 ## 已托管在 `apps/web` 中的服务端能力
 

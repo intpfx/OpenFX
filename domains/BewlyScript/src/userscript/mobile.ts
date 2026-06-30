@@ -497,11 +497,59 @@ export function isUserscriptRuntime(): boolean {
   return Boolean((globalThis as { __BEWLYSCRIPT__?: boolean }).__BEWLYSCRIPT__)
 }
 
-function hasNarrowMobileViewport(): boolean {
+interface ScreenWithOptionalOrientation {
+  orientation?: {
+    type?: string
+  }
+}
+
+interface WindowWithLegacyOrientation {
+  orientation?: number
+}
+
+function getScreenOrientationType(): string | undefined {
+  if (typeof screen === 'undefined')
+    return undefined
+
+  const orientation = (screen as ScreenWithOptionalOrientation).orientation
+  return typeof orientation?.type === 'string' ? orientation.type : undefined
+}
+
+function getLegacyWindowOrientation(): number | undefined {
+  if (typeof window === 'undefined')
+    return undefined
+
+  const orientation = (window as unknown as WindowWithLegacyOrientation).orientation
+  return typeof orientation === 'number' ? orientation : undefined
+}
+
+function getViewportOrientationFallback(): boolean {
   if (typeof window === 'undefined')
     return false
 
-  return window.innerWidth > 0 && window.innerWidth <= 700
+  const viewport = window.visualViewport
+  const viewportWidth = viewport?.width ?? window.innerWidth
+  const viewportHeight = viewport?.height ?? window.innerHeight
+  return viewportWidth > 0 && viewportHeight > 0 && viewportHeight >= viewportWidth
+}
+
+function hasPortraitDeviceOrientation(): boolean {
+  if (typeof window === 'undefined')
+    return false
+
+  const screenOrientationType = getScreenOrientationType()
+  if (screenOrientationType)
+    return screenOrientationType.startsWith('portrait')
+
+  const legacyOrientation = getLegacyWindowOrientation()
+  if (legacyOrientation !== undefined)
+    return Math.abs(legacyOrientation) % 180 === 0
+
+  const portraitMediaQuery = globalThis.matchMedia?.('(orientation: portrait)')
+  if (portraitMediaQuery)
+    return portraitMediaQuery.matches
+
+  return getViewportOrientationFallback()
 }
 
 function hasMobileUserscriptPageMarker(): boolean {
@@ -516,7 +564,7 @@ function hasMobileUserscriptPageMarker(): boolean {
 export function isDesktopPortraitUserscriptRuntimePage(url: string = location.href): boolean {
   if (!isDesktopBilibiliPage(url))
     return false
-  if (!hasNarrowMobileViewport())
+  if (!hasPortraitDeviceOrientation())
     return false
 
   const pageKind = classifyMobileTakeoverBilibiliPage(url)
@@ -531,7 +579,7 @@ export function isMobileUserscriptRuntimePage(url: string = location.href): bool
 }
 
 export function shouldUseMobileVideoDetailLayout(url: string = location.href): boolean {
-  return isBilibiliVideoDetailPage(url) && isDesktopBilibiliPage(url) && hasNarrowMobileViewport()
+  return isBilibiliVideoDetailPage(url) && isDesktopBilibiliPage(url) && hasPortraitDeviceOrientation()
 }
 
 export function normalizeBilibiliUrlForCurrentSurface(targetUrl: string, currentUrl: string = location.href): string {

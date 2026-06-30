@@ -29,11 +29,28 @@ import {
 import { getMobileRouteAppPage, isCoreMobileRoute, parseMobileRoute } from '../userscript/mobile-route'
 import { parseDanmakuXml, parseMobileVideoUrl, selectPlayableVideoUrl } from '../userscript/mobile-video'
 
-function withViewportWidth(width: number, callback: () => void) {
+type TestOrientationType = 'portrait-primary' | 'portrait-secondary' | 'landscape-primary' | 'landscape-secondary'
+
+interface TestScreenWithOrientation {
+  orientation?: {
+    type?: string
+  }
+}
+
+interface TestWindowWithLegacyOrientation {
+  orientation?: number
+}
+
+function withViewportSize(width: number, height: number, callback: () => void) {
   const originalWidth = window.innerWidth
+  const originalHeight = window.innerHeight
   Object.defineProperty(window, 'innerWidth', {
     configurable: true,
     value: width,
+  })
+  Object.defineProperty(window, 'innerHeight', {
+    configurable: true,
+    value: height,
   })
 
   try {
@@ -44,6 +61,45 @@ function withViewportWidth(width: number, callback: () => void) {
       configurable: true,
       value: originalWidth,
     })
+    Object.defineProperty(window, 'innerHeight', {
+      configurable: true,
+      value: originalHeight,
+    })
+  }
+}
+
+function withDeviceOrientation(type: TestOrientationType, legacyAngle: number, callback: () => void) {
+  const screenWithOrientation = screen as unknown as TestScreenWithOrientation
+  const windowWithOrientation = window as unknown as TestWindowWithLegacyOrientation
+  const originalScreenOrientationDescriptor = Object.getOwnPropertyDescriptor(screenWithOrientation, 'orientation')
+  const originalWindowOrientationDescriptor = Object.getOwnPropertyDescriptor(windowWithOrientation, 'orientation')
+
+  Object.defineProperty(screenWithOrientation, 'orientation', {
+    configurable: true,
+    value: { type },
+  })
+  Object.defineProperty(windowWithOrientation, 'orientation', {
+    configurable: true,
+    value: legacyAngle,
+  })
+
+  try {
+    callback()
+  }
+  finally {
+    if (originalScreenOrientationDescriptor) {
+      Object.defineProperty(screenWithOrientation, 'orientation', originalScreenOrientationDescriptor)
+    }
+    else {
+      delete screenWithOrientation.orientation
+    }
+
+    if (originalWindowOrientationDescriptor) {
+      Object.defineProperty(windowWithOrientation, 'orientation', originalWindowOrientationDescriptor)
+    }
+    else {
+      delete windowWithOrientation.orientation
+    }
   }
 }
 
@@ -112,24 +168,28 @@ describe('mobile userscript support', () => {
 
   it('hides native desktop content only for portrait Bewly shell pages', () => {
     withUserscriptRuntime(() => {
-      withViewportWidth(402, () => {
-        expect(shouldHideMobileNativeContentForPage('https://m.bilibili.com/')).toBe(false)
-        expect(shouldHideMobileNativeContentForPage('https://www.bilibili.com/?page=Home')).toBe(true)
-        expect(shouldHideMobileNativeContentForPage('https://m.bilibili.com/video/BV123')).toBe(false)
-        expect(shouldHideMobileNativeContentForPage('https://www.bilibili.com/video/BV123')).toBe(false)
-        expect(shouldHideMobileNativeContentForPage('https://m.bilibili.com/search?keyword=test')).toBe(false)
-        expect(shouldHideMobileNativeContentForPage('https://www.bilibili.com/search?keyword=test')).toBe(true)
-        expect(shouldHideMobileNativeContentForPage('https://m.bilibili.com/space/123')).toBe(false)
-        expect(shouldHideMobileNativeContentForPage('https://www.bilibili.com/space/123')).toBe(true)
-        expect(shouldHideMobileNativeContentForPage('https://m.bilibili.com/dynamic')).toBe(false)
-        expect(shouldHideMobileNativeContentForPage('https://m.bilibili.com/account/history')).toBe(false)
-        expect(shouldHideMobileNativeContentForPage('https://www.bilibili.com/bangumi/play/ep123')).toBe(false)
+      withDeviceOrientation('portrait-primary', 0, () => {
+        withViewportSize(1170, 844, () => {
+          expect(shouldHideMobileNativeContentForPage('https://m.bilibili.com/')).toBe(false)
+          expect(shouldHideMobileNativeContentForPage('https://www.bilibili.com/?page=Home')).toBe(true)
+          expect(shouldHideMobileNativeContentForPage('https://m.bilibili.com/video/BV123')).toBe(false)
+          expect(shouldHideMobileNativeContentForPage('https://www.bilibili.com/video/BV123')).toBe(false)
+          expect(shouldHideMobileNativeContentForPage('https://m.bilibili.com/search?keyword=test')).toBe(false)
+          expect(shouldHideMobileNativeContentForPage('https://www.bilibili.com/search?keyword=test')).toBe(true)
+          expect(shouldHideMobileNativeContentForPage('https://m.bilibili.com/space/123')).toBe(false)
+          expect(shouldHideMobileNativeContentForPage('https://www.bilibili.com/space/123')).toBe(true)
+          expect(shouldHideMobileNativeContentForPage('https://m.bilibili.com/dynamic')).toBe(false)
+          expect(shouldHideMobileNativeContentForPage('https://m.bilibili.com/account/history')).toBe(false)
+          expect(shouldHideMobileNativeContentForPage('https://www.bilibili.com/bangumi/play/ep123')).toBe(false)
+        })
       })
     })
 
     withUserscriptRuntime(() => {
-      withViewportWidth(900, () => {
-        expect(shouldHideMobileNativeContentForPage('https://www.bilibili.com/?page=Home')).toBe(false)
+      withDeviceOrientation('landscape-primary', 90, () => {
+        withViewportSize(402, 844, () => {
+          expect(shouldHideMobileNativeContentForPage('https://www.bilibili.com/?page=Home')).toBe(false)
+        })
       })
     })
   })
@@ -226,15 +286,19 @@ describe('mobile userscript support', () => {
     expect(isBilibiliVideoDetailPage('https://example.com/video/BV123')).toBe(false)
   })
 
-  it('uses the mobile video detail layout only for narrow desktop video surfaces', () => {
-    withViewportWidth(402, () => {
-      expect(shouldUseMobileVideoDetailLayout('https://m.bilibili.com/video/BV123')).toBe(false)
-      expect(shouldUseMobileVideoDetailLayout('https://www.bilibili.com/video/BV123')).toBe(true)
+  it('uses the mobile video detail layout only for portrait desktop video surfaces', () => {
+    withDeviceOrientation('portrait-primary', 0, () => {
+      withViewportSize(1170, 844, () => {
+        expect(shouldUseMobileVideoDetailLayout('https://m.bilibili.com/video/BV123')).toBe(false)
+        expect(shouldUseMobileVideoDetailLayout('https://www.bilibili.com/video/BV123')).toBe(true)
+      })
     })
 
-    withViewportWidth(900, () => {
-      expect(shouldUseMobileVideoDetailLayout('https://www.bilibili.com/video/BV123')).toBe(false)
-      expect(shouldUseMobileVideoDetailLayout('https://m.bilibili.com/search?keyword=test')).toBe(false)
+    withDeviceOrientation('landscape-primary', 90, () => {
+      withViewportSize(402, 844, () => {
+        expect(shouldUseMobileVideoDetailLayout('https://www.bilibili.com/video/BV123')).toBe(false)
+        expect(shouldUseMobileVideoDetailLayout('https://m.bilibili.com/search?keyword=test')).toBe(false)
+      })
     })
   })
 
@@ -280,36 +344,40 @@ describe('mobile userscript support', () => {
     expect(contentScriptSource).toContain('applyMobileVideoDetailLoginDrawerOffset')
     expect(contentScriptSource).toContain('reboundMobileVideoDetailLoginDrawer')
     expect(contentScriptSource).toContain('animateMobileVideoDetailLoginDrawerClose')
-    expect(contentScriptSource).toContain('translate3d(0, ${clampedOffset}px, 0)')
+    expect(contentScriptSource).toContain(`translate3d(0, \${clampedOffset}px, 0)`)
     expect(contentScriptSource).toContain('MOBILE_VIDEO_DETAIL_LOGIN_REBOUND_TRANSITION')
     expect(contentScriptSource).toContain('MOBILE_VIDEO_DETAIL_LOGIN_CLOSE_TRANSITION')
     expect(contentScriptSource).toContain('setPointerCapture')
-    expect(contentScriptSource).toContain("window.addEventListener('pointerup', finishDrag)")
-    expect(contentScriptSource).toContain("mask.style.setProperty('display', 'none', 'important')")
+    expect(contentScriptSource).toContain('window.addEventListener(\'pointerup\', finishDrag)')
+    expect(contentScriptSource).toContain('mask.style.setProperty(\'display\', \'none\', \'important\')')
     expect(contentScriptSource).toContain('lastY = event.clientY')
     expect(contentScriptSource).toContain('MOBILE_VIDEO_DETAIL_LOGIN_DRAG_THRESHOLD_PX')
     expect(contentScriptSource).toContain('.bili-mini-login-right-wp')
     expect(contentScriptSource).toContain('.tab__form .form__item, .tab__form input')
     expect(contentScriptSource).toContain('.login-pwd-wp, .tab__form')
-    expect(contentScriptSource).toContain("forceMobileVideoDetailLoginDisplay(item, 'flex')")
-    expect(contentScriptSource).toContain("style.setProperty('display', 'flex', 'important')")
-    expect(contentScriptSource).toContain("element.style.setProperty('display', display, 'important')")
+    expect(contentScriptSource).toContain('forceMobileVideoDetailLoginDisplay(item, \'flex\')')
+    expect(contentScriptSource).toContain('style.setProperty(\'display\', \'flex\', \'important\')')
+    expect(contentScriptSource).toContain('element.style.setProperty(\'display\', display, \'important\')')
   })
 
-  it('treats narrow desktop core pages as the portrait userscript surface without enabling m-site takeover', () => {
+  it('treats portrait desktop core pages as the portrait userscript surface without enabling m-site takeover', () => {
     withUserscriptRuntime(() => {
-      withViewportWidth(402, () => {
-        expect(isMobileUserscriptRuntimePage('https://m.bilibili.com/?page=Home')).toBe(false)
-        expect(isMobileUserscriptRuntimePage('https://www.bilibili.com/?page=Home')).toBe(true)
-        expect(isDesktopPortraitUserscriptRuntimePage('https://www.bilibili.com/search?keyword=test')).toBe(true)
-        expect(isDesktopPortraitUserscriptRuntimePage('https://www.bilibili.com/video/BV123')).toBe(true)
-        expect(isDesktopPortraitUserscriptRuntimePage('https://www.bilibili.com/read/cv123')).toBe(false)
+      withDeviceOrientation('portrait-primary', 0, () => {
+        withViewportSize(1170, 844, () => {
+          expect(isMobileUserscriptRuntimePage('https://m.bilibili.com/?page=Home')).toBe(false)
+          expect(isMobileUserscriptRuntimePage('https://www.bilibili.com/?page=Home')).toBe(true)
+          expect(isDesktopPortraitUserscriptRuntimePage('https://www.bilibili.com/search?keyword=test')).toBe(true)
+          expect(isDesktopPortraitUserscriptRuntimePage('https://www.bilibili.com/video/BV123')).toBe(true)
+          expect(isDesktopPortraitUserscriptRuntimePage('https://www.bilibili.com/read/cv123')).toBe(false)
+        })
       })
     })
 
     withUserscriptRuntime(() => {
-      withViewportWidth(900, () => {
-        expect(isMobileUserscriptRuntimePage('https://www.bilibili.com/?page=Home')).toBe(false)
+      withDeviceOrientation('landscape-primary', 90, () => {
+        withViewportSize(402, 844, () => {
+          expect(isMobileUserscriptRuntimePage('https://www.bilibili.com/?page=Home')).toBe(false)
+        })
       })
     })
   })
@@ -397,20 +465,20 @@ describe('mobile userscript support', () => {
     expect(contentScriptSource).toContain('ensureMobileVideoDetailBackButton(toolbar)')
     expect(contentScriptSource).toContain('removeMobileVideoDetailBackButton')
     expect(contentScriptSource).toContain('navigateMobileVideoDetailBack')
-    expect(contentScriptSource).toContain("location.assign('https://www.bilibili.com/?page=Home')")
+    expect(contentScriptSource).toContain('location.assign(\'https://www.bilibili.com/?page=Home\')')
     expect(contentScriptSource).toContain('getMobileVideoDetailEventPoint')
     expect(contentScriptSource).toContain('isMobileVideoDetailEventInsideElement')
     expect(contentScriptSource).toContain('MOBILE_VIDEO_DETAIL_PLAYER_CONTROLS_VISIBLE_ATTR')
     expect(contentScriptSource).toContain('capture: true')
     expect(contentScriptSource).toContain('new Set([playerWrapper, playerContainer]).forEach(bindRevealEvents)')
-    expect(contentScriptSource).toContain("target.addEventListener('click', revealControls")
-    expect(contentScriptSource).toContain("target.addEventListener('mousedown', revealControls")
-    expect(contentScriptSource).toContain("target.addEventListener('mousemove', revealControls")
-    expect(contentScriptSource).toContain("target.addEventListener('pointerdown', revealControls")
-    expect(contentScriptSource).toContain("target.addEventListener('pointermove'")
-    expect(contentScriptSource).toContain("target.addEventListener('touchstart', revealControls")
-    expect(contentScriptSource).toContain("document.addEventListener('click', revealControlsFromDocument")
-    expect(contentScriptSource).toContain("document.addEventListener('pointerdown', revealControlsFromDocument")
+    expect(contentScriptSource).toContain('target.addEventListener(\'click\', revealControls')
+    expect(contentScriptSource).toContain('target.addEventListener(\'mousedown\', revealControls')
+    expect(contentScriptSource).toContain('target.addEventListener(\'mousemove\', revealControls')
+    expect(contentScriptSource).toContain('target.addEventListener(\'pointerdown\', revealControls')
+    expect(contentScriptSource).toContain('target.addEventListener(\'pointermove\'')
+    expect(contentScriptSource).toContain('target.addEventListener(\'touchstart\', revealControls')
+    expect(contentScriptSource).toContain('document.addEventListener(\'click\', revealControlsFromDocument')
+    expect(contentScriptSource).toContain('document.addEventListener(\'pointerdown\', revealControlsFromDocument')
     expect(MOBILE_VIDEO_DETAIL_CSS).toContain('[data-bewly-mobile-player-controls-visible="true"]')
     expect(MOBILE_VIDEO_DETAIL_CSS).toContain('[data-bewly-mobile-player-card="true"] :is(#bilibili-player')
     expect(MOBILE_VIDEO_DETAIL_CSS).toContain('--bewly-mobile-player-fixed-top')

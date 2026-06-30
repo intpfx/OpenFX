@@ -1216,7 +1216,7 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
                     完整美化体验只以 <code>www.bilibili.com</code> 桌面原站为功能基准。
                   </li>
                   <li>
-                    竖屏/窄屏体验也走桌面原站的响应式美化，保留原生 B
+                    竖屏体验按设备方向切换，并继续走桌面原站的响应式美化，保留原生 B
                     站播放器和页面结构。
                   </li>
                   <li>
