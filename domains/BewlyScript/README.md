@@ -56,18 +56,15 @@ dist/BewlyScript.user.js
 
 ## 移动端策略
 
-移动端以 `m.bilibili.com` 为第一目标，并由 BewlyScript 完整接管核心页面体验：
+BewlyScript 的完整体验以 B 站桌面原站 `www.bilibili.com` 为唯一功能基准，并在同一套原站页面上支持横版与竖版布局：
 
-- 核心移动页由 `#bewly` shadow DOM 主渲染，原生 m 站 DOM 只作为加载期与失败 fallback，不作为主体验。
-- 第一阶段覆盖 Home、Video、Search、Space、Moments、Favorites、History、Watch Later，以及已有的 Bewly 页面。
-- 视频页使用 BewlyScript 自绘播放器，优先加载可播放的 MP4/durl，提供分 P、清晰度、倍速、进度、静音、全屏、PiP 和只读弹幕轨道。
-- 搜索页、空间页、动态页保持 app 内导航；视频卡片进入 Bewly 自绘视频页，空间用户卡进入 Bewly 空间页。
-- 移动 app shell 遵循触控优先与 safe-area 优先：安全区顶栏、内容滚动容器、底部 Dock、设置底部抽屉。
-- 视频详情页隐藏普通 Dock，使用视频专用顶栏与底部操作区；其他核心页保留移动 Dock。
-- `message`、`account`、`login` 等附属页面暂不接管，仍使用原站跳转或 drawer fallback。
+- `www.bilibili.com` 继续承载完整美化、播放器增强、页面样式适配和 Bewly 页面入口。
+- 竖屏/窄屏体验基于桌面原站页面做响应式美化，并复用原 m 站适配中沉淀下来的 safe-area、底部搜索、底部 Dock、触控卡片、移动抽屉和视频详情信息排布。
+- `/video/...` 在竖屏/窄屏下仍进入 `www.bilibili.com` 原生视频页，使用 B 站原生播放器；BewlyScript 只重排播放器、作者卡、工具栏、简介、标签和评论区域，不再进入旧的自绘移动视频页。
+- `m.bilibili.com` 只保留 userscript metadata 覆盖，用于在 document-start 显示提示页，提醒用户开启浏览器的“请求桌面网站”并访问桌面版。
+- 进入 m 站时不再加载 Vue 主应用、不再隐藏 m 站原生 DOM、不再进入 Bewly 自绘移动视频页。
+- 若点击桌面版入口后仍回到 m 站，说明 B 站按移动 UA 做了服务端跳转，需要先开启“请求桌面网站”。
 - 继续保留 userscript 单文件构建目标与 Safari Userscripts 安装方式。
-
-桌面端继续复用 BewlyCat 原有页面与组件逻辑。
 
 ## 验证
 

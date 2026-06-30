@@ -6,6 +6,7 @@ import { build } from 'vite'
 
 import packageJson from '../package.json'
 import { buildUserscriptMetadata } from '../src/userscript/metadata'
+import { MOBILE_DESKTOP_FALLBACK_SCRIPT } from '../src/userscript/mobile-desktop-fallback'
 import { hasExternalExtensionUrl, sanitizeInlineSvg } from '../src/userscript/svg-sanitizer'
 import { r } from './utils'
 
@@ -42,6 +43,8 @@ function assembleUserscript(options: {
   return `${metadata}
 ;(function () {
   "use strict";
+
+${MOBILE_DESKTOP_FALLBACK_SCRIPT}
 
   var globalObject = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
   var userscriptStyleCss = ${styleCss};

@@ -52,6 +52,22 @@ let mobileVideoDetailStructureObserver: MutationObserver | undefined
 let mobileVideoDetailStructureTimer: ReturnType<typeof setTimeout> | undefined
 let mobileVideoDetailStructureRetryCount = 0
 
+const MOBILE_VIDEO_DETAIL_LOGIN_PREVIOUS_DISPLAY_ATTR = 'data-bewly-mobile-login-previous-display'
+const MOBILE_VIDEO_DETAIL_LOGIN_PREVIOUS_DISPLAY_PRIORITY_ATTR = 'data-bewly-mobile-login-previous-display-priority'
+const MOBILE_VIDEO_DETAIL_LOGIN_DRAG_HANDLE_ATTR = 'data-bewly-mobile-login-drag-handle'
+const MOBILE_VIDEO_DETAIL_LOGIN_DRAG_THRESHOLD_PX = 72
+const MOBILE_VIDEO_DETAIL_LOGIN_FAST_DRAG_THRESHOLD_PX = 36
+const MOBILE_VIDEO_DETAIL_LOGIN_FAST_DRAG_VELOCITY_PX_PER_MS = 0.42
+const MOBILE_VIDEO_DETAIL_LOGIN_REBOUND_TRANSITION = 'transform 180ms cubic-bezier(0.2, 0, 0, 1)'
+const MOBILE_VIDEO_DETAIL_LOGIN_CLOSE_TRANSITION = 'transform 220ms cubic-bezier(0.32, 0, 0.67, 0)'
+const MOBILE_VIDEO_DETAIL_LOGIN_CLOSE_ANIMATION_MS = 230
+const MOBILE_VIDEO_DETAIL_PLAYER_CONTROLS_BOUND_ATTR = 'data-bewly-mobile-player-controls-bound'
+const MOBILE_VIDEO_DETAIL_PLAYER_CONTROLS_VISIBLE_ATTR = 'data-bewly-mobile-player-controls-visible'
+const MOBILE_VIDEO_DETAIL_BACK_BUTTON_ATTR = 'data-bewly-mobile-video-back'
+const MOBILE_VIDEO_DETAIL_PLAYER_CONTROLS_VISIBLE_MS = 3600
+
+const mobileVideoDetailPlayerControlsTimers = new WeakMap<HTMLElement, ReturnType<typeof setTimeout>>()
+
 type BewlyScriptWindow = Window & {
   __BEWLYSCRIPT_STYLE_CSS__?: string
 }
@@ -90,6 +106,228 @@ function stopMobileVideoDetailStructureEnhancement(): void {
     clearTimeout(mobileVideoDetailStructureTimer)
     mobileVideoDetailStructureTimer = undefined
   }
+  restoreMobileVideoDetailLoginDrawer()
+  removeMobileVideoDetailBackButton()
+}
+
+function rememberMobileVideoDetailLoginDisplay(element: HTMLElement): void {
+  if (element.hasAttribute(MOBILE_VIDEO_DETAIL_LOGIN_PREVIOUS_DISPLAY_ATTR))
+    return
+
+  element.setAttribute(MOBILE_VIDEO_DETAIL_LOGIN_PREVIOUS_DISPLAY_ATTR, element.style.getPropertyValue('display'))
+  element.setAttribute(MOBILE_VIDEO_DETAIL_LOGIN_PREVIOUS_DISPLAY_PRIORITY_ATTR, element.style.getPropertyPriority('display'))
+}
+
+function restoreMobileVideoDetailLoginDrawer(): void {
+  document.querySelectorAll<HTMLElement>(`[${MOBILE_VIDEO_DETAIL_LOGIN_DRAG_HANDLE_ATTR}="true"]`).forEach((element) => {
+    element.remove()
+  })
+
+  document.querySelectorAll<HTMLElement>('[data-bewly-mobile-login-methods="true"], [data-bewly-mobile-login-form="true"]').forEach((element) => {
+    const previousDisplay = element.getAttribute(MOBILE_VIDEO_DETAIL_LOGIN_PREVIOUS_DISPLAY_ATTR)
+    const previousPriority = element.getAttribute(MOBILE_VIDEO_DETAIL_LOGIN_PREVIOUS_DISPLAY_PRIORITY_ATTR)
+
+    if (previousDisplay === null)
+      element.style.removeProperty('display')
+    else if (previousDisplay)
+      element.style.setProperty('display', previousDisplay, previousPriority === 'important' ? 'important' : '')
+    else
+      element.style.removeProperty('display')
+
+    element.removeAttribute(MOBILE_VIDEO_DETAIL_LOGIN_PREVIOUS_DISPLAY_ATTR)
+    element.removeAttribute(MOBILE_VIDEO_DETAIL_LOGIN_PREVIOUS_DISPLAY_PRIORITY_ATTR)
+    element.removeAttribute('data-bewly-mobile-login-methods')
+    element.removeAttribute('data-bewly-mobile-login-form')
+  })
+
+  document.querySelectorAll<HTMLElement>('[data-bewly-mobile-login-drawer="true"]').forEach((element) => {
+    element.removeAttribute('data-bewly-mobile-login-dragging')
+    element.removeAttribute('data-bewly-mobile-login-settling')
+    element.removeAttribute('data-bewly-mobile-login-closing')
+    element.style.removeProperty('transform')
+    element.style.removeProperty('transition')
+    element.removeAttribute('data-bewly-mobile-login-drawer')
+  })
+
+  document.querySelectorAll<HTMLElement>('[data-bewly-mobile-login-scan="true"]').forEach((element) => {
+    element.removeAttribute('data-bewly-mobile-login-scan')
+  })
+}
+
+function closeMobileVideoDetailLoginDrawer(drawer: HTMLElement): void {
+  const mask = drawer.closest<HTMLElement>('.bili-mini-mask')
+  const nativeClose = drawer.querySelector<HTMLElement>('.bili-mini-close-icon')
+  if (nativeClose) {
+    nativeClose.click()
+    requestAnimationFrame(() => {
+      if (mask && isMobileVideoDetailLoginElementVisible(mask))
+        mask.style.setProperty('display', 'none', 'important')
+    })
+    return
+  }
+
+  if (mask)
+    mask.style.setProperty('display', 'none', 'important')
+}
+
+function applyMobileVideoDetailLoginDrawerOffset(drawer: HTMLElement, offsetY: number, transition?: string): void {
+  const clampedOffset = Math.max(0, Math.min(offsetY, window.innerHeight))
+  drawer.style.setProperty('transition', transition ?? 'none', 'important')
+  drawer.style.setProperty('transform', `translate3d(0, ${clampedOffset}px, 0)`, 'important')
+}
+
+function clearMobileVideoDetailLoginDrawerMotion(drawer: HTMLElement): void {
+  drawer.removeAttribute('data-bewly-mobile-login-settling')
+  drawer.removeAttribute('data-bewly-mobile-login-closing')
+  drawer.style.removeProperty('transform')
+  drawer.style.removeProperty('transition')
+}
+
+function reboundMobileVideoDetailLoginDrawer(drawer: HTMLElement): void {
+  drawer.removeAttribute('data-bewly-mobile-login-closing')
+  drawer.setAttribute('data-bewly-mobile-login-settling', 'true')
+  applyMobileVideoDetailLoginDrawerOffset(drawer, 0, MOBILE_VIDEO_DETAIL_LOGIN_REBOUND_TRANSITION)
+  window.setTimeout(() => {
+    if (drawer.isConnected)
+      clearMobileVideoDetailLoginDrawerMotion(drawer)
+  }, 190)
+}
+
+function animateMobileVideoDetailLoginDrawerClose(drawer: HTMLElement): void {
+  const rect = drawer.getBoundingClientRect()
+  const closeOffset = Math.max(rect.height, window.innerHeight - rect.top + 16)
+  drawer.removeAttribute('data-bewly-mobile-login-settling')
+  drawer.setAttribute('data-bewly-mobile-login-closing', 'true')
+  applyMobileVideoDetailLoginDrawerOffset(drawer, closeOffset, MOBILE_VIDEO_DETAIL_LOGIN_CLOSE_TRANSITION)
+  window.setTimeout(() => {
+    closeMobileVideoDetailLoginDrawer(drawer)
+  }, MOBILE_VIDEO_DETAIL_LOGIN_CLOSE_ANIMATION_MS)
+}
+
+function ensureMobileVideoDetailLoginDragHandle(drawer: HTMLElement): void {
+  const existingHandle = drawer.querySelector<HTMLElement>(`[${MOBILE_VIDEO_DETAIL_LOGIN_DRAG_HANDLE_ATTR}="true"]`)
+  if (existingHandle?.isConnected)
+    return
+
+  const handle = document.createElement('div')
+  handle.setAttribute(MOBILE_VIDEO_DETAIL_LOGIN_DRAG_HANDLE_ATTR, 'true')
+  handle.setAttribute('aria-hidden', 'true')
+
+  let activePointerId: number | undefined
+  let startY = 0
+  let lastY = 0
+  let startedAt = 0
+
+  const removeWindowDragListeners = () => {
+    window.removeEventListener('pointermove', trackDrag)
+    window.removeEventListener('pointerup', finishDrag)
+    window.removeEventListener('pointercancel', cancelDrag)
+  }
+
+  const resetDragState = () => {
+    activePointerId = undefined
+    drawer.removeAttribute('data-bewly-mobile-login-dragging')
+    removeWindowDragListeners()
+  }
+
+  const trackDrag = (event: PointerEvent) => {
+    if (activePointerId !== event.pointerId)
+      return
+
+    lastY = event.clientY
+    applyMobileVideoDetailLoginDrawerOffset(drawer, lastY - startY)
+    if (lastY >= startY) {
+      event.preventDefault()
+    }
+  }
+
+  const cancelDrag = (event: PointerEvent) => {
+    if (activePointerId === event.pointerId) {
+      resetDragState()
+      reboundMobileVideoDetailLoginDrawer(drawer)
+    }
+  }
+
+  const finishDrag = (event: PointerEvent) => {
+    if (activePointerId !== event.pointerId)
+      return
+
+    lastY = event.clientY
+    const deltaY = lastY - startY
+    const elapsedMs = Math.max(1, performance.now() - startedAt)
+    const velocity = deltaY / elapsedMs
+
+    resetDragState()
+
+    if (deltaY >= MOBILE_VIDEO_DETAIL_LOGIN_DRAG_THRESHOLD_PX || (deltaY >= MOBILE_VIDEO_DETAIL_LOGIN_FAST_DRAG_THRESHOLD_PX && velocity >= MOBILE_VIDEO_DETAIL_LOGIN_FAST_DRAG_VELOCITY_PX_PER_MS))
+      animateMobileVideoDetailLoginDrawerClose(drawer)
+    else
+      reboundMobileVideoDetailLoginDrawer(drawer)
+  }
+
+  handle.addEventListener('pointerdown', (event) => {
+    if (event.pointerType === 'mouse' && event.button !== 0)
+      return
+
+    removeWindowDragListeners()
+    activePointerId = event.pointerId
+    startY = event.clientY
+    lastY = event.clientY
+    startedAt = performance.now()
+    drawer.setAttribute('data-bewly-mobile-login-dragging', 'true')
+    drawer.removeAttribute('data-bewly-mobile-login-settling')
+    drawer.removeAttribute('data-bewly-mobile-login-closing')
+    applyMobileVideoDetailLoginDrawerOffset(drawer, 0)
+    handle.setPointerCapture(event.pointerId)
+    window.addEventListener('pointermove', trackDrag, { passive: false })
+    window.addEventListener('pointerup', finishDrag)
+    window.addEventListener('pointercancel', cancelDrag)
+    event.preventDefault()
+  }, { passive: false })
+
+  handle.addEventListener('pointermove', trackDrag, { passive: false })
+  handle.addEventListener('pointerup', finishDrag)
+  handle.addEventListener('pointercancel', cancelDrag)
+
+  drawer.prepend(handle)
+}
+
+function isMobileVideoDetailLoginElementVisible(element: HTMLElement): boolean {
+  const style = getComputedStyle(element)
+  if (style.display === 'none' || style.visibility === 'hidden')
+    return false
+
+  const rect = element.getBoundingClientRect()
+  return rect.width > 0 && rect.height > 0
+}
+
+function forceMobileVideoDetailLoginDisplay(element: HTMLElement, display: 'block' | 'flex'): void {
+  rememberMobileVideoDetailLoginDisplay(element)
+  element.setAttribute('data-bewly-mobile-login-form', 'true')
+  element.style.setProperty('display', display, 'important')
+}
+
+function hasVisibleMobileVideoDetailLoginForm(drawer: HTMLElement): boolean {
+  return Array.from(drawer.querySelectorAll<HTMLElement>('.tab__form .form__item, .tab__form input')).some((element) => {
+    return isMobileVideoDetailLoginElementVisible(element)
+  })
+}
+
+function normalizeMobileVideoDetailLoginForms(drawer: HTMLElement): void {
+  if (!hasVisibleMobileVideoDetailLoginForm(drawer)) {
+    drawer.querySelectorAll<HTMLElement>('.login-pwd-wp, .tab__form').forEach((form) => {
+      forceMobileVideoDetailLoginDisplay(form, 'block')
+    })
+  }
+
+  drawer.querySelectorAll<HTMLElement>('.tab__form').forEach((form) => {
+    if (!isMobileVideoDetailLoginElementVisible(form))
+      return
+
+    form.querySelectorAll<HTMLElement>('.form__item').forEach((item) => {
+      forceMobileVideoDetailLoginDisplay(item, 'flex')
+    })
+  })
 }
 
 function findMobileVideoDetailMainColumn(): HTMLElement | undefined {
@@ -353,6 +591,95 @@ function hideMobileVideoDetailPlayerTopPromotions(playerWrapper: HTMLElement): v
     if (isAboveVideo && isInsidePlayer && isVisibleBlock)
       candidate.setAttribute('data-bewly-mobile-pre-player-hidden', 'true')
   })
+}
+
+function getMobileVideoDetailNativePlayerContainer(playerWrapper: HTMLElement): HTMLElement | undefined {
+  if (playerWrapper.matches('.bpx-player-container'))
+    return playerWrapper
+
+  const container = playerWrapper.querySelector('.bpx-player-container')
+  return container instanceof HTMLElement ? container : undefined
+}
+
+function showMobileVideoDetailNativePlayerControls(playerWrapper: HTMLElement): void {
+  const playerContainer = getMobileVideoDetailNativePlayerContainer(playerWrapper)
+  if (!playerContainer)
+    return
+
+  const existingTimer = mobileVideoDetailPlayerControlsTimers.get(playerContainer)
+  if (existingTimer)
+    clearTimeout(existingTimer)
+
+  playerContainer.setAttribute(MOBILE_VIDEO_DETAIL_PLAYER_CONTROLS_VISIBLE_ATTR, 'true')
+  const timer = setTimeout(() => {
+    playerContainer.removeAttribute(MOBILE_VIDEO_DETAIL_PLAYER_CONTROLS_VISIBLE_ATTR)
+    mobileVideoDetailPlayerControlsTimers.delete(playerContainer)
+  }, MOBILE_VIDEO_DETAIL_PLAYER_CONTROLS_VISIBLE_MS)
+  mobileVideoDetailPlayerControlsTimers.set(playerContainer, timer)
+}
+
+function getMobileVideoDetailEventPoint(event: MouseEvent | PointerEvent | TouchEvent): { clientX: number, clientY: number } | undefined {
+  if ('clientX' in event && Number.isFinite(event.clientX) && Number.isFinite(event.clientY))
+    return { clientX: event.clientX, clientY: event.clientY }
+
+  if (!('touches' in event))
+    return undefined
+
+  const touch = event.touches?.[0] ?? event.changedTouches?.[0]
+  if (!touch)
+    return undefined
+
+  return { clientX: touch.clientX, clientY: touch.clientY }
+}
+
+function isMobileVideoDetailEventInsideElement(event: MouseEvent | PointerEvent | TouchEvent, element: HTMLElement): boolean {
+  const point = getMobileVideoDetailEventPoint(event)
+  if (!point)
+    return false
+
+  const rect = element.getBoundingClientRect()
+  return point.clientX >= rect.left
+    && point.clientX <= rect.right
+    && point.clientY >= rect.top
+    && point.clientY <= rect.bottom
+}
+
+function installMobileVideoDetailNativePlayerControls(playerWrapper: HTMLElement): void {
+  const playerContainer = getMobileVideoDetailNativePlayerContainer(playerWrapper)
+  if (!playerContainer || playerContainer.getAttribute(MOBILE_VIDEO_DETAIL_PLAYER_CONTROLS_BOUND_ATTR) === 'true')
+    return
+
+  playerContainer.setAttribute(MOBILE_VIDEO_DETAIL_PLAYER_CONTROLS_BOUND_ATTR, 'true')
+
+  const revealControls = () => {
+    showMobileVideoDetailNativePlayerControls(playerWrapper)
+  }
+
+  const revealControlsFromDocument = (event: MouseEvent | PointerEvent | TouchEvent) => {
+    if (!playerWrapper.isConnected)
+      return
+    if (isMobileVideoDetailEventInsideElement(event, playerWrapper))
+      revealControls()
+  }
+
+  const listenerOptions = { capture: true, passive: true }
+  const bindRevealEvents = (target: HTMLElement) => {
+    target.addEventListener('click', revealControls, listenerOptions)
+    target.addEventListener('mousedown', revealControls, listenerOptions)
+    target.addEventListener('mousemove', revealControls, listenerOptions)
+    target.addEventListener('pointerdown', revealControls, listenerOptions)
+    target.addEventListener('pointermove', (event) => {
+      if (event.pointerType === 'mouse')
+        revealControls()
+    }, listenerOptions)
+    target.addEventListener('touchstart', revealControls, listenerOptions)
+  }
+
+  new Set([playerWrapper, playerContainer]).forEach(bindRevealEvents)
+  document.addEventListener('click', revealControlsFromDocument, listenerOptions)
+  document.addEventListener('mousedown', revealControlsFromDocument, listenerOptions)
+  document.addEventListener('pointerdown', revealControlsFromDocument, listenerOptions)
+  document.addEventListener('touchstart', revealControlsFromDocument, listenerOptions)
 }
 
 function hideMobileVideoDetailGlobalPrePlayerBlocks(playerWrapper: HTMLElement): void {
@@ -842,6 +1169,42 @@ function findMobileVideoDetailToolbar(): HTMLElement | undefined {
   return toolbar instanceof HTMLElement ? toolbar : undefined
 }
 
+function removeMobileVideoDetailBackButton(): void {
+  document.querySelectorAll<HTMLElement>(`[${MOBILE_VIDEO_DETAIL_BACK_BUTTON_ATTR}="true"]`).forEach((button) => {
+    button.remove()
+  })
+}
+
+function navigateMobileVideoDetailBack(): void {
+  if (window.history.length > 1) {
+    window.history.back()
+    return
+  }
+
+  location.assign('https://www.bilibili.com/?page=Home')
+}
+
+function ensureMobileVideoDetailBackButton(toolbar: HTMLElement): void {
+  const existing = document.querySelector<HTMLButtonElement>(`button[${MOBILE_VIDEO_DETAIL_BACK_BUTTON_ATTR}="true"]`)
+  const button = existing ?? document.createElement('button')
+
+  if (!existing) {
+    button.type = 'button'
+    button.setAttribute(MOBILE_VIDEO_DETAIL_BACK_BUTTON_ATTR, 'true')
+    button.setAttribute('aria-label', '返回')
+    button.title = '返回'
+
+    button.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      navigateMobileVideoDetailBack()
+    })
+  }
+
+  if (button.parentElement !== toolbar || toolbar.firstElementChild !== button)
+    toolbar.insertBefore(button, toolbar.firstChild)
+}
+
 function findMobileVideoDetailCommentRoot(): HTMLElement | undefined {
   const selectors = [
     'bili-comments',
@@ -947,8 +1310,10 @@ function ensureMobileVideoDetailToolbarCommentEntry(toolbar: HTMLElement): void 
   const label = entry.querySelector<HTMLElement>('[data-bewly-mobile-toolbar-comment-label="true"]') ?? entry
   label.textContent = getMobileVideoDetailCommentLabel()
 
-  if (entry.parentElement !== toolbar || toolbar.firstElementChild !== entry)
-    toolbar.insertBefore(entry, toolbar.firstChild)
+  const backButton = toolbar.querySelector<HTMLElement>(`[${MOBILE_VIDEO_DETAIL_BACK_BUTTON_ATTR}="true"]`)
+  const referenceNode = backButton?.nextSibling ?? toolbar.firstChild
+  if (entry.parentElement !== toolbar || entry !== referenceNode)
+    toolbar.insertBefore(entry, referenceNode)
 }
 
 function markMobileVideoDetailToolbarHiddenActions(toolbar: HTMLElement): void {
@@ -971,9 +1336,29 @@ function markMobileVideoDetailToolbarHiddenActions(toolbar: HTMLElement): void {
   })
 }
 
+function normalizeMobileVideoDetailLoginDrawer(): void {
+  document.querySelectorAll<HTMLElement>('.bili-mini-mask .bili-mini-content-wp').forEach((drawer) => {
+    drawer.setAttribute('data-bewly-mobile-login-drawer', 'true')
+    ensureMobileVideoDetailLoginDragHandle(drawer)
+
+    const loginMethods = drawer.querySelector<HTMLElement>('.bili-mini-login-right-wp')
+    if (loginMethods) {
+      rememberMobileVideoDetailLoginDisplay(loginMethods)
+      loginMethods.setAttribute('data-bewly-mobile-login-methods', 'true')
+      loginMethods.style.setProperty('display', 'flex', 'important')
+    }
+
+    normalizeMobileVideoDetailLoginForms(drawer)
+
+    drawer.querySelector<HTMLElement>('.login-scan-wp')?.setAttribute('data-bewly-mobile-login-scan', 'true')
+  })
+}
+
 function enhanceMobileVideoDetailStructure(): boolean {
   if (!shouldUseMobileVideoDetailLayout())
     return false
+
+  normalizeMobileVideoDetailLoginDrawer()
 
   const mainColumn = findMobileVideoDetailMainColumn()
   if (!mainColumn)
@@ -982,6 +1367,7 @@ function enhanceMobileVideoDetailStructure(): boolean {
   const player = findMobileVideoDetailPlayer()
   if (player) {
     player.setAttribute('data-bewly-mobile-player-card', 'true')
+    installMobileVideoDetailNativePlayerControls(player)
     hideMobileVideoDetailPrePlayerSiblings(player)
     requestAnimationFrame(() => {
       hideMobileVideoDetailPlayerTopPromotions(player)
@@ -1002,6 +1388,7 @@ function enhanceMobileVideoDetailStructure(): boolean {
 
   const toolbar = findMobileVideoDetailToolbar()
   if (toolbar) {
+    ensureMobileVideoDetailBackButton(toolbar)
     ensureMobileVideoDetailToolbarCommentEntry(toolbar)
     markMobileVideoDetailToolbarHiddenActions(toolbar)
   }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { buildUserscriptMetadata, USERSCRIPT_CONNECTS, USERSCRIPT_GRANTS, USERSCRIPT_MATCHES } from '../userscript/metadata'
+import { MOBILE_DESKTOP_FALLBACK_SCRIPT } from '../userscript/mobile-desktop-fallback'
 
 describe('userscript metadata', () => {
   it('covers desktop and mobile Bilibili pages', () => {
@@ -30,5 +31,11 @@ describe('userscript metadata', () => {
     expect(metadata).toContain('// @inject-into  content')
     expect(metadata).toContain('// @version      0.0.1-userscript.1')
     expect(metadata).toContain('// ==/UserScript==')
+  })
+
+  it('ships an m-site fallback prompt instead of the mobile app shell', () => {
+    expect(MOBILE_DESKTOP_FALLBACK_SCRIPT).toContain('location.hostname !== "m.bilibili.com"')
+    expect(MOBILE_DESKTOP_FALLBACK_SCRIPT).toContain('请求桌面网站')
+    expect(MOBILE_DESKTOP_FALLBACK_SCRIPT).toContain('if (showMobileDesktopFallback())')
   })
 })

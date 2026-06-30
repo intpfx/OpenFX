@@ -1,21 +1,3 @@
-export function injectMobileNativeHeaderCSS(url: string = location.href): HTMLStyleElement | undefined {
-  const style = document.createElement('style')
-  style.textContent = MOBILE_NATIVE_HEADER_CSS
-  document.documentElement.appendChild(style)
-  document.documentElement.setAttribute('data-bewly-mobile', 'true')
-  document.documentElement.setAttribute('data-bewly-mobile-page-kind', classifyMobileTakeoverBilibiliPage(url))
-  return style
-}
-
-export function removeMobileNativeHeaderCSS(styleEl: HTMLStyleElement | undefined): void {
-  if (styleEl?.isConnected)
-    document.documentElement.removeChild(styleEl)
-  setMobileNativeContentHidden(false)
-  document.documentElement.removeAttribute('data-bewly-mobile')
-  document.documentElement.removeAttribute('data-bewly-mobile-page-kind')
-  document.documentElement.removeAttribute('data-bewly-mobile-mounted')
-}
-
 const MOBILE_NATIVE_MANAGED_ATTR = 'data-bewly-mobile-native-managed'
 const MOBILE_NATIVE_PREVIOUS_ARIA_HIDDEN_ATTR = 'data-bewly-mobile-previous-aria-hidden'
 
@@ -86,11 +68,11 @@ let mobileNoNewTabGuardInstalled = false
 let originalWindowOpen: typeof window.open | undefined
 let mobileLinkTargetObserver: MutationObserver | undefined
 
-type GmOpenInTabOptions = {
+interface GmOpenInTabOptions {
   active?: boolean
 }
 
-type GmApi = {
+interface GmApi {
   openInTab?: (url: string, options?: boolean | GmOpenInTabOptions) => unknown
 }
 
@@ -377,6 +359,25 @@ html[data-bewly-mobile="true"] .channel-menu .v-switcher__header__after svg {
   fill: var(--native-text-2) !important;
 }
 `
+
+export function injectMobileNativeHeaderCSS(url: string = location.href): HTMLStyleElement | undefined {
+  const style = document.createElement('style')
+  style.textContent = MOBILE_NATIVE_HEADER_CSS
+  document.documentElement.appendChild(style)
+  document.documentElement.setAttribute('data-bewly-mobile', 'true')
+  document.documentElement.setAttribute('data-bewly-mobile-page-kind', classifyMobileTakeoverBilibiliPage(url))
+  return style
+}
+
+export function removeMobileNativeHeaderCSS(styleEl: HTMLStyleElement | undefined): void {
+  if (styleEl?.isConnected)
+    document.documentElement.removeChild(styleEl)
+  setMobileNativeContentHidden(false)
+  document.documentElement.removeAttribute('data-bewly-mobile')
+  document.documentElement.removeAttribute('data-bewly-mobile-page-kind')
+  document.documentElement.removeAttribute('data-bewly-mobile-mounted')
+}
+
 export const MOBILE_BILIBILI_HOST = 'm.bilibili.com'
 export const DESKTOP_BILIBILI_HOST = 'www.bilibili.com'
 
@@ -468,8 +469,11 @@ export function isDesktopBilibiliHomePage(url: string = location.href): boolean 
 }
 
 export function shouldHideMobileNativeContentForPage(url: string = location.href): boolean {
+  if (!isDesktopPortraitUserscriptRuntimePage(url))
+    return false
+
   const mobilePageKind = classifyMobileTakeoverBilibiliPage(url)
-  return mobilePageKind !== 'other' || isDesktopBilibiliHomePage(url)
+  return mobilePageKind !== 'video' && mobilePageKind !== 'other'
 }
 
 export function isBilibiliVideoDetailPage(url: string = location.href): boolean {
@@ -492,6 +496,13 @@ export function isUserscriptRuntime(): boolean {
   return Boolean((globalThis as { __BEWLYSCRIPT__?: boolean }).__BEWLYSCRIPT__)
 }
 
+function hasNarrowMobileViewport(): boolean {
+  if (typeof window === 'undefined')
+    return false
+
+  return window.innerWidth > 0 && window.innerWidth <= 700
+}
+
 function hasMobileUserscriptPageMarker(): boolean {
   if (typeof document === 'undefined')
     return false
@@ -501,26 +512,25 @@ function hasMobileUserscriptPageMarker(): boolean {
     || Boolean(document.querySelector('[data-bewly-mobile-userscript="true"]'))
 }
 
-function hasNarrowMobileViewport(): boolean {
-  if (typeof window === 'undefined')
+export function isDesktopPortraitUserscriptRuntimePage(url: string = location.href): boolean {
+  if (!isDesktopBilibiliPage(url))
+    return false
+  if (!hasNarrowMobileViewport())
     return false
 
-  return window.innerWidth > 0 && window.innerWidth <= 700
+  const pageKind = classifyMobileTakeoverBilibiliPage(url)
+  if (pageKind === 'other' && !isDesktopBilibiliHomePage(url))
+    return false
+
+  return isUserscriptRuntime() || hasMobileUserscriptPageMarker()
 }
 
 export function isMobileUserscriptRuntimePage(url: string = location.href): boolean {
-  const narrowMobileViewport = hasNarrowMobileViewport()
-  const isMobileSurface = isMobileBilibiliPage(url) || (isDesktopBilibiliPage(url) && narrowMobileViewport)
-
-  return isMobileSurface
-    && (isUserscriptRuntime() || hasMobileUserscriptPageMarker() || narrowMobileViewport)
+  return isDesktopPortraitUserscriptRuntimePage(url)
 }
 
 export function shouldUseMobileVideoDetailLayout(url: string = location.href): boolean {
-  return isBilibiliVideoDetailPage(url) && (
-    isMobileUserscriptRuntimePage(url)
-    || (isDesktopBilibiliPage(url) && hasNarrowMobileViewport())
-  )
+  return isBilibiliVideoDetailPage(url) && isDesktopBilibiliPage(url) && hasNarrowMobileViewport()
 }
 
 export function normalizeBilibiliUrlForCurrentSurface(targetUrl: string, currentUrl: string = location.href): string {
@@ -531,7 +541,7 @@ export function normalizeBilibiliUrlForCurrentSurface(targetUrl: string, current
       return parsedTarget.toString()
 
     parsedTarget.protocol = 'https:'
-    parsedTarget.hostname = isMobileBilibiliPage(currentUrl) ? MOBILE_BILIBILI_HOST : DESKTOP_BILIBILI_HOST
+    parsedTarget.hostname = DESKTOP_BILIBILI_HOST
 
     return parsedTarget.toString()
   }
@@ -581,7 +591,8 @@ export function shouldEnableHoverInteractions(
 }
 
 export function getBewlyUserscriptHomeUrl(page?: string, url: string = location.href): string {
-  const host = isMobileBilibiliPage(url) ? MOBILE_BILIBILI_HOST : 'www.bilibili.com'
+  void url
+  const host = DESKTOP_BILIBILI_HOST
   const target = new URL(`https://${host}/`)
   if (page)
     target.searchParams.set('page', page)
@@ -649,6 +660,9 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     --bewly-mobile-detail-accent: #00a1d6;
     --bewly-mobile-detail-inline-pad: 10px;
     --bewly-mobile-detail-radius: 16px;
+    --bewly-mobile-player-fixed-top: env(safe-area-inset-top, 0px);
+    --bewly-mobile-player-fixed-height: calc((100vw - (var(--bewly-mobile-detail-inline-pad) * 2)) * 9 / 16);
+    --bewly-mobile-player-flow-offset: calc(var(--bewly-mobile-player-fixed-height) + var(--bewly-mobile-player-fixed-top) + 8px);
     --bewly-mobile-detail-action-left: var(--bewly-mobile-detail-inline-pad);
     --bewly-mobile-detail-toolbar-left: 0px;
     --bewly-mobile-detail-toolbar-gap: 6px;
@@ -740,6 +754,14 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     flex-direction: column !important;
   }
 
+  html[data-bewly-mobile-video-detail="true"] .left-container.scroll-sticky,
+  html[data-bewly-mobile-video-detail="true"] .left-container-v1.scroll-sticky,
+  html[data-bewly-mobile-video-detail="true"] .left-container-under-player.scroll-sticky,
+  html[data-bewly-mobile-video-detail="true"] .video-left-container.scroll-sticky {
+    position: static !important;
+    top: auto !important;
+  }
+
   html[data-bewly-mobile-video-detail="true"] .left-container,
   html[data-bewly-mobile-video-detail="true"] .left-container-v1,
   html[data-bewly-mobile-video-detail="true"] .left-container-under-player,
@@ -750,7 +772,7 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     min-width: 0 !important;
     max-width: 100% !important;
     margin: 0 !important;
-    padding: 0 var(--bewly-mobile-detail-inline-pad) calc(62px + env(safe-area-inset-bottom, 0px)) !important;
+    padding: var(--bewly-mobile-player-flow-offset) var(--bewly-mobile-detail-inline-pad) calc(62px + env(safe-area-inset-bottom, 0px)) !important;
   }
 
   html[data-bewly-mobile-video-detail="true"] .right-container,
@@ -839,6 +861,8 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
   html[data-bewly-mobile-video-detail="true"] #bilibili-player,
   html[data-bewly-mobile-video-detail="true"] #bilibiliPlayer {
     order: 10 !important;
+    position: relative !important;
+    z-index: 20 !important;
     width: calc(100vw - (var(--bewly-mobile-detail-inline-pad) * 2)) !important;
     min-width: 0 !important;
     max-width: calc(100vw - (var(--bewly-mobile-detail-inline-pad) * 2)) !important;
@@ -847,17 +871,45 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     border: 1px solid rgba(255, 255, 255, 0.06) !important;
     border-radius: var(--bewly-mobile-detail-radius) !important;
     overflow: hidden !important;
+    pointer-events: auto !important;
     box-shadow: var(--bewly-mobile-detail-shadow) !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-player-card="true"] {
+  html[data-bewly-mobile-video-detail="true"] :is(#playerWrap, .player-wrap, #bilibili-player, #bilibiliPlayer)[data-bewly-mobile-player-card="true"] {
     order: 8 !important;
-    margin-top: 0 !important;
+    position: fixed !important;
+    top: var(--bewly-mobile-player-fixed-top) !important;
+    left: var(--bewly-mobile-detail-inline-pad) !important;
+    right: var(--bewly-mobile-detail-inline-pad) !important;
+    z-index: 2147482500 !important;
+    width: calc(100vw - (var(--bewly-mobile-detail-inline-pad) * 2)) !important;
+    max-width: calc(100vw - (var(--bewly-mobile-detail-inline-pad) * 2)) !important;
+    height: var(--bewly-mobile-player-fixed-height) !important;
+    max-height: var(--bewly-mobile-player-fixed-height) !important;
+    margin: 0 !important;
+    isolation: isolate !important;
+    pointer-events: auto !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-player-card="true"] :is(#bilibili-player, #bilibiliPlayer, .bpx-docker, .bpx-player-container, .bpx-player-primary-area, .bpx-player-video-area, .bpx-player-video-wrap, .bilibili-player-video-wrap, .bilibili-player-video-area) {
+    order: initial !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    height: 100% !important;
+    min-height: 0 !important;
+    max-height: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: inherit !important;
+    box-shadow: none !important;
+    pointer-events: auto !important;
   }
 
   html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-player-crop-top="true"] {
-    height: calc((100vw - (var(--bewly-mobile-detail-inline-pad) * 2)) * 9 / 16) !important;
-    max-height: calc((100vw - (var(--bewly-mobile-detail-inline-pad) * 2)) * 9 / 16) !important;
+    height: var(--bewly-mobile-player-fixed-height) !important;
+    max-height: var(--bewly-mobile-player-fixed-height) !important;
     overflow: hidden !important;
   }
 
@@ -898,6 +950,119 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     object-position: center center !important;
   }
 
+  html[data-bewly-mobile-video-detail="true"] .bpx-player-container[data-bewly-mobile-player-controls-visible="true"] {
+    cursor: auto !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bpx-player-container[data-bewly-mobile-player-controls-visible="true"] .bpx-player-control-wrap {
+    top: auto !important;
+    bottom: 0 !important;
+    z-index: 88 !important;
+    width: 100% !important;
+    height: 46px !important;
+    overflow: visible !important;
+    pointer-events: auto !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bpx-player-container[data-bewly-mobile-player-controls-visible="true"] .bpx-player-control-entity {
+    display: block !important;
+    width: 100% !important;
+    height: 46px !important;
+    margin: 0 !important;
+    pointer-events: auto !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bpx-player-container[data-bewly-mobile-player-controls-visible="true"] .bpx-player-control-bottom {
+    display: flex !important;
+    position: relative !important;
+    z-index: 2 !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 6px !important;
+    box-sizing: border-box !important;
+    width: 100% !important;
+    height: 46px !important;
+    margin: 0 !important;
+    padding: 0 8px !important;
+    overflow: hidden !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bpx-player-container[data-bewly-mobile-player-controls-visible="true"] .bpx-player-control-bottom-left,
+  html[data-bewly-mobile-video-detail="true"] .bpx-player-container[data-bewly-mobile-player-controls-visible="true"] .bpx-player-control-bottom-right {
+    min-width: 0 !important;
+    height: 46px !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 0 !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bpx-player-container[data-bewly-mobile-player-controls-visible="true"] .bpx-player-control-bottom-left {
+    flex: 1 1 auto !important;
+    overflow: hidden !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bpx-player-container[data-bewly-mobile-player-controls-visible="true"] .bpx-player-control-bottom-center {
+    display: none !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bpx-player-container[data-bewly-mobile-player-controls-visible="true"] .bpx-player-control-bottom-right {
+    flex: 0 0 auto !important;
+    max-width: fit-content !important;
+    margin-left: auto !important;
+    overflow: visible !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bpx-player-container[data-bewly-mobile-player-controls-visible="true"] :is(.bpx-player-ctrl-prev, .bpx-player-ctrl-next, .bpx-player-ctrl-viewpoint, .bpx-player-ctrl-eplist, .bpx-player-ctrl-setting, .bpx-player-ctrl-pip, .bpx-player-ctrl-wide, .bpx-player-ctrl-web) {
+    display: none !important;
+    visibility: hidden !important;
+    flex: 0 0 0 !important;
+    width: 0 !important;
+    min-width: 0 !important;
+    max-width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    pointer-events: none !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bpx-player-container[data-bewly-mobile-player-controls-visible="true"] :is(.bpx-player-ctrl-play, .bpx-player-ctrl-time, .bpx-player-ctrl-quality, .bpx-player-ctrl-playbackrate, .bpx-player-ctrl-volume, .bpx-player-ctrl-full) {
+    flex: 0 0 auto !important;
+    margin: 0 !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bpx-player-container[data-bewly-mobile-player-controls-visible="true"] .bpx-player-ctrl-time {
+    max-width: 92px !important;
+    padding: 0 2px !important;
+    overflow: hidden !important;
+    color: rgba(255, 255, 255, 0.92) !important;
+    font-size: 11px !important;
+    white-space: nowrap !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bpx-player-container[data-bewly-mobile-player-controls-visible="true"] .bpx-player-control-mask {
+    display: block !important;
+    bottom: 0 !important;
+    z-index: 1 !important;
+    width: 100% !important;
+    height: 76px !important;
+    opacity: 0.58 !important;
+    pointer-events: none !important;
+  }
+
+  @media (max-width: 380px) {
+    html[data-bewly-mobile-video-detail="true"] .bpx-player-container[data-bewly-mobile-player-controls-visible="true"] .bpx-player-ctrl-time {
+      width: 42px !important;
+      max-width: 42px !important;
+    }
+
+    html[data-bewly-mobile-video-detail="true"] .bpx-player-container[data-bewly-mobile-player-controls-visible="true"] :is(.bpx-player-ctrl-time-divide, .bpx-player-ctrl-time-duration, .bpx-player-ctrl-quality) {
+      display: none !important;
+    }
+  }
+
   html[data-bewly-mobile-video-detail="true"] .bpx-player-sending-bar,
   html[data-bewly-mobile-video-detail="true"] .bilibili-player-video-sendbar,
   html[data-bewly-mobile-video-detail="true"] .bilibili-player-video-inputbar {
@@ -909,6 +1074,8 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
   html[data-bewly-mobile-video-detail="true"] .media-info,
   html[data-bewly-mobile-video-detail="true"] .media-info-container {
     order: 20 !important;
+    position: relative !important;
+    z-index: 1 !important;
     width: 100% !important;
     min-width: 0 !important;
     margin: 0 0 4px !important;
@@ -972,14 +1139,16 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
   html[data-bewly-mobile-video-detail="true"] .members-info-container,
   html[data-bewly-mobile-video-detail="true"] .video-staffs-container {
     order: 24 !important;
+    position: relative !important;
+    z-index: 1 !important;
     width: 100% !important;
     min-width: 0 !important;
-    margin: 6px 0 10px !important;
-    padding: 6px 4px !important;
+    margin: 3px 0 6px !important;
+    padding: 4px !important;
     display: flex !important;
     align-items: center !important;
     flex-wrap: wrap !important;
-    gap: 8px 12px !important;
+    gap: 6px 10px !important;
     border: 0 !important;
     border-radius: 0 !important;
     background: transparent !important;
@@ -988,18 +1157,20 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
 
   html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-author-card="true"] {
     order: 24 !important;
-    margin: 6px 0 8px !important;
+    position: relative !important;
+    z-index: 1 !important;
+    margin: 3px 0 6px !important;
     display: grid !important;
-    grid-template-columns: 46px minmax(0, 1fr) auto !important;
+    grid-template-columns: 40px minmax(0, 1fr) auto !important;
     grid-auto-rows: min-content !important;
     align-items: center !important;
-    column-gap: 12px !important;
-    row-gap: 3px !important;
-    min-height: 72px !important;
+    column-gap: 10px !important;
+    row-gap: 2px !important;
+    min-height: 56px !important;
   }
 
   html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-author-card="true"] {
-    position: static !important;
+    position: relative !important;
     transform: none !important;
   }
 
@@ -1079,7 +1250,7 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
   html[data-bewly-mobile-video-detail="true"] .up-info-text,
   html[data-bewly-mobile-video-detail="true"] .staff-info,
   html[data-bewly-mobile-video-detail="true"] .video-staffs-info {
-    flex: 1 1 170px !important;
+    flex: 1 1 150px !important;
     max-width: 100% !important;
   }
 
@@ -1089,10 +1260,10 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
   html[data-bewly-mobile-video-detail="true"] .upinfo :is(.up-avatar, .up-info-avatar, .avatar, .bili-avatar, .face, .up-cover, .staff-avatar),
   html[data-bewly-mobile-video-detail="true"] .members-info-container :is(.up-avatar, .up-info-avatar, .avatar, .bili-avatar, .face, .up-cover, .staff-avatar),
   html[data-bewly-mobile-video-detail="true"] .video-staffs-container :is(.up-avatar, .up-info-avatar, .avatar, .bili-avatar, .face, .up-cover, .staff-avatar) {
-    flex: 0 0 46px !important;
-    width: 46px !important;
-    height: 46px !important;
-    min-width: 46px !important;
+    flex: 0 0 40px !important;
+    width: 40px !important;
+    height: 40px !important;
+    min-width: 40px !important;
     border-radius: 50% !important;
     overflow: hidden !important;
   }
@@ -1101,10 +1272,10 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
   html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-author-card="true"] > picture,
   html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-author-card="true"] > a[href*="space.bilibili.com"]:first-child,
   html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-author-card="true"] > a[href*="space.bilibili.com"]:first-child img {
-    flex: 0 0 46px !important;
-    width: 46px !important;
-    height: 46px !important;
-    min-width: 46px !important;
+    flex: 0 0 40px !important;
+    width: 40px !important;
+    height: 40px !important;
+    min-width: 40px !important;
     border-radius: 50% !important;
     overflow: hidden !important;
     object-fit: cover !important;
@@ -1202,9 +1373,9 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
   html[data-bewly-mobile-video-detail="true"] .btn-follow,
   html[data-bewly-mobile-video-detail="true"] .not-follow,
   html[data-bewly-mobile-video-detail="true"] .new-charge-btn {
-    min-height: 40px !important;
-    min-width: 72px !important;
-    padding: 0 13px !important;
+    min-height: 34px !important;
+    min-width: 62px !important;
+    padding: 0 11px !important;
     border-radius: 999px !important;
     font-weight: 650 !important;
     -webkit-tap-highlight-color: transparent !important;
@@ -1226,26 +1397,28 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
   html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-author-card="true"][data-bewly-mobile-author-normalized="true"] {
     position: relative !important;
     display: block !important;
-    min-height: 70px !important;
-    margin: 6px 0 10px !important;
-    padding: 8px 4px !important;
+    height: 56px !important;
+    min-height: 56px !important;
+    max-height: 56px !important;
+    margin: 2px 0 6px !important;
+    padding: 5px 4px !important;
     border: 0 !important;
     border-radius: 0 !important;
     background: transparent !important;
     box-shadow: none !important;
-    overflow: visible !important;
+    overflow: hidden !important;
   }
 
   html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-author-card="true"][data-bewly-mobile-author-display-name]::before {
     content: attr(data-bewly-mobile-author-display-name);
     position: absolute !important;
-    left: 62px !important;
-    right: 146px !important;
-    top: 12px !important;
+    left: 52px !important;
+    right: 126px !important;
+    top: 7px !important;
     color: var(--bewly-mobile-detail-text) !important;
-    font-size: 14px !important;
+    font-size: 13px !important;
     font-weight: 750 !important;
-    line-height: 18px !important;
+    line-height: 16px !important;
     overflow: hidden !important;
     text-overflow: ellipsis !important;
     white-space: nowrap !important;
@@ -1276,12 +1449,12 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
 
   html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-author-avatar="true"],
   html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-author-avatar="true"] :is(img, picture, .bili-avatar, .avatar, .face, .up-avatar, .up-info-avatar, .up-cover, .staff-avatar) {
-    width: 46px !important;
-    height: 46px !important;
-    min-width: 46px !important;
-    max-width: 46px !important;
-    min-height: 46px !important;
-    max-height: 46px !important;
+    width: 40px !important;
+    height: 40px !important;
+    min-width: 40px !important;
+    max-width: 40px !important;
+    min-height: 40px !important;
+    max-height: 40px !important;
     border-radius: 50% !important;
     overflow: hidden !important;
     object-fit: cover !important;
@@ -1290,16 +1463,18 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
 
   html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-author-card="true"][data-bewly-mobile-author-normalized="true"] [data-bewly-mobile-author-info="true"] {
     position: absolute !important;
-    left: 62px !important;
-    right: 146px !important;
-    top: 43px !important;
+    left: 52px !important;
+    right: 126px !important;
+    top: 34px !important;
     transform: translateY(-50%) !important;
     width: auto !important;
+    height: 18px !important;
     min-width: 0 !important;
+    max-height: 18px !important;
     display: flex !important;
     flex-direction: column !important;
     justify-content: center !important;
-    gap: 3px !important;
+    gap: 1px !important;
     overflow: hidden !important;
   }
 
@@ -1348,8 +1523,8 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
   html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-author-info="true"] :is(.up-description, .up-info-desc, .up-detail-bottom, .desc, .info-desc, .official) {
     display: block !important;
     color: var(--bewly-mobile-detail-text-muted) !important;
-    font-size: 12px !important;
-    line-height: 1.3 !important;
+    font-size: 11px !important;
+    line-height: 1.25 !important;
     overflow: hidden !important;
     text-overflow: ellipsis !important;
     white-space: nowrap !important;
@@ -1360,12 +1535,14 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     right: 4px !important;
     top: 50% !important;
     transform: translateY(-50%) !important;
-    width: 134px !important;
-    max-width: 134px !important;
-    min-width: 134px !important;
+    width: 118px !important;
+    max-width: 118px !important;
+    min-width: 118px !important;
+    height: 32px !important;
+    max-height: 32px !important;
     display: flex !important;
     flex-flow: row nowrap !important;
-    gap: 6px !important;
+    gap: 4px !important;
     align-items: center !important;
     justify-content: flex-end !important;
     overflow: visible !important;
@@ -1385,7 +1562,7 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     flex-flow: row nowrap !important;
     justify-content: flex-end !important;
     align-items: center !important;
-    gap: 6px !important;
+    gap: 4px !important;
     overflow: visible !important;
   }
 
@@ -1395,16 +1572,16 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     flex: 0 0 auto !important;
     width: auto !important;
     max-width: none !important;
-    min-width: 46px !important;
-    min-height: 32px !important;
-    height: 32px !important;
+    min-width: 42px !important;
+    min-height: 30px !important;
+    height: 30px !important;
     margin: 0 !important;
-    padding: 0 11px !important;
+    padding: 0 9px !important;
     display: inline-flex !important;
     align-items: center !important;
     justify-content: center !important;
     border-radius: 999px !important;
-    font-size: 12px !important;
+    font-size: 11.5px !important;
     font-weight: 700 !important;
     line-height: 1 !important;
     white-space: nowrap !important;
@@ -1414,13 +1591,13 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
   }
 
   html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-author-actions="true"] :is(.follow-btn, .follow-button, .btn-follow, .not-follow) {
-    min-width: 62px !important;
-    padding-inline: 12px !important;
+    min-width: 58px !important;
+    padding-inline: 10px !important;
   }
 
   html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-author-actions="true"] :is(.new-charge-btn) {
-    min-width: 50px !important;
-    padding-inline: 10px !important;
+    min-width: 46px !important;
+    padding-inline: 9px !important;
   }
 
   html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-author-actions="true"] :is(button, a, .follow-btn, .follow-button, .btn-follow, .not-follow, .new-charge-btn) * {
@@ -1464,6 +1641,46 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
   html[data-bewly-mobile-video-detail="true"] #arc_toolbar_report::-webkit-scrollbar,
   html[data-bewly-mobile-video-detail="true"] .video-toolbar-container::-webkit-scrollbar {
     display: none;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-video-back="true"] {
+    order: -10 !important;
+    position: relative !important;
+    flex: 0 0 46px !important;
+    width: 46px !important;
+    height: 46px !important;
+    min-width: 46px !important;
+    min-height: 46px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-radius: 16px !important;
+    background: rgba(255, 255, 255, 0.075) !important;
+    color: #fff !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+    font-size: 0 !important;
+    line-height: 0 !important;
+    -webkit-tap-highlight-color: transparent !important;
+    pointer-events: auto !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-video-back="true"]::before {
+    content: "";
+    width: 10px !important;
+    height: 10px !important;
+    margin-left: 3px !important;
+    display: block !important;
+    border-left: 2px solid currentColor !important;
+    border-bottom: 2px solid currentColor !important;
+    transform: rotate(45deg) !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-video-back="true"]:active {
+    transform: scale(0.94) !important;
+    background: rgba(255, 255, 255, 0.12) !important;
   }
 
   html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-toolbar-action-hidden="true"],
@@ -1567,6 +1784,526 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     display: none !important;
   }
 
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 2147483500 !important;
+    width: 100vw !important;
+    height: 100dvh !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    display: flex !important;
+    align-items: flex-end !important;
+    justify-content: center !important;
+    overflow: hidden !important;
+    background: rgba(0, 0, 0, 0.56) !important;
+    backdrop-filter: blur(10px) saturate(1.08) !important;
+    -webkit-backdrop-filter: blur(10px) saturate(1.08) !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .bili-mini-content-wp {
+    position: relative !important;
+    inset: auto !important;
+    left: auto !important;
+    top: auto !important;
+    right: auto !important;
+    bottom: auto !important;
+    transform: none !important;
+    flex: 0 0 auto !important;
+    width: 100vw !important;
+    min-width: 0 !important;
+    max-width: 100vw !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: min(86dvh, 720px) !important;
+    margin: 0 !important;
+    padding: 26px max(16px, env(safe-area-inset-right, 0px)) calc(18px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)) !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 16px !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-bottom: 0 !important;
+    border-radius: 24px 24px 0 0 !important;
+    background: var(--bewly-mobile-detail-elevated) !important;
+    color: var(--bewly-mobile-detail-text) !important;
+    box-shadow: 0 -18px 42px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+    scrollbar-width: none !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .bili-mini-content-wp[data-bewly-mobile-login-drawer="true"] {
+    padding-top: 48px !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .bili-mini-content-wp:is([data-bewly-mobile-login-dragging="true"], [data-bewly-mobile-login-settling="true"], [data-bewly-mobile-login-closing="true"]) {
+    will-change: transform !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .bili-mini-content-wp::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .bili-mini-content-wp::before {
+    content: "";
+    position: absolute !important;
+    top: 9px !important;
+    left: 50% !important;
+    width: 42px !important;
+    height: 4px !important;
+    border-radius: 999px !important;
+    background: rgba(255, 255, 255, 0.24) !important;
+    transform: translateX(-50%) !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .bili-mini-content-wp[data-bewly-mobile-login-drawer="true"]::before {
+    display: none !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask [data-bewly-mobile-login-drag-handle="true"] {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    z-index: 2 !important;
+    width: 100% !important;
+    height: 44px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    display: block !important;
+    border: 0 !important;
+    background: transparent !important;
+    cursor: grab !important;
+    touch-action: none !important;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    -webkit-tap-highlight-color: transparent !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask [data-bewly-mobile-login-drag-handle="true"]::before {
+    content: "" !important;
+    position: absolute !important;
+    top: 14px !important;
+    left: 50% !important;
+    width: 48px !important;
+    height: 5px !important;
+    border-radius: 999px !important;
+    background: rgba(255, 255, 255, 0.26) !important;
+    transform: translateX(-50%) !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .bili-mini-content-wp[data-bewly-mobile-login-dragging="true"] [data-bewly-mobile-login-drag-handle="true"] {
+    cursor: grabbing !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .bili-mini-close-icon {
+    position: absolute !important;
+    top: 12px !important;
+    right: max(12px, env(safe-area-inset-right, 0px)) !important;
+    z-index: 4 !important;
+    width: 34px !important;
+    height: 34px !important;
+    margin: 0 !important;
+    border-radius: 50% !important;
+    background: rgba(255, 255, 255, 0.08) !important;
+    color: var(--bewly-mobile-detail-text) !important;
+    -webkit-tap-highlight-color: transparent !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .bili-mini-line {
+    display: none !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-scan-wp,
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .bili-mini-login-right-wp,
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-agreement-wp {
+    position: relative !important;
+    inset: auto !important;
+    left: auto !important;
+    top: auto !important;
+    right: auto !important;
+    bottom: auto !important;
+    transform: none !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .bili-mini-login-right-wp {
+    order: 1 !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    padding-top: 10px !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .bili-mini-login-right-wp[data-bewly-mobile-login-methods="true"] {
+    display: flex !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-tab-wp {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    margin: 0 0 18px !important;
+    display: flex !important;
+    justify-content: center !important;
+    gap: 0 !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-tab-item {
+    flex: 1 1 0 !important;
+    min-width: 0 !important;
+    max-width: 150px !important;
+    text-align: center !important;
+    color: rgba(242, 243, 245, 0.76) !important;
+    font-size: 18px !important;
+    line-height: 24px !important;
+    font-weight: 700 !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-tab-item.active-tab {
+    color: var(--bewly-mobile-detail-accent) !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-tab-line {
+    background: rgba(255, 255, 255, 0.14) !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask :is(.login-pwd-wp, .login-sms-wp, .tab__form, .form__item, .btn_wp, .login-sns-wp) {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask :is(input, button, .btn_primary, .btn_other) {
+    max-width: 100% !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .tab__form {
+    height: auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    align-content: start !important;
+    row-gap: 10px !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    outline: 0 !important;
+    overflow: visible !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .tab__form::before,
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .tab__form::after {
+    content: none !important;
+    display: none !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .form__item {
+    height: 50px !important;
+    min-height: 50px !important;
+    max-height: 50px !important;
+    margin: 0 !important;
+    padding: 0 12px !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 0 !important;
+    border: 0 !important;
+    border-radius: 14px !important;
+    background: rgba(255, 255, 255, 0.055) !important;
+    box-shadow: none !important;
+    outline: 0 !important;
+    overflow: hidden !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .form__item + .form__item {
+    margin-top: 0 !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .form__item::before,
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .form__item::after {
+    content: none !important;
+    display: none !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .form__item:focus-within {
+    background: rgba(255, 255, 255, 0.075) !important;
+    box-shadow: none !important;
+    outline: 0 !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .form__item > :is(.form_info, .login-sms-wp__cid),
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .form__item > div:first-child:not(.eye-btn):not(.clickable):not(.forget-tip):not(.login-sms-wp__vertical-line):not(.login-sms-send) {
+    flex: 0 0 60px !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    color: rgba(242, 243, 245, 0.86) !important;
+    font-size: 14px !important;
+    line-height: 20px !important;
+    white-space: nowrap !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .form__item > .eye-btn {
+    flex: 0 0 32px !important;
+    width: 32px !important;
+    height: 32px !important;
+    margin: 0 0 0 8px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    opacity: 0.64 !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .form__item > .eye-btn.eye-btn.eye-btn {
+    flex-basis: 32px !important;
+    width: 32px !important;
+    min-width: 32px !important;
+    max-width: 32px !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .form__item > .clickable {
+    flex: 0 0 auto !important;
+    margin-left: 8px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    color: var(--bewly-mobile-detail-accent) !important;
+    font-size: 13px !important;
+    line-height: 18px !important;
+    white-space: nowrap !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .form__item > .forget-tip {
+    display: none !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .form__item > .forget-tip.forget-tip.forget-tip {
+    display: none !important;
+    visibility: hidden !important;
+    width: 0 !important;
+    height: 0 !important;
+    overflow: hidden !important;
+    pointer-events: none !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .form__item input {
+    flex: 1 1 0 !important;
+    width: auto !important;
+    min-width: 0 !important;
+    height: 50px !important;
+    min-height: 50px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    outline: none !important;
+    background: transparent !important;
+    color: var(--bewly-mobile-detail-text) !important;
+    font-size: 15px !important;
+    line-height: 50px !important;
+    caret-color: var(--bewly-mobile-detail-accent) !important;
+    box-shadow: none !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .form__item input::placeholder {
+    color: rgba(242, 243, 245, 0.42) !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-sms-wp__cid {
+    flex: 0 0 62px !important;
+    height: 50px !important;
+    gap: 7px !important;
+    cursor: pointer !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-sms-wp__cid img {
+    position: static !important;
+    width: 12px !important;
+    height: 12px !important;
+    margin: 1px 0 0 !important;
+    opacity: 0.72 !important;
+    filter: invert(1) opacity(0.78) !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-sms-wp__vertical-line {
+    flex: 0 0 1px !important;
+    width: 1px !important;
+    height: 24px !important;
+    margin: 0 10px !important;
+    background: rgba(255, 255, 255, 0.1) !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-sms-send {
+    flex: 0 0 auto !important;
+    min-width: 86px !important;
+    height: 34px !important;
+    padding: 0 10px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 10px !important;
+    color: var(--bewly-mobile-detail-accent) !important;
+    background: rgba(0, 174, 236, 0.1) !important;
+    font-size: 13px !important;
+    line-height: 18px !important;
+    font-weight: 700 !important;
+    white-space: nowrap !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-sms-send.disable {
+    color: rgba(242, 243, 245, 0.5) !important;
+    background: rgba(255, 255, 255, 0.055) !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .btn_wp {
+    margin-top: 14px !important;
+    display: flex !important;
+    gap: 10px !important;
+    justify-content: stretch !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask :is(.btn_primary, .btn_other) {
+    flex: 1 1 0 !important;
+    min-width: 0 !important;
+    height: 48px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 14px !important;
+    font-size: 15px !important;
+    line-height: 20px !important;
+    font-weight: 700 !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .btn_primary {
+    color: #fff !important;
+    background: linear-gradient(135deg, #00aeec, #12b7f5) !important;
+    box-shadow: 0 10px 22px rgba(0, 174, 236, 0.24) !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .btn_other {
+    color: rgba(242, 243, 245, 0.82) !important;
+    background: rgba(255, 255, 255, 0.055) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-scan-wp {
+    order: 2 !important;
+    display: none !important;
+    grid-template-columns: 106px minmax(0, 1fr) !important;
+    grid-template-areas: "title title" "qr desc" !important;
+    align-items: center !important;
+    gap: 10px 12px !important;
+    padding: 13px !important;
+    border: 1px solid rgba(255, 255, 255, 0.07) !important;
+    border-radius: 18px !important;
+    background: rgba(255, 255, 255, 0.045) !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-scan-title {
+    grid-area: title !important;
+    width: auto !important;
+    margin: 0 !important;
+    text-align: left !important;
+    color: var(--bewly-mobile-detail-text) !important;
+    font-size: 15px !important;
+    line-height: 20px !important;
+    font-weight: 700 !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-scan-hover-wp,
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-scan-box {
+    grid-area: qr !important;
+    width: 106px !important;
+    height: 106px !important;
+    min-width: 106px !important;
+    min-height: 106px !important;
+    margin: 0 !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-scan-hover-wp,
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-scan-hover-wp:hover,
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-scan-hover-wp:hover .login-scan-box {
+    transform: none !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-scan-hover-wp > :not(.login-scan-box),
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-scan-hover-wp :is(.scan-tips-icon, .login-client-qr-code, .login-icon, .login-scan-tips, .qrcode-tips) {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    width: 0 !important;
+    height: 0 !important;
+    pointer-events: none !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-scan-box > div:not(.login_qrcode_tip),
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-scan-box > img {
+    width: 96px !important;
+    height: 96px !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login_qrcode_tip {
+    inset: 0 !important;
+    width: 106px !important;
+    height: 106px !important;
+    border-radius: 12px !important;
+    overflow: hidden !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login_qrcode_tip img {
+    width: 34px !important;
+    height: 34px !important;
+    max-width: 34px !important;
+    max-height: 34px !important;
+    object-fit: contain !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login_qrcode_tip span {
+    max-width: 92px !important;
+    color: rgba(31, 35, 41, 0.66) !important;
+    font-size: 11px !important;
+    line-height: 1.25 !important;
+    text-align: center !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-scan-desc {
+    grid-area: desc !important;
+    width: auto !important;
+    margin: 0 !important;
+    color: rgba(242, 243, 245, 0.78) !important;
+    text-align: left !important;
+    font-size: 12px !important;
+    line-height: 1.55 !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-agreement-wp {
+    order: 3 !important;
+    color: rgba(242, 243, 245, 0.7) !important;
+    text-align: center !important;
+    font-size: 12px !important;
+    line-height: 1.55 !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-agreement-wp p {
+    margin: 0 !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-agreement-wp :is(a, span) {
+    color: var(--bewly-mobile-detail-accent) !important;
+  }
+
   html[data-bewly-mobile-video-detail="true"] .desc-info,
   html[data-bewly-mobile-video-detail="true"] .basic-desc-info,
   html[data-bewly-mobile-video-detail="true"] .video-desc-container,
@@ -1656,18 +2393,32 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
   html[data-bewly-mobile-video-detail="true"] #v_tag,
   html[data-bewly-mobile-video-detail="true"] .video-tag-container {
     order: 60 !important;
-    width: 100% !important;
-    margin: 2px 0 14px !important;
-    padding: 0 4px !important;
-    display: flex !important;
-    flex-wrap: wrap !important;
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    max-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
     gap: 6px !important;
     position: relative !important;
     z-index: 1 !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    overscroll-behavior-x: contain !important;
+    scrollbar-width: none !important;
     border: 0 !important;
     border-radius: 0 !important;
     background: transparent !important;
     box-shadow: none !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] .tag-area::-webkit-scrollbar,
+  html[data-bewly-mobile-video-detail="true"] #v_tag::-webkit-scrollbar,
+  html[data-bewly-mobile-video-detail="true"] .video-tag-container::-webkit-scrollbar {
+    display: none !important;
   }
 
   html[data-bewly-mobile-video-detail="true"] :is(.tag-area, #v_tag, .video-tag-container) > :not(:is(a, button, .tag-link, .tag, .video-tag)) {
@@ -1685,6 +2436,7 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
   }
 
   html[data-bewly-mobile-video-detail="true"] :is(.tag-area, #v_tag, .video-tag-container) :is(a[href], .tag-link, .tag, .video-tag):not(:has(:is(.tag-link, .tag, .video-tag))) {
+    flex: 0 0 auto !important;
     min-height: 26px !important;
     margin: 0 !important;
     padding: 3px 9px !important;
@@ -1719,11 +2471,13 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
   }
 
   html[data-bewly-mobile-video-detail="true"] :is(.tag-area, #v_tag, .video-tag-container) [data-bewly-mobile-tag-more="true"] {
-    width: 34px !important;
-    min-width: 34px !important;
-    max-width: 34px !important;
-    height: 28px !important;
-    min-height: 28px !important;
+    flex: 0 0 30px !important;
+    width: 30px !important;
+    min-width: 30px !important;
+    max-width: 30px !important;
+    height: 26px !important;
+    min-height: 26px !important;
+    max-height: 26px !important;
     margin: 0 !important;
     padding: 0 !important;
     display: inline-flex !important;

@@ -3,6 +3,7 @@ import { onKeyStroke, useEventListener, useIntersectionObserver, useThrottleFn, 
 import type { Ref } from 'vue'
 import { provide, ref } from 'vue'
 
+import TopBarSearch from '~/components/TopBar/components/TopBarSearch.vue'
 import type { BewlyAppProvider } from '~/composables/useAppProvider'
 import { DrawerType, UndoForwardState } from '~/composables/useAppProvider'
 import { useDark } from '~/composables/useDark'
@@ -13,12 +14,11 @@ import { settings } from '~/logic'
 import type { DockItem } from '~/stores/mainStore'
 import { useMainStore } from '~/stores/mainStore'
 import { useTopBarStore } from '~/stores/topBarStore'
-import { getBewlyUserscriptHomeUrl, isMobileBilibiliHomePage, isMobileUserscriptRuntimePage, MOBILE_OPEN_IN_PAGE_EVENT, normalizeBilibiliUrlForCurrentSurface } from '~/userscript/mobile'
+import { getBewlyUserscriptHomeUrl, isBilibiliVideoDetailPage, isMobileBilibiliHomePage, isMobileUserscriptRuntimePage, MOBILE_OPEN_IN_PAGE_EVENT, normalizeBilibiliUrlForCurrentSurface } from '~/userscript/mobile'
 import { getMobileRouteAppPage, isCoreMobileRoute, parseMobileRoute } from '~/userscript/mobile-route'
 import { isHomePage, isInIframe, isNotificationPage, isSearchResultsPage, isVideoOrBangumiPage, openLinkToNewTab, queryDomUntilFound, scrollToTop } from '~/utils/main'
 import emitter from '~/utils/mitt'
 
-import TopBarSearch from '~/components/TopBar/components/TopBarSearch.vue'
 import { setupNecessarySettingsWatchers } from './necessarySettingsWatchers'
 
 // Check if current page is festival page
@@ -324,6 +324,7 @@ const showBewlyPage = computed((): boolean => {
 
   return isBewlyHomePage()
 })
+const showMobileBottomShell = computed(() => isMobileUserscriptPage && showBewlyPage.value && !hideMobileShell.value)
 const activePageKey = computed(() => isMobileUserscriptPage ? `${activatedPage.value}:${currentRouteUrl.value}` : activatedPage.value)
 const showTopBar = computed((): boolean => {
   // When using the open in drawer feature, the iframe inside the page will hide the top bar
@@ -640,6 +641,11 @@ function openMobileUrlInPage(url: string) {
       window.dispatchEvent(new Event('pushstate'))
       return
     }
+
+    if (isBilibiliVideoDetailPage(destination.toString())) {
+      window.location.href = destination.toString()
+      return
+    }
   }
   catch {
     // Fall through to drawer handling.
@@ -918,7 +924,7 @@ if (settings.value.cleanUrlArgument) {
     </div>
 
     <div
-      v-if="isMobileUserscriptPage && !isInIframe() && !hideMobileShell"
+      v-if="showMobileBottomShell && !isInIframe()"
       class="bewly-mobile-bottom-shell"
       :style="{
         opacity: hideUIForIframePhotoViewer ? 0 : 1,

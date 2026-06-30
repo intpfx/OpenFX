@@ -1,6 +1,6 @@
 import { AppPage } from '~/enums/appEnums'
 
-import { DESKTOP_BILIBILI_HOST, MOBILE_BILIBILI_HOST } from './mobile'
+import { DESKTOP_BILIBILI_HOST } from './mobile'
 
 export type MobileRouteKind = 'home' | 'bewly-page' | 'video' | 'search' | 'space' | 'moments' | 'unsupported'
 
@@ -31,7 +31,7 @@ function parseRouteUrl(url: string): URL | undefined {
 
 function isSupportedBilibiliSurface(url: URL): boolean {
   return url.protocol === 'https:'
-    && (url.hostname === MOBILE_BILIBILI_HOST || url.hostname === DESKTOP_BILIBILI_HOST)
+    && url.hostname === DESKTOP_BILIBILI_HOST
 }
 
 export function parseMobileRoute(url: string = location.href): MobileRoute {
@@ -56,9 +56,8 @@ export function parseMobileRoute(url: string = location.href): MobileRoute {
   const videoMatch = pathname.match(/^\/video\/([^/?#]+)/)
   if (videoMatch) {
     return {
-      kind: 'video',
+      kind: 'unsupported',
       url: parsed.toString(),
-      page: AppPage.VideoDetail,
       bvid: decodeURIComponent(videoMatch[1]),
     }
   }
