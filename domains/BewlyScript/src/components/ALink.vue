@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import { useBewlyApp } from '~/composables/useAppProvider'
 import { settings } from '~/logic'
-import { isMobileUserscriptRuntimePage, MOBILE_LINK_MANAGED_ATTR, openMobileUrlInCurrentPage, shouldPreferTouchMode } from '~/userscript/mobile'
+import { isBilibiliVideoDetailPage, isMobileUserscriptRuntimePage, MOBILE_LINK_MANAGED_ATTR, openMobileUrlInCurrentPage, shouldPreferTouchMode } from '~/userscript/mobile'
 
 const props = defineProps<{
   href?: string
@@ -30,6 +30,15 @@ const processedHref = computed(() => {
 
 const preferTouchMode = computed(() => shouldPreferTouchMode(settings.value.touchScreenOptimization))
 
+function getProcessedDestinationUrl(): string | undefined {
+  try {
+    return new URL(processedHref.value, location.href).toString()
+  }
+  catch {
+    return undefined
+  }
+}
+
 // Since BewlyBewly sometimes uses an iframe to open the original Bilibili page in the current tab
 // please set the target to `_top` instead of `_self`
 const target = computed(() => {
@@ -42,6 +51,14 @@ const target = computed(() => {
 function handleClick(event: MouseEvent) {
   if (props.stopPropagation) {
     event.stopPropagation()
+  }
+
+  const destinationUrl = getProcessedDestinationUrl()
+  if (isMobileUserscriptPage.value && props.href && destinationUrl && isBilibiliVideoDetailPage(destinationUrl)) {
+    event.preventDefault()
+    event.stopPropagation()
+    openIframeDrawer(destinationUrl)
+    return
   }
 
   if (props.customClickEvent) {

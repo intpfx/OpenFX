@@ -14,7 +14,7 @@ import { settings } from '~/logic'
 import type { DockItem } from '~/stores/mainStore'
 import { useMainStore } from '~/stores/mainStore'
 import { useTopBarStore } from '~/stores/topBarStore'
-import { getBewlyUserscriptHomeUrl, isBilibiliVideoDetailPage, isMobileBilibiliHomePage, isMobileUserscriptRuntimePage, MOBILE_OPEN_IN_PAGE_EVENT, normalizeBilibiliUrlForCurrentSurface } from '~/userscript/mobile'
+import { BEWLY_MOBILE_VIDEO_DRAWER_PARAM, getBewlyUserscriptHomeUrl, isBilibiliVideoDetailPage, isMobileBilibiliHomePage, isMobileUserscriptRuntimePage, markBewlyMobileVideoDrawerFrameUrl, MOBILE_OPEN_IN_PAGE_EVENT, normalizeBilibiliUrlForCurrentSurface } from '~/userscript/mobile'
 import { getMobileRouteAppPage, isCoreMobileRoute, parseMobileRoute } from '~/userscript/mobile-route'
 import { isHomePage, isInIframe, isNotificationPage, isSearchResultsPage, isVideoOrBangumiPage, openLinkToNewTab, queryDomUntilFound, scrollToTop } from '~/utils/main'
 import emitter from '~/utils/mitt'
@@ -29,12 +29,22 @@ function isFestivalPage(): boolean {
 const mainStore = useMainStore()
 const topBarStore = useTopBarStore()
 const currentRouteUrl = ref(window.location.href)
+const initialMobileVideoDrawerIntent = ref<string | null>(getMobileVideoDrawerIntentFromUrl())
 const { width: viewportWidth } = useWindowSize()
 const isMobileUserscriptPage = computed(() => {
   // Subscribe to viewport width so structural shell layout updates on resize.
   void viewportWidth.value
   return isMobileUserscriptRuntimePage(currentRouteUrl.value) && !isInIframe()
 })
+
+function getMobileVideoDrawerIntentFromUrl(url: string = window.location.href): string | null {
+  try {
+    return new URL(url).searchParams.get(BEWLY_MOBILE_VIDEO_DRAWER_PARAM)
+  }
+  catch {
+    return null
+  }
+}
 
 function isBewlyHomePage(url: string = window.location.href): boolean {
   return isHomePage(url) || (isMobileUserscriptPage.value && isMobileBilibiliHomePage(url))
@@ -81,6 +91,15 @@ function syncRouteFromUrl() {
     activatedPage.value = nextPage
 }
 
+async function initializeMobileShellAccountData() {
+  if (!isMobileUserscriptPage.value || isInIframe())
+    return
+
+  await topBarStore.initData()
+  if (topBarStore.isLogin)
+    topBarStore.startUpdateTimer()
+}
+
 // 监听 URL 变化,同步更新 activatedPage
 useEventListener(window, 'pushstate', syncRouteFromUrl)
 useEventListener(window, 'popstate', syncRouteFromUrl)
@@ -104,6 +123,9 @@ function clearSearchParamsFromUrl() {
   }
 
   const urlParams = new URLSearchParams(window.location.search)
+  if (urlParams.has(BEWLY_MOBILE_VIDEO_DRAWER_PARAM))
+    return
+
   const hasSearchParams = urlParams.has('keyword')
     || urlParams.has('category')
     || urlParams.has('user_order')
@@ -414,6 +436,8 @@ let scrollingEmitted = false
 
 onMounted(() => {
   window.dispatchEvent(new CustomEvent(BEWLY_MOUNTED))
+  void initializeMobileShellAccountData()
+  consumeMobileVideoDrawerIntent()
 
   // ✅ 设置 IntersectionObserver 用于无限滚动底部检测（仅在首页且使用Bewly页面时）
   // 避免在每次滚动时读取 scrollHeight/clientHeight
@@ -630,6 +654,9 @@ function openIframeDrawer(url: string) {
       openLinkToNewTab(destination.toString())
       return
     }
+
+    if (isMobileUserscriptPage.value && isBilibiliVideoDetailPage(destination.toString()))
+      destination = new URL(markBewlyMobileVideoDrawerFrameUrl(destination.toString()), location.href)
   }
   catch {
     if (!isMobileUserscriptPage.value)
@@ -647,16 +674,17 @@ function openMobileUrlInPage(url: string) {
 
   try {
     const destination = new URL(normalizedUrl, location.href)
+
+    if (isBilibiliVideoDetailPage(destination.toString())) {
+      openIframeDrawer(destination.toString())
+      return
+    }
+
     const route = parseMobileRoute(destination.toString())
 
     if (route.kind !== 'unsupported') {
       window.history.pushState({}, '', `${destination.pathname}${destination.search}${destination.hash}`)
       window.dispatchEvent(new Event('pushstate'))
-      return
-    }
-
-    if (isBilibiliVideoDetailPage(destination.toString())) {
-      window.location.href = destination.toString()
       return
     }
   }
@@ -665,6 +693,25 @@ function openMobileUrlInPage(url: string) {
   }
 
   openIframeDrawer(normalizedUrl)
+}
+
+function consumeMobileVideoDrawerIntent() {
+  if (!isMobileUserscriptPage.value)
+    return
+
+  const current = new URL(window.location.href)
+  const drawerUrl = current.searchParams.get(BEWLY_MOBILE_VIDEO_DRAWER_PARAM) ?? initialMobileVideoDrawerIntent.value
+  if (!drawerUrl)
+    return
+
+  initialMobileVideoDrawerIntent.value = null
+  current.searchParams.delete(BEWLY_MOBILE_VIDEO_DRAWER_PARAM)
+  if (!current.searchParams.get('page'))
+    current.searchParams.set('page', AppPage.Home)
+
+  window.history.replaceState(history.state, '', `${current.pathname}${current.search}${current.hash}`)
+  window.dispatchEvent(new Event('replacestate'))
+  openIframeDrawer(normalizeBilibiliUrlForCurrentSurface(drawerUrl))
 }
 
 function handleMobileOpenInPage(event: Event) {

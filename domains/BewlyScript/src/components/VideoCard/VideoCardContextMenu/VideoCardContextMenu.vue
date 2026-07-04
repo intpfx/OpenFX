@@ -3,6 +3,7 @@ import type { CSSProperties } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { useBewlyApp } from '~/composables/useAppProvider'
+import { useMobileBottomDrawerDrag } from '~/composables/useMobileBottomDrawerDrag'
 import { settings } from '~/logic'
 import { Type as ThreePointV2Type } from '~/models/video/appForYou'
 import { isMobileUserscriptRuntimePage, openMobileUrlInCurrentPage, shouldEnableHoverInteractions } from '~/userscript/mobile'
@@ -80,6 +81,17 @@ const loadingWebDislike = ref<boolean>(false)
 const { openIframeDrawer } = useBewlyApp()
 const hoverInteractionsEnabled = computed(() => shouldEnableHoverInteractions(settings.value.touchScreenOptimization))
 const isMobileUserscriptPage = computed(() => isMobileUserscriptRuntimePage())
+
+const {
+  drawerStyle: contextMenuDrawerStyle,
+  handlePointerDown: handleContextMenuDrawerPointerDown,
+  stateAttrs: contextMenuDrawerStateAttrs,
+} = useMobileBottomDrawerDrag({
+  enabled: () => isMobileUserscriptPage.value && showContextMenu.value,
+  onClose: () => {
+    handleClose()
+  },
+})
 
 enum VideoOption {
   OpenInNewTab,
@@ -470,16 +482,20 @@ async function unfollowUser() {
         />
         <div
           style="backdrop-filter: var(--bew-filter-glass-1); box-shadow: var(--bew-shadow-edge-glow-1), var(--bew-shadow-1);"
-          :style="isMobileUserscriptPage ? undefined : contextMenuStyles"
+          :style="isMobileUserscriptPage ? contextMenuDrawerStyle : contextMenuStyles"
           p-1 bg="$bew-elevated" rounded="$bew-radius"
           min-w-200px m="t-4 l-[calc(-200px+1rem)]"
           border="1 $bew-border-color"
           class="context-menu-container" :class="[{ 'context-menu-container--mobile': isMobileUserscriptPage }]"
+          v-bind="isMobileUserscriptPage ? contextMenuDrawerStateAttrs : {}"
           @click.stop
         >
-          <div
+          <button
             v-if="isMobileUserscriptPage"
+            type="button"
             class="context-menu-drawer-handle"
+            aria-label="下滑关闭更多操作"
+            @pointerdown="handleContextMenuDrawerPointerDown"
           />
 
           <!-- 顶部滚动指示器 -->
@@ -620,12 +636,34 @@ async function unfollowUser() {
 }
 
 .context-menu-drawer-handle {
+  position: relative;
+  width: 100%;
+  height: 42px;
+  flex: 0 0 auto;
+  margin: 0 0 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: grab;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+.context-menu-drawer-handle::before {
+  content: "";
+  position: absolute;
+  top: 14px;
+  left: 50%;
   width: 42px;
   height: 4px;
-  flex: 0 0 auto;
-  margin: 4px auto 10px;
   border-radius: 999px;
   background: var(--bew-fill-4);
+  transform: translateX(-50%);
+}
+
+[data-bewly-mobile-drawer-dragging="true"] .context-menu-drawer-handle {
+  cursor: grabbing;
 }
 
 .context-menu-item {

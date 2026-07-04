@@ -1,9 +1,9 @@
 import { TABS_MESSAGE } from '~/background/messageListeners/tabs'
-import { openMobileUrlInCurrentPage } from '~/userscript/mobile'
+import { isUserscriptRuntime, openMobileUrlInCurrentPage } from '~/userscript/mobile'
 import { sendMessage } from '~/utils/messaging'
 
 function shouldForceCurrentTabNavigation(): boolean {
-  return Boolean((globalThis as { __BEWLYSCRIPT__?: boolean }).__BEWLYSCRIPT__)
+  return isUserscriptRuntime()
     && location.protocol === 'https:'
     && location.hostname === 'm.bilibili.com'
 }

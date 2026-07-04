@@ -695,7 +695,9 @@ defineExpose({
                 </div>
               </a>
               <div class="media-ft-highlight-info">
-                <div class="media-ft-highlight-title" text="lg $bew-text-1" font-medium v-html="item.title" />
+                <div class="media-ft-highlight-title" text="lg $bew-text-1" font-medium>
+                  {{ removeHighlight(item.title) }}
+                </div>
                 <div class="media-ft-highlight-meta" text="sm $bew-text-3" flex items-center gap-2>
                   <span v-if="item.media_score?.score" text="$bew-theme-color" font-bold>
                     {{ item.media_score.score.toFixed(1) }} 分

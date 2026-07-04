@@ -3,6 +3,7 @@ import DOMPurify from 'dompurify'
 import { storeToRefs } from 'pinia'
 import { useI18n } from 'vue-i18n'
 
+import { useMobileBottomDrawerDrag } from '~/composables/useMobileBottomDrawerDrag'
 import { settings } from '~/logic'
 import { useTopBarStore } from '~/stores/topBarStore'
 import { isMobileUserscriptRuntimePage, openMobileUrlInCurrentPage, shouldEnableHoverInteractions, shouldPreferTouchMode } from '~/userscript/mobile'
@@ -27,13 +28,17 @@ const props = defineProps<{
   userInfo: UserInfo
 }>()
 
+const emit = defineEmits<{
+  (e: 'close'): void
+}>()
+
 const { t } = useI18n()
 
 const topBarStore = useTopBarStore()
 const { hasBCoinToReceive } = storeToRefs(topBarStore)
 
 const mid = computed(() => {
-  return getUserID()
+  return props.userInfo.mid ? String(props.userInfo.mid) : getUserID()
 })
 
 const otherLinks = computed((): { name: string, url: string, icon: string, code?: string }[] => {
@@ -111,6 +116,14 @@ const hoverInteractionsEnabled = computed(() => {
 })
 
 const isMobileUserscriptPage = computed(() => isMobileUserscriptRuntimePage())
+const {
+  drawerStyle: mobileDrawerStyle,
+  handlePointerDown: handleMobileDrawerPointerDown,
+  stateAttrs: mobileDrawerStateAttrs,
+} = useMobileBottomDrawerDrag({
+  enabled: () => isMobileUserscriptPage.value,
+  onClose: () => emit('close'),
+})
 
 onMounted(() => {
   api.user.getUserStat()
@@ -162,6 +175,9 @@ function getLvIcon(level: number, isSigma: boolean = false): string {
 }
 
 function handleClickChannel() {
+  if (!mid.value)
+    return
+
   const spaceUrl = `https://space.bilibili.com/${mid.value}`
 
   if (isMobileUserscriptRuntimePage()) {
@@ -182,20 +198,39 @@ function handleClickChannel() {
     shadow="[var(--bew-shadow-3),var(--bew-shadow-edge-glow-1)]"
     class="userPanel-pop bew-popover"
     :class="{ 'userPanel-pop--mobile-drawer': isMobileUserscriptPage }"
+    :style="mobileDrawerStyle"
+    v-bind="mobileDrawerStateAttrs"
     data-key="userPanel"
   >
-    <div
-      text="xl" font-medium flex="~ items-center gap-2"
-    >
-      <Button
-        v-if="preferTouchMode"
-        type="secondary" strong @click="handleClickChannel"
+    <button
+      v-if="isMobileUserscriptPage"
+      type="button"
+      class="mobile-user-panel-drag-handle"
+      aria-label="下滑关闭个人面板"
+      @pointerdown="handleMobileDrawerPointerDown"
+      @click.stop
+    />
+    <div class="user-panel-header">
+      <div text="xl" font-medium flex="~ items-center gap-2" min-w-0>
+        <Button
+          v-if="preferTouchMode"
+          type="secondary" strong @click="handleClickChannel"
+        >
+          {{ userInfo.uname ? userInfo.uname : '-' }}
+        </Button>
+        <span v-else>
+          {{ userInfo.uname ? userInfo.uname : '-' }}
+        </span>
+      </div>
+      <button
+        v-if="isMobileUserscriptPage"
+        type="button"
+        class="mobile-user-panel-logout"
+        @click.stop="logout()"
       >
-        {{ userInfo.uname ? userInfo.uname : '-' }}
-      </Button>
-      <span v-else>
-        {{ userInfo.uname ? userInfo.uname : '-' }}
-      </span>
+        <div i-solar:logout-2-bold-duotone />
+        {{ $t('topbar.user_dropdown.log_out') }}
+      </button>
     </div>
     <div
       text="xs $bew-text-2"
@@ -390,6 +425,8 @@ function handleClickChannel() {
         <div i-mingcute:arrow-right-line />
       </ALink>
       <div
+        v-if="!isMobileUserscriptPage"
+        class="desktop-user-panel-logout"
         text="$bew-error-color"
         :class="hoverInteractionsEnabled ? 'hover:bg-$bew-fill-2' : ''"
         p="x-4 y-2" flex="~ items-center"
@@ -413,6 +450,22 @@ function handleClickChannel() {
 
 .level-next :deep(svg .level-bg) {
   --uno: "fill-#c9ccd0";
+}
+
+.user-panel-header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.mobile-user-panel-logout {
+  display: none;
+}
+
+.mobile-user-panel-drag-handle {
+  display: none;
 }
 
 .lv6-entry--card {
@@ -470,20 +523,58 @@ function handleClickChannel() {
   box-shadow:
     var(--bew-shadow-edge-glow-1),
     0 -18px 48px rgba(0, 0, 0, 0.38) !important;
-  transform: translateY(0) !important;
+  transform: translateY(0);
 
-  &::before {
-    content: "";
+  .mobile-user-panel-drag-handle {
+    position: relative;
     display: block;
+    width: 100%;
+    height: 34px;
+    margin: -8px 0 8px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .mobile-user-panel-drag-handle::before {
+    content: "";
+    position: absolute;
+    top: 12px;
+    left: 50%;
     width: 42px;
     height: 4px;
-    margin: -6px auto 14px;
     border-radius: 999px;
     background: var(--bew-fill-4);
+    transform: translateX(-50%);
+  }
+
+  &[data-bewly-mobile-drawer-dragging="true"] .mobile-user-panel-drag-handle {
+    cursor: grabbing;
   }
 
   &::after {
     display: none !important;
+  }
+
+  .mobile-user-panel-logout {
+    display: inline-flex;
+    flex: 0 0 auto;
+    gap: 6px;
+    align-items: center;
+    justify-content: center;
+    min-height: 34px;
+    padding: 0 12px;
+    color: var(--bew-error-color);
+    border: 1px solid color-mix(in oklab, var(--bew-error-color), transparent 72%);
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--bew-error-color), transparent 92%);
+    font-size: 13px;
+    font-weight: 650;
   }
 
   &.mobile-user-panel-enter-active,

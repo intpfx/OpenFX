@@ -3,6 +3,7 @@ import { useEventListener } from '@vueuse/core'
 
 import { DrawerType, useBewlyApp } from '~/composables/useAppProvider'
 import { useDark } from '~/composables/useDark'
+import { useMobileBottomDrawerDrag } from '~/composables/useMobileBottomDrawerDrag'
 import { DRAWER_VIDEO_ENTER_PAGE_FULL, DRAWER_VIDEO_EXIT_PAGE_FULL, IFRAME_DARK_MODE_CHANGE } from '~/constants/globalEvents'
 import { settings } from '~/logic'
 import { isMobileUserscriptRuntimePage, openMobileUrlInCurrentPage } from '~/userscript/mobile'
@@ -41,6 +42,16 @@ const escPressedTimer = ref<NodeJS.Timeout | null>(null)
 const disableEscPress = ref<boolean>(false)
 const isMobileUserscriptPage = isMobileUserscriptRuntimePage()
 const mobileDrawerHeaderHeight = 'calc(56px + env(safe-area-inset-top, 0px))'
+const {
+  drawerStyle: mobileDrawerMotionStyle,
+  handlePointerDown: handleMobileDrawerPointerDown,
+  stateAttrs: mobileDrawerStateAttrs,
+} = useMobileBottomDrawerDrag({
+  enabled: () => isMobileUserscriptPage && show.value && !isPageFullscreen.value,
+  onClose: () => {
+    void handleClose()
+  },
+})
 const modalSiblingState = new Map<HTMLElement, { ariaHidden: string | null, inert: boolean }>()
 let stopIframePushStateListener: (() => void) | null = null
 let stopIframePopStateListener: (() => void) | null = null
@@ -71,12 +82,14 @@ const iframeContainerStyles = computed(() => {
     return {
       top: '0',
       height: '100%',
+      ...mobileDrawerMotionStyle.value,
     }
   }
 
   return {
     top: mobileDrawerHeaderHeight,
     height: 'calc(100% - 56px - env(safe-area-inset-top, 0px))',
+    ...mobileDrawerMotionStyle.value,
   }
 })
 
@@ -185,7 +198,8 @@ watch(() => props.url, async (newUrl, oldUrl) => {
   if (!show.value || newUrl === oldUrl)
     return
 
-  history.replaceState(null, '', newUrl.replace(/\/$/, ''))
+  if (!isMobileUserscriptPage)
+    history.replaceState(null, '', newUrl.replace(/\/$/, ''))
   await remountIframe(newUrl)
 })
 
@@ -245,10 +259,8 @@ function injectStyleClass() {
 
 function handleIframeLoad() {
   const iframeWindow = iframeRef.value?.contentWindow
-  if (!iframeWindow) {
-    console.error('Iframe or contentWindow is not available')
+  if (!iframeWindow)
     return
-  }
 
   cleanupIframeWindowListeners()
   injectStyleClass()
@@ -270,7 +282,8 @@ async function remountIframe(url: string) {
 onMounted(async () => {
   console.log('[IframeDrawer] onMounted called')
   originUrl.value = window.location.href
-  history.pushState(null, '', props.url)
+  if (!isMobileUserscriptPage)
+    history.pushState(null, '', props.url)
   show.value = true
   headerShow.value = true
   currentUrl.value = props.url
@@ -303,10 +316,14 @@ onBeforeUnmount(async () => {
 })
 
 onUnmounted(() => {
-  history.replaceState(null, '', originUrl.value)
+  if (!isMobileUserscriptPage && originUrl.value)
+    history.replaceState(null, '', originUrl.value)
 })
 
 function updateCurrentUrl(e: any) {
+  if (isMobileUserscriptPage)
+    return
+
   if (!iframeRef.value?.contentWindow) {
     console.error('iframe contentWindow not available')
     return
@@ -539,15 +556,20 @@ watchEffect(() => {
       <div
         v-if="headerShow"
         class="iframe-drawer-header"
+        :style="isMobileUserscriptPage ? mobileDrawerMotionStyle : undefined"
+        v-bind="isMobileUserscriptPage ? mobileDrawerStateAttrs : {}"
         pos="relative top-0" flex="~ items-center justify-end gap-2"
         max-w="$bew-page-max-width" w-full h="$bew-top-bar-height"
         m-auto px-4
         pointer-events-none
       >
-        <div
+        <button
           v-if="isMobileUserscriptPage"
-          class="iframe-drawer-grabber"
-          aria-hidden="true"
+          type="button"
+          class="iframe-drawer-drag-handle"
+          aria-label="下滑关闭抽屉"
+          @pointerdown="handleMobileDrawerPointerDown"
+          @click.stop
         />
         <Button
           v-if="!isMobileUserscriptPage"
@@ -605,6 +627,7 @@ watchEffect(() => {
         v-if="show"
         :class="iframeContainerClasses"
         :style="iframeContainerStyles"
+        v-bind="isMobileUserscriptPage ? mobileDrawerStateAttrs : {}"
       >
         <Transition name="fade">
           <iframe
@@ -620,24 +643,13 @@ watchEffect(() => {
             pointer-events-auto
             :pos="isPageFullscreen ? undefined : 'relative left-0'"
             allow="fullscreen"
+            allowfullscreen
             w-full
             h-full
             @load="handleIframeLoad"
           />
         </Transition>
       </div>
-    </Transition>
-
-    <Transition name="fade">
-      <button
-        v-if="show && !isPageFullscreen && isMobileUserscriptPage"
-        type="button"
-        class="iframe-drawer-mobile-return"
-        :aria-label="$t('iframe_drawer.close')"
-        @click="handleClose"
-      >
-        <i i-mingcute:left-line />
-      </button>
     </Transition>
   </div>
 </template>
@@ -660,50 +672,41 @@ watchEffect(() => {
     padding: calc(6px + env(safe-area-inset-top, 0px)) 10px 6px !important;
     align-items: center !important;
     justify-content: center !important;
+    background: color-mix(in oklab, var(--bew-bg) 94%, transparent) !important;
+    box-shadow: inset 0 -1px 0 color-mix(in oklab, var(--bew-border-color) 70%, transparent);
+    pointer-events: auto !important;
   }
 
-  .iframe-drawer-grabber {
+  .iframe-drawer-drag-handle {
+    position: absolute;
+    inset: env(safe-area-inset-top, 0px) 0 auto;
+    width: 100%;
+    height: 44px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: grab;
+    pointer-events: auto;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .iframe-drawer-drag-handle::before {
+    content: "";
     position: absolute;
     left: 50%;
-    top: calc(env(safe-area-inset-top, 0px) + 8px);
+    top: 8px;
     width: 42px;
     height: 5px;
     border-radius: 999px;
     background: color-mix(in srgb, var(--bew-text-3) 62%, transparent);
     transform: translateX(-50%);
-    pointer-events: none;
-  }
-}
-
-.iframe-drawer-mobile-return {
-  position: absolute;
-  left: max(10px, env(safe-area-inset-left, 0px));
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
-  z-index: 1;
-  width: 56px;
-  height: 56px;
-  display: grid;
-  place-items: center;
-  border: 1px solid color-mix(in srgb, var(--bew-border-color) 82%, transparent);
-  border-radius: 19px;
-  background: color-mix(in srgb, var(--bew-elevated-solid) 92%, transparent);
-  color: var(--bew-text-1);
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
-  backdrop-filter: blur(18px) saturate(1.2);
-  pointer-events: auto;
-  -webkit-tap-highlight-color: transparent;
-  transition:
-    transform 180ms ease,
-    background 180ms ease,
-    box-shadow 180ms ease;
-
-  &:active {
-    transform: scale(0.94);
-    background: var(--bew-fill-2);
   }
 
-  i {
-    font-size: 25px;
+  [data-bewly-mobile-drawer-dragging="true"] .iframe-drawer-drag-handle {
+    cursor: grabbing;
   }
 }
 </style>

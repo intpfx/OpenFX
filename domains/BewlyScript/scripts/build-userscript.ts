@@ -48,6 +48,8 @@ ${MOBILE_DESKTOP_FALLBACK_SCRIPT}
 
   var globalObject = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
   var userscriptStyleCss = ${styleCss};
+  globalThis.__BEWLYSCRIPT__ = true;
+  globalThis.__BEWLYSCRIPT_STYLE_CSS__ = userscriptStyleCss;
   globalObject.__BEWLYSCRIPT__ = true;
   globalObject.__BEWLYSCRIPT_STYLE_CSS__ = userscriptStyleCss;
   window.__BEWLYSCRIPT__ = true;

@@ -1,7 +1,122 @@
 const MOBILE_NATIVE_MANAGED_ATTR = 'data-bewly-mobile-native-managed'
 const MOBILE_NATIVE_PREVIOUS_ARIA_HIDDEN_ATTR = 'data-bewly-mobile-previous-aria-hidden'
+const MOBILE_NATIVE_INTERACTIVE_OVERLAY_SELECTOR = '.bili-mini-mask, .bili-mini, .geetest_panel, .geetest_panel_ghost, [data-bewly-mobile-video-drawer-host-fallback="true"]'
+const MOBILE_VIEWPORT_MANAGED_ATTR = 'data-bewly-mobile-viewport-managed'
+const MOBILE_VIEWPORT_CREATED_ATTR = 'data-bewly-mobile-viewport-created'
+const MOBILE_VIEWPORT_PREVIOUS_CONTENT_ATTR = 'data-bewly-mobile-viewport-previous-content'
+
+export const MOBILE_USERSCRIPT_VIEWPORT_CONTENT = 'width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover'
 
 let mobileNativeContentObserver: MutationObserver | undefined
+let mobileViewportZoomGuardInstalled = false
+
+function getViewportMeta(): HTMLMetaElement | undefined {
+  if (typeof document === 'undefined')
+    return undefined
+
+  return Array.from(document.querySelectorAll<HTMLMetaElement>('meta')).find((meta) => {
+    return meta.name.toLowerCase() === 'viewport'
+  })
+}
+
+export function ensureMobileUserscriptViewportMeta(): HTMLMetaElement | undefined {
+  if (typeof document === 'undefined' || !document.head)
+    return undefined
+
+  let viewport = getViewportMeta()
+
+  if (!viewport) {
+    viewport = document.createElement('meta')
+    viewport.name = 'viewport'
+    viewport.setAttribute(MOBILE_VIEWPORT_CREATED_ATTR, 'true')
+    document.head.prepend(viewport)
+  }
+
+  if (viewport.getAttribute(MOBILE_VIEWPORT_MANAGED_ATTR) !== 'true') {
+    const previousContent = viewport.getAttribute('content')
+    if (previousContent !== null)
+      viewport.setAttribute(MOBILE_VIEWPORT_PREVIOUS_CONTENT_ATTR, previousContent)
+  }
+
+  viewport.setAttribute(MOBILE_VIEWPORT_MANAGED_ATTR, 'true')
+  viewport.setAttribute('content', MOBILE_USERSCRIPT_VIEWPORT_CONTENT)
+  return viewport
+}
+
+export function restoreMobileUserscriptViewportMeta(): void {
+  const viewport = getViewportMeta()
+  if (!viewport || viewport.getAttribute(MOBILE_VIEWPORT_MANAGED_ATTR) !== 'true')
+    return
+
+  if (viewport.getAttribute(MOBILE_VIEWPORT_CREATED_ATTR) === 'true') {
+    viewport.remove()
+    return
+  }
+
+  const previousContent = viewport.getAttribute(MOBILE_VIEWPORT_PREVIOUS_CONTENT_ATTR)
+  if (previousContent !== null)
+    viewport.setAttribute('content', previousContent)
+  else
+    viewport.removeAttribute('content')
+
+  viewport.removeAttribute(MOBILE_VIEWPORT_MANAGED_ATTR)
+  viewport.removeAttribute(MOBILE_VIEWPORT_CREATED_ATTR)
+  viewport.removeAttribute(MOBILE_VIEWPORT_PREVIOUS_CONTENT_ATTR)
+}
+
+function preventMobilePageZoom(event: Event): void {
+  event.preventDefault()
+}
+
+function preventMobileMultiTouchZoom(event: TouchEvent): void {
+  if (event.touches.length > 1)
+    event.preventDefault()
+}
+
+function preventDesktopWheelZoom(event: WheelEvent): void {
+  if (event.ctrlKey || event.metaKey)
+    event.preventDefault()
+}
+
+export function installMobileUserscriptZoomGuard(): void {
+  if (typeof document === 'undefined' || mobileViewportZoomGuardInstalled)
+    return
+
+  mobileViewportZoomGuardInstalled = true
+  document.addEventListener('gesturestart', preventMobilePageZoom, { passive: false })
+  document.addEventListener('gesturechange', preventMobilePageZoom, { passive: false })
+  document.addEventListener('gestureend', preventMobilePageZoom, { passive: false })
+  document.addEventListener('touchmove', preventMobileMultiTouchZoom, { passive: false })
+  window.addEventListener('wheel', preventDesktopWheelZoom, { passive: false })
+}
+
+export function removeMobileUserscriptZoomGuard(): void {
+  if (typeof document === 'undefined' || !mobileViewportZoomGuardInstalled)
+    return
+
+  mobileViewportZoomGuardInstalled = false
+  document.removeEventListener('gesturestart', preventMobilePageZoom)
+  document.removeEventListener('gesturechange', preventMobilePageZoom)
+  document.removeEventListener('gestureend', preventMobilePageZoom)
+  document.removeEventListener('touchmove', preventMobileMultiTouchZoom)
+  window.removeEventListener('wheel', preventDesktopWheelZoom)
+}
+
+function isMobileNativeInteractiveOverlay(element: HTMLElement): boolean {
+  return element.matches(MOBILE_NATIVE_INTERACTIVE_OVERLAY_SELECTOR)
+}
+
+function restoreMobileNativeContentElement(element: HTMLElement): void {
+  const previousAriaHidden = element.getAttribute(MOBILE_NATIVE_PREVIOUS_ARIA_HIDDEN_ATTR)
+  if (previousAriaHidden !== null)
+    element.setAttribute('aria-hidden', previousAriaHidden)
+  else
+    element.removeAttribute('aria-hidden')
+
+  element.removeAttribute(MOBILE_NATIVE_PREVIOUS_ARIA_HIDDEN_ATTR)
+  element.removeAttribute(MOBILE_NATIVE_MANAGED_ATTR)
+  element.inert = false
+}
 
 function applyMobileNativeContentHidden(hidden: boolean): void {
   const body = document.body
@@ -11,6 +126,11 @@ function applyMobileNativeContentHidden(hidden: boolean): void {
   Array.from(body.children).forEach((child) => {
     if (!(child instanceof HTMLElement) || child.id === 'bewly')
       return
+
+    if (isMobileNativeInteractiveOverlay(child)) {
+      restoreMobileNativeContentElement(child)
+      return
+    }
 
     if (hidden) {
       if (!child.hasAttribute(MOBILE_NATIVE_MANAGED_ATTR)) {
@@ -28,15 +148,7 @@ function applyMobileNativeContentHidden(hidden: boolean): void {
     if (child.getAttribute(MOBILE_NATIVE_MANAGED_ATTR) !== 'true')
       return
 
-    const previousAriaHidden = child.getAttribute(MOBILE_NATIVE_PREVIOUS_ARIA_HIDDEN_ATTR)
-    if (previousAriaHidden !== null)
-      child.setAttribute('aria-hidden', previousAriaHidden)
-    else
-      child.removeAttribute('aria-hidden')
-
-    child.removeAttribute(MOBILE_NATIVE_PREVIOUS_ARIA_HIDDEN_ATTR)
-    child.removeAttribute(MOBILE_NATIVE_MANAGED_ATTR)
-    child.inert = false
+    restoreMobileNativeContentElement(child)
   })
 }
 
@@ -68,6 +180,10 @@ let mobileNoNewTabGuardInstalled = false
 let originalWindowOpen: typeof window.open | undefined
 let mobileLinkTargetObserver: MutationObserver | undefined
 
+export const MOBILE_BILIBILI_HOST = 'm.bilibili.com'
+export const DESKTOP_BILIBILI_HOST = 'www.bilibili.com'
+export const SPACE_BILIBILI_HOST = 'space.bilibili.com'
+
 interface GmOpenInTabOptions {
   active?: boolean
 }
@@ -77,15 +193,23 @@ interface GmApi {
 }
 
 export const MOBILE_OPEN_IN_PAGE_EVENT = 'bewly-mobile-open-in-page'
+export const MOBILE_OPEN_LOGIN_DRAWER_EVENT = 'bewly-mobile-open-login-drawer'
 export const MOBILE_LINK_MANAGED_ATTR = 'data-bewly-mobile-link-managed'
+export const BEWLY_MOBILE_LOGIN_INTENT_PARAM = 'bewlyLogin'
+export const BEWLY_MOBILE_VIDEO_DRAWER_PARAM = 'bewlyVideoDrawer'
+export const BEWLY_MOBILE_VIDEO_DRAWER_FRAME_PARAM = 'bewlyVideoDrawerFrame'
 export const BILIBILI_LOGIN_URL = 'https://passport.bilibili.com/login'
+
+export interface OpenBilibiliLoginPageOptions {
+  forcePage?: boolean
+}
 
 function normalizeMobileNavigationUrl(url: string): string {
   return normalizeBilibiliUrlForCurrentSurface(url)
 }
 
 function shouldKeepMobileNavigationInCurrentTab(url: string = location.href): boolean {
-  return isMobileUserscriptRuntimePage(url)
+  return isMobileUserscriptRuntimePage(url) || hasBewlyMobileLoginIntent(url)
 }
 
 export function openMobileUrlInCurrentPage(url: string): boolean {
@@ -98,6 +222,50 @@ export function openMobileUrlInCurrentPage(url: string): boolean {
   })
   window.dispatchEvent(event)
   return true
+}
+
+export function openMobileLoginDrawer(): boolean {
+  if (typeof window === 'undefined' || !shouldKeepMobileNavigationInCurrentTab())
+    return false
+
+  const event = new CustomEvent(MOBILE_OPEN_LOGIN_DRAWER_EVENT, {
+    cancelable: true,
+    detail: { url: BILIBILI_LOGIN_URL },
+  })
+  return !window.dispatchEvent(event)
+}
+
+export function isBilibiliLoginUrl(url: string): boolean {
+  try {
+    const parsed = typeof location === 'undefined' ? new URL(url) : new URL(url, location.href)
+    const pathname = parsed.pathname.replace(/\/+$/, '') || '/'
+    return parsed.protocol === 'https:'
+      && parsed.hostname === 'passport.bilibili.com'
+      && (pathname === '/login' || pathname.startsWith('/login/') || pathname.includes('/passport/login'))
+  }
+  catch {
+    return false
+  }
+}
+
+export function getBewlyMobileLoginUrl(currentUrl: string = location.href): string {
+  void currentUrl
+  const target = new URL(`https://${DESKTOP_BILIBILI_HOST}/`)
+  target.searchParams.set(BEWLY_MOBILE_LOGIN_INTENT_PARAM, '1')
+  return target.toString()
+}
+
+export function hasBewlyMobileLoginIntent(url: string = location.href): boolean {
+  try {
+    const parsed = typeof location === 'undefined' ? new URL(url) : new URL(url, location.href)
+    if (parsed.protocol !== 'https:' || parsed.hostname !== DESKTOP_BILIBILI_HOST)
+      return false
+
+    return parsed.searchParams.get(BEWLY_MOBILE_LOGIN_INTENT_PARAM) === '1'
+  }
+  catch {
+    return false
+  }
 }
 
 export function openMobileExternalUrl(url: string, target: string = '_blank'): boolean {
@@ -126,7 +294,20 @@ function navigateCurrentPage(url: string): void {
   location.href = url
 }
 
-export function openBilibiliLoginPage(): void {
+export function openBilibiliLoginPage(options: OpenBilibiliLoginPageOptions = {}): void {
+  if (!options.forcePage && openMobileLoginDrawer())
+    return
+
+  if (shouldKeepMobileNavigationInCurrentTab()) {
+    navigateCurrentPage(getBewlyMobileLoginUrl())
+    return
+  }
+
+  if (options.forcePage) {
+    navigateCurrentPage(BILIBILI_LOGIN_URL)
+    return
+  }
+
   if (openMobileExternalUrl(BILIBILI_LOGIN_URL, '_self'))
     return
 
@@ -175,6 +356,14 @@ function isInsideBewlyFromMobileClick(anchor: HTMLAnchorElement, path: EventTarg
     || !!anchor.closest('#bewly')
 }
 
+function shouldForceMobileCurrentPageTarget(anchor: HTMLAnchorElement): boolean {
+  if (anchor.closest('#bewly'))
+    return true
+
+  const href = getMobileNavigableAnchorHref(anchor)
+  return Boolean(href && isBilibiliVideoDetailPage(href))
+}
+
 function handleMobileNoNewTabClick(event: MouseEvent): void {
   if (!shouldKeepMobileNavigationInCurrentTab())
     return
@@ -202,6 +391,19 @@ function handleMobileNoNewTabClick(event: MouseEvent): void {
     || event.button === 1
   const isInsideBewly = isInsideBewlyFromMobileClick(anchor, path)
 
+  if (isBilibiliLoginUrl(href) && openMobileLoginDrawer()) {
+    event.preventDefault()
+    event.stopPropagation()
+    return
+  }
+
+  if (isBilibiliVideoDetailPage(href)) {
+    event.preventDefault()
+    event.stopPropagation()
+    openMobileUrlInCurrentPage(href)
+    return
+  }
+
   if (!requestsNewContext && !isInsideBewly)
     return
 
@@ -221,7 +423,7 @@ function applyMobileCurrentPageTargets(root: ParentNode = document): void {
   anchors.forEach((anchor) => {
     if (!(anchor instanceof HTMLAnchorElement))
       return
-    if (!anchor.closest('#bewly'))
+    if (!shouldForceMobileCurrentPageTarget(anchor))
       return
     anchor.target = '_self'
   })
@@ -282,13 +484,38 @@ html[data-bewly-mobile="true"] {
   --native-text-1: #e2e2e6;
   --native-text-2: #98989f;
   --native-border: #2c2c30;
+  --bewly-mobile-detail-elevated: #1c1f25;
+  --bewly-mobile-detail-text: #f2f3f5;
+  --bewly-mobile-detail-accent: #00a1d6;
+  --bewly-mobile-login-bg: #fff;
+  --bewly-mobile-login-text: #18191c;
+  --bewly-mobile-login-muted: #6f7682;
+  --bewly-mobile-login-subtle: #8d96a3;
+  --bewly-mobile-login-placeholder: #9aa2ad;
+  --bewly-mobile-login-border: rgba(24, 25, 28, 0.12);
+  --bewly-mobile-login-border-strong: rgba(251, 114, 153, 0.45);
+  --bewly-mobile-login-field-bg: #f7f8fa;
+  --bewly-mobile-login-accent: #fb7299;
+  --bewly-mobile-detail-radius: clamp(14px, 4vw, 20px);
+  --bewly-mobile-login-drawer-max-height: min(86dvh, calc(100dvh - env(safe-area-inset-top, 0px)));
+  --bewly-mobile-login-drawer-pad-top: clamp(22px, 4.8dvh, 26px);
+  --bewly-mobile-login-drawer-pad-inline: clamp(14px, 4vw, 16px);
+  --bewly-mobile-login-drawer-pad-bottom: clamp(16px, 3dvh, 18px);
+  --bewly-mobile-login-drag-height: clamp(38px, 6dvh, 44px);
+  --bewly-mobile-login-drag-width: clamp(38px, 12vw, 48px);
+  --bewly-mobile-login-drag-thickness: clamp(4px, 1.2vw, 5px);
+  --bewly-mobile-login-control-size: clamp(28px, 8vw, 32px);
+  touch-action: pan-x pan-y;
+  -webkit-text-size-adjust: 100%;
 }
 
 html[data-bewly-mobile="true"] body {
   background: var(--native-bg) !important;
+  touch-action: pan-x pan-y;
+  -webkit-text-size-adjust: 100%;
 }
 
-html[data-bewly-mobile="true"]:not([data-bewly-mobile-page-kind="other"]):not([data-bewly-mobile-mounted="true"]) body > :not(#bewly) {
+html[data-bewly-mobile="true"]:not([data-bewly-mobile-page-kind="video"]):not([data-bewly-mobile-page-kind="other"]):not([data-bewly-mobile-video-detail="true"]):not([data-bewly-mobile-mounted="true"]) body > :not(#bewly) {
   opacity: 0 !important;
   pointer-events: none !important;
 }
@@ -364,6 +591,8 @@ export function injectMobileNativeHeaderCSS(url: string = location.href): HTMLSt
   const style = document.createElement('style')
   style.textContent = MOBILE_NATIVE_HEADER_CSS
   document.documentElement.appendChild(style)
+  ensureMobileUserscriptViewportMeta()
+  installMobileUserscriptZoomGuard()
   document.documentElement.setAttribute('data-bewly-mobile', 'true')
   document.documentElement.setAttribute('data-bewly-mobile-page-kind', classifyMobileTakeoverBilibiliPage(url))
   return style
@@ -376,11 +605,9 @@ export function removeMobileNativeHeaderCSS(styleEl: HTMLStyleElement | undefine
   document.documentElement.removeAttribute('data-bewly-mobile')
   document.documentElement.removeAttribute('data-bewly-mobile-page-kind')
   document.documentElement.removeAttribute('data-bewly-mobile-mounted')
+  removeMobileUserscriptZoomGuard()
+  restoreMobileUserscriptViewportMeta()
 }
-
-export const MOBILE_BILIBILI_HOST = 'm.bilibili.com'
-export const DESKTOP_BILIBILI_HOST = 'www.bilibili.com'
-export const SPACE_BILIBILI_HOST = 'space.bilibili.com'
 
 export function isMobileBilibiliPage(url: string = location.href): boolean {
   try {
@@ -493,8 +720,13 @@ export function isBilibiliVideoDetailPage(url: string = location.href): boolean 
   }
 }
 
+interface BewlyUserscriptRuntimeGlobal {
+  __BEWLYSCRIPT__?: boolean
+}
+
 export function isUserscriptRuntime(): boolean {
-  return Boolean((globalThis as { __BEWLYSCRIPT__?: boolean }).__BEWLYSCRIPT__)
+  return Boolean((globalThis as BewlyUserscriptRuntimeGlobal).__BEWLYSCRIPT__)
+    || (typeof window !== 'undefined' && Boolean((window as unknown as BewlyUserscriptRuntimeGlobal).__BEWLYSCRIPT__))
 }
 
 interface ScreenWithOptionalOrientation {
@@ -533,8 +765,42 @@ function getViewportOrientationFallback(): boolean {
   return viewportWidth > 0 && viewportHeight > 0 && viewportHeight >= viewportWidth
 }
 
+function getViewportOrientation(): boolean | undefined {
+  if (typeof window === 'undefined')
+    return undefined
+
+  const viewport = window.visualViewport
+  const viewportWidth = viewport?.width ?? window.innerWidth
+  const viewportHeight = viewport?.height ?? window.innerHeight
+
+  if (viewportWidth <= 0 || viewportHeight <= 0)
+    return undefined
+
+  if (Math.abs(viewportHeight - viewportWidth) < 24)
+    return undefined
+
+  if (viewportHeight >= viewportWidth)
+    return true
+
+  if (viewportWidth <= 980 && viewportWidth < viewportHeight * 1.45)
+    return true
+
+  return false
+}
+
 function hasPortraitDeviceOrientation(): boolean {
   if (typeof window === 'undefined')
+    return false
+
+  const viewportOrientation = getViewportOrientation()
+  if (viewportOrientation !== undefined)
+    return viewportOrientation
+
+  const portraitMediaQuery = globalThis.matchMedia?.('(orientation: portrait)')
+  const landscapeMediaQuery = globalThis.matchMedia?.('(orientation: landscape)')
+  if (portraitMediaQuery?.matches)
+    return true
+  if (landscapeMediaQuery?.matches)
     return false
 
   const screenOrientationType = getScreenOrientationType()
@@ -544,10 +810,6 @@ function hasPortraitDeviceOrientation(): boolean {
   const legacyOrientation = getLegacyWindowOrientation()
   if (legacyOrientation !== undefined)
     return Math.abs(legacyOrientation) % 180 === 0
-
-  const portraitMediaQuery = globalThis.matchMedia?.('(orientation: portrait)')
-  if (portraitMediaQuery)
-    return portraitMediaQuery.matches
 
   return getViewportOrientationFallback()
 }
@@ -580,6 +842,33 @@ export function isMobileUserscriptRuntimePage(url: string = location.href): bool
 
 export function shouldUseMobileVideoDetailLayout(url: string = location.href): boolean {
   return isBilibiliVideoDetailPage(url) && isDesktopBilibiliPage(url) && hasPortraitDeviceOrientation()
+}
+
+export function shouldOpenMobileVideoDetailAsDrawer(url: string = location.href): boolean {
+  return shouldUseMobileVideoDetailLayout(url)
+}
+
+export function getBewlyMobileVideoDrawerHomeUrl(videoUrl: string = location.href, currentUrl: string = location.href): string {
+  const normalizedVideoUrl = normalizeBilibiliUrlForCurrentSurface(videoUrl, currentUrl)
+  const homeUrl = new URL('https://www.bilibili.com/', currentUrl)
+  homeUrl.searchParams.set('page', 'Home')
+  homeUrl.searchParams.set(BEWLY_MOBILE_VIDEO_DRAWER_PARAM, normalizedVideoUrl)
+  return homeUrl.toString()
+}
+
+export function hasBewlyMobileVideoDrawerFrameMarker(url: string = location.href): boolean {
+  try {
+    return new URL(url, location.href).searchParams.get(BEWLY_MOBILE_VIDEO_DRAWER_FRAME_PARAM) === '1'
+  }
+  catch {
+    return false
+  }
+}
+
+export function markBewlyMobileVideoDrawerFrameUrl(videoUrl: string, currentUrl: string = location.href): string {
+  const markedUrl = new URL(normalizeBilibiliUrlForCurrentSurface(videoUrl, currentUrl), currentUrl)
+  markedUrl.searchParams.set(BEWLY_MOBILE_VIDEO_DRAWER_FRAME_PARAM, '1')
+  return markedUrl.toString()
 }
 
 export function normalizeBilibiliUrlForCurrentSurface(targetUrl: string, currentUrl: string = location.href): string {
@@ -700,44 +989,546 @@ export const MOBILE_USERSCRIPT_SHADOW_CSS = `
   }
 `
 
+export const MOBILE_VIDEO_DETAIL_FRAME_CSS = `
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] :is(
+    #playerWrap,
+    .player-wrap,
+    #bilibili-player,
+    #bilibiliPlayer,
+    .bpx-player-container,
+    .bpx-player-primary-area,
+    .bpx-player-video-area,
+    .bpx-player-video-wrap,
+    .bilibili-player-video-wrap,
+    .bilibili-player-video-area,
+    .mplayer,
+    .mplayer-container,
+    .squirtle-video-wrap,
+    .squirtle-video-player,
+    [class*="player"],
+    [class*="Player"]
+  ) {
+    overflow: visible !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-root="true"] {
+    position: fixed !important;
+    top: var(--bewly-mobile-player-fixed-top, 0px) !important;
+    right: 0 !important;
+    left: 0 !important;
+    z-index: 2147482500 !important;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    height: var(--bewly-mobile-player-fixed-height) !important;
+    max-height: var(--bewly-mobile-player-fixed-height) !important;
+    margin: 0 !important;
+    background: #000 !important;
+    overflow: hidden !important;
+    isolation: isolate !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"][data-bewly-mobile-frame-web-fullscreen="true"] {
+    overflow: hidden !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-root="true"][data-bewly-mobile-frame-web-fullscreen="true"] {
+    position: fixed !important;
+    inset: 0 !important;
+    top: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    z-index: 2147483100 !important;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    background: #000 !important;
+    overflow: hidden !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-root="true"][data-bewly-mobile-frame-web-fullscreen="true"] :is(
+    .bpx-player-container,
+    .bpx-player-primary-area,
+    .bpx-player-video-area,
+    .bpx-player-video-wrap,
+    .bilibili-player-video-wrap,
+    .bilibili-player-video-area,
+    .mplayer,
+    .mplayer-container,
+    .squirtle-video-wrap,
+    .squirtle-video-player
+  ) {
+    width: 100% !important;
+    max-width: 100vw !important;
+    height: 100% !important;
+    max-height: 100dvh !important;
+    margin: 0 !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-root="true"][data-bewly-mobile-frame-web-fullscreen="true"] video {
+    width: 100% !important;
+    height: 100% !important;
+    max-width: 100vw !important;
+    max-height: 100dvh !important;
+    object-fit: contain !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-spacer="true"] {
+    display: block !important;
+    flex: 0 0 auto !important;
+    order: 9 !important;
+    width: 100% !important;
+    height: calc(var(--bewly-mobile-player-fixed-height) + 10px) !important;
+    min-height: calc(var(--bewly-mobile-player-fixed-height) + 10px) !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    pointer-events: none !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-root="true"] :is(
+    .bpx-player-control-wrap,
+    .bpx-player-control-bottom,
+    .bilibili-player-video-control,
+    .bilibili-player-video-control-bottom,
+    .bpx-player-sending-bar,
+    .bpx-player-video-inputbar,
+    .bpx-player-video-inputbar *,
+    .bpx-player-video-inputbar-wrap,
+    .bpx-player-dm-wrap,
+    .bpx-player-dm-hint,
+    .bpx-player-dm-btn-send,
+    .bpx-player-sending-area,
+    .bilibili-player-video-sendbar,
+    .bpx-player-ctrl-back,
+    .bpx-player-video-btn-back,
+    .bilibili-player-video-btn-back,
+    .squirtle-back,
+    [class*="player"][class*="back" i],
+    [class*="back" i][class*="player"],
+    .squirtle-controller,
+    #bilibili-player-placeholder-bottom,
+    #bilibili-player-placeholder-bottom-left,
+    #bilibili-player-placeholder-bottom-right,
+    #bilibili-player-placeholder-bottom *,
+    #bilibili-player-placeholder-bottom-left *,
+    #bilibili-player-placeholder-bottom-right *
+  ) {
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+    background: transparent !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-danmaku-hidden] :is(
+    .bpx-player-row-dm-wrap,
+    .bpx-player-dm-wrap,
+    .bpx-player-dm-root,
+    .bilibili-player-video-danmaku,
+    .bilibili-player-video-danmaku-root,
+    .squirtle-danmaku,
+    [class*="danmaku"],
+    [class*="danmu"]
+  ) {
+    display: none !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-toolbar="true"] {
+    position: absolute !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    top: 0 !important;
+    z-index: 30 !important;
+    display: block !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    pointer-events: none !important;
+    touch-action: manipulation !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-toolbar="true"][data-bewly-mobile-frame-player-detached] {
+    opacity: 1 !important;
+    visibility: visible !important;
+    pointer-events: none !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-scrim="true"] {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 2147483001 !important;
+    display: block !important;
+    width: 100vw !important;
+    height: 100dvh !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: rgba(0, 0, 0, 0.58) !important;
+    pointer-events: auto !important;
+    touch-action: none !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-scrim="true"][hidden] {
+    display: none !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-topbar="true"] {
+    position: absolute !important;
+    top: 0 !important;
+    right: 0 !important;
+    left: 0 !important;
+    z-index: 2 !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    align-items: center !important;
+    gap: clamp(7px, 2.1vw, 12px) !important;
+    min-height: clamp(46px, 8.4dvh, 58px) !important;
+    padding: max(clamp(7px, 1.6dvh, 10px), env(safe-area-inset-top, 0px)) max(clamp(10px, 3vw, 16px), env(safe-area-inset-right, 0px)) clamp(12px, 3dvh, 18px) max(clamp(10px, 3vw, 16px), env(safe-area-inset-left, 0px)) !important;
+    background: linear-gradient(to bottom, rgba(0, 0, 0, 0.76), rgba(0, 0, 0, 0.44) 64%, transparent) !important;
+    pointer-events: auto !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-title="true"] {
+    min-width: 0 !important;
+    overflow: hidden !important;
+    color: rgba(255, 255, 255, 0.94) !important;
+    font: 650 clamp(13px, 3.8vw, 16px) / 1.2 system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif !important;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85), 0 0 10px rgba(0, 0, 0, 0.45) !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-mainbar="true"] {
+    position: absolute !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    z-index: 2 !important;
+    display: grid !important;
+    align-items: center !important;
+    gap: clamp(6px, 1.6vw, 9px) !important;
+    grid-template-areas: "play progress danmaku fullscreen" !important;
+    grid-template-columns: auto minmax(0, 1fr) auto auto !important;
+    min-height: clamp(58px, 10dvh, 72px) !important;
+    padding: clamp(16px, 4dvh, 24px) max(clamp(8px, 2.4vw, 12px), env(safe-area-inset-right, 0px)) max(clamp(8px, 2.2dvh, 14px), env(safe-area-inset-bottom, 0px)) max(clamp(8px, 2.4vw, 12px), env(safe-area-inset-left, 0px)) !important;
+    width: 100% !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.78), rgba(0, 0, 0, 0.42) 70%, transparent) !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    pointer-events: auto !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-toolbar="true"] [data-bewly-mobile-frame-player-topbar="true"],
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-toolbar="true"] [data-bewly-mobile-frame-player-mainbar="true"] {
+    transition: opacity 180ms cubic-bezier(0.2, 0, 0, 1), transform 180ms cubic-bezier(0.2, 0, 0, 1) !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-toolbar="true"]:not([data-bewly-mobile-frame-player-controls-visible]):not([data-bewly-mobile-frame-player-sheet-open]) [data-bewly-mobile-frame-player-topbar="true"] {
+    opacity: 0 !important;
+    transform: translateY(-8px) !important;
+    pointer-events: none !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-toolbar="true"]:not([data-bewly-mobile-frame-player-controls-visible]):not([data-bewly-mobile-frame-player-sheet-open]) [data-bewly-mobile-frame-player-mainbar="true"] {
+    opacity: 0 !important;
+    transform: translateY(10px) !important;
+    pointer-events: none !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-toolbar="true"] :is(button, [role="button"]) {
+    display: inline-grid !important;
+    min-width: clamp(34px, 9.4vw, 44px) !important;
+    height: clamp(32px, 6.2dvh, 42px) !important;
+    padding: 0 clamp(6px, 1.8vw, 9px) !important;
+    place-items: center !important;
+    border: 0 !important;
+    border-radius: 999px !important;
+    background: rgba(8, 10, 14, 0.46) !important;
+    color: rgba(255, 255, 255, 0.96) !important;
+    box-shadow: 0 1px 8px rgba(0, 0, 0, 0.24) !important;
+    font: 750 clamp(12px, 3.3vw, 14px) / 1 system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif !important;
+    white-space: nowrap !important;
+    pointer-events: auto !important;
+    -webkit-tap-highlight-color: transparent !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-toolbar="true"] :is(button, [role="button"]):active {
+    background: rgba(20, 24, 32, 0.88) !important;
+    transform: scale(0.96) !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-time="true"] {
+    flex: 0 0 auto !important;
+    min-width: max-content !important;
+    color: rgba(255, 255, 255, 0.92) !important;
+    font: 650 clamp(11px, 3vw, 13px) / 1.1 system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif !important;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85) !important;
+    white-space: nowrap !important;
+    text-align: left !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-progress-wrap="true"] {
+    display: grid !important;
+    align-items: center !important;
+    grid-area: progress !important;
+    grid-template-columns: auto minmax(0, 1fr) !important;
+    min-width: 0 !important;
+    gap: clamp(6px, 1.7vw, 8px) !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-action="play-toggle"] {
+    position: relative !important;
+    z-index: 5 !important;
+    display: grid !important;
+    grid-area: play !important;
+    place-items: center !important;
+    width: clamp(40px, 10.8vw, 46px) !important;
+    min-width: 0 !important;
+    height: clamp(40px, 7.8dvh, 46px) !important;
+    padding: 0 !important;
+    opacity: 1 !important;
+    background: rgba(251, 114, 153, 0.92) !important;
+    color: #fff !important;
+    box-shadow: 0 3px 12px rgba(251, 114, 153, 0.32), 0 1px 8px rgba(0, 0, 0, 0.28) !important;
+    font-size: clamp(17px, 4.5vw, 22px) !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-action="danmaku"] {
+    grid-area: danmaku !important;
+    flex: 0 0 clamp(32px, 8.4vw, 36px) !important;
+    width: clamp(36px, 9.6vw, 42px) !important;
+    min-width: 0 !important;
+    height: clamp(36px, 7.2dvh, 42px) !important;
+    padding: 0 !important;
+    font-size: clamp(16px, 4.2vw, 20px) !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-action="fullscreen"] {
+    grid-area: fullscreen !important;
+    flex: 0 0 clamp(32px, 8.4vw, 36px) !important;
+    width: clamp(36px, 9.6vw, 42px) !important;
+    min-width: 0 !important;
+    height: clamp(36px, 7.2dvh, 42px) !important;
+    padding: 0 !important;
+    font-size: clamp(17px, 4.5vw, 22px) !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-progress="true"] {
+    width: 100% !important;
+    min-width: 0 !important;
+    height: clamp(18px, 4dvh, 24px) !important;
+    accent-color: #fb7299 !important;
+    touch-action: pan-x !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-actions="true"] {
+    position: fixed !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    z-index: 2147483002 !important;
+    display: grid !important;
+    gap: 0 !important;
+    max-height: min(68dvh, 560px) !important;
+    padding: 10px max(16px, env(safe-area-inset-right, 0px)) max(18px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)) !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    border: 0 !important;
+    border-radius: 18px 18px 0 0 !important;
+    background: #171a21 !important;
+    color: #f4f6f8 !important;
+    box-shadow: 0 -18px 42px rgba(0, 0, 0, 0.42) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    pointer-events: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-actions="true"][hidden] {
+    display: none !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-sheet-handle="true"] {
+    justify-self: center !important;
+    width: clamp(36px, 12vw, 52px) !important;
+    height: 5px !important;
+    margin: 0 0 14px !important;
+    border-radius: 999px !important;
+    background: rgba(255, 255, 255, 0.24) !important;
+    cursor: grab !important;
+    touch-action: none !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-sheet-title="true"] {
+    padding: 0 0 10px !important;
+    color: #f4f6f8 !important;
+    font: 750 clamp(15px, 4.2vw, 18px) / 1.2 system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-setting-row="true"] {
+    display: grid !important;
+    grid-template-columns: auto minmax(0, 1fr) !important;
+    align-items: center !important;
+    gap: clamp(12px, 3.5vw, 18px) !important;
+    min-height: clamp(54px, 9.5dvh, 66px) !important;
+    padding: 0 0 0 clamp(12px, 3.6vw, 18px) !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.09) !important;
+    background: #1d222a !important;
+    color: #f4f6f8 !important;
+    font: 650 clamp(14px, 3.9vw, 16px) / 1 system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-setting-row="true"]:first-of-type {
+    border-radius: 12px 12px 0 0 !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-setting-row="true"]:last-child {
+    border-bottom: 0 !important;
+    border-radius: 0 0 12px 12px !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-speed-group="true"] {
+    min-width: 0 !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-speed-menu="true"] {
+    display: grid !important;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    gap: 0 !important;
+    min-width: 0 !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-speed-menu="true"] button {
+    width: 100% !important;
+    min-width: 0 !important;
+    height: clamp(40px, 7dvh, 48px) !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-right: 1px solid rgba(255, 255, 255, 0.10) !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    color: #b9c0ca !important;
+    box-shadow: none !important;
+    font: 700 clamp(12px, 3.5vw, 14px) / 1 system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-speed-menu="true"] button:last-child {
+    border-right: 0 !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-speed-option][data-bewly-mobile-frame-player-selected] {
+    background: transparent !important;
+    color: #fb7299 !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-setting-row="true"] > button {
+    justify-self: end !important;
+    min-width: clamp(64px, 18vw, 86px) !important;
+    height: clamp(34px, 6.2dvh, 42px) !important;
+    margin-right: clamp(10px, 3vw, 16px) !important;
+    border: 0 !important;
+    border-radius: 999px !important;
+    background: #2a303a !important;
+    color: #c7ced8 !important;
+    font: 750 clamp(12px, 3.5vw, 14px) / 1 system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-setting-row="true"] > button[data-bewly-mobile-frame-player-active] {
+    background: #fb7299 !important;
+    color: #fff !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-action="danmaku"][data-bewly-mobile-frame-player-active] {
+    color: #fb7299 !important;
+  }
+
+`
+
 export const MOBILE_VIDEO_DETAIL_CSS = `
   html[data-bewly-mobile-video-detail="true"] {
     color-scheme: dark;
-    background: #101114 !important;
-    --bewly-mobile-detail-bg: #101114;
-    --bewly-mobile-detail-bg-soft: #121418;
-    --bewly-mobile-detail-surface: #181a1f;
-    --bewly-mobile-detail-elevated: #1c1f25;
-    --bewly-mobile-detail-elevated-2: #242832;
-    --bewly-mobile-detail-text: #f2f3f5;
-    --bewly-mobile-detail-text-muted: #a9adb7;
-    --bewly-mobile-detail-text-subtle: #7f8591;
-    --bewly-mobile-detail-border: rgba(255, 255, 255, 0.08);
-    --bewly-mobile-detail-separator: rgba(255, 255, 255, 0.065);
-    --bewly-mobile-detail-accent: #00a1d6;
-    --bewly-mobile-detail-inline-pad: 10px;
-    --bewly-mobile-detail-radius: 16px;
+    background: #0f1115 !important;
+    --bewly-mobile-detail-bg: #0f1115;
+    --bewly-mobile-detail-bg-soft: #141820;
+    --bewly-mobile-detail-surface: #171a21;
+    --bewly-mobile-detail-elevated: #1d222a;
+    --bewly-mobile-detail-elevated-2: #242a34;
+    --bewly-mobile-detail-text: #f4f6f8;
+    --bewly-mobile-detail-text-muted: #b9c0ca;
+    --bewly-mobile-detail-text-subtle: #8f98a6;
+    --bewly-mobile-detail-border: rgba(255, 255, 255, 0.12);
+    --bewly-mobile-detail-separator: rgba(255, 255, 255, 0.08);
+    --bewly-mobile-detail-accent: #fb7299;
+    --bewly-mobile-comment-text: #e8ecf2;
+    --bewly-mobile-comment-name: #f4f6f8;
+    --bewly-mobile-comment-muted: #a7b0bd;
+    --bewly-mobile-comment-link: #5bc8f4;
+    --bewly-mobile-login-bg: #fff;
+    --bewly-mobile-login-text: #18191c;
+    --bewly-mobile-login-muted: #6f7682;
+    --bewly-mobile-login-subtle: #8d96a3;
+    --bewly-mobile-login-placeholder: #9aa2ad;
+    --bewly-mobile-login-border: rgba(24, 25, 28, 0.12);
+    --bewly-mobile-login-border-strong: rgba(251, 114, 153, 0.45);
+    --bewly-mobile-login-field-bg: #f7f8fa;
+    --bewly-mobile-login-accent: #fb7299;
+    --bewly-mobile-detail-inline-pad: clamp(8px, 2.8vw, 16px);
+    --bewly-mobile-detail-radius: clamp(14px, 4vw, 20px);
     --bewly-mobile-player-fixed-top: env(safe-area-inset-top, 0px);
-    --bewly-mobile-player-fixed-height: calc((100vw - (var(--bewly-mobile-detail-inline-pad) * 2)) * 9 / 16);
-    --bewly-mobile-player-flow-offset: calc(var(--bewly-mobile-player-fixed-height) + var(--bewly-mobile-player-fixed-top) + 8px);
+    --bewly-mobile-player-fixed-height: min(calc(100vw * 9 / 16), calc(42dvh - env(safe-area-inset-top, 0px)));
+    --bewly-mobile-player-flow-offset: 0px;
     --bewly-mobile-detail-action-left: var(--bewly-mobile-detail-inline-pad);
     --bewly-mobile-detail-toolbar-left: 0px;
-    --bewly-mobile-detail-toolbar-gap: 6px;
-    --bewly-mobile-detail-comment-min: 104px;
-    --bewly-mobile-detail-comment-max: 172px;
-    --bewly-mobile-detail-action-min: 42px;
-    --bewly-mobile-detail-action-max: 58px;
-    --bewly-mobile-detail-shadow: 0 8px 22px rgba(0, 0, 0, 0.18);
+    --bewly-mobile-detail-toolbar-gap: clamp(4px, 1.2vw, 8px);
+    --bewly-mobile-detail-comment-min: clamp(82px, 28vw, 112px);
+    --bewly-mobile-detail-comment-max: clamp(118px, 42vw, 172px);
+    --bewly-mobile-detail-action-min: clamp(36px, 11vw, 44px);
+    --bewly-mobile-detail-action-max: clamp(44px, 14vw, 58px);
+    --bewly-mobile-detail-author-avatar: clamp(34px, 11vw, 40px);
+    --bewly-mobile-detail-author-card-height: clamp(50px, 9dvh, 56px);
+    --bewly-mobile-detail-author-button-width: clamp(92px, 30vw, 118px);
+    --bewly-mobile-detail-author-button-height: clamp(28px, 5.8dvh, 32px);
+    --bewly-mobile-detail-author-control-min: clamp(38px, 11vw, 42px);
+    --bewly-mobile-detail-author-follow-min: clamp(52px, 16vw, 58px);
+    --bewly-mobile-detail-author-charge-min: clamp(42px, 14vw, 46px);
+    --bewly-mobile-login-drawer-max-height: min(86dvh, calc(100dvh - env(safe-area-inset-top, 0px)));
+    --bewly-mobile-login-drawer-pad-top: clamp(22px, 4.8dvh, 26px);
+    --bewly-mobile-login-drawer-pad-inline: clamp(14px, 4vw, 16px);
+    --bewly-mobile-login-drawer-pad-bottom: clamp(16px, 3dvh, 18px);
+    --bewly-mobile-login-drag-height: clamp(38px, 6dvh, 44px);
+    --bewly-mobile-login-drag-width: clamp(38px, 12vw, 48px);
+    --bewly-mobile-login-drag-thickness: clamp(4px, 1.2vw, 5px);
+    --bewly-mobile-login-control-size: clamp(28px, 8vw, 32px);
+    --bewly-mobile-detail-shadow: none;
   }
 
-  html[data-bewly-mobile-video-detail="true"][data-bewly-mobile-video-detail-frame="true"] {
+  html[data-bewly-mobile-video-detail="true"][data-bewly-mobile-video-media-orientation="portrait"] {
+    --bewly-mobile-player-fixed-height: min(calc(100vw * 16 / 9), calc(82dvh - env(safe-area-inset-top, 0px)));
+  }
+
+  html[data-bewly-mobile-video-detail="true"][data-bewly-mobile-video-media-orientation="square"] {
+    --bewly-mobile-player-fixed-height: min(100vw, calc(58dvh - env(safe-area-inset-top, 0px)));
+  }
+
+  html[data-bewly-mobile-video-detail="true"][data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] {
+    --bewly-mobile-player-fixed-top: 0px;
+    --bewly-mobile-player-flow-offset: 0px;
     --bewly-mobile-detail-action-left: var(--bewly-mobile-detail-inline-pad);
-    --bewly-mobile-detail-toolbar-left: calc(74px + env(safe-area-inset-left, 0px));
-    --bewly-mobile-detail-toolbar-gap: 5px;
-    --bewly-mobile-detail-comment-min: 92px;
-    --bewly-mobile-detail-comment-max: 146px;
-    --bewly-mobile-detail-action-min: 38px;
-    --bewly-mobile-detail-action-max: 52px;
+    --bewly-mobile-detail-toolbar-left: 0px;
+    --bewly-mobile-detail-toolbar-gap: clamp(4px, 1vw, 6px);
+    --bewly-mobile-detail-comment-min: clamp(76px, 25vw, 96px);
+    --bewly-mobile-detail-comment-max: clamp(104px, 38vw, 146px);
+    --bewly-mobile-detail-action-min: clamp(34px, 10vw, 40px);
+    --bewly-mobile-detail-action-max: clamp(42px, 13vw, 52px);
   }
 
   html[data-bewly-mobile-video-detail="true"],
@@ -756,6 +1547,12 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     font-size: 14px !important;
     -webkit-font-smoothing: antialiased;
     scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] #bewly {
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
   }
 
   html[data-bewly-mobile-video-detail="true"] *,
@@ -799,6 +1596,14 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     background: var(--bewly-mobile-detail-bg) !important;
   }
 
+  html[data-bewly-mobile-video-detail="true"] #app,
+  html[data-bewly-mobile-video-detail="true"] #i_cecream {
+    display: flex !important;
+    flex-direction: column !important;
+    min-height: 100dvh !important;
+    padding-top: 0 !important;
+  }
+
   html[data-bewly-mobile-video-detail="true"] .video-container,
   html[data-bewly-mobile-video-detail="true"] .video-container-v1,
   html[data-bewly-mobile-video-detail="true"] .left-container,
@@ -829,22 +1634,15 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     min-width: 0 !important;
     max-width: 100% !important;
     margin: 0 !important;
-    padding: var(--bewly-mobile-player-flow-offset) var(--bewly-mobile-detail-inline-pad) calc(62px + env(safe-area-inset-bottom, 0px)) !important;
+    padding: 0 var(--bewly-mobile-detail-inline-pad) calc(18px + env(safe-area-inset-bottom, 0px)) !important;
   }
 
   html[data-bewly-mobile-video-detail="true"] .right-container,
   html[data-bewly-mobile-video-detail="true"] .right-container-inner,
   html[data-bewly-mobile-video-detail="true"] .video-right-container {
-    order: 42 !important;
-    width: 100% !important;
-    min-width: 0 !important;
-    max-width: 100% !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    display: flex !important;
-    flex-direction: column !important;
-    gap: 0 !important;
-    background: transparent !important;
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
   }
 
   html[data-bewly-mobile-video-detail="true"] .right-container .recommend-container,
@@ -920,35 +1718,38 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     order: 10 !important;
     position: relative !important;
     z-index: 20 !important;
-    width: calc(100vw - (var(--bewly-mobile-detail-inline-pad) * 2)) !important;
+    width: 100vw !important;
     min-width: 0 !important;
-    max-width: calc(100vw - (var(--bewly-mobile-detail-inline-pad) * 2)) !important;
-    margin: 2px auto 10px !important;
+    max-width: 100vw !important;
+    margin: 0 calc(50% - 50vw) 10px !important;
     background: #000 !important;
-    border: 1px solid rgba(255, 255, 255, 0.06) !important;
-    border-radius: var(--bewly-mobile-detail-radius) !important;
+    border: 0 !important;
+    border-radius: 0 !important;
     overflow: hidden !important;
     pointer-events: auto !important;
-    box-shadow: var(--bewly-mobile-detail-shadow) !important;
+    box-shadow: none !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] :is(#playerWrap, .player-wrap, #bilibili-player, #bilibiliPlayer)[data-bewly-mobile-player-card="true"] {
+  html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-player-card="true"] {
     order: 8 !important;
-    position: fixed !important;
+    position: sticky !important;
     top: var(--bewly-mobile-player-fixed-top) !important;
-    left: var(--bewly-mobile-detail-inline-pad) !important;
-    right: var(--bewly-mobile-detail-inline-pad) !important;
+    left: auto !important;
+    right: auto !important;
     z-index: 2147482500 !important;
-    width: calc(100vw - (var(--bewly-mobile-detail-inline-pad) * 2)) !important;
-    max-width: calc(100vw - (var(--bewly-mobile-detail-inline-pad) * 2)) !important;
+    width: 100vw !important;
+    max-width: 100vw !important;
     height: var(--bewly-mobile-player-fixed-height) !important;
     max-height: var(--bewly-mobile-player-fixed-height) !important;
-    margin: 0 !important;
+    margin: 0 calc(50% - 50vw) 10px !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
     isolation: isolate !important;
     pointer-events: auto !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-player-card="true"] :is(#bilibili-player, #bilibiliPlayer, .bpx-docker, .bpx-player-container, .bpx-player-primary-area, .bpx-player-video-area, .bpx-player-video-wrap, .bilibili-player-video-wrap, .bilibili-player-video-area) {
+  html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-player-card="true"] :is(#playerWrap, .player-wrap, #bilibili-player, #bilibiliPlayer, .bpx-docker, .bpx-player-container, .bpx-player-primary-area, .bpx-player-video-area, .bpx-player-video-wrap, .bilibili-player-video-wrap, .bilibili-player-video-area) {
     order: initial !important;
     width: 100% !important;
     min-width: 0 !important;
@@ -962,6 +1763,30 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     border-radius: inherit !important;
     box-shadow: none !important;
     pointer-events: auto !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-player-card="true"] :is(video, canvas) {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    object-fit: contain !important;
+    object-position: center center !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"][data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-player-card="true"] {
+    position: sticky !important;
+    top: 0 !important;
+    left: auto !important;
+    right: auto !important;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    height: var(--bewly-mobile-player-fixed-height) !important;
+    max-height: var(--bewly-mobile-player-fixed-height) !important;
+    margin: 0 calc(50% - 50vw) 10px !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
   }
 
   html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-player-crop-top="true"] {
@@ -986,6 +1811,20 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     min-height: 0 !important;
   }
 
+  html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-player-card="true"]:is(#playerWrap, .player-wrap) {
+    aspect-ratio: auto !important;
+    height: var(--bewly-mobile-player-fixed-height) !important;
+    max-height: var(--bewly-mobile-player-fixed-height) !important;
+    min-height: 0 !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-player-card="true"] :is(#playerWrap, .player-wrap) {
+    aspect-ratio: auto !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    min-height: 0 !important;
+  }
+
   html[data-bewly-mobile-video-detail="true"] .bpx-player-container,
   html[data-bewly-mobile-video-detail="true"] .bpx-player-primary-area,
   html[data-bewly-mobile-video-detail="true"] .bpx-player-video-area,
@@ -1003,127 +1842,8 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
   html[data-bewly-mobile-video-detail="true"] .bilibili-player video {
     width: 100% !important;
     height: 100% !important;
-    object-fit: cover !important;
+    object-fit: contain !important;
     object-position: center center !important;
-  }
-
-  html[data-bewly-mobile-video-detail="true"] .bpx-player-container[data-bewly-mobile-player-controls-visible="true"] {
-    cursor: auto !important;
-  }
-
-  html[data-bewly-mobile-video-detail="true"] .bpx-player-container[data-bewly-mobile-player-controls-visible="true"] .bpx-player-control-wrap {
-    top: auto !important;
-    bottom: 0 !important;
-    z-index: 88 !important;
-    width: 100% !important;
-    height: 46px !important;
-    overflow: visible !important;
-    pointer-events: auto !important;
-  }
-
-  html[data-bewly-mobile-video-detail="true"] .bpx-player-container[data-bewly-mobile-player-controls-visible="true"] .bpx-player-control-entity {
-    display: block !important;
-    width: 100% !important;
-    height: 46px !important;
-    margin: 0 !important;
-    pointer-events: auto !important;
-  }
-
-  html[data-bewly-mobile-video-detail="true"] .bpx-player-container[data-bewly-mobile-player-controls-visible="true"] .bpx-player-control-bottom {
-    display: flex !important;
-    position: relative !important;
-    z-index: 2 !important;
-    align-items: center !important;
-    justify-content: space-between !important;
-    gap: 6px !important;
-    box-sizing: border-box !important;
-    width: 100% !important;
-    height: 46px !important;
-    margin: 0 !important;
-    padding: 0 8px !important;
-    overflow: hidden !important;
-    opacity: 1 !important;
-    visibility: visible !important;
-    pointer-events: auto !important;
-  }
-
-  html[data-bewly-mobile-video-detail="true"] .bpx-player-container[data-bewly-mobile-player-controls-visible="true"] .bpx-player-control-bottom-left,
-  html[data-bewly-mobile-video-detail="true"] .bpx-player-container[data-bewly-mobile-player-controls-visible="true"] .bpx-player-control-bottom-right {
-    min-width: 0 !important;
-    height: 46px !important;
-    display: flex !important;
-    align-items: center !important;
-    gap: 0 !important;
-  }
-
-  html[data-bewly-mobile-video-detail="true"] .bpx-player-container[data-bewly-mobile-player-controls-visible="true"] .bpx-player-control-bottom-left {
-    flex: 1 1 auto !important;
-    overflow: hidden !important;
-  }
-
-  html[data-bewly-mobile-video-detail="true"] .bpx-player-container[data-bewly-mobile-player-controls-visible="true"] .bpx-player-control-bottom-center {
-    display: none !important;
-  }
-
-  html[data-bewly-mobile-video-detail="true"] .bpx-player-container[data-bewly-mobile-player-controls-visible="true"] .bpx-player-control-bottom-right {
-    flex: 0 0 auto !important;
-    max-width: fit-content !important;
-    margin-left: auto !important;
-    overflow: visible !important;
-  }
-
-  html[data-bewly-mobile-video-detail="true"] .bpx-player-container[data-bewly-mobile-player-controls-visible="true"] :is(.bpx-player-ctrl-prev, .bpx-player-ctrl-next, .bpx-player-ctrl-viewpoint, .bpx-player-ctrl-eplist, .bpx-player-ctrl-setting, .bpx-player-ctrl-pip, .bpx-player-ctrl-wide, .bpx-player-ctrl-web) {
-    display: none !important;
-    visibility: hidden !important;
-    flex: 0 0 0 !important;
-    width: 0 !important;
-    min-width: 0 !important;
-    max-width: 0 !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    overflow: hidden !important;
-    pointer-events: none !important;
-  }
-
-  html[data-bewly-mobile-video-detail="true"] .bpx-player-container[data-bewly-mobile-player-controls-visible="true"] :is(.bpx-player-ctrl-play, .bpx-player-ctrl-time, .bpx-player-ctrl-quality, .bpx-player-ctrl-playbackrate, .bpx-player-ctrl-volume, .bpx-player-ctrl-full) {
-    flex: 0 0 auto !important;
-    margin: 0 !important;
-  }
-
-  html[data-bewly-mobile-video-detail="true"] .bpx-player-container[data-bewly-mobile-player-controls-visible="true"] .bpx-player-ctrl-time {
-    max-width: 92px !important;
-    padding: 0 2px !important;
-    overflow: hidden !important;
-    color: rgba(255, 255, 255, 0.92) !important;
-    font-size: 11px !important;
-    white-space: nowrap !important;
-  }
-
-  html[data-bewly-mobile-video-detail="true"] .bpx-player-container[data-bewly-mobile-player-controls-visible="true"] .bpx-player-control-mask {
-    display: block !important;
-    bottom: 0 !important;
-    z-index: 1 !important;
-    width: 100% !important;
-    height: 76px !important;
-    opacity: 0.58 !important;
-    pointer-events: none !important;
-  }
-
-  @media (max-width: 380px) {
-    html[data-bewly-mobile-video-detail="true"] .bpx-player-container[data-bewly-mobile-player-controls-visible="true"] .bpx-player-ctrl-time {
-      width: 42px !important;
-      max-width: 42px !important;
-    }
-
-    html[data-bewly-mobile-video-detail="true"] .bpx-player-container[data-bewly-mobile-player-controls-visible="true"] :is(.bpx-player-ctrl-time-divide, .bpx-player-ctrl-time-duration, .bpx-player-ctrl-quality) {
-      display: none !important;
-    }
-  }
-
-  html[data-bewly-mobile-video-detail="true"] .bpx-player-sending-bar,
-  html[data-bewly-mobile-video-detail="true"] .bilibili-player-video-sendbar,
-  html[data-bewly-mobile-video-detail="true"] .bilibili-player-video-inputbar {
-    display: none !important;
   }
 
   html[data-bewly-mobile-video-detail="true"] .video-info-container,
@@ -1218,12 +1938,12 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     z-index: 1 !important;
     margin: 3px 0 6px !important;
     display: grid !important;
-    grid-template-columns: 40px minmax(0, 1fr) auto !important;
+    grid-template-columns: var(--bewly-mobile-detail-author-avatar) minmax(0, 1fr) auto !important;
     grid-auto-rows: min-content !important;
     align-items: center !important;
-    column-gap: 10px !important;
+    column-gap: clamp(8px, 2.6vw, 10px) !important;
     row-gap: 2px !important;
-    min-height: 56px !important;
+    min-height: var(--bewly-mobile-detail-author-card-height) !important;
   }
 
   html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-author-card="true"] {
@@ -1317,10 +2037,10 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
   html[data-bewly-mobile-video-detail="true"] .upinfo :is(.up-avatar, .up-info-avatar, .avatar, .bili-avatar, .face, .up-cover, .staff-avatar),
   html[data-bewly-mobile-video-detail="true"] .members-info-container :is(.up-avatar, .up-info-avatar, .avatar, .bili-avatar, .face, .up-cover, .staff-avatar),
   html[data-bewly-mobile-video-detail="true"] .video-staffs-container :is(.up-avatar, .up-info-avatar, .avatar, .bili-avatar, .face, .up-cover, .staff-avatar) {
-    flex: 0 0 40px !important;
-    width: 40px !important;
-    height: 40px !important;
-    min-width: 40px !important;
+    flex: 0 0 var(--bewly-mobile-detail-author-avatar) !important;
+    width: var(--bewly-mobile-detail-author-avatar) !important;
+    height: var(--bewly-mobile-detail-author-avatar) !important;
+    min-width: var(--bewly-mobile-detail-author-avatar) !important;
     border-radius: 50% !important;
     overflow: hidden !important;
   }
@@ -1329,17 +2049,17 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
   html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-author-card="true"] > picture,
   html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-author-card="true"] > a[href*="space.bilibili.com"]:first-child,
   html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-author-card="true"] > a[href*="space.bilibili.com"]:first-child img {
-    flex: 0 0 40px !important;
-    width: 40px !important;
-    height: 40px !important;
-    min-width: 40px !important;
+    flex: 0 0 var(--bewly-mobile-detail-author-avatar) !important;
+    width: var(--bewly-mobile-detail-author-avatar) !important;
+    height: var(--bewly-mobile-detail-author-avatar) !important;
+    min-width: var(--bewly-mobile-detail-author-avatar) !important;
     border-radius: 50% !important;
     overflow: hidden !important;
     object-fit: cover !important;
   }
 
   html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-author-card="true"] > a[href*="space.bilibili.com"]:not(:first-child) {
-    flex: 1 1 calc(100% - 58px) !important;
+    flex: 1 1 calc(100% - var(--bewly-mobile-detail-author-avatar) - clamp(14px, 4vw, 18px)) !important;
     width: auto !important;
     min-width: 0 !important;
     font-size: 15px !important;
@@ -1438,7 +2158,9 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     -webkit-tap-highlight-color: transparent !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-author-card="true"] a[href*="message.bilibili.com"] {
+  html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-author-card="true"] a[href*="message.bilibili.com"],
+  html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-author-card="true"] .new-charge-btn,
+  html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-author-card="true"] .charge-btn-loaded {
     display: none !important;
     min-height: 32px !important;
     padding: 0 12px !important;
@@ -1454,11 +2176,11 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
   html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-author-card="true"][data-bewly-mobile-author-normalized="true"] {
     position: relative !important;
     display: block !important;
-    height: 56px !important;
-    min-height: 56px !important;
-    max-height: 56px !important;
+    height: var(--bewly-mobile-detail-author-card-height) !important;
+    min-height: var(--bewly-mobile-detail-author-card-height) !important;
+    max-height: var(--bewly-mobile-detail-author-card-height) !important;
     margin: 2px 0 6px !important;
-    padding: 5px 4px !important;
+    padding: clamp(4px, 1.2dvh, 5px) clamp(3px, 1.2vw, 4px) !important;
     border: 0 !important;
     border-radius: 0 !important;
     background: transparent !important;
@@ -1469,9 +2191,9 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
   html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-author-card="true"][data-bewly-mobile-author-display-name]::before {
     content: attr(data-bewly-mobile-author-display-name);
     position: absolute !important;
-    left: 52px !important;
-    right: 126px !important;
-    top: 7px !important;
+    left: calc(var(--bewly-mobile-detail-author-avatar) + clamp(10px, 3vw, 12px)) !important;
+    right: calc(var(--bewly-mobile-detail-author-button-width) + clamp(8px, 2vw, 12px)) !important;
+    top: clamp(6px, 1.3dvh, 7px) !important;
     color: var(--bewly-mobile-detail-text) !important;
     font-size: 13px !important;
     font-weight: 750 !important;
@@ -1499,19 +2221,19 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
 
   html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-author-card="true"][data-bewly-mobile-author-normalized="true"] [data-bewly-mobile-author-avatar="true"] {
     position: absolute !important;
-    left: 4px !important;
+    left: clamp(3px, 1.2vw, 4px) !important;
     top: 50% !important;
     transform: translateY(-50%) !important;
   }
 
   html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-author-avatar="true"],
   html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-author-avatar="true"] :is(img, picture, .bili-avatar, .avatar, .face, .up-avatar, .up-info-avatar, .up-cover, .staff-avatar) {
-    width: 40px !important;
-    height: 40px !important;
-    min-width: 40px !important;
-    max-width: 40px !important;
-    min-height: 40px !important;
-    max-height: 40px !important;
+    width: var(--bewly-mobile-detail-author-avatar) !important;
+    height: var(--bewly-mobile-detail-author-avatar) !important;
+    min-width: var(--bewly-mobile-detail-author-avatar) !important;
+    max-width: var(--bewly-mobile-detail-author-avatar) !important;
+    min-height: var(--bewly-mobile-detail-author-avatar) !important;
+    max-height: var(--bewly-mobile-detail-author-avatar) !important;
     border-radius: 50% !important;
     overflow: hidden !important;
     object-fit: cover !important;
@@ -1520,9 +2242,9 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
 
   html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-author-card="true"][data-bewly-mobile-author-normalized="true"] [data-bewly-mobile-author-info="true"] {
     position: absolute !important;
-    left: 52px !important;
-    right: 126px !important;
-    top: 34px !important;
+    left: calc(var(--bewly-mobile-detail-author-avatar) + clamp(10px, 3vw, 12px)) !important;
+    right: calc(var(--bewly-mobile-detail-author-button-width) + clamp(8px, 2vw, 12px)) !important;
+    top: calc(var(--bewly-mobile-detail-author-card-height) - clamp(20px, 3.8dvh, 22px)) !important;
     transform: translateY(-50%) !important;
     width: auto !important;
     height: 18px !important;
@@ -1589,14 +2311,14 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
 
   html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-author-card="true"][data-bewly-mobile-author-normalized="true"] [data-bewly-mobile-author-actions="true"] {
     position: absolute !important;
-    right: 4px !important;
+    right: clamp(3px, 1.2vw, 4px) !important;
     top: 50% !important;
     transform: translateY(-50%) !important;
-    width: 118px !important;
-    max-width: 118px !important;
-    min-width: 118px !important;
-    height: 32px !important;
-    max-height: 32px !important;
+    width: var(--bewly-mobile-detail-author-button-width) !important;
+    max-width: var(--bewly-mobile-detail-author-button-width) !important;
+    min-width: var(--bewly-mobile-detail-author-button-width) !important;
+    height: var(--bewly-mobile-detail-author-button-height) !important;
+    max-height: var(--bewly-mobile-detail-author-button-height) !important;
     display: flex !important;
     flex-flow: row nowrap !important;
     gap: 4px !important;
@@ -1629,11 +2351,11 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     flex: 0 0 auto !important;
     width: auto !important;
     max-width: none !important;
-    min-width: 42px !important;
-    min-height: 30px !important;
-    height: 30px !important;
+    min-width: var(--bewly-mobile-detail-author-control-min) !important;
+    min-height: calc(var(--bewly-mobile-detail-author-button-height) - 2px) !important;
+    height: calc(var(--bewly-mobile-detail-author-button-height) - 2px) !important;
     margin: 0 !important;
-    padding: 0 9px !important;
+    padding: 0 clamp(7px, 2.4vw, 9px) !important;
     display: inline-flex !important;
     align-items: center !important;
     justify-content: center !important;
@@ -1648,13 +2370,13 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
   }
 
   html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-author-actions="true"] :is(.follow-btn, .follow-button, .btn-follow, .not-follow) {
-    min-width: 58px !important;
-    padding-inline: 10px !important;
+    min-width: var(--bewly-mobile-detail-author-follow-min) !important;
+    padding-inline: clamp(8px, 2.8vw, 10px) !important;
   }
 
   html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-author-actions="true"] :is(.new-charge-btn) {
-    min-width: 46px !important;
-    padding-inline: 9px !important;
+    min-width: var(--bewly-mobile-detail-author-charge-min) !important;
+    padding-inline: clamp(7px, 2.4vw, 9px) !important;
   }
 
   html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-author-actions="true"] :is(button, a, .follow-btn, .follow-button, .btn-follow, .not-follow, .new-charge-btn) * {
@@ -1666,83 +2388,44 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
 
   html[data-bewly-mobile-video-detail="true"] #arc_toolbar_report,
   html[data-bewly-mobile-video-detail="true"] .video-toolbar-container {
-    order: 30 !important;
-    position: fixed !important;
-    left: var(--bewly-mobile-detail-toolbar-left) !important;
-    right: 0 !important;
-    bottom: 0 !important;
-    z-index: 2147483000 !important;
-    width: auto !important;
+    order: 56 !important;
+    position: relative !important;
+    z-index: 1 !important;
+    width: 100% !important;
     min-width: 0 !important;
-    min-height: calc(62px + env(safe-area-inset-bottom, 0px)) !important;
+    max-width: 100% !important;
+    min-height: clamp(42px, 7dvh, 52px) !important;
     height: auto !important;
-    margin: 0 !important;
-    padding: 8px var(--bewly-mobile-detail-inline-pad) calc(8px + env(safe-area-inset-bottom, 0px)) var(--bewly-mobile-detail-action-left) !important;
+    margin: 6px 0 8px !important;
+    padding: 0 4px !important;
     display: flex !important;
     align-items: center !important;
-    justify-content: center !important;
+    justify-content: flex-start !important;
     gap: var(--bewly-mobile-detail-toolbar-gap) !important;
-    overflow-x: hidden !important;
+    overflow-x: auto !important;
     overflow-y: hidden !important;
-    border: 0 !important;
-    border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
-    border-radius: 18px 18px 0 0 !important;
-    background: rgba(19, 21, 26, 0.94) !important;
-    box-shadow: 0 -10px 28px rgba(0, 0, 0, 0.24) !important;
-    backdrop-filter: blur(22px) saturate(1.18) !important;
-    -webkit-backdrop-filter: blur(22px) saturate(1.18) !important;
     overscroll-behavior-x: contain !important;
-    scrollbar-width: none;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    scrollbar-width: none !important;
+    pointer-events: auto !important;
+    touch-action: pan-x manipulation !important;
+    -webkit-overflow-scrolling: touch !important;
   }
 
   html[data-bewly-mobile-video-detail="true"] #arc_toolbar_report::-webkit-scrollbar,
   html[data-bewly-mobile-video-detail="true"] .video-toolbar-container::-webkit-scrollbar {
-    display: none;
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-video-back="true"] {
-    order: -10 !important;
-    position: relative !important;
-    flex: 0 0 46px !important;
-    width: 46px !important;
-    height: 46px !important;
-    min-width: 46px !important;
-    min-height: 46px !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    display: inline-flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    border: 1px solid rgba(255, 255, 255, 0.08) !important;
-    border-radius: 16px !important;
-    background: rgba(255, 255, 255, 0.075) !important;
-    color: #fff !important;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
-    font-size: 0 !important;
-    line-height: 0 !important;
-    -webkit-tap-highlight-color: transparent !important;
-    pointer-events: auto !important;
-  }
-
-  html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-video-back="true"]::before {
-    content: "";
-    width: 10px !important;
-    height: 10px !important;
-    margin-left: 3px !important;
-    display: block !important;
-    border-left: 2px solid currentColor !important;
-    border-bottom: 2px solid currentColor !important;
-    transform: rotate(45deg) !important;
-  }
-
-  html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-video-back="true"]:active {
-    transform: scale(0.94) !important;
-    background: rgba(255, 255, 255, 0.12) !important;
-  }
-
-  html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-toolbar-action-hidden="true"],
-  html[data-bewly-mobile-video-detail="true"] #arc_toolbar_report .video-toolbar-right,
-  html[data-bewly-mobile-video-detail="true"] .video-toolbar-container .video-toolbar-right {
+  html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-toolbar-back-hidden="true"],
+  html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-toolbar-comment-entry="true"] {
     display: none !important;
   }
 
@@ -1764,6 +2447,8 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     font: inherit !important;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
     -webkit-tap-highlight-color: transparent !important;
+    pointer-events: auto !important;
+    touch-action: manipulation !important;
   }
 
   html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-toolbar-comment-entry="true"]::before {
@@ -1791,15 +2476,20 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     font-weight: 650 !important;
   }
 
+  html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-toolbar-comment-entry="true"] {
+    display: none !important;
+  }
+
   html[data-bewly-mobile-video-detail="true"] .video-toolbar-left,
   html[data-bewly-mobile-video-detail="true"] .video-toolbar-right,
   html[data-bewly-mobile-video-detail="true"] .video-toolbar-left-main {
-    width: auto !important;
-    min-width: 0 !important;
+    width: max-content !important;
+    min-width: max-content !important;
+    max-width: none !important;
     display: flex !important;
     align-items: center !important;
-    justify-content: center !important;
-    gap: 4px !important;
+    justify-content: flex-start !important;
+    gap: var(--bewly-mobile-detail-toolbar-gap) !important;
     flex-wrap: nowrap !important;
     flex: 0 0 auto !important;
   }
@@ -1807,17 +2497,23 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
   html[data-bewly-mobile-video-detail="true"] .video-toolbar-left-item,
   html[data-bewly-mobile-video-detail="true"] .video-toolbar-right-item,
   html[data-bewly-mobile-video-detail="true"] .toolbar-left-item-wrap > .video-toolbar-left-item {
-    flex: 1 1 48px !important;
+    flex: 0 0 auto !important;
     width: auto !important;
     min-width: var(--bewly-mobile-detail-action-min) !important;
-    max-width: var(--bewly-mobile-detail-action-max) !important;
-    height: 46px !important;
-    padding: 0 5px !important;
+    max-width: none !important;
+    height: clamp(40px, 6.6dvh, 48px) !important;
+    min-height: clamp(40px, 6.6dvh, 48px) !important;
+    margin: 0 !important;
+    padding: 0 clamp(5px, 1.8vw, 8px) !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
     border: 0 !important;
     border-radius: 16px !important;
     background: transparent !important;
     color: var(--bewly-mobile-detail-text) !important;
     box-shadow: none !important;
+    pointer-events: auto !important;
     -webkit-tap-highlight-color: transparent !important;
     transition: background-color 160ms ease, transform 160ms ease !important;
   }
@@ -1838,10 +2534,18 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
   html[data-bewly-mobile-video-detail="true"] .video-toolbar-item-text,
   html[data-bewly-mobile-video-detail="true"] .video-toolbar-left-item .text,
   html[data-bewly-mobile-video-detail="true"] .video-toolbar-right-item .text {
-    display: none !important;
+    max-width: clamp(36px, 12vw, 56px) !important;
+    min-width: 0 !important;
+    display: block !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    color: inherit !important;
+    font-size: 11px !important;
+    line-height: 1.15 !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask {
     position: fixed !important;
     inset: 0 !important;
     z-index: 2147483500 !important;
@@ -1858,7 +2562,7 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     -webkit-backdrop-filter: blur(10px) saturate(1.08) !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .bili-mini-content-wp {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .bili-mini-content-wp {
     position: relative !important;
     inset: auto !important;
     left: auto !important;
@@ -1872,60 +2576,60 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     max-width: 100vw !important;
     height: auto !important;
     min-height: 0 !important;
-    max-height: min(86dvh, 720px) !important;
+    max-height: var(--bewly-mobile-login-drawer-max-height) !important;
     margin: 0 !important;
-    padding: 26px max(16px, env(safe-area-inset-right, 0px)) calc(18px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)) !important;
+    padding: var(--bewly-mobile-login-drawer-pad-top) max(var(--bewly-mobile-login-drawer-pad-inline), env(safe-area-inset-right, 0px)) calc(var(--bewly-mobile-login-drawer-pad-bottom) + env(safe-area-inset-bottom, 0px)) max(var(--bewly-mobile-login-drawer-pad-inline), env(safe-area-inset-left, 0px)) !important;
     display: flex !important;
     flex-direction: column !important;
     gap: 16px !important;
     overflow-x: hidden !important;
     overflow-y: auto !important;
     overscroll-behavior: contain !important;
-    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border: 1px solid rgba(24, 25, 28, 0.08) !important;
     border-bottom: 0 !important;
-    border-radius: 24px 24px 0 0 !important;
-    background: var(--bewly-mobile-detail-elevated) !important;
-    color: var(--bewly-mobile-detail-text) !important;
-    box-shadow: 0 -18px 42px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+    border-radius: var(--bewly-mobile-detail-radius) var(--bewly-mobile-detail-radius) 0 0 !important;
+    background: var(--bewly-mobile-login-bg) !important;
+    color: var(--bewly-mobile-login-text) !important;
+    box-shadow: 0 -18px 42px rgba(0, 0, 0, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.92) !important;
     scrollbar-width: none !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .bili-mini-content-wp[data-bewly-mobile-login-drawer="true"] {
-    padding-top: 48px !important;
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .bili-mini-content-wp[data-bewly-mobile-login-drawer="true"] {
+    padding-top: calc(var(--bewly-mobile-login-drag-height) + clamp(4px, 1dvh, 6px)) !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .bili-mini-content-wp:is([data-bewly-mobile-login-dragging="true"], [data-bewly-mobile-login-settling="true"], [data-bewly-mobile-login-closing="true"]) {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .bili-mini-content-wp:is([data-bewly-mobile-login-dragging="true"], [data-bewly-mobile-login-settling="true"], [data-bewly-mobile-login-closing="true"]) {
     will-change: transform !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .bili-mini-content-wp::-webkit-scrollbar {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .bili-mini-content-wp::-webkit-scrollbar {
     display: none !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .bili-mini-content-wp::before {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .bili-mini-content-wp::before {
     content: "";
     position: absolute !important;
     top: 9px !important;
     left: 50% !important;
-    width: 42px !important;
-    height: 4px !important;
+    width: var(--bewly-mobile-login-drag-width) !important;
+    height: var(--bewly-mobile-login-drag-thickness) !important;
     border-radius: 999px !important;
-    background: rgba(255, 255, 255, 0.24) !important;
+    background: rgba(24, 25, 28, 0.2) !important;
     transform: translateX(-50%) !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .bili-mini-content-wp[data-bewly-mobile-login-drawer="true"]::before {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .bili-mini-content-wp[data-bewly-mobile-login-drawer="true"]::before {
     display: none !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask [data-bewly-mobile-login-drag-handle="true"] {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask [data-bewly-mobile-login-drag-handle="true"] {
     position: absolute !important;
     top: 0 !important;
     left: 0 !important;
     right: 0 !important;
     z-index: 2 !important;
     width: 100% !important;
-    height: 44px !important;
+    height: var(--bewly-mobile-login-drag-height) !important;
     margin: 0 !important;
     padding: 0 !important;
     display: block !important;
@@ -1938,43 +2642,61 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     -webkit-tap-highlight-color: transparent !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask [data-bewly-mobile-login-drag-handle="true"]::before {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask [data-bewly-mobile-login-drag-handle="true"]::before {
     content: "" !important;
     position: absolute !important;
-    top: 14px !important;
+    top: clamp(12px, 2.4dvh, 14px) !important;
     left: 50% !important;
-    width: 48px !important;
-    height: 5px !important;
+    width: var(--bewly-mobile-login-drag-width) !important;
+    height: var(--bewly-mobile-login-drag-thickness) !important;
     border-radius: 999px !important;
-    background: rgba(255, 255, 255, 0.26) !important;
+    background: rgba(24, 25, 28, 0.22) !important;
     transform: translateX(-50%) !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .bili-mini-content-wp[data-bewly-mobile-login-dragging="true"] [data-bewly-mobile-login-drag-handle="true"] {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .bili-mini-content-wp[data-bewly-mobile-login-dragging="true"] [data-bewly-mobile-login-drag-handle="true"] {
     cursor: grabbing !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .bili-mini-close-icon {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .bili-mini-close-icon {
     position: absolute !important;
     top: 12px !important;
     right: max(12px, env(safe-area-inset-right, 0px)) !important;
     z-index: 4 !important;
-    width: 34px !important;
-    height: 34px !important;
+    width: 40px !important;
+    height: 40px !important;
     margin: 0 !important;
     border-radius: 50% !important;
-    background: rgba(255, 255, 255, 0.08) !important;
-    color: var(--bewly-mobile-detail-text) !important;
+    border: 1px solid rgba(24, 25, 28, 0.08) !important;
+    background: rgba(24, 25, 28, 0.08) !important;
+    color: var(--bewly-mobile-login-muted) !important;
+    font-size: 0 !important;
+    line-height: 0 !important;
+    opacity: 1 !important;
     -webkit-tap-highlight-color: transparent !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .bili-mini-line {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .bili-mini-close-icon::before {
+    content: "\\00d7" !important;
+    position: absolute !important;
+    inset: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    color: var(--bewly-mobile-login-muted) !important;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+    font-size: 25px !important;
+    line-height: 1 !important;
+    font-weight: 500 !important;
+  }
+
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .bili-mini-line {
     display: none !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-scan-wp,
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .bili-mini-login-right-wp,
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-agreement-wp {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .login-scan-wp,
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .bili-mini-login-right-wp,
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .login-agreement-wp {
     position: relative !important;
     inset: auto !important;
     left: auto !important;
@@ -1991,18 +2713,18 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     padding: 0 !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .bili-mini-login-right-wp {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .bili-mini-login-right-wp {
     order: 1 !important;
     flex-direction: column !important;
     align-items: stretch !important;
     padding-top: 10px !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .bili-mini-login-right-wp[data-bewly-mobile-login-methods="true"] {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .bili-mini-login-right-wp[data-bewly-mobile-login-methods="true"] {
     display: flex !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-tab-wp {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .login-tab-wp {
     width: 100% !important;
     min-width: 0 !important;
     max-width: 100% !important;
@@ -2012,36 +2734,53 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     gap: 0 !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-tab-item {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .login-tab-item {
     flex: 1 1 0 !important;
     min-width: 0 !important;
     max-width: 150px !important;
     text-align: center !important;
-    color: rgba(242, 243, 245, 0.76) !important;
+    color: var(--bewly-mobile-login-subtle) !important;
     font-size: 18px !important;
     line-height: 24px !important;
-    font-weight: 700 !important;
+    font-weight: 650 !important;
+    opacity: 1 !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-tab-item.active-tab {
-    color: var(--bewly-mobile-detail-accent) !important;
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .login-tab-item.active-tab {
+    color: var(--bewly-mobile-login-accent) !important;
+    font-weight: 750 !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-tab-line {
-    background: rgba(255, 255, 255, 0.14) !important;
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .login-tab-item:not(.active-tab) {
+    color: var(--bewly-mobile-login-subtle) !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask :is(.login-pwd-wp, .login-sms-wp, .tab__form, .form__item, .btn_wp, .login-sns-wp) {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .login-tab-line {
+    background: var(--bewly-mobile-login-border-strong) !important;
+  }
+
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask :is(.login-pwd-wp, .login-sms-wp, .tab__form, .form__item, .btn_wp, .login-sns-wp) {
     width: 100% !important;
     min-width: 0 !important;
     max-width: 100% !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask :is(input, button, .btn_primary, .btn_other) {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .login-sns-wp {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    pointer-events: none !important;
+  }
+
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask :is(input, button, .btn_primary, .btn_other) {
     max-width: 100% !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .tab__form {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .tab__form {
     height: auto !important;
     min-height: 0 !important;
     margin: 0 !important;
@@ -2058,13 +2797,13 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     overflow: visible !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .tab__form::before,
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .tab__form::after {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .tab__form::before,
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .tab__form::after {
     content: none !important;
     display: none !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .form__item {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .form__item {
     height: 50px !important;
     min-height: 50px !important;
     max-height: 50px !important;
@@ -2073,32 +2812,33 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     display: flex !important;
     align-items: center !important;
     gap: 0 !important;
-    border: 0 !important;
+    border: 1px solid var(--bewly-mobile-login-border) !important;
     border-radius: 14px !important;
-    background: rgba(255, 255, 255, 0.055) !important;
+    background: var(--bewly-mobile-login-field-bg) !important;
     box-shadow: none !important;
     outline: 0 !important;
     overflow: hidden !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .form__item + .form__item {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .form__item + .form__item {
     margin-top: 0 !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .form__item::before,
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .form__item::after {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .form__item::before,
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .form__item::after {
     content: none !important;
     display: none !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .form__item:focus-within {
-    background: rgba(255, 255, 255, 0.075) !important;
-    box-shadow: none !important;
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .form__item:focus-within {
+    border-color: var(--bewly-mobile-login-border-strong) !important;
+    background: #fff !important;
+    box-shadow: 0 0 0 3px rgba(251, 114, 153, 0.1) !important;
     outline: 0 !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .form__item > :is(.form_info, .login-sms-wp__cid),
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .form__item > div:first-child:not(.eye-btn):not(.clickable):not(.forget-tip):not(.login-sms-wp__vertical-line):not(.login-sms-send) {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .form__item > :is(.form_info, .login-sms-wp__cid),
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .form__item > div:first-child:not(.eye-btn):not(.clickable):not(.forget-tip):not(.login-sms-wp__vertical-line):not(.login-sms-send) {
     flex: 0 0 60px !important;
     min-width: 0 !important;
     margin: 0 !important;
@@ -2106,47 +2846,50 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     display: flex !important;
     align-items: center !important;
     justify-content: flex-start !important;
-    color: rgba(242, 243, 245, 0.86) !important;
+    color: var(--bewly-mobile-login-muted) !important;
     font-size: 14px !important;
     line-height: 20px !important;
+    font-weight: 600 !important;
+    opacity: 1 !important;
     white-space: nowrap !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .form__item > .eye-btn {
-    flex: 0 0 32px !important;
-    width: 32px !important;
-    height: 32px !important;
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .form__item > .eye-btn {
+    flex: 0 0 var(--bewly-mobile-login-control-size) !important;
+    width: var(--bewly-mobile-login-control-size) !important;
+    height: var(--bewly-mobile-login-control-size) !important;
     margin: 0 0 0 8px !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
-    opacity: 0.64 !important;
+    color: var(--bewly-mobile-login-subtle) !important;
+    opacity: 1 !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .form__item > .eye-btn.eye-btn.eye-btn {
-    flex-basis: 32px !important;
-    width: 32px !important;
-    min-width: 32px !important;
-    max-width: 32px !important;
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .form__item > .eye-btn.eye-btn.eye-btn {
+    flex-basis: var(--bewly-mobile-login-control-size) !important;
+    width: var(--bewly-mobile-login-control-size) !important;
+    min-width: var(--bewly-mobile-login-control-size) !important;
+    max-width: var(--bewly-mobile-login-control-size) !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .form__item > .clickable {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .form__item > .clickable {
     flex: 0 0 auto !important;
     margin-left: 8px !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
-    color: var(--bewly-mobile-detail-accent) !important;
+    color: var(--bewly-mobile-login-accent) !important;
     font-size: 13px !important;
     line-height: 18px !important;
     white-space: nowrap !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .form__item > .forget-tip {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .form__item > .forget-tip {
     display: none !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .form__item > .forget-tip.forget-tip.forget-tip {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .form__item > .forget-tip.forget-tip.forget-tip {
     display: none !important;
     visibility: hidden !important;
     width: 0 !important;
@@ -2155,7 +2898,7 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     pointer-events: none !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .form__item input {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .form__item input {
     flex: 1 1 0 !important;
     width: auto !important;
     min-width: 0 !important;
@@ -2166,42 +2909,43 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     border: 0 !important;
     outline: none !important;
     background: transparent !important;
-    color: var(--bewly-mobile-detail-text) !important;
+    color: var(--bewly-mobile-login-text) !important;
     font-size: 15px !important;
     line-height: 50px !important;
-    caret-color: var(--bewly-mobile-detail-accent) !important;
+    caret-color: var(--bewly-mobile-login-accent) !important;
     box-shadow: none !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .form__item input::placeholder {
-    color: rgba(242, 243, 245, 0.42) !important;
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .form__item input::placeholder {
+    color: var(--bewly-mobile-login-placeholder) !important;
+    opacity: 1 !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-sms-wp__cid {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .login-sms-wp__cid {
     flex: 0 0 62px !important;
     height: 50px !important;
     gap: 7px !important;
     cursor: pointer !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-sms-wp__cid img {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .login-sms-wp__cid img {
     position: static !important;
     width: 12px !important;
     height: 12px !important;
     margin: 1px 0 0 !important;
-    opacity: 0.72 !important;
-    filter: invert(1) opacity(0.78) !important;
+    opacity: 0.78 !important;
+    filter: none !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-sms-wp__vertical-line {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .login-sms-wp__vertical-line {
     flex: 0 0 1px !important;
     width: 1px !important;
     height: 24px !important;
     margin: 0 10px !important;
-    background: rgba(255, 255, 255, 0.1) !important;
+    background: var(--bewly-mobile-login-border) !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-sms-send {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .login-sms-send {
     flex: 0 0 auto !important;
     min-width: 86px !important;
     height: 34px !important;
@@ -2210,27 +2954,27 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     align-items: center !important;
     justify-content: center !important;
     border-radius: 10px !important;
-    color: var(--bewly-mobile-detail-accent) !important;
-    background: rgba(0, 174, 236, 0.1) !important;
+    color: var(--bewly-mobile-login-accent) !important;
+    background: rgba(251, 114, 153, 0.1) !important;
     font-size: 13px !important;
     line-height: 18px !important;
     font-weight: 700 !important;
     white-space: nowrap !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-sms-send.disable {
-    color: rgba(242, 243, 245, 0.5) !important;
-    background: rgba(255, 255, 255, 0.055) !important;
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .login-sms-send.disable {
+    color: #aeb4be !important;
+    background: rgba(24, 25, 28, 0.05) !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .btn_wp {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .btn_wp {
     margin-top: 14px !important;
     display: flex !important;
     gap: 10px !important;
     justify-content: stretch !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask :is(.btn_primary, .btn_other) {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask :is(.btn_primary, .btn_other) {
     flex: 1 1 0 !important;
     min-width: 0 !important;
     height: 48px !important;
@@ -2243,19 +2987,19 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     font-weight: 700 !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .btn_primary {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .btn_primary {
     color: #fff !important;
-    background: linear-gradient(135deg, #00aeec, #12b7f5) !important;
-    box-shadow: 0 10px 22px rgba(0, 174, 236, 0.24) !important;
+    background: linear-gradient(135deg, #fb7299, #ff8aae) !important;
+    box-shadow: 0 10px 22px rgba(251, 114, 153, 0.24) !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .btn_other {
-    color: rgba(242, 243, 245, 0.82) !important;
-    background: rgba(255, 255, 255, 0.055) !important;
-    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .btn_other {
+    color: var(--bewly-mobile-login-accent) !important;
+    background: rgba(251, 114, 153, 0.1) !important;
+    border: 1px solid rgba(251, 114, 153, 0.22) !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-scan-wp {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .login-scan-wp {
     order: 2 !important;
     display: none !important;
     grid-template-columns: 106px minmax(0, 1fr) !important;
@@ -2263,24 +3007,24 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     align-items: center !important;
     gap: 10px 12px !important;
     padding: 13px !important;
-    border: 1px solid rgba(255, 255, 255, 0.07) !important;
+    border: 1px solid var(--bewly-mobile-login-border) !important;
     border-radius: 18px !important;
-    background: rgba(255, 255, 255, 0.045) !important;
+    background: var(--bewly-mobile-login-field-bg) !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-scan-title {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .login-scan-title {
     grid-area: title !important;
     width: auto !important;
     margin: 0 !important;
     text-align: left !important;
-    color: var(--bewly-mobile-detail-text) !important;
+    color: var(--bewly-mobile-login-text) !important;
     font-size: 15px !important;
     line-height: 20px !important;
     font-weight: 700 !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-scan-hover-wp,
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-scan-box {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .login-scan-hover-wp,
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .login-scan-box {
     grid-area: qr !important;
     width: 106px !important;
     height: 106px !important;
@@ -2289,14 +3033,14 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     margin: 0 !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-scan-hover-wp,
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-scan-hover-wp:hover,
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-scan-hover-wp:hover .login-scan-box {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .login-scan-hover-wp,
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .login-scan-hover-wp:hover,
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .login-scan-hover-wp:hover .login-scan-box {
     transform: none !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-scan-hover-wp > :not(.login-scan-box),
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-scan-hover-wp :is(.scan-tips-icon, .login-client-qr-code, .login-icon, .login-scan-tips, .qrcode-tips) {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .login-scan-hover-wp > :not(.login-scan-box),
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .login-scan-hover-wp :is(.scan-tips-icon, .login-client-qr-code, .login-icon, .login-scan-tips, .qrcode-tips) {
     display: none !important;
     visibility: hidden !important;
     opacity: 0 !important;
@@ -2305,13 +3049,13 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     pointer-events: none !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-scan-box > div:not(.login_qrcode_tip),
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-scan-box > img {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .login-scan-box > div:not(.login_qrcode_tip),
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .login-scan-box > img {
     width: 96px !important;
     height: 96px !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login_qrcode_tip {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .login_qrcode_tip {
     inset: 0 !important;
     width: 106px !important;
     height: 106px !important;
@@ -2319,7 +3063,7 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     overflow: hidden !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login_qrcode_tip img {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .login_qrcode_tip img {
     width: 34px !important;
     height: 34px !important;
     max-width: 34px !important;
@@ -2327,7 +3071,7 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     object-fit: contain !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login_qrcode_tip span {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .login_qrcode_tip span {
     max-width: 92px !important;
     color: rgba(31, 35, 41, 0.66) !important;
     font-size: 11px !important;
@@ -2335,30 +3079,34 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     text-align: center !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-scan-desc {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .login-scan-desc {
     grid-area: desc !important;
     width: auto !important;
     margin: 0 !important;
-    color: rgba(242, 243, 245, 0.78) !important;
+    color: var(--bewly-mobile-login-muted) !important;
     text-align: left !important;
     font-size: 12px !important;
     line-height: 1.55 !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-agreement-wp {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .login-agreement-wp {
     order: 3 !important;
-    color: rgba(242, 243, 245, 0.7) !important;
+    color: var(--bewly-mobile-login-muted) !important;
     text-align: center !important;
     font-size: 12px !important;
     line-height: 1.55 !important;
+    opacity: 1 !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-agreement-wp p {
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .login-agreement-wp p {
     margin: 0 !important;
+    color: var(--bewly-mobile-login-muted) !important;
+    opacity: 1 !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] .bili-mini-mask .login-agreement-wp :is(a, span) {
-    color: var(--bewly-mobile-detail-accent) !important;
+  :is(html[data-bewly-mobile="true"], html[data-bewly-mobile-video-detail="true"]) .bili-mini-mask .login-agreement-wp :is(a, span) {
+    color: var(--bewly-mobile-login-accent) !important;
+    font-weight: 650 !important;
   }
 
   html[data-bewly-mobile-video-detail="true"] .desc-info,
@@ -2574,6 +3322,7 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
   html[data-bewly-mobile-video-detail="true"] #comment-module,
   html[data-bewly-mobile-video-detail="true"] #comment-body,
   html[data-bewly-mobile-video-detail="true"] #commentapp,
+  html[data-bewly-mobile-video-detail="true"] bili-comments,
   html[data-bewly-mobile-video-detail="true"] .commentapp,
   html[data-bewly-mobile-video-detail="true"] .comment-container,
   html[data-bewly-mobile-video-detail="true"] .bili-comment-container,
@@ -2587,23 +3336,113 @@ export const MOBILE_VIDEO_DETAIL_CSS = `
     padding-bottom: 0 !important;
     min-height: 0 !important;
     border-top: 1px solid var(--bewly-mobile-detail-separator) !important;
+    background: transparent !important;
     color: var(--bewly-mobile-detail-text) !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] :is(bili-comments, #comment-module, #comment-body, #commentapp, .commentapp, .comment-container, .bili-comment-container, .bb-comment) :is(
+    .comment-list,
+    .reply-list,
+    .bili-comment-list,
+    .list,
+    .items,
+    .reply-item,
+    .comment-item,
+    .bili-comment-item,
+    .root-reply-container,
+    .sub-reply-container,
+    .sub-reply-item,
+    .bb-comment-item,
+    [class*="ReplyItem"],
+    [class*="reply-item"],
+    [class*="CommentItem"],
+    [class*="comment-item"]
+  ) {
+    background: transparent !important;
+    color: var(--bewly-mobile-comment-text) !important;
+    border-color: var(--bewly-mobile-detail-separator) !important;
+    box-shadow: none !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] :is(bili-comments, #comment-module, #comment-body, #commentapp, .commentapp, .comment-container, .bili-comment-container, .bb-comment) :is(
+    .reply-content,
+    .comment-content,
+    .root-reply,
+    .sub-reply,
+    .rich-text,
+    .content,
+    .text,
+    p,
+    [class*="content"],
+    [class*="Content"],
+    [class*="text"],
+    [class*="Text"]
+  ) {
+    color: var(--bewly-mobile-comment-text) !important;
+    opacity: 1 !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] :is(bili-comments, #comment-module, #comment-body, #commentapp, .commentapp, .comment-container, .bili-comment-container, .bb-comment) :is(
+    .user-name,
+    .nickname,
+    .reply-name,
+    .comment-name,
+    .name,
+    [class*="nickname"],
+    [class*="Nickname"],
+    [class*="nick-name"],
+    [class*="user-name"],
+    [class*="reply-name"]
+  ) {
+    color: var(--bewly-mobile-comment-name) !important;
+    opacity: 1 !important;
+    font-weight: 650 !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] :is(bili-comments, #comment-module, #comment-body, #commentapp, .commentapp, .comment-container, .bili-comment-container, .bb-comment) :is(
+    .reply-time,
+    .comment-time,
+    .time,
+    .reply-like,
+    .reply-dislike,
+    .reply-btn,
+    .operation,
+    .comment-info,
+    .sub-info,
+    .info,
+    [class*="time"],
+    [class*="Time"],
+    [class*="operation"],
+    [class*="Operation"]
+  ) {
+    color: var(--bewly-mobile-comment-muted) !important;
+    opacity: 1 !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] :is(bili-comments, #comment-module, #comment-body, #commentapp, .commentapp, .comment-container, .bili-comment-container, .bb-comment) a {
+    color: var(--bewly-mobile-comment-link) !important;
   }
 
   html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-comment-composer="true"],
   html[data-bewly-mobile-video-detail="true"] :is(.reply-box, .reply-box-wrap, .reply-box-warp, .comment-send, .comment-send-box, .comment-send-lite, .comment-publish, .bili-comment-publish, .bili-comment-box, .bili-comment-reply-box, .fixed-reply-box, .reply-textarea),
-  html[data-bewly-mobile-video-detail="true"] :is(#comment-module, #comment-body, #commentapp, .commentapp, .comment-container, .bili-comment-container, .bb-comment) :is(.reply-box, .reply-box-wrap, .reply-box-warp, .comment-box, .comment-input, .comment-input-wrapper, .comment-send, .comment-send-box, .comment-send-lite, .comment-publish, .bili-comment-publish, .bili-comment-box, .bili-comment-reply-box, .fixed-reply-box, .textarea-container, .reply-textarea, textarea),
-  html[data-bewly-mobile-video-detail="true"] :is(#comment-module, #comment-body, #commentapp, .commentapp, .comment-container, .bili-comment-container, .bb-comment) :is(form, div, section):not(#comment-module):not(#comment-body):not(#commentapp):not(.commentapp):not(.comment-container):not(.bili-comment-container):not(.bb-comment):has(:is(textarea, input, [contenteditable="true"], [role="textbox"], [placeholder*="评论"], [placeholder*="发一条"], [class*="textarea"], [class*="input"], [class*="editor"])) {
+  html[data-bewly-mobile-video-detail="true"] :is(bili-comments, #comment-module, #comment-body, #commentapp, .commentapp, .comment-container, .bili-comment-container, .bb-comment) :is(.reply-box, .reply-box-wrap, .reply-box-warp, .comment-box, .comment-input, .comment-input-wrapper, .comment-send, .comment-send-box, .comment-send-lite, .comment-publish, .bili-comment-publish, .bili-comment-box, .bili-comment-reply-box, .fixed-reply-box, .textarea-container, .reply-textarea, textarea),
+  html[data-bewly-mobile-video-detail="true"] :is(bili-comments, #comment-module, #comment-body, #commentapp, .commentapp, .comment-container, .bili-comment-container, .bb-comment) :is(form, div, section):not(bili-comments):not(#comment-module):not(#comment-body):not(#commentapp):not(.commentapp):not(.comment-container):not(.bili-comment-container):not(.bb-comment):has(:is(textarea, input, [contenteditable="true"], [role="textbox"], [placeholder*="评论"], [placeholder*="发一条"], [class*="textarea"], [class*="input"], [class*="editor"])) {
     display: none !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] :is(#comment-module, #comment-body, #commentapp, .commentapp, .comment-container, .bili-comment-container, .bb-comment) :is(.no-more, .no-more-comment, .no-more-comments, .nomore, .end, .comment-end, .reply-end, .list-end, .bottom-page, .bili-comment-end) {
+  html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-comment-composer-open="true"],
+  html[data-bewly-mobile-video-detail="true"] [data-bewly-mobile-comment-composer-open="true"] :is(.reply-box, .reply-box-wrap, .reply-box-warp, .comment-send, .comment-send-box, .comment-send-lite, .comment-publish, .bili-comment-publish, .bili-comment-box, .bili-comment-reply-box, .fixed-reply-box, .reply-textarea, .comment-box, .comment-input, .comment-input-wrapper, .textarea-container, textarea, input, [contenteditable="true"], [role="textbox"]) {
+    visibility: visible !important;
+    pointer-events: auto !important;
+  }
+
+  html[data-bewly-mobile-video-detail="true"] :is(bili-comments, #comment-module, #comment-body, #commentapp, .commentapp, .comment-container, .bili-comment-container, .bb-comment) :is(.no-more, .no-more-comment, .no-more-comments, .nomore, .end, .comment-end, .reply-end, .list-end, .bottom-page, .bili-comment-end) {
     min-height: 0 !important;
     margin: 10px 0 8px !important;
     padding: 0 !important;
   }
 
-  html[data-bewly-mobile-video-detail="true"] :is(#comment-module, #comment-body, #commentapp, .commentapp, .comment-container, .bili-comment-container, .bb-comment) :is(.comment-list, .reply-list, .bili-comment-list, .list, .items) {
+  html[data-bewly-mobile-video-detail="true"] :is(bili-comments, #comment-module, #comment-body, #commentapp, .commentapp, .comment-container, .bili-comment-container, .bb-comment) :is(.comment-list, .reply-list, .bili-comment-list, .list, .items) {
     padding-bottom: 0 !important;
     margin-bottom: 0 !important;
   }

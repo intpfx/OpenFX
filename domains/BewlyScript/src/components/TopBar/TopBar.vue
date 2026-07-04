@@ -53,6 +53,14 @@ function checkUrlChange() {
 let hideTimer: number | null = null
 let urlCheckTimer: number | null = null
 
+async function initializeTopBarData() {
+  await topBarStore.initData()
+
+  // 只有在登录状态下才启动更新定时器
+  if (topBarStore.isLogin)
+    topBarStore.startUpdateTimer()
+}
+
 // 检测是否有弹窗激活
 const hasActivePopup = computed(() => {
   return Object.values(topBarStore.popupVisible).some(visible => visible)
@@ -333,10 +341,7 @@ function handleClickOutsidePopup(event: MouseEvent) {
 onMounted(() => {
   nextTick(() => {
     // 初始化数据和更新定时器
-    topBarStore.initData()
-    // 只有在登录状态下才启动更新定时器
-    if (topBarStore.isLogin)
-      topBarStore.startUpdateTimer()
+    void initializeTopBarData()
     setupScrollListeners()
 
     updateConflictingHeaderVisibility()

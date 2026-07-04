@@ -9,6 +9,7 @@ describe('userscript metadata', () => {
     expect(USERSCRIPT_MATCHES).toContain('https://m.bilibili.com/*')
     expect(USERSCRIPT_MATCHES).toContain('https://space.bilibili.com/*')
     expect(USERSCRIPT_MATCHES).toContain('https://search.bilibili.com/*')
+    expect(USERSCRIPT_MATCHES).toContain('https://passport.bilibili.com/*')
   })
 
   it('requests Userscripts and Tampermonkey compatible grants', () => {
@@ -29,12 +30,15 @@ describe('userscript metadata', () => {
     expect(metadata).toContain('// ==UserScript==')
     expect(metadata).toContain('// @name         BewlyScript')
     expect(metadata).toContain('// @inject-into  content')
-    expect(metadata).toContain('// @version      0.0.1-userscript.1')
+    expect(metadata).toContain('// @version      0.0.1-userscript.6')
     expect(metadata).toContain('// ==/UserScript==')
   })
 
   it('ships an m-site fallback prompt instead of the mobile app shell', () => {
     expect(MOBILE_DESKTOP_FALLBACK_SCRIPT).toContain('location.hostname !== "m.bilibili.com"')
+    expect(MOBILE_DESKTOP_FALLBACK_SCRIPT).toContain('passport.bilibili.com')
+    expect(MOBILE_DESKTOP_FALLBACK_SCRIPT).toContain('takeOverBilibiliPassportLogin')
+    expect(MOBILE_DESKTOP_FALLBACK_SCRIPT).toContain('bewlyLogin')
     expect(MOBILE_DESKTOP_FALLBACK_SCRIPT).toContain('请求桌面网站')
     expect(MOBILE_DESKTOP_FALLBACK_SCRIPT).toContain('if (showMobileDesktopFallback())')
   })

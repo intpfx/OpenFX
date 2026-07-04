@@ -17,12 +17,12 @@ import { updateInterval } from '~/components/TopBar/notify'
 import type { PrivilegeInfo, UnReadDm, UnReadMessage, UserInfo } from '~/components/TopBar/types'
 import { settings } from '~/logic'
 import api from '~/utils/api'
-import { getCSRF, isHomePage } from '~/utils/main'
+import { getCSRF, getUserID, isHomePage } from '~/utils/main'
 
 export const useTopBarStore = defineStore('topBar', () => {
   const toast = useToast()
-  const isLogin = ref<boolean>(true)
-  const userInfo = reactive<UserInfo>({} as UserInfo)
+  const isLogin = ref<boolean>(false)
+  const userInfo = reactive<UserInfo>(createEmptyUserInfo())
 
   const unReadMessage = reactive<UnReadMessage>({} as UnReadMessage)
   const unReadDm = reactive<UnReadDm>({} as UnReadDm)
@@ -67,6 +67,11 @@ export const useTopBarStore = defineStore('topBar', () => {
 
   // 大会员经验领取状态
   const vipExpAlreadyReceived = ref<boolean>(false) // 记录大会员经验是否已经领取
+
+  const LOGIN_STATE_REFRESH_DELAYS_MS = [900, 1800, 3200, 5200, 8500, 13000]
+  const USER_AVATAR_REFRESH_DELAYS_MS = [250, 1200, 3200, 7000]
+  let loginStateRefreshTimers: Array<ReturnType<typeof setTimeout>> = []
+  let userAvatarRefreshTimers: Array<ReturnType<typeof setTimeout>> = []
 
   // UI State
   const drawerVisible = reactive({
@@ -120,6 +125,111 @@ export const useTopBarStore = defineStore('topBar', () => {
   })
 
   // User Methods
+  function createEmptyUserInfo(): UserInfo {
+    return {
+      face: '',
+      level_info: {
+        current_level: 0,
+        current_min: 0,
+        current_exp: 0,
+        next_exp: 0,
+      },
+      mid: 0,
+      money: 0,
+      uname: '',
+      vip: {
+        status: 0,
+        due_date: 0,
+      },
+      wallet: {
+        mid: 0,
+        bcoin_balance: 0,
+        coupon_balance: 0,
+      },
+      wbi_img: {
+        img_url: '',
+        sub_url: '',
+      },
+      is_senior_member: false,
+    }
+  }
+
+  function resetUserInfo() {
+    Object.assign(userInfo, createEmptyUserInfo())
+  }
+
+  function resetLoginDependentState() {
+    isLogin.value = false
+    clearUserAvatarRefreshTimers()
+    resetUserInfo()
+    bCoinAlreadyReceived.value = false
+    hasBCoinToReceive.value = false
+    vipExpAlreadyReceived.value = false
+  }
+
+  function isLoggedInNavData(data: Partial<UserInfo> | undefined): data is UserInfo {
+    if (!data)
+      return false
+
+    return data.isLogin !== false && Number(data.mid) > 0
+  }
+
+  function isDefaultAvatarUrl(face: string | undefined): boolean {
+    if (!face)
+      return true
+
+    return /(?:^|\/)(?:noface|default[_-]?avatar)\.(?:jpg|jpeg|png|webp|gif)(?:$|[?#@])/i.test(face)
+  }
+
+  function getCurrentUserMid(): string {
+    const mid = Number(userInfo.mid || getUserID())
+    return Number.isFinite(mid) && mid > 0 ? String(mid) : ''
+  }
+
+  async function hydrateUserAvatarFromSpaceInfo(force = false) {
+    const mid = getCurrentUserMid()
+    if (!mid || (!force && !isDefaultAvatarUrl(userInfo.face)))
+      return
+
+    try {
+      const res = await api.user.getSpaceInfo({ mid })
+      const face = typeof res?.data?.face === 'string' ? res.data.face : ''
+      if (face && !isDefaultAvatarUrl(face))
+        userInfo.face = face
+      if (!userInfo.uname && typeof res?.data?.name === 'string')
+        userInfo.uname = res.data.name
+    }
+    catch {
+      // Keep the nav payload; avatar refresh is best-effort.
+    }
+  }
+
+  function clearUserAvatarRefreshTimers() {
+    userAvatarRefreshTimers.forEach(timer => clearTimeout(timer))
+    userAvatarRefreshTimers = []
+  }
+
+  function scheduleUserAvatarRefresh() {
+    clearUserAvatarRefreshTimers()
+
+    USER_AVATAR_REFRESH_DELAYS_MS.forEach((delay) => {
+      const timer = setTimeout(() => {
+        userAvatarRefreshTimers = userAvatarRefreshTimers.filter(activeTimer => activeTimer !== timer)
+        if (isLogin.value)
+          void hydrateUserAvatarFromSpaceInfo(true)
+      }, delay)
+      userAvatarRefreshTimers.push(timer)
+    })
+  }
+
+  function refreshUserAvatar() {
+    if (!isLogin.value)
+      return
+
+    void hydrateUserAvatarFromSpaceInfo(true)
+    scheduleUserAvatarRefresh()
+  }
+
   async function getUserInfo(retryCount = 0) {
     const maxRetries = 2 // 最多重试2次
     const retryDelay = (retryCount + 1) * 1000 // 递增延迟: 1s, 2s
@@ -127,12 +237,14 @@ export const useTopBarStore = defineStore('topBar', () => {
     try {
       const res = await api.user.getUserInfo()
 
-      if (res.code === 0) {
+      if (res.code === 0 && isLoggedInNavData(res.data)) {
         const wasLoggedIn = isLogin.value
         const previousMid = userInfo.mid
 
         isLogin.value = true
-        Object.assign(userInfo, res.data)
+        Object.assign(userInfo, createEmptyUserInfo(), res.data)
+        await hydrateUserAvatarFromSpaceInfo(true)
+        scheduleUserAvatarRefresh()
 
         // 如果是新登录或者切换了账号，重置B币领取状态
         if (!wasLoggedIn || previousMid !== userInfo.mid) {
@@ -141,12 +253,9 @@ export const useTopBarStore = defineStore('topBar', () => {
           vipExpAlreadyReceived.value = false
         }
       }
-      else if (res.code === -101) {
-        isLogin.value = false
-        // 登出时重置状态
-        bCoinAlreadyReceived.value = false
-        hasBCoinToReceive.value = false
-        vipExpAlreadyReceived.value = false
+      else if (res.code === -101 || res.code === 0) {
+        // /x/web-interface/nav 在未登录时也可能返回 code 0，但 data.isLogin=false/mid=0。
+        resetLoginDependentState()
       }
       else {
         // 其他错误码
@@ -158,10 +267,7 @@ export const useTopBarStore = defineStore('topBar', () => {
           return
         }
 
-        isLogin.value = false
-        bCoinAlreadyReceived.value = false
-        hasBCoinToReceive.value = false
-        vipExpAlreadyReceived.value = false
+        resetLoginDependentState()
       }
     }
     catch {
@@ -174,10 +280,7 @@ export const useTopBarStore = defineStore('topBar', () => {
       }
 
       // 重试次数用尽，标记为未登录
-      isLogin.value = false
-      bCoinAlreadyReceived.value = false
-      hasBCoinToReceive.value = false
-      vipExpAlreadyReceived.value = false
+      resetLoginDependentState()
     }
   }
 
@@ -354,8 +457,41 @@ export const useTopBarStore = defineStore('topBar', () => {
     }
   }
 
+  function clearLoginStateRefreshTimers() {
+    loginStateRefreshTimers.forEach(timer => clearTimeout(timer))
+    loginStateRefreshTimers = []
+  }
+
+  async function refreshLoginStateAfterLoginAttempt() {
+    await getUserInfo()
+
+    if (!isLogin.value)
+      return
+
+    startUpdateTimer()
+    checkBCoinReceiveStatus()
+    autoReceiveVipExp()
+    getUnreadMessageCount()
+    clearLoginStateRefreshTimers()
+  }
+
+  function scheduleLoginStateRefresh() {
+    clearLoginStateRefreshTimers()
+
+    LOGIN_STATE_REFRESH_DELAYS_MS.forEach((delay) => {
+      const timer = setTimeout(() => {
+        loginStateRefreshTimers = loginStateRefreshTimers.filter(activeTimer => activeTimer !== timer)
+        void refreshLoginStateAfterLoginAttempt()
+      }, delay)
+      loginStateRefreshTimers.push(timer)
+    })
+  }
+
   function cleanup() {
+    clearLoginStateRefreshTimers()
+    clearUserAvatarRefreshTimers()
     stopUpdateTimer()
+    resetUserInfo()
 
     Object.keys(unReadMessage).forEach((key) => {
       unReadMessage[key as keyof UnReadMessage] = 0
@@ -366,6 +502,7 @@ export const useTopBarStore = defineStore('topBar', () => {
 
     closeAllPopups()
     drawerVisible.notifications = false
+    isLogin.value = false
     hasBCoinToReceive.value = false
     bCoinAlreadyReceived.value = false
     vipExpAlreadyReceived.value = false
@@ -409,6 +546,8 @@ export const useTopBarStore = defineStore('topBar', () => {
     closeAllPopups,
     initData,
     cleanup,
+    refreshUserAvatar,
+    scheduleLoginStateRefresh,
     isMouseOverPopup,
     setMouseOverPopup,
     getMouseOverPopup,

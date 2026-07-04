@@ -71,8 +71,9 @@ BewlyScript 的完整体验以 B 站桌面原站 `www.bilibili.com` 为唯一功
 
 - `www.bilibili.com` 继续承载完整美化、播放器增强、页面样式适配和 Bewly 页面入口。
 - 竖屏体验基于设备横竖屏状态判断，而不是窗口宽度阈值；在桌面原站页面做响应式美化，并复用原 m 站适配中沉淀下来的 safe-area、底部搜索、底部 Dock、触控卡片、移动抽屉和视频详情信息排布。
-- `/video/...` 在竖屏下仍进入 `www.bilibili.com` 原生视频页，使用 B 站原生播放器；BewlyScript 只重排播放器、作者卡、工具栏、简介、标签和评论区域，不再进入旧的自绘移动视频页。
+- 从 Bewly 页面点击视频时，竖屏与横屏一致使用抽屉承载 `www.bilibili.com` 原生视频页；直接访问 `/video/...` 时仍使用 B 站原生播放器，并由 BewlyScript 重排播放器、作者卡、工具栏、简介、标签和评论区域，不再进入旧的自绘移动视频页。
 - `m.bilibili.com` 只保留 userscript metadata 覆盖，用于在 document-start 显示提示页，提醒用户开启浏览器的“请求桌面网站”并访问桌面版。
+- 移动端进入 `passport.bilibili.com/login` 时由 document-start 接管回 `www.bilibili.com/?bewlyLogin=1`，再触发原站 mini-login 底部抽屉，避免直接打开 Passport 原页出现权限错误。
 - 进入 m 站时不再加载 Vue 主应用、不再隐藏 m 站原生 DOM、不再进入 Bewly 自绘移动视频页。
 - 若点击桌面版入口后仍回到 m 站，说明 B 站按移动 UA 做了服务端跳转，需要先开启“请求桌面网站”。
 - 继续保留 userscript 单文件构建目标与 Safari Userscripts 安装方式。

@@ -5,8 +5,8 @@ import { storeToRefs } from 'pinia'
 import ALink from '~/components/ALink.vue'
 import { settings } from '~/logic'
 import { useTopBarStore } from '~/stores/topBarStore'
-import { BILIBILI_LOGIN_URL, isMobileUserscriptRuntimePage, openBilibiliLoginPage, openMobileUrlInCurrentPage, shouldEnableHoverInteractions } from '~/userscript/mobile'
-import { getUserID, removeHttpFromUrl } from '~/utils/main'
+import { BILIBILI_LOGIN_URL, isMobileUserscriptRuntimePage, openBilibiliLoginPage, openMobileLoginDrawer, openMobileUrlInCurrentPage, shouldEnableHoverInteractions } from '~/userscript/mobile'
+import { getUserID } from '~/utils/main'
 import { isComponentVisible, shouldShowBadge, shouldShowDotBadge, shouldShowNumberBadge } from '~/utils/topBarBadge'
 
 import { useTopBarInteraction } from '../composables/useTopBarInteraction'
@@ -31,11 +31,12 @@ const {
   hasBCoinToReceive,
 } = storeToRefs(topBarStore)
 
-const { getUnreadMessageCount, checkBCoinReceiveStatus } = topBarStore
+const { getUnreadMessageCount, checkBCoinReceiveStatus, refreshUserAvatar } = topBarStore
 
 // 将 DOM 引用移到组件内部
 const avatarImg = ref<HTMLElement | null>(null)
 const avatarShadow = ref<HTMLElement | null>(null)
+const avatarLoadFailed = ref(false)
 
 const { handleClickTopBarItem, setupTopBarItemHoverEvent, setupTopBarItemTransformer, forceWhiteIcon } = useTopBarInteraction()
 
@@ -45,6 +46,29 @@ const upload = isComponentVisible('upload') ? setupTopBarItemHoverEvent('upload'
 const notifications = isComponentVisible('notifications') ? setupTopBarItemHoverEvent('notifications') : ref()
 const more = setupTopBarItemHoverEvent('more')
 const avatar = setupTopBarItemHoverEvent('userPanel')
+const isMobileUserscriptPage = computed(() => isMobileUserscriptRuntimePage())
+
+function normalizeAvatarUrl(url: string | undefined): string {
+  if (!url)
+    return ''
+
+  if (url.startsWith('//'))
+    return `https:${url}`
+
+  return url.replace(/^http:/, 'https:')
+}
+
+const avatarUrl = computed(() => normalizeAvatarUrl(userInfo.value.face))
+const shouldShowAvatarImage = computed(() => Boolean(avatarUrl.value) && !avatarLoadFailed.value)
+
+watch(avatarUrl, () => {
+  avatarLoadFailed.value = false
+})
+
+watch(isLogin, (loggedIn) => {
+  if (loggedIn)
+    refreshUserAvatar()
+}, { immediate: true })
 
 function handleLoginClick(event: MouseEvent) {
   if (event.defaultPrevented)
@@ -52,6 +76,15 @@ function handleLoginClick(event: MouseEvent) {
 
   if (isLogin.value)
     return
+
+  if (isMobileUserscriptPage.value) {
+    event.preventDefault()
+    event.stopPropagation()
+    if (!openMobileLoginDrawer())
+      openBilibiliLoginPage()
+    topBarStore.scheduleLoginStateRefresh()
+    return
+  }
 
   if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
     event.preventDefault()
@@ -131,7 +164,6 @@ watch(() => focused.value, (newVal, _) => {
 const hoverInteractionsEnabled = computed(() => {
   return shouldEnableHoverInteractions(settings.value.touchScreenOptimization)
 })
-const isMobileUserscriptPage = computed(() => isMobileUserscriptRuntimePage())
 
 // 修改通知点击处理
 function handleNotificationsClick(item: { name: string, url: string, unreadCount: number, icon: string }) {
@@ -356,17 +388,31 @@ const shouldShowDivider = computed(() => {
           class="avatar-img"
           :class="{ hover: popupVisible?.userPanel && hoverInteractionsEnabled }"
           :style="{
-            backgroundImage: `url(${userInfo.face ? removeHttpFromUrl(userInfo.face) : ''})`,
+            backgroundImage: shouldShowAvatarImage ? `url(${avatarUrl})` : undefined,
           }"
           :custom-click-event="isMobileUserscriptPage"
           @click="handleAvatarClick"
-        />
+        >
+          <img
+            v-if="shouldShowAvatarImage"
+            :src="avatarUrl"
+            :alt="userInfo.uname || '用户头像'"
+            class="avatar-img__image"
+            referrerpolicy="no-referrer-when-downgrade"
+            @error="avatarLoadFailed = true"
+          >
+          <div
+            v-else
+            class="avatar-img__fallback"
+            i-solar:user-circle-bold-duotone
+          />
+        </ALink>
         <div
           ref="avatarShadow"
           class="avatar-shadow"
           :class="{ hover: popupVisible?.userPanel && hoverInteractionsEnabled }"
           :style="{
-            backgroundImage: `url(${userInfo.face ? removeHttpFromUrl(userInfo.face) : ''})`,
+            backgroundImage: shouldShowAvatarImage ? `url(${avatarUrl})` : undefined,
           }"
         />
         <svg
@@ -394,7 +440,9 @@ const shouldShowDivider = computed(() => {
             :user-info="userInfo"
             after:h="!0"
             class="bew-popover"
-            pos="!left-auto !right-0" transform="!translate-x-0"
+            :pos="isMobileUserscriptPage ? undefined : '!left-auto !right-0'"
+            :transform="isMobileUserscriptPage ? undefined : '!translate-x-0'"
+            @close="closeMobileUserPanelDrawer"
             @click.stop="() => {}"
           />
         </Transition>
@@ -411,6 +459,27 @@ const shouldShowDivider = computed(() => {
   inset: 0;
   z-index: 10020;
   background: rgba(0, 0, 0, 0.42);
+}
+
+.avatar-img {
+  display: grid;
+  overflow: hidden;
+  place-items: center;
+  background-color: var(--bew-fill-2);
+}
+
+.avatar-img__image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
+.avatar-img__fallback {
+  width: 70%;
+  height: 70%;
+  color: var(--bew-text-3);
 }
 
 .fade-enter-active,

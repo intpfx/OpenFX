@@ -1,4 +1,4 @@
-import { openBilibiliLoginPage } from '~/userscript/mobile'
+import { isMobileUserscriptRuntimePage, openBilibiliLoginPage } from '~/userscript/mobile'
 
 const BILIBILI_TOP_BAR_SELECTORS = [
   '.bili-header',
@@ -78,6 +78,9 @@ export function resetBilibiliTopBarInlineStyles(doc: Document) {
  * to redirect users to the login page.
  */
 export function setupLoginButtonClickHandlers(doc: Document) {
+  if (isMobileUserscriptRuntimePage())
+    return () => {}
+
   // Function to handle login button binding
   function bindLoginButton(button: HTMLElement) {
     if (button.hasAttribute('data-bewly-login-handler'))

@@ -8,6 +8,7 @@ import { useVideoCardShadowStyle } from '~/composables/useVideoCardShadowStyle'
 import { OVERLAY_SCROLL_BAR_SCROLL } from '~/constants/globalEvents'
 import type { GridLayoutType } from '~/logic'
 import { settings } from '~/logic'
+import { isMobileUserscriptRuntimePage } from '~/userscript/mobile'
 import emitter from '~/utils/mitt'
 
 import SmoothLoading from './SmoothLoading.vue'
@@ -632,10 +633,16 @@ function getAdaptiveGridColumns(width: number): number {
 }
 
 function getCurrentColumnCount(width: number): number {
+  if (isMobileUserscriptRuntimePage())
+    return 1
+
   return getAdaptiveGridColumns(width)
 }
 
 function getGridGap(width = 0): number {
+  if (isMobileUserscriptRuntimePage())
+    return 12
+
   return width > 0 && width <= 700 ? 12 : 20
 }
 
