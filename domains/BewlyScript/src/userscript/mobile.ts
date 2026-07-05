@@ -1025,10 +1025,32 @@ export const MOBILE_VIDEO_DETAIL_FRAME_CSS = `
     background: #000 !important;
     overflow: hidden !important;
     isolation: isolate !important;
+    touch-action: none !important;
   }
 
-  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"][data-bewly-mobile-frame-web-fullscreen="true"] {
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"][data-bewly-mobile-frame-web-fullscreen="true"],
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"][data-bewly-mobile-frame-web-fullscreen="true"] body {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    height: 100dvh !important;
+    min-height: 100dvh !important;
+    margin: 0 !important;
+    background: #000 !important;
     overflow: hidden !important;
+    overscroll-behavior: none !important;
+    touch-action: none !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"][data-bewly-mobile-frame-web-fullscreen-lock="true"],
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-web-fullscreen-lock="true"] {
+    width: 100vw !important;
+    height: 100dvh !important;
+    min-height: 100dvh !important;
+    max-height: 100dvh !important;
+    overflow: hidden !important;
+    overscroll-behavior: none !important;
+    touch-action: none !important;
   }
 
   html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-root="true"][data-bewly-mobile-frame-web-fullscreen="true"] {
@@ -1046,7 +1068,10 @@ export const MOBILE_VIDEO_DETAIL_FRAME_CSS = `
     margin: 0 !important;
     border-radius: 0 !important;
     background: #000 !important;
+    isolation: isolate !important;
     overflow: hidden !important;
+    touch-action: none !important;
+    transform: none !important;
   }
 
   html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-root="true"][data-bewly-mobile-frame-web-fullscreen="true"] :is(
@@ -1088,11 +1113,77 @@ export const MOBILE_VIDEO_DETAIL_FRAME_CSS = `
     pointer-events: none !important;
   }
 
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-home="true"] {
+    display: none !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-native-duplicate-control="true"],
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-native-viewer-source="true"],
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] :is(
+    .bpx-player-control-wrap,
+    .bpx-player-control-bottom,
+    .bilibili-player-video-control,
+    .bilibili-player-video-control-bottom,
+    .bpx-player-dm-setting,
+    .bpx-player-dm-switch,
+    .bpx-player-ctrl-danmaku,
+    .bili-mini,
+    .bili-mini-mask,
+    .mplayer-danmaku,
+    .mplayer-danmaku-btn,
+    .mplayer-danmaku-switch,
+    .mplayer-danmaku-setting,
+    .bpx-player-sending-bar,
+    .bpx-player-video-inputbar,
+    .bpx-player-video-inputbar *,
+    .bpx-player-video-inputbar-wrap,
+    .bpx-player-dm-hint,
+    .bpx-player-dm-btn-send,
+    .bpx-player-sending-area,
+    .bilibili-player-video-sendbar,
+    .squirtle-controller,
+    .mplayer-control,
+    .mplayer-controller,
+    .mplayer-control-bar,
+    [class*="danmu" i][class*="switch" i],
+    [class*="danmu" i][class*="setting" i],
+    [class*="danmu" i][class*="toggle" i],
+    [class*="danmu" i][class*="btn" i],
+    [class*="danmu" i][class*="button" i],
+    [class*="danmaku" i][class*="switch" i],
+    [class*="danmaku" i][class*="setting" i],
+    [class*="danmaku" i][class*="toggle" i],
+    [class*="danmaku" i][class*="btn" i],
+    [class*="danmaku" i][class*="button" i],
+    [class*="barrage" i][class*="switch" i],
+    [class*="barrage" i][class*="setting" i],
+    [class*="barrage" i][class*="toggle" i],
+    [class*="barrage" i][class*="btn" i],
+    [class*="barrage" i][class*="button" i],
+    [class*="dm" i][class*="switch" i],
+    [class*="dm" i][class*="setting" i],
+    [class*="dm" i][class*="toggle" i],
+    [class*="dm" i][class*="btn" i],
+    [class*="dm" i][class*="button" i],
+    #bilibili-player-placeholder-bottom,
+    #bilibili-player-placeholder-bottom-left,
+    #bilibili-player-placeholder-bottom-right,
+    #bilibili-player-placeholder-bottom *,
+    #bilibili-player-placeholder-bottom-left *,
+    #bilibili-player-placeholder-bottom-right *
+  ),
   html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-root="true"] :is(
     .bpx-player-control-wrap,
     .bpx-player-control-bottom,
     .bilibili-player-video-control,
     .bilibili-player-video-control-bottom,
+    .bpx-player-dm-setting,
+    .bpx-player-dm-switch,
+    .bpx-player-ctrl-danmaku,
+    .mplayer-danmaku,
+    .mplayer-danmaku-btn,
+    .mplayer-danmaku-switch,
+    .mplayer-danmaku-setting,
     .bpx-player-sending-bar,
     .bpx-player-video-inputbar,
     .bpx-player-video-inputbar *,
@@ -1106,9 +1197,35 @@ export const MOBILE_VIDEO_DETAIL_FRAME_CSS = `
     .bpx-player-video-btn-back,
     .bilibili-player-video-btn-back,
     .squirtle-back,
+    .squirtle-controller,
+    .mplayer-control,
+    .mplayer-controller,
+    .mplayer-control-bar,
     [class*="player"][class*="back" i],
     [class*="back" i][class*="player"],
-    .squirtle-controller,
+    [class*="control" i][class*="bottom" i],
+    [class*="control" i][class*="bar" i],
+    [class*="controller" i],
+    [class*="danmu" i][class*="switch" i],
+    [class*="danmu" i][class*="setting" i],
+    [class*="danmu" i][class*="toggle" i],
+    [class*="danmu" i][class*="btn" i],
+    [class*="danmu" i][class*="button" i],
+    [class*="danmaku" i][class*="switch" i],
+    [class*="danmaku" i][class*="setting" i],
+    [class*="danmaku" i][class*="toggle" i],
+    [class*="danmaku" i][class*="btn" i],
+    [class*="danmaku" i][class*="button" i],
+    [class*="barrage" i][class*="switch" i],
+    [class*="barrage" i][class*="setting" i],
+    [class*="barrage" i][class*="toggle" i],
+    [class*="barrage" i][class*="btn" i],
+    [class*="barrage" i][class*="button" i],
+    [class*="dm" i][class*="switch" i],
+    [class*="dm" i][class*="setting" i],
+    [class*="dm" i][class*="toggle" i],
+    [class*="dm" i][class*="btn" i],
+    [class*="dm" i][class*="button" i],
     #bilibili-player-placeholder-bottom,
     #bilibili-player-placeholder-bottom-left,
     #bilibili-player-placeholder-bottom-right,
@@ -1116,6 +1233,7 @@ export const MOBILE_VIDEO_DETAIL_FRAME_CSS = `
     #bilibili-player-placeholder-bottom-left *,
     #bilibili-player-placeholder-bottom-right *
   ) {
+    display: none !important;
     opacity: 0 !important;
     visibility: hidden !important;
     pointer-events: none !important;
@@ -1202,6 +1320,25 @@ export const MOBILE_VIDEO_DETAIL_FRAME_CSS = `
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85), 0 0 10px rgba(0, 0, 0, 0.45) !important;
     text-overflow: ellipsis !important;
     white-space: nowrap !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-viewers="true"] {
+    justify-self: end !important;
+    max-width: 34vw !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+    padding: clamp(5px, 1.4dvh, 7px) clamp(8px, 2.3vw, 11px) !important;
+    border-radius: 999px !important;
+    background: rgba(8, 10, 14, 0.46) !important;
+    color: rgba(255, 255, 255, 0.94) !important;
+    font: 650 clamp(11px, 3.2vw, 13px) / 1 system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif !important;
+    text-overflow: ellipsis !important;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65) !important;
+    white-space: nowrap !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-viewers="true"][hidden] {
+    display: none !important;
   }
 
   html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-mainbar="true"] {
@@ -1296,10 +1433,30 @@ export const MOBILE_VIDEO_DETAIL_FRAME_CSS = `
     height: clamp(40px, 7.8dvh, 46px) !important;
     padding: 0 !important;
     opacity: 1 !important;
-    background: rgba(251, 114, 153, 0.92) !important;
-    color: #fff !important;
-    box-shadow: 0 3px 12px rgba(251, 114, 153, 0.32), 0 1px 8px rgba(0, 0, 0, 0.28) !important;
+    background: rgba(10, 12, 16, 0.72) !important;
+    color: rgba(255, 255, 255, 0.96) !important;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35) !important;
     font-size: clamp(17px, 4.5vw, 22px) !important;
+  }
+
+  html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-volume-hud="true"] {
+    position: absolute !important;
+    top: 50% !important;
+    right: max(clamp(12px, 3.4vw, 20px), env(safe-area-inset-right, 0px)) !important;
+    z-index: 32 !important;
+    padding: clamp(8px, 2.2vw, 10px) clamp(12px, 3.4vw, 16px) !important;
+    border: 0 !important;
+    border-radius: 999px !important;
+    background: rgba(8, 10, 14, 0.72) !important;
+    color: rgba(255, 255, 255, 0.96) !important;
+    box-shadow: 0 8px 26px rgba(0, 0, 0, 0.34) !important;
+    font: 750 clamp(12px, 3.4vw, 15px) / 1 system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65) !important;
+    transform: translateY(-50%) !important;
+    transition: opacity 140ms cubic-bezier(0.2, 0, 0, 1) !important;
+    white-space: nowrap !important;
   }
 
   html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] [data-bewly-mobile-frame-player-action="danmaku"] {

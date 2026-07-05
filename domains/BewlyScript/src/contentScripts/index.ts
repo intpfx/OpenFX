@@ -13,8 +13,8 @@ import {
   BEWLY_MOBILE_VIDEO_DRAWER_FRAME_PARAM,
   BEWLY_MOBILE_VIDEO_DRAWER_PARAM,
   getBewlyMobileLoginUrl,
-  hasBewlyMobileVideoDrawerFrameMarker,
   hasBewlyMobileLoginIntent,
+  hasBewlyMobileVideoDrawerFrameMarker,
   injectMobileNativeHeaderCSS,
   installMobileNoNewTabGuard,
   isMobileUserscriptRuntimePage,
@@ -26,8 +26,8 @@ import {
   MOBILE_VIDEO_DETAIL_FRAME_CSS,
   openMobileUrlInCurrentPage,
   setMobileNativeContentHidden,
-  shouldOpenMobileVideoDetailAsDrawer,
   shouldHideMobileNativeContentForPage,
+  shouldOpenMobileVideoDetailAsDrawer,
   shouldUseMobileVideoDetailLayout,
 } from '~/userscript/mobile'
 import { sanitizeInlineSvg } from '~/userscript/svg-sanitizer'
@@ -400,14 +400,20 @@ const MOBILE_VIDEO_DETAIL_FRAME_PLAYER_SHEET_OPEN_ATTR = 'data-bewly-mobile-fram
 const MOBILE_VIDEO_DETAIL_FRAME_PLAYER_DETACHED_ATTR = 'data-bewly-mobile-frame-player-detached'
 const MOBILE_VIDEO_DETAIL_FRAME_PLAYER_CONTROLS_VISIBLE_ATTR = 'data-bewly-mobile-frame-player-controls-visible'
 const MOBILE_VIDEO_DETAIL_FRAME_PLAYER_SPACER_ATTR = 'data-bewly-mobile-frame-player-spacer'
+const MOBILE_VIDEO_DETAIL_FRAME_PLAYER_HOME_ATTR = 'data-bewly-mobile-frame-player-home'
+const MOBILE_VIDEO_DETAIL_FRAME_NATIVE_DUPLICATE_CONTROL_ATTR = 'data-bewly-mobile-frame-native-duplicate-control'
+const MOBILE_VIDEO_DETAIL_FRAME_NATIVE_VIEWER_SOURCE_ATTR = 'data-bewly-mobile-frame-native-viewer-source'
 const MOBILE_VIDEO_DETAIL_FRAME_OVERLAY_ATTR = 'data-bewly-mobile-video-detail-frame-overlay'
 const MOBILE_VIDEO_DETAIL_FRAME_WEB_FULLSCREEN_ATTR = 'data-bewly-mobile-frame-web-fullscreen'
+const MOBILE_VIDEO_DETAIL_FRAME_WEB_FULLSCREEN_LOCK_ATTR = 'data-bewly-mobile-frame-web-fullscreen-lock'
 const MOBILE_VIDEO_DETAIL_BACK_BUTTON_ATTR = 'data-bewly-mobile-video-back'
 const MOBILE_VIDEO_DETAIL_TOOLBAR_BACK_HIDDEN_ATTR = 'data-bewly-mobile-toolbar-back-hidden'
 const MOBILE_VIDEO_DETAIL_FRAME_ENHANCEMENT_RETRY_MS = 300
 const MOBILE_VIDEO_DETAIL_FRAME_ENHANCEMENT_MAX_RETRIES = 20
 const MOBILE_VIDEO_DETAIL_FRAME_CONTROLS_IDLE_MS = 4800
 const MOBILE_VIDEO_DETAIL_FRAME_PLAYBACK_RATES = [0.75, 1, 1.25, 1.5, 2]
+const MOBILE_VIDEO_DETAIL_FRAME_VOLUME_GESTURE_THRESHOLD_PX = 14
+const MOBILE_VIDEO_DETAIL_FRAME_VIEWER_TEXT_PATTERN = /\d[\d.]*[万亿]?人正?在看/
 const MOBILE_VIDEO_DETAIL_FRAME_NATIVE_CONTROL_BAR_SELECTOR = [
   '.bpx-player-control-bottom',
   '.bpx-player-control-wrap',
@@ -417,7 +423,30 @@ const MOBILE_VIDEO_DETAIL_FRAME_NATIVE_CONTROL_BAR_SELECTOR = [
   '[class*="control-bottom"]',
   '[class*="controller"]',
 ].join(',')
-const MOBILE_VIDEO_DETAIL_FRAME_PLAYER_TOOLBAR_VERSION = 'control-row-icon-v11-main-row-safe-labels'
+const MOBILE_VIDEO_DETAIL_FRAME_NATIVE_DANMAKU_TOGGLE_SELECTOR = [
+  '.bpx-player-dm-switch input',
+  '.bpx-player-dm-switch button',
+  '.bpx-player-dm-switch',
+  '.bpx-player-ctrl-danmaku',
+  '.bilibili-player-video-danmaku-switch input',
+  '.bilibili-player-video-danmaku-switch button',
+  '.bilibili-player-video-danmaku-switch',
+  'button[aria-label*="弹幕"]',
+  'button[title*="弹幕"]',
+  '[role="button"][aria-label*="弹幕"]',
+  '[role="button"][title*="弹幕"]',
+].join(',')
+const MOBILE_VIDEO_DETAIL_FRAME_PLAYER_TOOLBAR_VERSION = 'control-row-page-fullscreen-v14'
+
+interface MobileVideoDetailFrameVolumeGestureController {
+  sourceKey: string
+  detach: () => void
+}
+
+const mobileVideoDetailFrameVolumeGestures = new WeakMap<HTMLElement, MobileVideoDetailFrameVolumeGestureController>()
+const mobileVideoDetailFrameRootHomes = new WeakMap<HTMLElement, HTMLElement>()
+const mobileVideoDetailFrameFullscreenStyleSnapshots = new WeakMap<HTMLElement, string | null>()
+let mobileVideoDetailFrameLastFullscreenToggleAt = 0
 
 const MOBILE_VIDEO_DETAIL_COMMENT_SHADOW_CSS = `
   :host {
@@ -809,15 +838,23 @@ function shouldUseMobileVideoDetailFrameOverlay(): boolean {
 
 function removeMobileVideoDetailFrameRootMarkers(): void {
   document.querySelectorAll<HTMLElement>(`[${MOBILE_VIDEO_DETAIL_FRAME_PLAYER_ROOT_ATTR}="true"]`).forEach((root) => {
+    restoreMobileVideoDetailFrameRootHome(root)
     root.removeAttribute(MOBILE_VIDEO_DETAIL_FRAME_PLAYER_ROOT_ATTR)
     root.removeAttribute(MOBILE_VIDEO_DETAIL_FRAME_DANMAKU_HIDDEN_ATTR)
+    root.removeAttribute(MOBILE_VIDEO_DETAIL_FRAME_WEB_FULLSCREEN_ATTR)
   })
   document.querySelectorAll<HTMLElement>(`[${MOBILE_VIDEO_DETAIL_FRAME_PLAYER_SPACER_ATTR}="true"]`).forEach(spacer => spacer.remove())
+  document.querySelectorAll<HTMLElement>(`[${MOBILE_VIDEO_DETAIL_FRAME_PLAYER_HOME_ATTR}="true"]`).forEach(home => home.remove())
+  document.documentElement.removeAttribute(MOBILE_VIDEO_DETAIL_FRAME_WEB_FULLSCREEN_ATTR)
+  setMobileVideoDetailFramePageFullscreenLock(false)
 }
 
 function syncMobileVideoDetailFrameOverlayState(): boolean {
   const shouldUseOverlay = shouldUseMobileVideoDetailFrameOverlay()
-  document.documentElement.toggleAttribute(MOBILE_VIDEO_DETAIL_FRAME_OVERLAY_ATTR, shouldUseOverlay)
+  if (shouldUseOverlay)
+    document.documentElement.setAttribute(MOBILE_VIDEO_DETAIL_FRAME_OVERLAY_ATTR, 'true')
+  else
+    document.documentElement.removeAttribute(MOBILE_VIDEO_DETAIL_FRAME_OVERLAY_ATTR)
 
   if (!shouldUseOverlay) {
     closeMobileVideoDetailFramePanels()
@@ -1251,26 +1288,416 @@ function isMobileVideoDetailFrameWebFullscreen(root: HTMLElement): boolean {
   return root.getAttribute(MOBILE_VIDEO_DETAIL_FRAME_WEB_FULLSCREEN_ATTR) === 'true'
 }
 
+function ensureMobileVideoDetailFrameRootHome(root: HTMLElement): HTMLElement | undefined {
+  const existingHome = mobileVideoDetailFrameRootHomes.get(root)
+  if (existingHome?.isConnected)
+    return existingHome
+
+  if (!root.parentNode)
+    return undefined
+
+  const home = document.createElement('span')
+  home.setAttribute(MOBILE_VIDEO_DETAIL_FRAME_PLAYER_HOME_ATTR, 'true')
+  home.hidden = true
+  home.style.setProperty('display', 'none', 'important')
+  root.before(home)
+  mobileVideoDetailFrameRootHomes.set(root, home)
+  return home
+}
+
+function restoreMobileVideoDetailFrameRootHome(root: HTMLElement): void {
+  const home = mobileVideoDetailFrameRootHomes.get(root)
+  if (!home)
+    return
+
+  if (home.isConnected)
+    home.replaceWith(root)
+
+  mobileVideoDetailFrameRootHomes.delete(root)
+}
+
+function dockMobileVideoDetailFrameRootForWebFullscreen(root: HTMLElement, enabled: boolean): void {
+  if (!enabled) {
+    restoreMobileVideoDetailFrameRootHome(root)
+    return
+  }
+
+  if (!document.body || root.parentElement === document.body)
+    return
+
+  ensureMobileVideoDetailFrameRootHome(root)
+  document.body.append(root)
+}
+
+function setMobileVideoDetailFramePageFullscreenLock(enabled: boolean): void {
+  const targets = [document.documentElement, document.body].filter((element): element is HTMLElement => element instanceof HTMLElement)
+  targets.forEach((element) => {
+    if (enabled) {
+      if (!mobileVideoDetailFrameFullscreenStyleSnapshots.has(element))
+        mobileVideoDetailFrameFullscreenStyleSnapshots.set(element, element.getAttribute('style'))
+
+      element.setAttribute(MOBILE_VIDEO_DETAIL_FRAME_WEB_FULLSCREEN_LOCK_ATTR, 'true')
+      setMobileVideoDetailImportantStyles(element, {
+        'background': '#000',
+        'height': '100dvh',
+        'margin': '0',
+        'max-height': '100dvh',
+        'max-width': '100vw',
+        'min-height': '100dvh',
+        'overflow': 'hidden',
+        'overscroll-behavior': 'none',
+        'touch-action': 'none',
+        'width': '100vw',
+      })
+      if (element === document.body) {
+        setMobileVideoDetailImportantStyles(element, {
+          'inset': '0',
+          'position': 'fixed',
+        })
+      }
+      return
+    }
+
+    element.removeAttribute(MOBILE_VIDEO_DETAIL_FRAME_WEB_FULLSCREEN_LOCK_ATTR)
+    if (!mobileVideoDetailFrameFullscreenStyleSnapshots.has(element))
+      return
+
+    const styleSnapshot = mobileVideoDetailFrameFullscreenStyleSnapshots.get(element) ?? null
+    if (styleSnapshot === null)
+      element.removeAttribute('style')
+    else
+      element.setAttribute('style', styleSnapshot)
+    mobileVideoDetailFrameFullscreenStyleSnapshots.delete(element)
+  })
+}
+
 function setMobileVideoDetailFrameWebFullscreen(root: HTMLElement, enabled: boolean): void {
   document.querySelectorAll<HTMLElement>(`[${MOBILE_VIDEO_DETAIL_FRAME_WEB_FULLSCREEN_ATTR}="true"]`).forEach((element) => {
     if (element !== root) {
       element.removeAttribute(MOBILE_VIDEO_DETAIL_FRAME_WEB_FULLSCREEN_ATTR)
-      if (element.hasAttribute(MOBILE_VIDEO_DETAIL_FRAME_PLAYER_ROOT_ATTR))
+      if (element.hasAttribute(MOBILE_VIDEO_DETAIL_FRAME_PLAYER_ROOT_ATTR)) {
+        restoreMobileVideoDetailFrameRootHome(element)
         applyMobileVideoDetailFrameRootInlineStyles(element)
+      }
     }
   })
 
-  root.toggleAttribute(MOBILE_VIDEO_DETAIL_FRAME_WEB_FULLSCREEN_ATTR, enabled)
-  document.documentElement.toggleAttribute(MOBILE_VIDEO_DETAIL_FRAME_WEB_FULLSCREEN_ATTR, enabled)
+  if (enabled) {
+    root.setAttribute(MOBILE_VIDEO_DETAIL_FRAME_WEB_FULLSCREEN_ATTR, 'true')
+    document.documentElement.setAttribute(MOBILE_VIDEO_DETAIL_FRAME_WEB_FULLSCREEN_ATTR, 'true')
+  }
+  else {
+    root.removeAttribute(MOBILE_VIDEO_DETAIL_FRAME_WEB_FULLSCREEN_ATTR)
+    document.documentElement.removeAttribute(MOBILE_VIDEO_DETAIL_FRAME_WEB_FULLSCREEN_ATTR)
+  }
+  setMobileVideoDetailFramePageFullscreenLock(enabled)
+  dockMobileVideoDetailFrameRootForWebFullscreen(root, enabled)
   applyMobileVideoDetailFrameRootInlineStyles(root)
 }
 
+function isMobileVideoDetailFrameOwnControl(element: Element): boolean {
+  return Boolean(element.closest(
+    `[${MOBILE_VIDEO_DETAIL_FRAME_PLAYER_TOOLBAR_ATTR}="true"], [data-bewly-mobile-frame-player-actions="true"], [data-bewly-mobile-frame-player-scrim="true"]`,
+  ))
+}
+
+function normalizeMobileVideoDetailFrameCompactText(text: string | null | undefined): string {
+  return (text ?? '').replace(/\s+/g, '').trim()
+}
+
+function getMobileVideoDetailFrameViewerTextFromElement(element: HTMLElement): string | undefined {
+  if (isMobileVideoDetailFrameOwnControl(element))
+    return undefined
+
+  const text = normalizeMobileVideoDetailFrameCompactText(element.textContent)
+  if (!text || text.length > 36)
+    return undefined
+
+  return text.match(MOBILE_VIDEO_DETAIL_FRAME_VIEWER_TEXT_PATTERN)?.[0]
+}
+
+function findMobileVideoDetailFrameViewerText(root: HTMLElement): string | undefined {
+  const selector = [
+    `[${MOBILE_VIDEO_DETAIL_FRAME_NATIVE_VIEWER_SOURCE_ATTR}="true"]`,
+    '[class*="online" i]',
+    '[class*="viewer" i]',
+    '[class*="audience" i]',
+    '[class*="watch" i]',
+    '[class*="people" i]',
+    '[class*="count" i]',
+    'span',
+    'div',
+  ].join(',')
+
+  const scopes = [root, document.body].filter((scope): scope is HTMLElement => scope instanceof HTMLElement)
+  for (const scope of scopes) {
+    const candidates = Array.from(scope.querySelectorAll<HTMLElement>(selector))
+    for (const candidate of candidates) {
+      const text = getMobileVideoDetailFrameViewerTextFromElement(candidate)
+      if (text)
+        return text
+    }
+  }
+
+  return undefined
+}
+
+function getMobileVideoDetailFrameNativeControlBoundary(candidate: HTMLElement): HTMLElement {
+  return candidate.closest<HTMLElement>(
+    'button, [role="button"], label, .bpx-player-ctrl-btn, .bpx-player-dm-switch, .bpx-player-dm-setting, [class*="danmu" i], [class*="danmaku" i], [class*="barrage" i], [class*="dm" i][class*="switch" i], [class*="dm" i][class*="setting" i], [class*="dm" i][class*="btn" i]',
+  ) ?? candidate
+}
+
+function isMobileVideoDetailFrameNativeDanmakuControl(candidate: HTMLElement): boolean {
+  if (isMobileVideoDetailFrameOwnControl(candidate))
+    return false
+
+  const text = normalizeMobileVideoDetailFrameCompactText(candidate.textContent)
+  const label = normalizeMobileVideoDetailFrameCompactText(candidate.getAttribute('aria-label'))
+  const title = normalizeMobileVideoDetailFrameCompactText(candidate.getAttribute('title'))
+  const className = typeof candidate.className === 'string' ? candidate.className.toLowerCase() : ''
+  const tagName = candidate.tagName.toLowerCase()
+  const hasDanmakuClass = className.includes('danmaku') || className.includes('danmu') || className.includes('barrage') || /\bdm\b/.test(className)
+  const hasDanmakuTag = tagName.includes('danmaku') || tagName.includes('danmu') || tagName.includes('barrage')
+  const hasControlClass = className.includes('switch') || className.includes('setting') || className.includes('toggle') || className.includes('control') || className.includes('btn') || className.includes('button')
+  const isInteractiveCandidate = candidate.matches('button, [role="button"], label, input, [aria-label], [title]')
+    || Boolean(candidate.closest('button, [role="button"], label'))
+  const hasCompactDanmakuText = /^(?:弹幕设置|弹幕开关|弹幕|弹)$/.test(text)
+    || (isInteractiveCandidate && /弹幕/.test(text) && text.length <= 16)
+  return hasCompactDanmakuText
+    || /弹幕/.test(label)
+    || /弹幕/.test(title)
+    || (hasDanmakuClass && hasControlClass)
+    || (hasDanmakuTag && (isInteractiveCandidate || hasControlClass))
+}
+
+function hideMobileVideoDetailFrameNativeDuplicateControl(element: HTMLElement): void {
+  element.setAttribute(MOBILE_VIDEO_DETAIL_FRAME_NATIVE_DUPLICATE_CONTROL_ATTR, 'true')
+  setMobileVideoDetailImportantStyles(element, {
+    'display': 'none',
+    'opacity': '0',
+    'pointer-events': 'none',
+    'visibility': 'hidden',
+  })
+}
+
+function syncMobileVideoDetailFrameNativeControlVisibility(root: HTMLElement): void {
+  document.querySelectorAll<HTMLElement>(`[${MOBILE_VIDEO_DETAIL_FRAME_NATIVE_DUPLICATE_CONTROL_ATTR}="true"], [${MOBILE_VIDEO_DETAIL_FRAME_NATIVE_VIEWER_SOURCE_ATTR}="true"]`).forEach((element) => {
+    element.removeAttribute(MOBILE_VIDEO_DETAIL_FRAME_NATIVE_DUPLICATE_CONTROL_ATTR)
+    element.removeAttribute(MOBILE_VIDEO_DETAIL_FRAME_NATIVE_VIEWER_SOURCE_ATTR)
+  })
+
+  const scopes = [root, document.body].filter((scope): scope is HTMLElement => scope instanceof HTMLElement)
+  const seenCandidates = new Set<HTMLElement>()
+  scopes.forEach((scope) => {
+    const candidates = Array.from(scope.querySelectorAll<HTMLElement>('button, [role="button"], label, span, div, [aria-label], [title], [class*="danmu" i], [class*="danmaku" i], [class*="barrage" i], [class*="dm" i]'))
+    candidates.forEach((candidate) => {
+      if (seenCandidates.has(candidate))
+        return
+
+      seenCandidates.add(candidate)
+      if (getMobileVideoDetailFrameViewerTextFromElement(candidate))
+        candidate.setAttribute(MOBILE_VIDEO_DETAIL_FRAME_NATIVE_VIEWER_SOURCE_ATTR, 'true')
+
+      if (isMobileVideoDetailFrameNativeDanmakuControl(candidate))
+        hideMobileVideoDetailFrameNativeDuplicateControl(getMobileVideoDetailFrameNativeControlBoundary(candidate))
+    })
+  })
+}
+
+function isMobileVideoDetailFrameInteractiveTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element))
+    return false
+
+  return Boolean(target.closest(
+    `[${MOBILE_VIDEO_DETAIL_FRAME_PLAYER_TOOLBAR_ATTR}="true"], [data-bewly-mobile-frame-player-actions="true"], button, a, input, textarea, select, [role="button"], [contenteditable="true"]`,
+  ))
+}
+
+function findMobileVideoDetailFrameNativeControl(root: HTMLElement, selector: string): HTMLElement | undefined {
+  return Array.from(root.querySelectorAll<HTMLElement>(selector))
+    .find(candidate => !isMobileVideoDetailFrameOwnControl(candidate))
+}
+
+function activateMobileVideoDetailFrameNativeControl(root: HTMLElement, selector: string): boolean {
+  const control = findMobileVideoDetailFrameNativeControl(root, selector)
+  if (!control)
+    return false
+
+  const clickTarget = control.matches('button, input, label, [role="button"]')
+    ? control
+    : control.querySelector<HTMLElement>('button, input, label, [role="button"]') ?? control
+  clickTarget.click()
+  return true
+}
+
+function toggleMobileVideoDetailFrameDanmaku(root: HTMLElement): void {
+  const shouldHide = !isMobileVideoDetailFrameDanmakuHidden(root)
+  activateMobileVideoDetailFrameNativeControl(root, MOBILE_VIDEO_DETAIL_FRAME_NATIVE_DANMAKU_TOGGLE_SELECTOR)
+  setMobileVideoDetailFrameDanmakuHidden(root, shouldHide)
+}
+
 function requestMobileVideoDetailWebFullscreen(playerWrapper: HTMLElement): boolean {
-  setMobileVideoDetailFrameWebFullscreen(playerWrapper, !isMobileVideoDetailFrameWebFullscreen(playerWrapper))
+  const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
+  if (now - mobileVideoDetailFrameLastFullscreenToggleAt < 650)
+    return true
+
+  mobileVideoDetailFrameLastFullscreenToggleAt = now
+  const shouldEnter = !isMobileVideoDetailFrameWebFullscreen(playerWrapper)
+  setMobileVideoDetailFrameWebFullscreen(playerWrapper, shouldEnter)
   const toolbar = playerWrapper.querySelector<HTMLElement>(`[${MOBILE_VIDEO_DETAIL_FRAME_PLAYER_TOOLBAR_ATTR}="true"]`)
   toolbar?.setAttribute(MOBILE_VIDEO_DETAIL_FRAME_PLAYER_CONTROLS_VISIBLE_ATTR, 'true')
   closeMobileVideoDetailFramePanels()
   return true
+}
+
+function clampMobileVideoDetailFrameVolume(value: number): number {
+  if (!Number.isFinite(value))
+    return 0
+
+  return Math.min(1, Math.max(0, value))
+}
+
+function setMobileVideoDetailFrameVideoVolume(video: HTMLVideoElement, value: number): number {
+  const volume = clampMobileVideoDetailFrameVolume(value)
+  try {
+    video.volume = volume
+    video.muted = volume <= 0
+    if (volume > 0)
+      video.muted = false
+  }
+  catch {
+    if (volume <= 0)
+      video.muted = true
+    else
+      video.muted = false
+  }
+
+  return video.muted ? 0 : clampMobileVideoDetailFrameVolume(video.volume)
+}
+
+function installMobileVideoDetailFrameVolumeGesture(root: HTMLElement, video: HTMLVideoElement, sourceKey: string): void {
+  const existingGesture = mobileVideoDetailFrameVolumeGestures.get(root)
+  if (existingGesture?.sourceKey === sourceKey)
+    return
+
+  existingGesture?.detach()
+
+  let pointerId: number | undefined
+  let startY = 0
+  let startVolume = 0
+  let gestureActive = false
+  let volumeHud: HTMLElement | undefined
+  let volumeHudTimer: number | undefined
+
+  const hideVolumeHud = () => {
+    if (!volumeHud)
+      return
+
+    volumeHud.style.setProperty('opacity', '0', 'important')
+  }
+
+  const showVolumeHud = (volume: number) => {
+    if (!volumeHud) {
+      volumeHud = document.createElement('div')
+      volumeHud.setAttribute('data-bewly-mobile-frame-player-volume-hud', 'true')
+      setMobileVideoDetailImportantStyles(volumeHud, {
+        'background': 'rgba(8, 10, 14, 0.72)',
+        'border': '0',
+        'border-radius': '999px',
+        'box-shadow': '0 8px 26px rgba(0, 0, 0, 0.34)',
+        'color': 'rgba(255, 255, 255, 0.96)',
+        'font': '750 clamp(12px, 3.4vw, 15px) / 1 system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif',
+        'opacity': '0',
+        'padding': 'clamp(8px, 2.2vw, 10px) clamp(12px, 3.4vw, 16px)',
+        'pointer-events': 'none',
+        'position': 'absolute',
+        'right': 'max(clamp(12px, 3.4vw, 20px), env(safe-area-inset-right, 0px))',
+        'text-shadow': '0 1px 2px rgba(0, 0, 0, 0.65)',
+        'top': '50%',
+        'transform': 'translateY(-50%)',
+        'transition': 'opacity 140ms cubic-bezier(0.2, 0, 0, 1)',
+        'white-space': 'nowrap',
+        'z-index': '32',
+      })
+      root.append(volumeHud)
+    }
+
+    volumeHud.textContent = `音量 ${Math.round(volume * 100)}%`
+    volumeHud.style.setProperty('opacity', '1', 'important')
+    if (volumeHudTimer)
+      window.clearTimeout(volumeHudTimer)
+    volumeHudTimer = window.setTimeout(hideVolumeHud, 720)
+  }
+
+  const startGesture = (event: PointerEvent) => {
+    if (!event.isPrimary || event.pointerType === 'mouse' || event.button !== 0 || isMobileVideoDetailFrameInteractiveTarget(event.target))
+      return
+
+    pointerId = event.pointerId
+    startY = event.clientY
+    startVolume = video.muted ? 0 : clampMobileVideoDetailFrameVolume(video.volume)
+    gestureActive = false
+  }
+
+  const moveGesture = (event: PointerEvent) => {
+    if (pointerId !== event.pointerId)
+      return
+
+    const deltaY = startY - event.clientY
+    if (!gestureActive && Math.abs(deltaY) < MOBILE_VIDEO_DETAIL_FRAME_VOLUME_GESTURE_THRESHOLD_PX)
+      return
+
+    gestureActive = true
+    try {
+      if (!root.hasPointerCapture(event.pointerId))
+        root.setPointerCapture(event.pointerId)
+    }
+    catch {}
+
+    const rootHeight = Math.max(120, root.getBoundingClientRect().height)
+    const volumeRange = Math.max(120, Math.min(320, rootHeight * 0.72))
+    const volume = setMobileVideoDetailFrameVideoVolume(video, startVolume + deltaY / volumeRange)
+    showVolumeHud(volume)
+    event.preventDefault()
+    event.stopPropagation()
+  }
+
+  const finishGesture = (event: PointerEvent) => {
+    if (pointerId !== event.pointerId)
+      return
+
+    pointerId = undefined
+    try {
+      if (root.hasPointerCapture(event.pointerId))
+        root.releasePointerCapture(event.pointerId)
+    }
+    catch {}
+
+    if (!gestureActive)
+      return
+
+    event.preventDefault()
+    event.stopPropagation()
+    gestureActive = false
+  }
+
+  root.addEventListener('pointerdown', startGesture, { capture: true, passive: false })
+  root.addEventListener('pointermove', moveGesture, { capture: true, passive: false })
+  root.addEventListener('pointerup', finishGesture, { capture: true, passive: false })
+  root.addEventListener('pointercancel', finishGesture, { capture: true, passive: false })
+  mobileVideoDetailFrameVolumeGestures.set(root, {
+    sourceKey,
+    detach: () => {
+      root.removeEventListener('pointerdown', startGesture, true)
+      root.removeEventListener('pointermove', moveGesture, true)
+      root.removeEventListener('pointerup', finishGesture, true)
+      root.removeEventListener('pointercancel', finishGesture, true)
+      if (volumeHudTimer)
+        window.clearTimeout(volumeHudTimer)
+      volumeHud?.remove()
+    },
+  })
 }
 
 function findMobileVideoDetailFrameVideo(): MobileVideoDetailFullscreenVideoElement | undefined {
@@ -1329,6 +1756,9 @@ function findMobileVideoDetailFrameOverlayRoot(video: HTMLVideoElement): HTMLEle
 }
 
 function ensureMobileVideoDetailFramePlayerSpacer(root: HTMLElement): void {
+  if (isMobileVideoDetailFrameWebFullscreen(root))
+    return
+
   if (!root.parentElement)
     return
 
@@ -1571,10 +2001,12 @@ function applyMobileVideoDetailFrameRootInlineStyles(root: HTMLElement): void {
   const isWebFullscreen = isMobileVideoDetailFrameWebFullscreen(root)
   setMobileVideoDetailImportantStyles(root, {
     'background': '#000',
+    'bottom': isWebFullscreen ? '0' : 'auto',
     'border': '0',
     'border-radius': '0',
     'box-shadow': 'none',
     'height': isWebFullscreen ? '100dvh' : 'var(--bewly-mobile-player-fixed-height)',
+    'isolation': 'isolate',
     'left': '0',
     'margin': '0',
     'max-height': isWebFullscreen ? '100dvh' : 'var(--bewly-mobile-player-fixed-height)',
@@ -1585,6 +2017,8 @@ function applyMobileVideoDetailFrameRootInlineStyles(root: HTMLElement): void {
     'position': 'fixed',
     'right': '0',
     'top': isWebFullscreen ? '0' : 'var(--bewly-mobile-player-fixed-top, 0px)',
+    'touch-action': 'none',
+    'transform': 'none',
     'width': '100vw',
     'z-index': isWebFullscreen ? '2147483100' : '2147482500',
   })
@@ -1616,13 +2050,14 @@ function ensureMobileVideoDetailFrameToolbar(): boolean {
     return false
 
   const root = findMobileVideoDetailFrameOverlayRoot(video)
+  const videoSourceKey = video.currentSrc || video.src || location.href
   markMobileVideoDetailPlayerCard(root)
   syncMobileVideoDetailPlayerMediaOrientation(root)
   root.setAttribute(MOBILE_VIDEO_DETAIL_FRAME_PLAYER_ROOT_ATTR, 'true')
   applyMobileVideoDetailFrameRootInlineStyles(root)
+  installMobileVideoDetailFrameVolumeGesture(root, video, videoSourceKey)
   ensureMobileVideoDetailFramePlayerSpacer(root)
 
-  const videoSourceKey = video.currentSrc || video.src || location.href
   let toolbar = document.querySelector<HTMLElement>(`[${MOBILE_VIDEO_DETAIL_FRAME_PLAYER_TOOLBAR_ATTR}="true"]`)
   if (toolbar && toolbar.getAttribute(MOBILE_VIDEO_DETAIL_FRAME_PLAYER_SOURCE_ATTR) !== videoSourceKey) {
     removeMobileVideoDetailFrameToolbars()
@@ -1677,9 +2112,21 @@ function ensureMobileVideoDetailFrameToolbar(): boolean {
       const activate = (event: Event) => {
         if (handledActivationEvents.has(event))
           return
-        if (event instanceof PointerEvent && event.pointerType === 'mouse' && event.button !== 0)
+
+        const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
+        if (event.type === 'click' && now - lastActivationAt < 700) {
+          event.preventDefault()
+          event.stopPropagation()
+          handledActivationEvents.add(event)
           return
-        if (event instanceof MouseEvent && event.button !== 0)
+        }
+
+        const pointerEvent = typeof PointerEvent !== 'undefined' && event instanceof PointerEvent ? event : undefined
+        if (pointerEvent && (pointerEvent.type !== 'pointerup' || (pointerEvent.pointerType === 'mouse' && pointerEvent.button !== 0)))
+          return
+        if (!pointerEvent && event instanceof MouseEvent && event.type !== 'click')
+          return
+        if (!pointerEvent && event instanceof MouseEvent && event.button !== 0)
           return
         if (event instanceof KeyboardEvent && event.key !== 'Enter' && event.key !== ' ')
           return
@@ -1688,18 +2135,14 @@ function ensureMobileVideoDetailFrameToolbar(): boolean {
         event.stopPropagation()
         handledActivationEvents.add(event)
 
-        const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
-        if (now - lastActivationAt < 320)
+        if (now - lastActivationAt < 700)
           return
 
         lastActivationAt = now
         action()
       }
 
-      element.addEventListener('pointerdown', activate, { passive: false })
       element.addEventListener('pointerup', activate, { passive: false })
-      element.addEventListener('mousedown', activate)
-      element.addEventListener('mouseup', activate)
       element.addEventListener('touchend', activate, { passive: false })
       element.addEventListener('click', activate)
       element.addEventListener('keydown', activate)
@@ -1760,14 +2203,26 @@ function ensureMobileVideoDetailFrameToolbar(): boolean {
       'white-space': 'nowrap',
     })
 
-    const topMoreButton = document.createElement('button')
-    topMoreButton.type = 'button'
-    topMoreButton.textContent = '•••'
-    topMoreButton.setAttribute('aria-label', '播放设置')
-    topMoreButton.setAttribute('data-bewly-mobile-frame-player-action', 'more')
-    applyMobileVideoDetailFrameButtonStyles(topMoreButton)
+    const viewerLabel = document.createElement('span')
+    viewerLabel.hidden = true
+    viewerLabel.setAttribute('data-bewly-mobile-frame-player-viewers', 'true')
+    setMobileVideoDetailImportantStyles(viewerLabel, {
+      'background': 'rgba(8, 10, 14, 0.46)',
+      'border-radius': '999px',
+      'color': 'rgba(255, 255, 255, 0.94)',
+      'display': 'none',
+      'font': '650 clamp(11px, 3.2vw, 13px) / 1 system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif',
+      'justify-self': 'end',
+      'max-width': '34vw',
+      'min-width': '0',
+      'overflow': 'hidden',
+      'padding': 'clamp(5px, 1.4dvh, 7px) clamp(8px, 2.3vw, 11px)',
+      'text-overflow': 'ellipsis',
+      'text-shadow': '0 1px 2px rgba(0, 0, 0, 0.65)',
+      'white-space': 'nowrap',
+    })
 
-    topBar.append(titleLabel, topMoreButton)
+    topBar.append(titleLabel, viewerLabel)
 
     const mainBar = document.createElement('div')
     mainBar.setAttribute('data-bewly-mobile-frame-player-mainbar', 'true')
@@ -1799,9 +2254,9 @@ function ensureMobileVideoDetailFrameToolbar(): boolean {
     playButton.setAttribute('data-bewly-mobile-frame-player-action', 'play-toggle')
     setMobileVideoDetailFrameIconButton(playButton, 'pause')
     applyMobileVideoDetailFrameButtonStyles(playButton, {
-      'background': 'rgba(251, 114, 153, 0.92)',
-      'box-shadow': '0 3px 12px rgba(251, 114, 153, 0.32), 0 1px 8px rgba(0, 0, 0, 0.28)',
-      'color': '#fff',
+      'background': 'rgba(10, 12, 16, 0.72)',
+      'box-shadow': '0 2px 10px rgba(0, 0, 0, 0.35)',
+      'color': 'rgba(255, 255, 255, 0.96)',
       'display': 'grid',
       'font-size': 'clamp(17px, 4.5vw, 22px)',
       'grid-area': 'play',
@@ -1837,7 +2292,7 @@ function ensureMobileVideoDetailFrameToolbar(): boolean {
       'width': 'clamp(36px, 9.6vw, 42px)',
     })
     bindMobileVideoDetailFrameActivation(mainDanmakuButton, () => {
-      setMobileVideoDetailFrameDanmakuHidden(root, !isMobileVideoDetailFrameDanmakuHidden(root))
+      toggleMobileVideoDetailFrameDanmaku(root)
       syncToolbar()
     })
 
@@ -2190,19 +2645,13 @@ function ensureMobileVideoDetailFrameToolbar(): boolean {
       }, MOBILE_VIDEO_DETAIL_LOGIN_CLOSE_ANIMATION_MS)
     }
 
-    const toggleSheet = () => {
-      const willOpen = actionSheet.hidden
-      closeMobileVideoDetailFramePanels(actionSheet)
-      setSheetOpen(willOpen)
-    }
-
     const runMobileVideoDetailFramePlayerAction = (actionName: string, source?: HTMLElement): boolean => {
       if (actionName === 'play-toggle') {
         togglePlayback()
         return true
       }
       if (actionName === 'danmaku') {
-        setMobileVideoDetailFrameDanmakuHidden(root, !isMobileVideoDetailFrameDanmakuHidden(root))
+        toggleMobileVideoDetailFrameDanmaku(root)
         syncToolbar()
         return true
       }
@@ -2210,10 +2659,6 @@ function ensureMobileVideoDetailFrameToolbar(): boolean {
         closeMobileVideoDetailFramePanels()
         requestMobileVideoDetailWebFullscreen(root)
         syncToolbar()
-        return true
-      }
-      if (actionName === 'more') {
-        toggleSheet()
         return true
       }
       const rate = source?.getAttribute('data-bewly-mobile-frame-player-speed-option')
@@ -2226,12 +2671,25 @@ function ensureMobileVideoDetailFrameToolbar(): boolean {
       return false
     }
 
+    let lastDelegatedActivationAt = 0
     const handleDelegatedFramePlayerActivation = (event: Event) => {
       if (handledActivationEvents.has(event))
         return
-      if (event instanceof PointerEvent && event.pointerType === 'mouse' && event.button !== 0)
+
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
+      if (event.type === 'click' && now - lastDelegatedActivationAt < 700) {
+        event.preventDefault()
+        event.stopPropagation()
+        handledActivationEvents.add(event)
         return
-      if (event instanceof MouseEvent && event.button !== 0)
+      }
+
+      const pointerEvent = typeof PointerEvent !== 'undefined' && event instanceof PointerEvent ? event : undefined
+      if (pointerEvent && (pointerEvent.type !== 'pointerup' || (pointerEvent.pointerType === 'mouse' && pointerEvent.button !== 0)))
+        return
+      if (!pointerEvent && event instanceof MouseEvent && event.type !== 'click')
+        return
+      if (!pointerEvent && event instanceof MouseEvent && event.button !== 0)
         return
       if (event instanceof KeyboardEvent && event.key !== 'Enter' && event.key !== ' ')
         return
@@ -2251,19 +2709,16 @@ function ensureMobileVideoDetailFrameToolbar(): boolean {
       event.preventDefault()
       event.stopPropagation()
       handledActivationEvents.add(event)
+      lastDelegatedActivationAt = now
     }
 
     ;[toolbar, actionSheet].forEach((surface) => {
-      surface.addEventListener('pointerdown', handleDelegatedFramePlayerActivation, { passive: false })
       surface.addEventListener('pointerup', handleDelegatedFramePlayerActivation, { passive: false })
-      surface.addEventListener('mousedown', handleDelegatedFramePlayerActivation)
-      surface.addEventListener('mouseup', handleDelegatedFramePlayerActivation)
       surface.addEventListener('touchend', handleDelegatedFramePlayerActivation, { passive: false })
       surface.addEventListener('click', handleDelegatedFramePlayerActivation)
       surface.addEventListener('keydown', handleDelegatedFramePlayerActivation)
     })
 
-    bindMobileVideoDetailFrameActivation(topMoreButton, toggleSheet)
     bindMobileVideoDetailFrameActivation(scrim, () => {
       setSheetOpen(false, true)
     })
@@ -2272,6 +2727,11 @@ function ensureMobileVideoDetailFrameToolbar(): boolean {
 
     syncToolbar = () => {
       titleLabel.textContent = getMobileVideoDetailFrameTitle()
+      syncMobileVideoDetailFrameNativeControlVisibility(root)
+      const viewerText = findMobileVideoDetailFrameViewerText(root)
+      viewerLabel.hidden = !viewerText
+      viewerLabel.textContent = viewerText ?? ''
+      viewerLabel.style.setProperty('display', viewerText ? 'block' : 'none', 'important')
 
       const isVideoVisible = isMobileVideoDetailFrameVideoVisibleInsideRoot(video, root)
       currentToolbar.toggleAttribute(MOBILE_VIDEO_DETAIL_FRAME_PLAYER_DETACHED_ATTR, !isVideoVisible)

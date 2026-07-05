@@ -20,18 +20,17 @@ import appViewSource from '../contentScripts/views/App.vue?raw'
 import mobileVideoDetailSource from '../contentScripts/views/VideoDetail/VideoDetail.vue?raw'
 import { AppPage } from '../enums/appEnums'
 import topBarStoreSource from '../stores/topBarStore.ts?raw'
-import mobileDesktopFallbackSource from '../userscript/mobile-desktop-fallback.ts?raw'
 import {
-  classifyMobileBilibiliPage,
-  classifyMobileTakeoverBilibiliPage,
   BEWLY_MOBILE_VIDEO_DRAWER_FRAME_PARAM,
   BEWLY_MOBILE_VIDEO_DRAWER_PARAM,
+  classifyMobileBilibiliPage,
+  classifyMobileTakeoverBilibiliPage,
   ensureMobileUserscriptViewportMeta,
-  getBewlyMobileVideoDrawerHomeUrl,
   getBewlyMobileLoginUrl,
+  getBewlyMobileVideoDrawerHomeUrl,
   getBewlyUserscriptHomeUrl,
-  hasBewlyMobileVideoDrawerFrameMarker,
   hasBewlyMobileLoginIntent,
+  hasBewlyMobileVideoDrawerFrameMarker,
   injectMobileNativeHeaderCSS,
   isBilibiliLoginUrl,
   isBilibiliVideoDetailPage,
@@ -39,11 +38,11 @@ import {
   isMobileBilibiliHomePage,
   isMobileBilibiliPage,
   isMobileUserscriptRuntimePage,
+  markBewlyMobileVideoDrawerFrameUrl,
   MOBILE_NATIVE_HEADER_CSS,
   MOBILE_USERSCRIPT_VIEWPORT_CONTENT,
   MOBILE_VIDEO_DETAIL_CSS,
   MOBILE_VIDEO_DETAIL_FRAME_CSS,
-  markBewlyMobileVideoDrawerFrameUrl,
   normalizeBilibiliUrlForCurrentSurface,
   removeMobileNativeHeaderCSS,
   restoreMobileUserscriptViewportMeta,
@@ -54,6 +53,7 @@ import {
   shouldUseMobileVideoDetailLayout,
 } from '../userscript/mobile'
 import mobileSource from '../userscript/mobile.ts?raw'
+import mobileDesktopFallbackSource from '../userscript/mobile-desktop-fallback.ts?raw'
 import { getMobileRouteAppPage, isCoreMobileRoute, parseMobileRoute } from '../userscript/mobile-route'
 import { parseDanmakuXml, parseMobileVideoUrl, selectPlayableVideoUrl } from '../userscript/mobile-video'
 import bilibiliTopBarSource from '../utils/bilibiliTopBar.ts?raw'
@@ -770,6 +770,7 @@ describe('mobile userscript support', () => {
     expect(contentScriptSource).toContain('return canAutoRedirect && false')
     expect(contentScriptSource).toContain('function isBewlyMobileVideoDetailDrawerFrame')
     expect(contentScriptSource).toContain('hasBewlyMobileVideoDrawerFrameMarker()')
+    // eslint-disable-next-line no-template-curly-in-string
     expect(contentScriptSource).toContain('location.search.includes(`${BEWLY_MOBILE_VIDEO_DRAWER_FRAME_PARAM}=1`)')
     expect(contentScriptSource).toContain('document.referrer.includes(BEWLY_MOBILE_VIDEO_DRAWER_PARAM)')
     expect(contentScriptSource).not.toContain('function redirectMobileVideoDetailToDrawerIfNeeded')
@@ -902,7 +903,9 @@ describe('mobile userscript support', () => {
     expect(contentScriptSource).toContain('requestMobileVideoDetailWebFullscreen')
     expect(contentScriptSource).toContain('setMobileVideoDetailFrameWebFullscreen')
     expect(contentScriptSource).toContain('MOBILE_VIDEO_DETAIL_FRAME_WEB_FULLSCREEN_ATTR')
-    expect(contentScriptSource).toContain('document.documentElement.toggleAttribute(MOBILE_VIDEO_DETAIL_FRAME_WEB_FULLSCREEN_ATTR')
+    expect(contentScriptSource).toContain('root.setAttribute(MOBILE_VIDEO_DETAIL_FRAME_WEB_FULLSCREEN_ATTR, \'true\')')
+    expect(contentScriptSource).toContain('document.documentElement.setAttribute(MOBILE_VIDEO_DETAIL_FRAME_WEB_FULLSCREEN_ATTR, \'true\')')
+    expect(contentScriptSource).not.toContain('document.documentElement.toggleAttribute(MOBILE_VIDEO_DETAIL_FRAME_WEB_FULLSCREEN_ATTR')
     expect(contentScriptSource).not.toContain('.requestFullscreen')
     expect(contentScriptSource).not.toContain('webkitRequestFullscreen')
     expect(contentScriptSource).not.toContain('fullscreenTarget')
@@ -910,21 +913,31 @@ describe('mobile userscript support', () => {
     expect(contentScriptSource).not.toContain('webkitEnterFullscreen')
     expect(contentScriptSource).not.toContain('webkitSetPresentationMode')
     expect(contentScriptSource).toContain('const bindMobileVideoDetailFrameActivation = (element: HTMLElement, action: () => void) => {')
-    expect(contentScriptSource).toContain('element.addEventListener(\'pointerdown\', activate, { passive: false })')
+    expect(contentScriptSource).not.toContain('element.addEventListener(\'pointerdown\', activate, { passive: false })')
     expect(contentScriptSource).toContain('element.addEventListener(\'pointerup\', activate, { passive: false })')
-    expect(contentScriptSource).toContain('element.addEventListener(\'mousedown\', activate)')
-    expect(contentScriptSource).toContain('element.addEventListener(\'mouseup\', activate)')
+    expect(contentScriptSource).not.toContain('element.addEventListener(\'mousedown\', activate)')
+    expect(contentScriptSource).not.toContain('element.addEventListener(\'mouseup\', activate)')
     expect(contentScriptSource).toContain('element.addEventListener(\'touchend\', activate, { passive: false })')
     expect(contentScriptSource).toContain('element.addEventListener(\'click\', activate)')
     expect(contentScriptSource).toContain('element.addEventListener(\'keydown\', activate)')
     expect(contentScriptSource).toContain('const handleDelegatedFramePlayerActivation = (event: Event) => {')
-    expect(contentScriptSource).toContain('surface.addEventListener(\'pointerdown\', handleDelegatedFramePlayerActivation, { passive: false })')
+    expect(contentScriptSource).not.toContain('surface.addEventListener(\'pointerdown\', handleDelegatedFramePlayerActivation, { passive: false })')
+    expect(contentScriptSource).toContain('surface.addEventListener(\'pointerup\', handleDelegatedFramePlayerActivation, { passive: false })')
     expect(contentScriptSource).toContain('surface.addEventListener(\'click\', handleDelegatedFramePlayerActivation)')
     expect(contentScriptSource).toContain('runMobileVideoDetailFramePlayerAction(actionName, actionTarget)')
+    expect(contentScriptSource).toContain('toggleMobileVideoDetailFrameDanmaku(root)')
+    expect(contentScriptSource).not.toContain('MOBILE_VIDEO_DETAIL_FRAME_NATIVE_WEB_FULLSCREEN_SELECTOR')
+    expect(contentScriptSource).not.toContain('activateMobileVideoDetailFrameNativeControl(playerWrapper')
+    expect(contentScriptSource).toContain('dockMobileVideoDetailFrameRootForWebFullscreen(root, enabled)')
+    expect(contentScriptSource).toContain('restoreMobileVideoDetailFrameRootHome(root)')
+    expect(contentScriptSource).toContain('mobileVideoDetailFrameLastFullscreenToggleAt')
+    expect(contentScriptSource).toContain('now - mobileVideoDetailFrameLastFullscreenToggleAt < 650')
+    expect(contentScriptSource).toContain('setMobileVideoDetailFramePageFullscreenLock(enabled)')
+    expect(contentScriptSource).toContain('installMobileVideoDetailFrameVolumeGesture(root, video, videoSourceKey)')
     expect(contentScriptSource).not.toContain('fullscreenButton.textContent = \'全屏\'')
     expect(contentScriptSource).not.toContain('playButton.textContent = viewState.playButtonText')
     expect(contentScriptSource).toContain('const MOBILE_VIDEO_DETAIL_FRAME_PLAYER_TOOLBAR_VERSION')
-    expect(contentScriptSource).toContain('control-row-icon-v11-main-row-safe-labels')
+    expect(contentScriptSource).toContain('control-row-page-fullscreen-v14')
     expect(contentScriptSource).toContain('function shouldRebuildMobileVideoDetailFrameToolbar')
     expect(contentScriptSource).toContain('playButton.type = \'button\'')
     expect(contentScriptSource).not.toContain('playButton.title = \'播放或暂停\'')
@@ -943,6 +956,8 @@ describe('mobile userscript support', () => {
     expect(playButtonBlock).not.toContain('\'position\': \'absolute\'')
     expect(playButtonBlock).not.toContain('\'order\': \'-3\'')
     expect(playButtonBlock).not.toContain('\'transform\': \'translateY(-50%)\'')
+    expect(playButtonBlock).not.toContain('rgba(251, 114, 153')
+    expect(playButtonBlock).toContain('\'background\': \'rgba(10, 12, 16, 0.72)\'')
     expect(contentScriptSource).toContain('setMobileVideoDetailFrameIconButton(fullscreenButton, \'fullscreen\')')
     expect(contentScriptSource).toContain('setMobileVideoDetailFrameIconButton(mainDanmakuButton')
     expect(contentScriptSource).toContain('progressWrap.append(timeLabel, progress)')
@@ -1007,6 +1022,8 @@ describe('mobile userscript support', () => {
       mobileSource.indexOf('const screenOrientationType = getScreenOrientationType()'),
     )
     expect(contentScriptSource).toContain('syncMobileVideoDetailFrameOverlayState')
+    expect(contentScriptSource).toContain('document.documentElement.setAttribute(MOBILE_VIDEO_DETAIL_FRAME_OVERLAY_ATTR, \'true\')')
+    expect(contentScriptSource).not.toContain('document.documentElement.toggleAttribute(MOBILE_VIDEO_DETAIL_FRAME_OVERLAY_ATTR')
     expect(contentScriptSource).toContain('if (!syncMobileVideoDetailFrameOverlayState())\n    return true')
     expect(contentScriptSource).toContain('window.visualViewport?.addEventListener(\'resize\', mobileVideoDetailFrameViewportHandler)')
     expect(contentScriptSource).toContain('MOBILE_VIDEO_DETAIL_FRAME_PLAYER_TOOLBAR_ATTR')
@@ -1046,9 +1063,24 @@ describe('mobile userscript support', () => {
     expect(contentScriptSource).toContain('hasMobileVideoDetailFrameNativeControlBar')
     expect(contentScriptSource).toContain('findMobileVideoDetailFrameOverlayRoot')
     expect(contentScriptSource).toContain('ensureMobileVideoDetailFramePlayerSpacer(root)')
+    expect(contentScriptSource).toContain('MOBILE_VIDEO_DETAIL_FRAME_VOLUME_GESTURE_THRESHOLD_PX')
+    expect(contentScriptSource).toContain('MOBILE_VIDEO_DETAIL_FRAME_NATIVE_DUPLICATE_CONTROL_ATTR')
+    expect(contentScriptSource).toContain('MOBILE_VIDEO_DETAIL_FRAME_NATIVE_VIEWER_SOURCE_ATTR')
+    expect(contentScriptSource).toContain('MOBILE_VIDEO_DETAIL_FRAME_WEB_FULLSCREEN_LOCK_ATTR')
+    expect(contentScriptSource).toContain('MOBILE_VIDEO_DETAIL_FRAME_VIEWER_TEXT_PATTERN')
+    expect(contentScriptSource).toContain('syncMobileVideoDetailFrameNativeControlVisibility(root)')
+    expect(contentScriptSource).toContain('hideMobileVideoDetailFrameNativeDuplicateControl')
+    expect(contentScriptSource).toContain('[class*="danmu" i], [class*="danmaku" i], [class*="barrage" i], [class*="dm" i]')
+    expect(contentScriptSource).toContain('document.querySelectorAll<HTMLElement>(`[')
+    expect(contentScriptSource).toContain('MOBILE_VIDEO_DETAIL_FRAME_NATIVE_DUPLICATE_CONTROL_ATTR}="true"], [')
+    expect(contentScriptSource).toContain('const scopes = [root, document.body].filter')
+    expect(contentScriptSource).toContain('findMobileVideoDetailFrameViewerText(root)')
+    expect(contentScriptSource).toContain('data-bewly-mobile-frame-player-volume-hud')
     expect(contentScriptSource).toContain('isMobileVideoDetailFrameVideoVisibleInsideRoot(video, root)')
     expect(contentScriptSource).toContain('MOBILE_VIDEO_DETAIL_FRAME_PLAYER_DETACHED_ATTR')
     expect(contentScriptSource).toContain('MOBILE_VIDEO_DETAIL_FRAME_PLAYER_SPACER_ATTR')
+    expect(contentScriptSource).toContain('MOBILE_VIDEO_DETAIL_FRAME_PLAYER_HOME_ATTR')
+    expect(contentScriptSource).toContain('const mobileVideoDetailFrameRootHomes = new WeakMap<HTMLElement, HTMLElement>()')
     expect(contentScriptSource).toContain('removeMobileVideoDetailFrameToolbars')
     expect(contentScriptSource).toContain('[data-bewly-mobile-frame-player-floating="true"]')
     expect(contentScriptSource).toContain('const controlledRoot = Array.from(document.querySelectorAll<HTMLElement>(\'[class*="player"], [class*="Player"]\'))')
@@ -1067,6 +1099,7 @@ describe('mobile userscript support', () => {
     expect(contentScriptSource).toContain('data-bewly-mobile-frame-player-mainbar')
     expect(contentScriptSource).toContain('data-bewly-mobile-frame-player-progress')
     expect(contentScriptSource).toContain('data-bewly-mobile-frame-player-actions')
+    expect(contentScriptSource).toContain('data-bewly-mobile-frame-player-viewers')
     expect(contentScriptSource).toContain('bili-comments')
     expect(contentScriptSource).toContain('data-bewly-mobile-comment-shadow-style')
     expect(contentScriptSource).toContain('normalizeMobileVideoDetailCommentShadowStyles')
@@ -1078,7 +1111,9 @@ describe('mobile userscript support', () => {
     expect(contentScriptSource).toContain('bili-comment-renderer')
     expect(contentScriptSource).toContain('bili-rich-text')
     expect(contentScriptSource).toContain('toolbar.append(topBar, mainBar)')
-    expect(contentScriptSource).toContain('topBar.append(titleLabel, topMoreButton)')
+    expect(contentScriptSource).toContain('topBar.append(titleLabel, viewerLabel)')
+    expect(contentScriptSource).not.toContain('topMoreButton')
+    expect(contentScriptSource).not.toContain('data-bewly-mobile-frame-player-action\', \'more\'')
     expect(contentScriptSource).not.toContain('topBar.append(backButton')
     expect(contentScriptSource).not.toContain('data-bewly-mobile-frame-player-action\', \'back\'')
     expect(contentScriptSource).toContain('root.append(toolbar)')
@@ -1097,6 +1132,12 @@ describe('mobile userscript support', () => {
     expect(contentScriptSource).not.toContain('video.loop = !video.loop')
     expect(contentScriptSource).toContain('requestMobileVideoDetailWebFullscreen(root)')
     expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('[data-bewly-mobile-frame-web-fullscreen="true"]')
+    expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('[data-bewly-mobile-frame-web-fullscreen="true"] body')
+    expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('overscroll-behavior: none !important')
+    expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('position: fixed !important')
+    expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('inset: 0 !important')
+    expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('transform: none !important')
+    expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('[data-bewly-mobile-frame-web-fullscreen-lock="true"]')
     expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('height: 100dvh !important')
     expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('object-fit: contain !important')
     expect(contentScriptSource).toContain('setMobileVideoDetailFrameDanmakuHidden(root')
@@ -1205,16 +1246,29 @@ describe('mobile userscript support', () => {
     expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('[data-bewly-mobile-frame-player-toolbar="true"]')
     expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('[data-bewly-mobile-frame-player-root="true"] {\n    position: fixed !important')
     expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('[data-bewly-mobile-frame-player-spacer="true"]')
+    expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('[data-bewly-mobile-frame-player-home="true"]')
     expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('[data-bewly-mobile-frame-player-toolbar="true"] {\n    position: absolute !important')
     expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('[data-bewly-mobile-frame-player-toolbar="true"][data-bewly-mobile-frame-player-detached]')
     expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('[data-bewly-mobile-frame-player-toolbar="true"][data-bewly-mobile-frame-player-detached] {\n    opacity: 1 !important;\n    visibility: visible !important')
     expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).not.toContain('[data-bewly-mobile-frame-player-toolbar="true"][data-bewly-mobile-frame-player-detached] {\n    opacity: 0 !important')
     expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('height: 100% !important')
+    expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('touch-action: none !important')
     expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('[data-bewly-mobile-frame-player-scrim="true"]')
     expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('background: rgba(0, 0, 0, 0.58) !important')
     expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('[data-bewly-mobile-frame-player-topbar="true"]')
     expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('grid-template-columns: minmax(0, 1fr) auto !important')
     expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('[data-bewly-mobile-frame-player-title="true"]')
+    expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('[data-bewly-mobile-frame-player-viewers="true"]')
+    expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('[data-bewly-mobile-frame-player-viewers="true"][hidden]')
+    expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('[data-bewly-mobile-frame-native-duplicate-control="true"]')
+    expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('[data-bewly-mobile-frame-native-viewer-source="true"]')
+    expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('html[data-bewly-mobile-video-detail-frame="true"][data-bewly-mobile-video-detail-frame-overlay="true"] :is(')
+    expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('.bili-mini-mask')
+    expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('.bili-mini')
+    expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('.mplayer-danmaku-switch')
+    expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('[class*="danmu" i][class*="btn" i]')
+    expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('[class*="barrage" i][class*="button" i]')
+    expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('display: none !important')
     expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85)')
     expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('[data-bewly-mobile-frame-player-mainbar="true"]')
     expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain(':not([data-bewly-mobile-frame-player-controls-visible])')
@@ -1236,14 +1290,16 @@ describe('mobile userscript support', () => {
     expect(frameMainbarCss).not.toContain('calc(env(safe-area-inset-left, 0px) + 44px)')
     const playToggleCss = MOBILE_VIDEO_DETAIL_FRAME_CSS.slice(
       MOBILE_VIDEO_DETAIL_FRAME_CSS.indexOf('[data-bewly-mobile-frame-player-action="play-toggle"] {'),
-      MOBILE_VIDEO_DETAIL_FRAME_CSS.indexOf('[data-bewly-mobile-frame-player-action="danmaku"] {'),
+      MOBILE_VIDEO_DETAIL_FRAME_CSS.indexOf('[data-bewly-mobile-frame-player-volume-hud="true"] {'),
     )
     expect(playToggleCss).not.toContain('position: absolute !important')
     expect(playToggleCss).not.toContain('transform: translateY(-50%)')
     expect(playToggleCss).not.toContain('order: -3 !important')
     expect(playToggleCss).toContain('display: grid !important')
     expect(playToggleCss).toContain('grid-area: play !important')
-    expect(playToggleCss).toContain('background: rgba(251, 114, 153, 0.92) !important')
+    expect(playToggleCss).not.toContain('background: rgba(251, 114, 153, 0.92) !important')
+    expect(playToggleCss).toContain('background: rgba(10, 12, 16, 0.72) !important')
+    expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('[data-bewly-mobile-frame-player-volume-hud="true"]')
     expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).not.toContain('max(clamp(48px, 12vw, 56px), calc(env(safe-area-inset-left, 0px) + 48px)) !important')
     expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('border-radius: 18px 18px 0 0 !important')
     expect(MOBILE_VIDEO_DETAIL_FRAME_CSS).toContain('background: #171a21 !important')
