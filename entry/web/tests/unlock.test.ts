@@ -8,6 +8,18 @@ import { checkProjectAccess } from "../server/utils/access.ts";
 import { handleProtectedDownipUpdateRequest } from "../server/routes/update.post.ts";
 import { handleProxyRequest } from "../server/routes/api/proxy/[...path].ts";
 import { handleRootProxyRequest } from "../server/routes/api/proxy.ts";
+import { createAdminSessionHandler } from "../server/routes/api/admin/session.post.ts";
+
+const adminCookie = async (): Promise<string> => {
+  const response = await createAdminSessionHandler(
+    new Request("http://localhost/api/admin/session", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key: "TEST" }),
+    }),
+  );
+  return response.headers.get("set-cookie")!.split(";", 1)[0]!;
+};
 
 Deno.test("unlock handler rejects requests without a key", async () => {
   const response = await unlockHandler(
@@ -141,7 +153,7 @@ Deno.test("admin unlock save generates a five-character key", async () => {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-openfx-admin-key": "TEST",
+        cookie: await adminCookie(),
       },
       body: JSON.stringify({
         label: "Generated rule",

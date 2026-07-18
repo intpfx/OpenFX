@@ -4,9 +4,22 @@ import { checkAdminAccessHandler } from "../server/routes/api/admin/access.get.t
 import { deleteAdminKvHandler } from "../server/routes/api/admin/kv.delete.ts";
 import { listAdminKvHandler } from "../server/routes/api/admin/kv.get.ts";
 import { saveAdminKvHandler } from "../server/routes/api/admin/kv.post.ts";
+import { createAdminSessionHandler } from "../server/routes/api/admin/session.post.ts";
 
-Deno.test("admin access check validates the server-side admin key", async () => {
-  const rejected = checkAdminAccessHandler(
+const adminCookie = async (): Promise<string> => {
+  const response = await createAdminSessionHandler(
+    new Request("http://localhost/api/admin/session", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key: "TEST" }),
+    }),
+  );
+  expect(response.status).toBe(200);
+  return response.headers.get("set-cookie")!.split(";", 1)[0]!;
+};
+
+Deno.test("admin access check validates the cookie session", async () => {
+  const rejected = await checkAdminAccessHandler(
     new Request("http://localhost/api/admin/access"),
   );
   expect(rejected.status).toBe(401);
@@ -15,9 +28,16 @@ Deno.test("admin access check validates the server-side admin key", async () => 
     error: "unauthorized",
   });
 
-  const accepted = checkAdminAccessHandler(
+  const legacy = await checkAdminAccessHandler(
     new Request("http://localhost/api/admin/access", {
       headers: { "x-openfx-admin-key": "TEST" },
+    }),
+  );
+  expect(legacy.status).toBe(401);
+
+  const accepted = await checkAdminAccessHandler(
+    new Request("http://localhost/api/admin/access", {
+      headers: { cookie: await adminCookie() },
     }),
   );
   expect(accepted.status).toBe(200);
@@ -37,6 +57,7 @@ Deno.test("admin KV list rejects requests without the admin key", async () => {
 });
 
 Deno.test("admin KV handler can save, list, and delete a record", async () => {
+  const cookie = await adminCookie();
   const key = ["test", "admin-kv", crypto.randomUUID()];
   const value = {
     ipv6: "2001:db8::42",
@@ -48,7 +69,7 @@ Deno.test("admin KV handler can save, list, and delete a record", async () => {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-openfx-admin-key": "TEST",
+        cookie,
       },
       body: JSON.stringify({ key, value }),
     }),
@@ -70,7 +91,7 @@ Deno.test("admin KV handler can save, list, and delete a record", async () => {
     });
     const listResponse = await listAdminKvHandler(
       new Request(`http://localhost/api/admin/kv?${params.toString()}`, {
-        headers: { "x-openfx-admin-key": "TEST" },
+        headers: { cookie },
       }),
     );
 
@@ -89,7 +110,7 @@ Deno.test("admin KV handler can save, list, and delete a record", async () => {
     const deleteResponse = await deleteAdminKvHandler(
       new Request(`http://localhost/api/admin/kv?${params.toString()}`, {
         method: "DELETE",
-        headers: { "x-openfx-admin-key": "TEST" },
+        headers: { cookie },
       }),
     );
 

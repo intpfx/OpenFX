@@ -1,16 +1,10 @@
 import { defineEventHandler } from "h3";
 
 import { getKv } from "../../../../../../domains/_shared/kv.ts";
-import { getAdminUnlockKey } from "../../../admin/unlocks.ts";
+import { requireAdminSession } from "../../../console/admin.ts";
 import { createWebRequest } from "../../../utils/request.ts";
 
 type JsonKvKeyPart = string | number | boolean;
-
-const isAuthorized = (req: Request): boolean => {
-  const configured = getAdminUnlockKey();
-  const provided = (req.headers.get("x-openfx-admin-key") ?? "").trim();
-  return !!configured && provided === configured;
-};
 
 const isJsonKvKey = (value: unknown): value is JsonKvKeyPart[] => {
   return Array.isArray(value) && value.length > 0 &&
@@ -21,9 +15,8 @@ const isJsonKvKey = (value: unknown): value is JsonKvKeyPart[] => {
 };
 
 export const saveAdminKvHandler = async (req: Request): Promise<Response> => {
-  if (!isAuthorized(req)) {
-    return Response.json({ ok: false, error: "unauthorized" }, { status: 401 });
-  }
+  const denied = await requireAdminSession(req);
+  if (denied) return denied;
 
   let body: unknown;
   try {

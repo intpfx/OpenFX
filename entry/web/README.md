@@ -68,3 +68,26 @@ Web 页底部会展示构建版本。`deno task build` 会自动补齐：
 - `DOWNIP_REDIRECT_SCHEME` — 重定向协议，默认 `http`
 - `DOWNIP_REDIRECT_PORT` — 可选的全局重定向端口覆盖值
 - `OPENFX_PROXY_UPSTREAM` — 设置后启用可选代理路由
+- `OPENFX_ADMIN_KEY` — 管理控制台登录密钥；Deno Deploy 生产环境必须显式配置
+- `OPENFX_NODE_CREDENTIAL_KEY` — 32 字节文本或 32 字节 Base64URL 密钥，用于 AES-256-GCM
+  加密保存配对节点凭据
+
+## OpenFX Console 控制面
+
+管理 API 使用 12 小时绝对有效期的 `HttpOnly`、`SameSite=Strict` cookie，会话 token 仅以
+SHA-256 摘要保存。除 localhost 外 cookie 同时带 `Secure`；旧的 `x-openfx-admin-key`
+header 不再授权 `/api/admin/*` 或 `/api/console/*`。
+
+- `POST|GET|DELETE /api/admin/session` — 登录、恢复和退出会话
+- `POST /api/console/pairings` — 创建 10 分钟、原子单次使用的配对码
+- `POST /api/node/pair` — 配对唯一活动节点并一次性返回节点 secret
+- `POST /api/node/heartbeat`、`POST /api/node/telemetry` — 上报节点状态和遥测
+- `GET /api/console/overview`、`GET /api/console/processes` — 固定 Relay 查询
+- `GET|POST /api/console/agent/messages`、`GET|POST /api/console/approvals` — Agent
+  消息和审批固定操作
+- `GET|POST /api/console/relay` — Relay 状态与设置
+- `GET /api/console/telemetry`、`GET /api/console/audit` — 7 日分钟遥测和审计
+- `GET /api/console/events` — 支持 `Last-Event-ID` 的 SSE 事件流
+
+Relay 不接受目标 URL。服务端只连接当前配对节点上报的全局 IPv6，端口固定为
+`24531`，并使用共享 OpenFX Node v1 协议签名、加密请求和解密响应。
