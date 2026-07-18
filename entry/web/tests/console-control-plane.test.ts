@@ -2,6 +2,7 @@ import { expect } from "@std/expect";
 
 import {
   type ConsoleControlPlane,
+  consoleRelayTimeoutMs,
   createConsoleControlPlane,
   createMemoryConsoleStore,
   formatSseEvent,
@@ -17,6 +18,12 @@ import {
 import { decodeBase64Url } from "../../../domains/_shared/openfx-node/encoding.ts";
 
 const CREDENTIAL_KEY = "0123456789abcdef0123456789abcdef";
+
+Deno.test("Agent Relay timeout covers the shared 30 second node turn", () => {
+  expect(consoleRelayTimeoutMs("overview")).toBe(8_000);
+  expect(consoleRelayTimeoutMs("agent.messages.get")).toBe(35_000);
+  expect(consoleRelayTimeoutMs("agent.messages.post")).toBe(35_000);
+});
 
 const jsonRequest = (url: string, body: unknown, headers: HeadersInit = {}) =>
   new Request(url, {
@@ -779,10 +786,18 @@ Deno.test("Relay uses only the paired IPv6, port 24531, and fixed operation path
   let calledUrl = "";
   let tamperReply = false;
   let wrongCorrelation = false;
+  let redirectReply = false;
   const cryptoAdapter = createWebCryptoAdapter();
   const { plane } = createHarness({
     fetch: async (input, init) => {
       calledUrl = String(input);
+      expect(init?.redirect).toBe("manual");
+      if (redirectReply) {
+        return new Response(null, {
+          status: 307,
+          headers: { location: "https://attacker.example/collect" },
+        });
+      }
       const requestEnvelope = JSON.parse(String(init?.body));
       const request = await openRelayEnvelope<{
         nonce: string;
@@ -835,6 +850,17 @@ Deno.test("Relay uses only the paired IPv6, port 24531, and fixed operation path
     overview: { hostname: "studio" },
   });
   expect(calledUrl).toBe("http://[2001:4860:4860::8844]:24531/v1/relay");
+
+  redirectReply = true;
+  const redirected = await plane.console.handle(
+    new Request("http://localhost/api/console/overview", { headers: { cookie } }),
+    "overview",
+  );
+  expect(redirected.status).toBe(502);
+  await expect(redirected.json()).resolves.toMatchObject({
+    error: "node_relay_unavailable",
+  });
+  redirectReply = false;
 
   wrongCorrelation = true;
   const mismatched = await plane.console.handle(

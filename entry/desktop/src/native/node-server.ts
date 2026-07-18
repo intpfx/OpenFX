@@ -17,7 +17,7 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 export interface NodeServerOptions {
   crypto: NodeCryptoAdapter;
   loadSecret(): Promise<Uint8Array | null>;
-  dispatch(request: SignableNodeRequest): Promise<unknown>;
+  dispatch(request: SignableNodeRequest, signal?: AbortSignal): Promise<unknown>;
   host?: string;
   port?: number;
   replayStore?: PersistentReplayStore;
@@ -41,6 +41,7 @@ export const startNodeServer = (
   let protocol: ReturnType<typeof createNodeRelayProtocol> | null = null;
   const server = createServer((request, response) => {
     void handleRequest(request, response).catch((error) => {
+      if (request.aborted || response.destroyed) return;
       if (response.headersSent) {
         response.destroy(
           error instanceof Error ? error : new Error(String(error)),
@@ -76,29 +77,45 @@ export const startNodeServer = (
       });
       return;
     }
-    const secret = await options.loadSecret();
-    if (!secret) {
-      json(response, 503, {
-        ok: false,
-        error: OPENFX_NODE_ERROR_CODES.nodeUnpaired,
-      });
-      return;
+    const abortController = new AbortController();
+    const abortDispatch = (): void => abortController.abort();
+    const abortClosedResponse = (): void => {
+      if (!response.writableEnded) abortDispatch();
+    };
+    request.once("aborted", abortDispatch);
+    response.once("close", abortClosedResponse);
+    try {
+      const secret = await options.loadSecret();
+      if (!secret) {
+        json(response, 503, {
+          ok: false,
+          error: OPENFX_NODE_ERROR_CODES.nodeUnpaired,
+        });
+        return;
+      }
+      const nextKey = Buffer.from(secret).toString("base64");
+      if (!protocol || nextKey !== protocolKey) {
+        protocolKey = nextKey;
+        protocol = createNodeRelayProtocol({
+          crypto: options.crypto,
+          secret,
+          dispatch: options.dispatch,
+          replayStore: options.replayStore,
+        });
+      }
+      const envelope = await readJson(
+        request,
+        options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
+      ) as SealedRelayEnvelope;
+      json(
+        response,
+        200,
+        await protocol.handle(envelope, abortController.signal),
+      );
+    } finally {
+      request.removeListener("aborted", abortDispatch);
+      response.removeListener("close", abortClosedResponse);
     }
-    const nextKey = Buffer.from(secret).toString("base64");
-    if (!protocol || nextKey !== protocolKey) {
-      protocolKey = nextKey;
-      protocol = createNodeRelayProtocol({
-        crypto: options.crypto,
-        secret,
-        dispatch: options.dispatch,
-        replayStore: options.replayStore,
-      });
-    }
-    const envelope = await readJson(
-      request,
-      options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
-    ) as SealedRelayEnvelope;
-    json(response, 200, await protocol.handle(envelope));
   };
 
   server.requestTimeout = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
@@ -192,6 +209,10 @@ const readJson = (
       }
     });
     request.on("error", (error) => finish(() => reject(error)));
+    request.on(
+      "aborted",
+      () => finish(() => reject(new Error("relay_client_aborted"))),
+    );
   });
 
 const json = (

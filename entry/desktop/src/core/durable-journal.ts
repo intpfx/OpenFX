@@ -64,8 +64,17 @@ export interface DesktopJournalOptions {
   createId?: () => string;
 }
 
+export interface JournalOperationContext {
+  deadlineAt?: number;
+  signal?: AbortSignal;
+}
+
 export interface DesktopJournal extends ApprovalConsumptionStore {
-  registerRequest(request: BoundaryRequest, nodeId: string): Promise<void>;
+  registerRequest(
+    request: BoundaryRequest,
+    nodeId: string,
+    context?: JournalOperationContext,
+  ): Promise<void>;
   get(id: string): Promise<BoundaryRequest | null>;
   list(): Promise<BoundaryRequest[]>;
   recordApplicationOutcome(
@@ -217,8 +226,9 @@ export const createDesktopJournal = (
       });
     },
 
-    registerRequest(request, nodeId) {
+    registerRequest(request, nodeId, context) {
       return storage.transact((events) => {
+        assertJournalOperationActive(context);
         const state = reduceJournal(events);
         const existing = state.approvalsByRequest.get(request.id) ??
           state.approvalsByAction.get(request.action.id);
@@ -381,6 +391,15 @@ export const createMemoryJournalStorage = (): JournalStorage => {
       return Promise.resolve(true);
     },
   };
+};
+
+const assertJournalOperationActive = (
+  context: JournalOperationContext | undefined,
+): void => {
+  if (context?.signal?.aborted) throw new Error("agent_turn_aborted");
+  if (context?.deadlineAt !== undefined && Date.now() >= context.deadlineAt) {
+    throw new Error("agent_turn_deadline");
+  }
 };
 
 const reduceJournal = (events: readonly JournalEvent[]): JournalState => {

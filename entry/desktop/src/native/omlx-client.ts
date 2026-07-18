@@ -22,11 +22,16 @@ export type JsonRequester = (
 export type TextStreamRequester = (
   request: HttpJsonRequest,
   onChunk: (chunk: string) => void | Promise<void>,
-  options?: { deadlineAt?: number },
+  options?: { deadlineAt?: number; signal?: AbortSignal },
 ) => Promise<{ status: number }>;
 
 export interface OmlxClientOptions {
   streamDeadlineMs?: number;
+}
+
+export interface OmlxChatExecutionOptions {
+  deadlineAt?: number;
+  signal?: AbortSignal;
 }
 
 export interface OmlxToolCall {
@@ -40,11 +45,23 @@ export interface OmlxChatResult {
   toolCalls: OmlxToolCall[];
 }
 
+export interface OmlxToolResult {
+  toolCallId: string;
+  content: string;
+}
+
+export interface OmlxToolRound {
+  assistant: OmlxChatResult;
+  toolResults: OmlxToolResult[];
+}
+
 export interface OmlxClient {
   readonly tools: unknown[];
   chat(
     message: string,
     onDelta?: (delta: string) => void | Promise<void>,
+    toolRounds?: OmlxToolRound[],
+    execution?: OmlxChatExecutionOptions,
   ): Promise<OmlxChatResult>;
   status(): Promise<{ online: boolean; errorMessage: string | null }>;
 }
@@ -53,7 +70,7 @@ const MAX_SSE_LINE_CHARS = 64 * 1024;
 const MAX_SSE_INPUT_CHARS = 1024 * 1024;
 const MAX_SSE_LINES = 4096;
 const MAX_SSE_FRAMES = 1024;
-const MAX_CONTENT_CHARS = 256 * 1024;
+const MAX_CONTENT_BYTES = 128 * 1024;
 const MAX_TOOL_CALLS = 32;
 const MAX_TOOL_ARGUMENT_CHARS = 64 * 1024;
 const MAX_TOOL_ID_CHARS = 256;
@@ -76,14 +93,21 @@ export const createOmlxClient = (
 ): OmlxClient => {
   const client: OmlxClient = {
     tools,
-    async chat(message, onDelta) {
+    async chat(message, onDelta, toolRounds = [], execution = {}) {
+      if (execution.signal?.aborted) throw new Error("omlx_request_aborted");
+      const messages = createOmlxMessages(message, toolRounds);
+      const deadlineAt = Math.min(
+        execution.deadlineAt ?? Number.POSITIVE_INFINITY,
+        Date.now() + normalizeStreamDuration(options.streamDeadlineMs),
+      );
       if (requestStream && onDelta) {
         return await streamChat(
           client.tools,
-          message,
+          messages,
           requestStream,
           onDelta,
-          normalizeStreamDuration(options.streamDeadlineMs),
+          deadlineAt,
+          execution.signal,
         );
       }
       const response = await requestJson({
@@ -94,10 +118,12 @@ export const createOmlxClient = (
         method: "POST",
         body: {
           model: "local",
-          messages: [{ role: "user", content: message }],
+          messages,
           tools: client.tools,
         },
       });
+      if (execution.signal?.aborted) throw new Error("omlx_request_aborted");
+      if (Date.now() >= deadlineAt) throw new Error("omlx_stream_deadline");
       if (response.status < 200 || response.status >= 300) {
         throw new Error(`omlx_http_${response.status}`);
       }
@@ -120,14 +146,16 @@ export const createOmlxClient = (
 
 const streamChat = async (
   tools: unknown[],
-  message: string,
+  messages: unknown[],
   requestStream: TextStreamRequester,
   onDelta: (delta: string) => void | Promise<void>,
-  streamDeadlineMs: number,
+  deadlineAt: number,
+  signal?: AbortSignal,
 ): Promise<OmlxChatResult> => {
-  const deadlineAt = Date.now() + streamDeadlineMs;
+  if (signal?.aborted) throw new Error("omlx_request_aborted");
   let lineBuffer = "";
   let content = "";
+  let contentBytes = 0;
   let inputChars = 0;
   let lineCount = 0;
   let frameCount = 0;
@@ -166,12 +194,14 @@ const streamChat = async (
     const delta = objectValue(objectValue(choices[0]).delta);
     const text = stringValue(delta.content);
     if (text) {
-      if (content.length + text.length > MAX_CONTENT_CHARS) {
+      contentBytes += new TextEncoder().encode(text).byteLength;
+      if (contentBytes > MAX_CONTENT_BYTES) {
         throw new Error("omlx_content_too_large");
       }
       content += text;
       callbacks = observeRejection(
         callbacks.then(async () => {
+          if (signal?.aborted) throw new Error("omlx_request_aborted");
           if (callbackError || deadlineExpired) return;
           if (Date.now() >= deadlineAt) {
             deadlineExpired = true;
@@ -183,6 +213,7 @@ const streamChat = async (
             callbackError = new Error("omlx_delta_callback_failed");
             throw callbackError;
           }
+          if (signal?.aborted) throw new Error("omlx_request_aborted");
         }),
       );
     }
@@ -224,7 +255,7 @@ const streamChat = async (
       method: "POST",
       body: {
         model: "local",
-        messages: [{ role: "user", content: message }],
+        messages,
         tools,
         stream: true,
       },
@@ -254,11 +285,19 @@ const streamChat = async (
         throw streamError;
       }
       return callbacks;
-    }, { deadlineAt });
-    response = await settleBeforeDeadline(request, deadlineAt, () => {
-      deadlineExpired = true;
-    });
+    }, { deadlineAt, signal });
+    response = await settleBeforeDeadline(
+      request,
+      deadlineAt,
+      () => {
+        deadlineExpired = true;
+      },
+      signal,
+    );
   } catch (error) {
+    if (signal?.aborted || errorMessage(error) === "http_stream_aborted") {
+      throw new Error("omlx_request_aborted");
+    }
     if (streamError) throw streamError;
     if (callbackError) throw callbackError;
     if (deadlineExpired || errorMessage(error) === "http_stream_deadline") {
@@ -267,10 +306,16 @@ const streamChat = async (
     throw error;
   }
   if (streamError) throw streamError;
+  if (signal?.aborted) throw new Error("omlx_request_aborted");
   if (lineBuffer.trim()) consumeLine(lineBuffer.trim());
-  await settleBeforeDeadline(callbacks, deadlineAt, () => {
-    deadlineExpired = true;
-  });
+  await settleBeforeDeadline(
+    callbacks,
+    deadlineAt,
+    () => {
+      deadlineExpired = true;
+    },
+    signal,
+  );
   if (callbackError) throw callbackError;
   if (response.status < 200 || response.status >= 300) {
     throw new Error(`omlx_http_${response.status}`);
@@ -320,10 +365,40 @@ const parseChatResponse = (value: unknown): OmlxChatResult => {
     };
   }).filter((call) => call.name !== "");
   const content = stringValue(message.content);
-  if (content.length > MAX_CONTENT_CHARS) {
+  if (new TextEncoder().encode(content).byteLength > MAX_CONTENT_BYTES) {
     throw new Error("omlx_content_too_large");
   }
   return { content, toolCalls };
+};
+
+const createOmlxMessages = (
+  message: string,
+  toolRounds: OmlxToolRound[],
+): unknown[] => {
+  if (toolRounds.length > 3) throw new Error("omlx_too_many_tool_rounds");
+  const messages: unknown[] = [{ role: "user", content: message }];
+  for (const round of toolRounds) {
+    messages.push({
+      role: "assistant",
+      content: round.assistant.content,
+      tool_calls: round.assistant.toolCalls.map((call) => ({
+        id: call.id,
+        type: "function",
+        function: {
+          name: call.name,
+          arguments: JSON.stringify(call.arguments),
+        },
+      })),
+    });
+    for (const result of round.toolResults) {
+      messages.push({
+        role: "tool",
+        tool_call_id: result.toolCallId,
+        content: result.content,
+      });
+    }
+  }
+  return messages;
 };
 
 const parseArguments = (value: unknown): Record<string, unknown> => {
@@ -362,35 +437,50 @@ const settleBeforeDeadline = <Value>(
   promise: Promise<Value>,
   deadlineAt: number,
   onDeadline: () => void,
+  signal?: AbortSignal,
 ): Promise<Value> => {
   const remainingMs = deadlineAt - Date.now();
-  if (remainingMs <= 0) {
+  if (signal?.aborted || remainingMs <= 0) {
     onDeadline();
     promise.then(
       () => {},
       () => {},
     );
-    return Promise.reject(new Error("omlx_stream_deadline"));
+    return Promise.reject(
+      new Error(signal?.aborted ? "omlx_request_aborted" : "omlx_stream_deadline"),
+    );
   }
   return new Promise((resolve, reject) => {
     let settled = false;
+    const cleanup = (): void => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+    };
+    const onAbort = (): void => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new Error("omlx_request_aborted"));
+    };
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
+      cleanup();
       onDeadline();
       reject(new Error("omlx_stream_deadline"));
     }, remainingMs);
+    signal?.addEventListener("abort", onAbort, { once: true });
     promise.then(
       (value) => {
         if (settled) return;
         settled = true;
-        clearTimeout(timer);
+        cleanup();
         resolve(value);
       },
       (error) => {
         if (settled) return;
         settled = true;
-        clearTimeout(timer);
+        cleanup();
         reject(error);
       },
     );

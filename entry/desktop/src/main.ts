@@ -175,9 +175,10 @@ const dispatchRoute = createDesktopRouteDispatcher({
   processes: () => Promise.resolve(systemMonitor.processes()),
   network: () => Promise.resolve(systemMonitor.network()),
   relay: () => Promise.resolve(reporter.status()),
-  chat: (message, onDelta) => omlx.chat(message, onDelta),
+  chat: (message, onDelta, toolRounds, options) =>
+    omlx.chat(message, onDelta, toolRounds, options),
   agentDelta: (data) => eventReporter.emit({ type: "agent.delta", data }),
-  invokeTool: (toolId, input) => agentTools.invoke(toolId, input),
+  invokeTool: (toolId, input, options) => agentTools.invoke(toolId, input, options),
   listApprovals: () => agentTools.listApprovals(),
   resolveApproval: (input) => agentTools.resolve(input),
 }, { createId: () => createId("message") });

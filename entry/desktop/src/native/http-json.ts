@@ -76,7 +76,11 @@ export const requestJson = (
 export const requestTextStream = (
   request: HttpJsonRequest,
   onChunk: (chunk: string) => void | Promise<void>,
-  options: { absoluteDeadlineMs?: number; deadlineAt?: number } = {},
+  options: {
+    absoluteDeadlineMs?: number;
+    deadlineAt?: number;
+    signal?: AbortSignal;
+  } = {},
 ): Promise<{ status: number }> => {
   if (request.protocol !== "http:" || request.hostname !== "127.0.0.1") {
     return Promise.reject(new Error("stream_endpoint_must_be_loopback_http"));
@@ -86,6 +90,9 @@ export const requestTextStream = (
     let responseRef: IncomingMessage | null = null;
     let outgoing: ReturnType<typeof httpRequest> | null = null;
     let absoluteTimer: ReturnType<typeof setTimeout> | null = null;
+    const onAbort = (): void => fail(new Error("http_stream_aborted"));
+    const clearAbortListener = (): void =>
+      options.signal?.removeEventListener("abort", onAbort);
     const clearAbsoluteTimer = (): void => {
       if (absoluteTimer === null) return;
       clearTimeout(absoluteTimer);
@@ -95,6 +102,7 @@ export const requestTextStream = (
       if (settled) return;
       settled = true;
       clearAbsoluteTimer();
+      clearAbortListener();
       responseRef?.destroy();
       outgoing?.destroy();
       reject(error);
@@ -103,6 +111,7 @@ export const requestTextStream = (
       if (settled) return;
       settled = true;
       clearAbsoluteTimer();
+      clearAbortListener();
       resolve({ status });
     };
     const payload = request.body === undefined ? "" : JSON.stringify(request.body);
@@ -122,6 +131,11 @@ export const requestTextStream = (
       fail(new Error("http_stream_deadline"));
       return;
     }
+    if (options.signal?.aborted) {
+      fail(new Error("http_stream_aborted"));
+      return;
+    }
+    options.signal?.addEventListener("abort", onAbort, { once: true });
     absoluteTimer = setTimeout(
       () => fail(new Error("http_stream_deadline")),
       absoluteDeadlineMs,

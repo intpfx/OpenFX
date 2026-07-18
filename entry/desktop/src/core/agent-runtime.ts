@@ -15,6 +15,7 @@ import {
   createDesktopJournal,
   createMemoryJournalStorage,
   type DesktopJournal,
+  type JournalOperationContext,
 } from "./durable-journal.ts";
 import { findAgentTool } from "./agent-tools.ts";
 import { isAllowedApplication } from "./effect-policy.ts";
@@ -22,7 +23,11 @@ import { isAllowedApplication } from "./effect-policy.ts";
 export interface ApprovalRequestRepository extends ApprovalConsumptionStore {
   get(id: string): Promise<BoundaryRequest | null>;
   list(): Promise<BoundaryRequest[]>;
-  registerRequest(request: BoundaryRequest, nodeId: string): Promise<void>;
+  registerRequest(
+    request: BoundaryRequest,
+    nodeId: string,
+    context?: JournalOperationContext,
+  ): Promise<void>;
   recordApplicationOutcome(
     request: BoundaryRequest,
     application: ApplyActionResult,
@@ -83,6 +88,7 @@ export interface AgentToolRuntime {
   invoke(
     toolId: string,
     input: Record<string, unknown>,
+    context?: JournalOperationContext,
   ): Promise<AgentInvocationResult>;
   resolve(input: {
     id: string;
@@ -101,7 +107,8 @@ export interface AgentToolRuntime {
 export const createAgentToolRuntime = (
   dependencies: AgentToolRuntimeDependencies,
 ): AgentToolRuntime => ({
-  async invoke(toolId, input) {
+  async invoke(toolId, input, context) {
+    assertInvocationActive(context);
     const tool = findAgentTool(toolId);
     if (!tool) {
       return {
@@ -111,7 +118,11 @@ export const createAgentToolRuntime = (
       };
     }
     if (!tool.requiresApproval) {
-      const result = await executeReadTool(toolId, dependencies);
+      const result = await awaitInvocation(
+        executeReadTool(toolId, dependencies),
+        context,
+      );
+      assertInvocationActive(context);
       return { ok: true, approvalRequired: false, result };
     }
     const validation = validateEffectInput(toolId, input, dependencies.ownPid());
@@ -120,7 +131,11 @@ export const createAgentToolRuntime = (
     }
     let approvedInput = input;
     if (toolId === "process.kill") {
-      const identity = await dependencies.effects.inspectProcess(Number(input.pid));
+      const identity = await awaitInvocation(
+        dependencies.effects.inspectProcess(Number(input.pid)),
+        context,
+      );
+      assertInvocationActive(context);
       if (!identity || identity.pid !== input.pid) {
         return {
           ok: false,
@@ -153,11 +168,23 @@ export const createAgentToolRuntime = (
       createdAt,
       expiresAt: createdAt + APPROVAL_TTL_MS,
     };
-    await dependencies.approvals.registerRequest(
-      approval,
-      dependencies.nodeId(),
+    assertInvocationActive(context);
+    await awaitInvocation(
+      dependencies.approvals.registerRequest(
+        approval,
+        dependencies.nodeId(),
+        context,
+      ),
+      context,
     );
-    await dependencies.events?.approvalRequested(approval);
+    assertInvocationActive(context);
+    if (dependencies.events) {
+      await awaitInvocation(
+        dependencies.events.approvalRequested(approval),
+        context,
+      );
+      assertInvocationActive(context);
+    }
     return { ok: true, approvalRequired: true, approval };
   },
 
@@ -313,6 +340,64 @@ const ensureNativeSuccess = async (operation: Promise<unknown>): Promise<unknown
     (result as { ok?: unknown }).ok === false
   ) throw new Error("native_effect_failed");
   return result;
+};
+
+const assertInvocationActive = (
+  context: JournalOperationContext | undefined,
+): void => {
+  if (context?.signal?.aborted) throw new Error("agent_turn_aborted");
+  if (context?.deadlineAt !== undefined && Date.now() >= context.deadlineAt) {
+    throw new Error("agent_turn_deadline");
+  }
+};
+
+const awaitInvocation = <Value>(
+  promise: Promise<Value>,
+  context: JournalOperationContext | undefined,
+): Promise<Value> => {
+  if (!context?.signal && context?.deadlineAt === undefined) return promise;
+  const remainingMs = context.deadlineAt === undefined
+    ? 2_147_483_647
+    : context.deadlineAt - Date.now();
+  if (context.signal?.aborted || remainingMs <= 0) {
+    promise.then(() => {}, () => {});
+    return Promise.reject(
+      new Error(context.signal?.aborted ? "agent_turn_aborted" : "agent_turn_deadline"),
+    );
+  }
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const cleanup = (): void => {
+      if (timer !== null) clearTimeout(timer);
+      context.signal?.removeEventListener("abort", onAbort);
+    };
+    const rejectOnce = (error: Error): void => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+    const onAbort = (): void => rejectOnce(new Error("agent_turn_aborted"));
+    const timer = context.deadlineAt === undefined ? null : setTimeout(
+      () => rejectOnce(new Error("agent_turn_deadline")),
+      remainingMs,
+    );
+    context.signal?.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(value);
+      },
+      (error) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(error);
+      },
+    );
+  });
 };
 
 const parseInput = (preview: string | undefined): Record<string, unknown> => {

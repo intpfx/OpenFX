@@ -36,7 +36,7 @@ export const NODE_RELAY_ROUTES = Object.freeze(
 export interface NodeRelayProtocolOptions {
   crypto: NodeCryptoAdapter;
   secret: Uint8Array;
-  dispatch(request: SignableNodeRequest): Promise<unknown>;
+  dispatch(request: SignableNodeRequest, signal?: AbortSignal): Promise<unknown>;
   now?: () => number;
   randomBytes?: (length: number) => Uint8Array;
   replayStore?: PersistentReplayStore;
@@ -47,7 +47,10 @@ export interface PersistentReplayStore {
 }
 
 export interface NodeRelayProtocol {
-  handle(envelope: SealedRelayEnvelope): Promise<SealedRelayEnvelope>;
+  handle(
+    envelope: SealedRelayEnvelope,
+    signal?: AbortSignal,
+  ): Promise<SealedRelayEnvelope>;
 }
 
 export const createNodeRelayProtocol = (
@@ -57,7 +60,8 @@ export const createNodeRelayProtocol = (
   const replayStore = options.replayStore ?? createMemoryReplayStore();
   const noReplay = { consume() {} };
   return {
-    async handle(envelope) {
+    async handle(envelope, signal) {
+      if (signal?.aborted) throw new Error("relay_client_aborted");
       const signed = await openRelayEnvelope<SignedNodeRequest>(
         options.crypto,
         options.secret,
@@ -77,11 +81,15 @@ export const createNodeRelayProtocol = (
           "Signed node route is not in the fixed v1 map.",
         );
       }
-      const response = await options.dispatch({
-        method,
-        path: signed.path,
-        body: signed.body,
-      });
+      const response = await options.dispatch(
+        {
+          method,
+          path: signed.path,
+          body: signed.body,
+        },
+        signal,
+      );
+      if (signal?.aborted) throw new Error("relay_client_aborted");
       return await sealRelayEnvelope(
         options.crypto,
         options.secret,

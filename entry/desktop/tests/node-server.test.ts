@@ -137,3 +137,56 @@ Deno.test("node server returns stable 408 JSON for a slow request body", async (
     await server.close();
   }
 });
+
+Deno.test("node server aborts dispatch when the Relay client disconnects", async () => {
+  const crypto = createWebCryptoAdapter(globalThis.crypto);
+  const secret = new TextEncoder().encode("0123456789abcdef0123456789abcdef");
+  let dispatchStarted!: () => void;
+  let dispatchAborted!: () => void;
+  const started = new Promise<void>((resolve) => dispatchStarted = resolve);
+  const aborted = new Promise<void>((resolve) => dispatchAborted = resolve);
+  const server = await startNodeServer({
+    host: "127.0.0.1",
+    port: 0,
+    crypto,
+    loadSecret: () => Promise.resolve(secret),
+    dispatch: (_request, signal) => {
+      dispatchStarted();
+      return new Promise((_resolve, reject) => {
+        signal?.addEventListener("abort", () => {
+          dispatchAborted();
+          reject(new Error("relay_client_aborted"));
+        }, { once: true });
+      });
+    },
+  });
+  try {
+    const signed = await signRequest(
+      crypto,
+      secret,
+      { method: "POST", path: "/v1/agent/messages", body: { message: "slow" } },
+    );
+    const envelope = await sealRelayEnvelope(crypto, secret, signed);
+    const payload = JSON.stringify(envelope);
+    const socket = connect(server.port, "127.0.0.1");
+    await new Promise<void>((resolve, reject) => {
+      socket.once("connect", resolve);
+      socket.once("error", reject);
+    });
+    socket.write(
+      `POST /v1/relay HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: ${
+        new TextEncoder().encode(payload).byteLength
+      }\r\n\r\n${payload}`,
+    );
+    await started;
+    socket.destroy();
+    await Promise.race([
+      aborted,
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("dispatch was not aborted")), 250)
+      ),
+    ]);
+  } finally {
+    await server.close();
+  }
+});

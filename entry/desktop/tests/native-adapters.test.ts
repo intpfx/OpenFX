@@ -445,6 +445,55 @@ Deno.test("native text streaming has an absolute deadline despite trickle traffi
   }
 });
 
+Deno.test("Relay abort cancels the native OMLX request", async () => {
+  let streamController: ReadableStreamDefaultController<Uint8Array> | null = null;
+  let cancelled = false;
+  const server = Deno.serve(
+    { hostname: "127.0.0.1", port: 0, onListen: () => {} },
+    () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            streamController = controller;
+            controller.enqueue(new TextEncoder().encode(": keepalive\n"));
+          },
+          cancel() {
+            cancelled = true;
+          },
+        }),
+        { headers: { "content-type": "text/event-stream" } },
+      ),
+  );
+  const address = server.addr as Deno.NetAddr;
+  const controller = new AbortController();
+  const request = requestTextStream(
+    {
+      protocol: "http:",
+      hostname: "127.0.0.1",
+      port: address.port,
+      path: "/v1/chat/completions",
+      method: "POST",
+      body: {},
+    },
+    () => {},
+    { signal: controller.signal },
+  ).then(
+    () => "unexpected_success",
+    (error) => error instanceof Error ? error.message : String(error),
+  );
+
+  try {
+    assertEquals(await waitFor(() => streamController !== null, 100), true);
+    controller.abort();
+    assertEquals(await settleWithin(request, 250), "http_stream_aborted");
+    assertEquals(await waitFor(() => cancelled, 100), true);
+  } finally {
+    closeStream(streamController);
+    await request;
+    await server.shutdown();
+  }
+});
+
 Deno.test("OMLX bounds blank and comment line parsing work", async () => {
   const client = createOmlxClient(
     () => Promise.reject(new Error("unexpected JSON request")),
@@ -537,6 +586,105 @@ Deno.test("OMLX queued deltas share one total deadline", async () => {
   assertEquals(await settleWithin(chat, 250), "omlx_stream_deadline");
   await new Promise((resolve) => setTimeout(resolve, 60));
   assertEquals(invoked, ["A", "B"]);
+});
+
+Deno.test("OMLX follow-up serializes assistant tool calls and bounded tool results", async () => {
+  const requests: unknown[] = [];
+  const client = createOmlxClient((request) => {
+    requests.push(request);
+    return Promise.resolve({
+      status: 200,
+      body: { choices: [{ message: { content: "最终回答", tool_calls: [] } }] },
+    });
+  });
+
+  const result = await client.chat("检查进程", undefined, [{
+    assistant: {
+      content: "",
+      toolCalls: [{ id: "call-1", name: "process.list", arguments: {} }],
+    },
+    toolResults: [{
+      toolCallId: "call-1",
+      content: '{"ok":true,"processes":[{"pid":42}]}',
+    }],
+  }]);
+
+  assertEquals(result.content, "最终回答");
+  assertEquals(requests, [{
+    protocol: "http:",
+    hostname: "127.0.0.1",
+    port: 8000,
+    path: "/v1/chat/completions",
+    method: "POST",
+    body: {
+      model: "local",
+      messages: [
+        { role: "user", content: "检查进程" },
+        {
+          role: "assistant",
+          content: "",
+          tool_calls: [{
+            id: "call-1",
+            type: "function",
+            function: { name: "process.list", arguments: "{}" },
+          }],
+        },
+        {
+          role: "tool",
+          tool_call_id: "call-1",
+          content: '{"ok":true,"processes":[{"pid":42}]}',
+        },
+      ],
+      tools: client.tools,
+    },
+  }]);
+});
+
+Deno.test("OMLX follow-up calls share one caller-owned absolute deadline", async () => {
+  const deadlines: Array<number | undefined> = [];
+  const client = createOmlxClient(
+    () => Promise.reject(new Error("unexpected JSON request")),
+    (_request, onChunk, options) => {
+      deadlines.push(options?.deadlineAt);
+      onChunk('data: {"choices":[{"delta":{"content":"ok"}}]}\n');
+      return Promise.resolve({ status: 200 });
+    },
+  );
+  const deadlineAt = Date.now() + 1_000;
+
+  await client.chat("one", () => {}, [], { deadlineAt });
+  await client.chat("two", () => {}, [], { deadlineAt });
+
+  assertEquals(deadlines, [deadlineAt, deadlineAt]);
+});
+
+Deno.test("OMLX aborts while draining a delta after the HTTP stream ended", async () => {
+  const controller = new AbortController();
+  let deltaStarted!: () => void;
+  const started = new Promise<void>((resolve) => deltaStarted = resolve);
+  const client = createOmlxClient(
+    () => Promise.reject(new Error("unexpected JSON request")),
+    (_request, onChunk) => {
+      onChunk('data: {"choices":[{"delta":{"content":"pending"}}]}\n');
+      return Promise.resolve({ status: 200 });
+    },
+  );
+  const chat = client.chat(
+    "hello",
+    () => {
+      deltaStarted();
+      return new Promise(() => {});
+    },
+    [],
+    { deadlineAt: Date.now() + 1_000, signal: controller.signal },
+  ).then(
+    () => "unexpected_success",
+    (error) => error instanceof Error ? error.message : String(error),
+  );
+  await started;
+  controller.abort();
+
+  assertEquals(await settleWithin(chat, 100), "omlx_request_aborted");
 });
 
 const settleWithin = async (

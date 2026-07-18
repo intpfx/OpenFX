@@ -766,6 +766,76 @@ Deno.test("process Relay accepts an authenticated envelope near 163 KiB", async 
   await expect(response.json()).resolves.toEqual({ processes: processPayload });
 });
 
+Deno.test("Agent Relay accepts a valid 48 KiB assistant response", async () => {
+  const cryptoAdapter = createWebCryptoAdapter();
+  let nodeSecret = "";
+  let envelopeBytes = 0;
+  const assistant = "a".repeat(48 * 1024);
+  const { plane } = harness({
+    fetch: async (_input, init) => {
+      const request = await openRelayEnvelope<{
+        nonce: string;
+        method: string;
+        path: string;
+      }>(
+        cryptoAdapter,
+        decodeBase64Url(nodeSecret),
+        JSON.parse(String(init?.body)),
+        { now: () => START, replayProtector: { consume() {} } },
+      );
+      const reply = await sealRelayEnvelope(
+        cryptoAdapter,
+        decodeBase64Url(nodeSecret),
+        {
+          request: {
+            nonce: request.nonce,
+            method: request.method,
+            path: request.path,
+          },
+          result: { ok: true, message: assistant, toolResults: [] },
+        },
+        { now: () => START },
+      );
+      const encoded = new TextEncoder().encode(JSON.stringify(reply));
+      envelopeBytes = encoded.byteLength;
+      return new Response(encoded, { status: 200 });
+    },
+  });
+  const cookie = await login(plane);
+  const paired = await pair(plane, cookie);
+  nodeSecret = paired.nodeSecret;
+  await nodeHeartbeatHandler(
+    await signedJsonRequest(
+      "http://localhost/api/node/heartbeat",
+      {
+        nodeId: paired.node.id,
+        protocolVersion: 1,
+        publicIpv6: "2001:4860:4860::8844",
+        port: 24531,
+        availability: "online",
+      },
+      paired.nodeSecret,
+    ),
+    plane,
+  );
+
+  const response = await plane.console.handle(
+    jsonRequest("http://localhost/api/console/agent/messages", {
+      message: "检查系统",
+      conversationId: "turn-agent-limit",
+    }, { cookie }),
+    "agent.messages.post",
+  );
+
+  expect(envelopeBytes).toBeGreaterThan(64 * 1024);
+  expect(envelopeBytes).toBeLessThan(512 * 1024);
+  expect(response.status).toBe(200);
+  await expect(response.json()).resolves.toMatchObject({
+    ok: true,
+    message: assistant,
+  });
+});
+
 Deno.test("process Relay cancels a streamed response above 256 KiB", async () => {
   let pulls = 0;
   let cancelled = false;

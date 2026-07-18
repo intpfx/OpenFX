@@ -26,6 +26,9 @@ OpenFX Node 是常驻 macOS 菜单栏的原生 Perry 节点候选实现。它用
   `SafetyActionGate`。审批、执行意图/结果和审计使用追加式 SQLite journal；Relay nonce
   使用同一数据库中独立的带过期索引键表，不写入或扫描审计 journal。不完整执行在重启时
   终止为 `ambiguous`，不会重放原生副作用。
+- OMLX 工具调用使用最多 3 轮、12 次的有界回送闭环；工具结果受总字节预算控制，最终模型
+  回答才写入会话。全部轮次共享 30 秒绝对截止时间，Relay 断开会取消 OMLX 和剩余工具轮次，
+  且不写入被取消的 turn。节点只保留最近 30 条且最多 240 KiB 的 Agent 历史。
 - journal 写入 `~/Library/Application Support/OpenFX Node/journal.sqlite`，使用
   `BEGIN IMMEDIATE`、WAL 与 `synchronous=FULL`；首次启动会事务迁移旧 JSONL，也会把旧
   `replay.claimed` 事件一次性迁移到有界 nonce 表。nonce claim 通过 `BEGIN IMMEDIATE`

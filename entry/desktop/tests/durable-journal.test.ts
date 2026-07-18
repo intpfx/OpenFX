@@ -1,10 +1,11 @@
-import { assertEquals } from "@std/assert";
+import { assertEquals, assertRejects } from "@std/assert";
 
 import { SafetyActionGate } from "../../../domains/e/src/core/safety-action-gate.ts";
 import type { BoundaryRequest } from "../../../domains/e/src/core/types.ts";
 import {
   createDesktopJournal,
   createMemoryJournalStorage,
+  type JournalStorage,
 } from "../src/core/durable-journal.ts";
 
 const requestFixture = (gate: SafetyActionGate): BoundaryRequest => {
@@ -152,4 +153,45 @@ Deno.test("application outcome and replay nonce claims survive reconstruction", 
     await reconstructed.claimReplayNonce("nonce-1", 62_000, 31_001),
     true,
   );
+});
+
+Deno.test("an aborted queued approval is rejected at the journal commit boundary", async () => {
+  let release!: () => void;
+  let appended = false;
+  const storage: JournalStorage = {
+    transact(operation) {
+      return new Promise((resolve, reject) => {
+        release = () => {
+          try {
+            const mutation = operation([]);
+            appended = Boolean(mutation.append?.length);
+            resolve(mutation.result);
+          } catch (error) {
+            reject(error);
+          }
+        };
+      });
+    },
+    claimReplayNonce: () => Promise.resolve(true),
+  };
+  const journal = createDesktopJournal(storage, {
+    now: () => 1_000,
+    createId: () => "audit-1",
+  });
+  const gate = new SafetyActionGate({
+    now: () => 1_000,
+    createId: () => "unused",
+    consumptionStore: journal,
+  });
+  const controller = new AbortController();
+  const pending = journal.registerRequest(
+    requestFixture(gate),
+    "node-1",
+    { deadlineAt: Date.now() + 1_000, signal: controller.signal },
+  );
+  controller.abort();
+  release();
+
+  await assertRejects(() => pending, Error, "agent_turn_aborted");
+  assertEquals(appended, false);
 });

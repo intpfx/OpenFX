@@ -64,6 +64,9 @@ const NODE_ONLINE_WINDOW_MS = 45_000;
 const TELEMETRY_CLOCK_SKEW_MS = 60_000;
 const RELAY_RESPONSE_MAX_BYTES = 64 * 1024;
 const PROCESS_RELAY_RESPONSE_MAX_BYTES = 256 * 1024;
+const AGENT_RELAY_RESPONSE_MAX_BYTES = 512 * 1024;
+const DEFAULT_RELAY_TIMEOUT_MS = 8_000;
+const AGENT_RELAY_TIMEOUT_MS = 35_000;
 const PAIRING_EXPIRY_GRACE_MS = 60_000;
 const SESSION_COOKIE = "openfx_admin_session";
 const CREDENTIAL_AAD = utf8("openfx-node/v1/credential");
@@ -174,6 +177,13 @@ export interface ConsoleControlPlane {
   };
   authorize(req: Request): Promise<boolean>;
 }
+
+export const consoleRelayTimeoutMs = (
+  operation: ConsoleRelayOperation,
+): number =>
+  operation === "agent.messages.get" || operation === "agent.messages.post"
+    ? AGENT_RELAY_TIMEOUT_MS
+    : DEFAULT_RELAY_TIMEOUT_MS;
 
 export const createConsoleControlPlane = (
   options: ConsoleControlPlaneOptions = {},
@@ -1221,7 +1231,8 @@ export const createConsoleControlPlane = (
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(envelope),
-          signal: AbortSignal.timeout(8_000),
+          signal: AbortSignal.timeout(consoleRelayTimeoutMs(operation)),
+          redirect: "manual",
         },
       );
     } catch {
@@ -1245,6 +1256,9 @@ export const createConsoleControlPlane = (
         upstream,
         operation === "processes"
           ? PROCESS_RELAY_RESPONSE_MAX_BYTES
+          : operation === "agent.messages.get" ||
+              operation === "agent.messages.post"
+          ? AGENT_RELAY_RESPONSE_MAX_BYTES
           : RELAY_RESPONSE_MAX_BYTES,
       ) as SealedRelayEnvelope;
       const reply = await openRelayEnvelope<unknown>(

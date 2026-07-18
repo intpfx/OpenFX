@@ -1,4 +1,4 @@
-import { assertEquals } from "@std/assert";
+import { assertEquals, assertRejects } from "@std/assert";
 
 import { SafetyActionGate } from "../../../domains/e/src/core/safety-action-gate.ts";
 import {
@@ -333,4 +333,57 @@ Deno.test("a resolved native ok:false is recorded as effect failure", async () =
   });
   assertEquals(result.applied, false);
   assertEquals(result.error, "action_failed");
+});
+
+Deno.test("aborting process inspection prevents a late approval commit", async () => {
+  const approvals = createMemoryApprovalRequestRepository();
+  let resolveInspection!: (
+    value: { pid: number; command: string; startedAt: string },
+  ) => void;
+  let inspectionStarted!: () => void;
+  const started = new Promise<void>((resolve) => inspectionStarted = resolve);
+  const runtime = createAgentToolRuntime({
+    gate: new SafetyActionGate({
+      now: () => 1_000,
+      createId: () => "request-1",
+      consumptionStore: approvals,
+    }),
+    approvals,
+    audit: createAuditLog({
+      appendLine: () => Promise.resolve(),
+      readText: () => Promise.resolve(""),
+    }),
+    nodeId: () => "node-1",
+    ownPid: () => 99,
+    now: () => 1_000,
+    createId: () => "action-1",
+    read: {
+      overview: () => Promise.resolve({}),
+      processes: () => Promise.resolve([]),
+      network: () => Promise.resolve({}),
+      relay: () => Promise.resolve({}),
+    },
+    effects: {
+      inspectProcess: () => {
+        inspectionStarted();
+        return new Promise((resolve) => resolveInspection = resolve);
+      },
+      kill: () => Promise.resolve({ ok: true }),
+      openApplication: () => Promise.resolve({ ok: true }),
+      updateRelay: () => Promise.resolve({ ok: true }),
+    },
+  });
+  const controller = new AbortController();
+  const invocation = runtime.invoke(
+    "process.kill",
+    { pid: 42 },
+    { deadlineAt: Date.now() + 1_000, signal: controller.signal },
+  );
+  await started;
+  controller.abort();
+
+  await assertRejects(() => invocation, Error, "agent_turn_aborted");
+  resolveInspection({ pid: 42, command: "worker", startedAt: "start-a" });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assertEquals(await approvals.list(), []);
 });
