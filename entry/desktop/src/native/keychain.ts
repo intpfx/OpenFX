@@ -36,13 +36,14 @@ const systemExecFileText: ExecFileText = (file, args, input) =>
 
 export const createKeychain = (
   execute: ExecFileText = systemExecFileText,
+  service = KEYCHAIN_SERVICE,
 ): NodeKeychain => ({
   async write(account, secret) {
     await execute("/usr/bin/security", [
       "add-generic-password",
       "-U",
       "-s",
-      KEYCHAIN_SERVICE,
+      service,
       "-a",
       account,
       "-w",
@@ -54,7 +55,7 @@ export const createKeychain = (
         await execute("/usr/bin/security", [
           "find-generic-password",
           "-s",
-          KEYCHAIN_SERVICE,
+          service,
           "-a",
           account,
           "-w",
@@ -69,7 +70,7 @@ export const createKeychain = (
       await execute("/usr/bin/security", [
         "delete-generic-password",
         "-s",
-        KEYCHAIN_SERVICE,
+        service,
         "-a",
         account,
       ]);

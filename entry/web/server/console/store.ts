@@ -16,6 +16,7 @@ export interface ConsoleListOptions {
   start?: ConsoleKey;
   end?: ConsoleKey;
   limit?: number;
+  reverse?: boolean;
 }
 
 export interface ConsoleAtomicCheck {
@@ -119,7 +120,7 @@ export const createMemoryConsoleStore = (
     },
     list<T>(listOptions: ConsoleListOptions) {
       purgeExpired();
-      const values = Array.from(entries.values())
+      const matching = Array.from(entries.values())
         .filter((entry) => hasPrefix(entry.key, listOptions.prefix))
         .filter((entry) =>
           listOptions.start === undefined ||
@@ -128,7 +129,9 @@ export const createMemoryConsoleStore = (
         .filter((entry) =>
           listOptions.end === undefined || compareKeys(entry.key, listOptions.end) < 0
         )
-        .sort((left, right) => compareKeys(left.key, right.key))
+        .sort((left, right) => compareKeys(left.key, right.key));
+      if (listOptions.reverse) matching.reverse();
+      const values = matching
         .slice(0, listOptions.limit)
         .map((entry) => ({
           key: [...entry.key],
@@ -190,6 +193,7 @@ export const createDenoConsoleStore = (kv: Deno.Kv): ConsoleStore => {
         for await (
           const entry of kv.list<T>(selector, {
             limit: options.limit,
+            reverse: options.reverse,
           })
         ) {
           if (entry.value !== null && entry.versionstamp !== null) {

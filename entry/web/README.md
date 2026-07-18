@@ -94,6 +94,17 @@ header 不再授权 `/api/admin/*` 或 `/api/console/*`。
 Relay 不接受目标 URL。服务端只连接当前配对节点上报的全局 IPv6，端口固定为
 `24531`，并使用共享 OpenFX Node v1 协议签名、加密请求和解密响应。
 
+配对响应只返回一次节点 secret。此后的心跳、遥测和事件上报使用
+`x-openfx-node-version`、`x-openfx-node-timestamp`、`x-openfx-node-nonce`、
+`x-openfx-node-content-sha256` 和 `x-openfx-node-signature`，不会传 Bearer
+secret。服务端 在同一个 Deno KV 原子事务中消费 nonce
+并提交权威写入。审计接口默认按最新优先返回 100 条，可用 `limit`（最大 500）和独占的
+`before` 游标向前翻页。
+
+Perry 0.5.1220 的真实原生 HTTPS 客户端门尚未通过，所以控制面暂不取代 `domains/freemac`
+的生产运行路径。详见
+[`../../docs/openfx-console-architecture.md`](../../docs/openfx-console-architecture.md)。
+
 Deno Deploy 构建使用项目自有的流式入口：请求体在进入 Nitro 应用前硬限制为 64 KiB，
 超限立即返回 `413`；入口同时以运行时提供的真实远端地址覆盖外部伪造的转发地址。构建
 流程会检查最终 bundle，阻止 Nitro 预设中不受限的 `request.arrayBuffer()` 路径回归。

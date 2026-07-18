@@ -15,6 +15,9 @@
 - 当前产物入口是 `entry/web/.output/server/index.ts`
 - 如果需要持久化 DownIP 映射，请为应用关联 Deno KV
 - 如果需要代理功能，请设置环境变量 `OPENFX_PROXY_UPSTREAM`
+- OpenFX 控制台生产环境必须设置 `OPENFX_ADMIN_KEY` 和
+  `OPENFX_NODE_CREDENTIAL_KEY`；后者必须是 32 字节文本或 32 字节 Base64URL，且不能与
+  管理员密钥复用
 - 可选环境变量：`DOWNIP_REDIRECT_SCHEME`、`DOWNIP_REDIRECT_PORT`
 - Web 构建脚本会注入 `VITE_OPENFX_BUILD_TIME` 和
   `VITE_OPENFX_BUILD_HASH`，用于页脚展示构建时间和短哈希；Deno Deploy 自己重新构建时也会
@@ -43,3 +46,7 @@
 
 - DownIP 功能默认可用
 - Proxy 功能默认关闭，避免开放代理风险
+- 缺少任一控制台必填密钥时，生产控制台按失败关闭；真实值只能存入 Deno Deploy 加密环境
+  变量，不能写入 `.env.example`、客户端构建或日志
+- 节点凭据轮换不保留双密钥窗口：先撤销节点，再更新
+  `OPENFX_NODE_CREDENTIAL_KEY`、重新部署并重新配对

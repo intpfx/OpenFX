@@ -918,7 +918,7 @@ function Workbench(props: {
             </tr>
           </thead>
           <tbody>
-            {[...props.audit].reverse().map((event) => (
+            {props.audit.map((event) => (
               <tr key={event.id}>
                 <td>{formatTime(event.createdAt)}</td>
                 <td>{event.category}</td>

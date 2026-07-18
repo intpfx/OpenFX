@@ -80,6 +80,35 @@ Deno.test("Keychain sends the secret through stdin and never exposes it in argv"
   assertEquals(calls.some((call) => call.args.includes("secret-value")), false);
 });
 
+Deno.test("Keychain supports an isolated service for integration recovery", async () => {
+  const calls: Array<readonly string[]> = [];
+  const keychain = createKeychain((_file, args) => {
+    calls.push([...args]);
+    return Promise.resolve("");
+  }, "OpenFX Node Integration test-run");
+
+  await keychain.write("node-test", "secret-value");
+  await keychain.remove("node-test");
+
+  assertEquals(calls.map((args) => args.slice(0, 6)), [
+    [
+      "add-generic-password",
+      "-U",
+      "-s",
+      "OpenFX Node Integration test-run",
+      "-a",
+      "node-test",
+    ],
+    [
+      "delete-generic-password",
+      "-s",
+      "OpenFX Node Integration test-run",
+      "-a",
+      "node-test",
+    ],
+  ]);
+});
+
 Deno.test("OMLX client is fixed to the loopback v1 chat endpoint and reports offline", async () => {
   const calls: unknown[] = [];
   const online = createOmlxClient((request) => {

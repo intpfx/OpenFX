@@ -808,11 +808,33 @@ export const createConsoleControlPlane = (
   const listAudit = async (req: Request): Promise<Response> => {
     const denied = await requireSession(req);
     if (denied) return denied;
+    const query = new URL(req.url).searchParams;
+    const requestedLimit = Number.parseInt(query.get("limit") ?? "100", 10);
+    const limit = Number.isSafeInteger(requestedLimit) && requestedLimit > 0
+      ? Math.min(requestedLimit, 500)
+      : 100;
+    const beforeRaw = query.get("before");
+    const before = beforeRaw === null ? undefined : Number.parseInt(beforeRaw, 10);
+    if (
+      beforeRaw !== null &&
+      (!Number.isSafeInteger(before) || before === undefined || before <= 0 ||
+        String(before) !== beforeRaw)
+    ) {
+      return jsonError("invalid_audit_cursor", 400);
+    }
     const entries = await (await storePromise).list<AuditEvent>({
       prefix: [...ROOT, "audit"],
-      limit: 1_000,
+      end: before === undefined ? undefined : [...ROOT, "audit", before],
+      limit: limit + 1,
+      reverse: true,
     });
-    return Response.json({ ok: true, events: entries.map((entry) => entry.value) });
+    const hasMore = entries.length > limit;
+    const page = entries.slice(0, limit);
+    return Response.json({
+      ok: true,
+      events: page.map((entry) => entry.value),
+      nextCursor: hasMore ? page.at(-1)?.value.id ?? null : null,
+    });
   };
 
   const relay = async (

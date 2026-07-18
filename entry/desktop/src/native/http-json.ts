@@ -1,4 +1,4 @@
-import { request as httpRequest } from "node:http";
+import { type IncomingMessage, request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { Buffer } from "node:buffer";
 
@@ -25,15 +25,15 @@ export const requestJson = (
         : {}),
       ...request.headers,
     };
-    const send = request.protocol === "https:" ? httpsRequest : httpRequest;
-    const outgoing = send({
+    const options = {
       protocol: request.protocol,
       hostname: request.hostname,
       port: request.port,
       path: request.path,
       method: request.method,
       headers,
-    }, (response) => {
+    };
+    const receive = (response: IncomingMessage) => {
       const chunks: Uint8Array[] = [];
       let length = 0;
       response.on("data", (chunk: Uint8Array) => {
@@ -55,7 +55,13 @@ export const requestJson = (
           reject(error);
         }
       });
-    });
+    };
+    // Perry only attempts native lowering for a direct built-in call. Keeping the
+    // function in a conditional variable returned undefined in the compiled probe.
+    // Runtime client I/O is still guarded by the real integration smoke.
+    const outgoing = request.protocol === "https:"
+      ? httpsRequest(options, receive)
+      : httpRequest(options, receive);
     outgoing.setTimeout(
       8_000,
       () => outgoing.destroy(new Error("http_timeout")),
