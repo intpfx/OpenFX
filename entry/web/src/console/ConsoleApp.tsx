@@ -11,8 +11,12 @@ import {
   buildEventStreamUrl,
   ConsoleClientError,
   type ConsoleRequest,
+  ConsoleStaleRequestError,
   createAgentTurn,
+  createAgentTurnCompletionGate,
+  createAuthenticatedConsoleRequest,
   createConsoleClient,
+  createSessionGeneration,
   emptyConsoleMemory,
   handleConsoleSessionMessage,
   parseAgentDelta,
@@ -112,8 +116,12 @@ export function ConsoleApp() {
   );
   const activeModule = CONSOLE_MODULES.find((item) => item.id === module)!;
   const core = corePresentation(availability);
+  const sessionGeneration = useMemo(() => createSessionGeneration(), []);
+  const agentCompletion = useMemo(() => createAgentTurnCompletionGate(), []);
 
   const resetAuthenticatedState = useCallback(() => {
+    sessionGeneration.invalidate();
+    agentCompletion.reset();
     const empty = emptyConsoleMemory();
     setSession("anonymous");
     setPassword("");
@@ -131,19 +139,36 @@ export function ConsoleApp() {
     setNodeDataStale(false);
     setWhisper("");
     setWhisperStatus("");
+    setLoginStatus("");
     setLoading(false);
     setStatus({ message: "会话已结束，请重新登录", tone: "neutral" });
-  }, []);
+  }, [agentCompletion, sessionGeneration]);
   const client = useMemo(
-    () => createConsoleClient(fetch, resetAuthenticatedState),
-    [resetAuthenticatedState],
+    () => createConsoleClient(fetch),
+    [],
+  );
+  const authenticatedRequest = useMemo(
+    () =>
+      createAuthenticatedConsoleRequest(
+        client.request,
+        sessionGeneration,
+        resetAuthenticatedState,
+      ),
+    [client, resetAuthenticatedState, sessionGeneration],
   );
 
   useEffect(() => {
+    const ticket = sessionGeneration.capture();
     client.request<{ authenticated: true }>("/api/admin/session")
-      .then(() => setSession("authenticated"))
-      .catch(() => setSession("anonymous"));
-  }, [client]);
+      .then(() => {
+        if (!sessionGeneration.isCurrent(ticket)) return;
+        sessionGeneration.activate();
+        setSession("authenticated");
+      })
+      .catch(() => {
+        if (sessionGeneration.isCurrent(ticket)) setSession("anonymous");
+      });
+  }, [client, sessionGeneration]);
 
   useEffect(() => {
     if (!("BroadcastChannel" in globalThis)) return;
@@ -159,7 +184,7 @@ export function ConsoleApp() {
     void refreshAll();
     const timer = window.setInterval(() => void refreshOverview(), 15_000);
     const sessionTimer = window.setInterval(
-      () => void client.request("/api/admin/session").catch(() => undefined),
+      () => void authenticatedRequest("/api/admin/session").catch(() => undefined),
       30_000,
     );
     const events = new EventSource(buildEventStreamUrl());
@@ -167,6 +192,8 @@ export function ConsoleApp() {
       void Promise.all([loadMessages(), loadApprovals()]).catch(() => undefined);
     events.addEventListener("agent.delta", (event) => {
       try {
+        const ticket = sessionGeneration.capture();
+        if (!sessionGeneration.isAuthenticated(ticket)) return;
         const delta = parseAgentDelta(JSON.parse((event as MessageEvent).data));
         if (delta) {
           setAgentTurn((turn) => turn ? appendAgentDelta(turn, delta) : turn);
@@ -177,6 +204,8 @@ export function ConsoleApp() {
     });
     events.addEventListener("heartbeat", (event) => {
       try {
+        const ticket = sessionGeneration.capture();
+        if (!sessionGeneration.isAuthenticated(ticket)) return;
         const data = JSON.parse((event as MessageEvent).data);
         if (!isAvailability(data?.availability)) return;
         void applyHeartbeatTransition(data.availability, {
@@ -191,23 +220,26 @@ export function ConsoleApp() {
     events.addEventListener("approval.requested", refreshAgent);
     events.addEventListener("approval.resolved", refreshAgent);
     events.onerror = () => {
-      void client.request("/api/admin/session").catch(() => undefined);
+      void authenticatedRequest("/api/admin/session").catch(() => undefined);
     };
     return () => {
       clearInterval(timer);
       clearInterval(sessionTimer);
       events.close();
     };
-  }, [client, session]);
+  }, [authenticatedRequest, session, sessionGeneration]);
 
   async function login(event: FormEvent) {
     event.preventDefault();
     setLoginStatus("验证中");
+    const ticket = sessionGeneration.capture();
     try {
       await client.request("/api/admin/session", {
         method: "POST",
         body: JSON.stringify({ key: password }),
       });
+      if (!sessionGeneration.isCurrent(ticket)) return;
+      sessionGeneration.activate();
       setPassword("");
       setSession("authenticated");
       setLoginStatus("");
@@ -217,20 +249,22 @@ export function ConsoleApp() {
   }
 
   async function logout() {
-    await client.request("/api/admin/session", { method: "DELETE" }).catch(() =>
-      undefined
-    );
+    const pendingLogout = client.request("/api/admin/session", { method: "DELETE" });
+    resetAuthenticatedState();
     if ("BroadcastChannel" in globalThis) {
       const channel = new BroadcastChannel("openfx-console-session");
       channel.postMessage({ type: "logout" });
       channel.close();
     }
-    resetAuthenticatedState();
+    await pendingLogout.catch(() => undefined);
   }
 
   async function refreshOverview() {
     try {
-      const payload = await client.request<{ overview?: Overview; relay?: Relay }>(
+      const payload = await authenticatedRequest<{
+        overview?: Overview;
+        relay?: Relay;
+      }>(
         "/api/console/overview",
       );
       setOverview(payload.overview ?? null);
@@ -243,7 +277,7 @@ export function ConsoleApp() {
         tone: relayError ? "error" : "success",
       });
     } catch (error) {
-      if (error instanceof ConsoleClientError && error.status === 401) return;
+      if (ignoreAfterSessionReset(error)) return;
       const message = error instanceof Error ? error.message : "节点状态读取失败";
       setAvailability(message.includes("离线") ? "offline" : "unknown");
       setNodeDataStale(true);
@@ -252,42 +286,44 @@ export function ConsoleApp() {
   }
 
   async function loadProcesses() {
-    const payload = await client.request<{ processes?: ProcessInfo[] }>(
+    const payload = await authenticatedRequest<{ processes?: ProcessInfo[] }>(
       "/api/console/processes",
     );
     setProcesses(Array.isArray(payload.processes) ? payload.processes : []);
   }
 
   async function loadTelemetry() {
-    const payload = await client.request<{ minutes?: TelemetryMinute[] }>(
+    const payload = await authenticatedRequest<{ minutes?: TelemetryMinute[] }>(
       "/api/console/telemetry",
     );
     setTelemetry(Array.isArray(payload.minutes) ? payload.minutes : []);
   }
 
   async function loadMessages() {
-    const payload = await client.request<{ messages?: AgentMessage[] }>(
+    const payload = await authenticatedRequest<{ messages?: AgentMessage[] }>(
       "/api/console/agent/messages",
     );
     setMessages(Array.isArray(payload.messages) ? payload.messages : []);
   }
 
   async function loadApprovals() {
-    const payload = await client.request<{ approvals?: Approval[] }>(
+    const payload = await authenticatedRequest<{ approvals?: Approval[] }>(
       "/api/console/approvals",
     );
     setApprovals(Array.isArray(payload.approvals) ? payload.approvals : []);
   }
 
   async function loadAudit() {
-    const payload = await client.request<{ events?: AuditEvent[] }>(
+    const payload = await authenticatedRequest<{ events?: AuditEvent[] }>(
       "/api/console/audit",
     );
     setAudit(Array.isArray(payload.events) ? payload.events : []);
   }
 
   async function loadRelay() {
-    const payload = await client.request<{ relay?: Relay }>("/api/console/relay");
+    const payload = await authenticatedRequest<{ relay?: Relay }>(
+      "/api/console/relay",
+    );
     setRelay(payload.relay ?? null);
   }
 
@@ -301,6 +337,7 @@ export function ConsoleApp() {
   }
 
   async function refreshAll() {
+    const ticket = sessionGeneration.capture();
     setLoading(true);
     await refreshOverview();
     await Promise.allSettled([
@@ -311,18 +348,22 @@ export function ConsoleApp() {
       loadAudit(),
       loadRelay(),
     ]);
-    setLoading(false);
+    sessionGeneration.commit(ticket, () => setLoading(false));
   }
 
   async function generatePairing() {
     try {
-      const payload = await client.request<{ code: string; expiresAt: number }>(
+      const payload = await authenticatedRequest<{
+        code: string;
+        expiresAt: number;
+      }>(
         CONSOLE_ENDPOINTS.pairings,
         { method: "POST", body: "{}" },
       );
       setPairing(payload);
       setStatus({ message: "已生成一次性配对码", tone: "success" });
     } catch (error) {
+      if (ignoreAfterSessionReset(error)) return;
       setStatus({
         message: error instanceof Error ? error.message : "配对码生成失败",
         tone: "error",
@@ -332,7 +373,9 @@ export function ConsoleApp() {
 
   async function revokeNode() {
     try {
-      const payload = await client.request<{ revokedNodeId: string | null }>(
+      const payload = await authenticatedRequest<{
+        revokedNodeId: string | null;
+      }>(
         CONSOLE_ENDPOINTS.node,
         { method: "DELETE" },
       );
@@ -348,6 +391,7 @@ export function ConsoleApp() {
         tone: "success",
       });
     } catch (error) {
+      if (ignoreAfterSessionReset(error)) return;
       setStatus({
         message: error instanceof Error ? error.message : "撤销失败",
         tone: "error",
@@ -357,7 +401,7 @@ export function ConsoleApp() {
 
   async function updateRelay(enabled: boolean) {
     try {
-      const result = await client.request<{ approvalRequired?: boolean }>(
+      const result = await authenticatedRequest<{ approvalRequired?: boolean }>(
         "/api/console/relay",
         {
           method: "POST",
@@ -371,6 +415,7 @@ export function ConsoleApp() {
         tone: "success",
       });
     } catch (error) {
+      if (ignoreAfterSessionReset(error)) return;
       setStatus({
         message: error instanceof Error ? error.message : "设置失败",
         tone: "error",
@@ -383,21 +428,42 @@ export function ConsoleApp() {
     const message = whisper.trim();
     if (!message) return;
     const messageId = crypto.randomUUID();
+    agentCompletion.begin(messageId);
     setWhisperStatus("Agent 正在处理");
     setAgentTurn(createAgentTurn(messageId));
     setWhisper("");
     try {
-      const payload = await client.request<{ message?: string }>(
+      const payload = await authenticatedRequest<{
+        messageId?: string;
+        message?: string;
+      }>(
         "/api/console/agent/messages",
         {
           method: "POST",
           body: JSON.stringify({ message, conversationId: messageId }),
         },
       );
-      setWhisperStatus(payload.message || "Agent 已响应");
+      if (
+        !agentCompletion.complete(
+          messageId,
+          payload.messageId,
+          () => setWhisperStatus(payload.message || "Agent 已响应"),
+        )
+      ) return;
       await Promise.all([loadMessages(), loadApprovals()]);
     } catch (error) {
-      setWhisperStatus(error instanceof Error ? error.message : "Agent 请求失败");
+      if (ignoreAfterSessionReset(error) || !agentCompletion.isCurrent(messageId)) {
+        return;
+      }
+      const returnedMessageId = error instanceof ConsoleClientError
+        ? error.payload.messageId
+        : messageId;
+      agentCompletion.complete(
+        messageId,
+        returnedMessageId,
+        () =>
+          setWhisperStatus(error instanceof Error ? error.message : "Agent 请求失败"),
+      );
     }
   }
 
@@ -405,8 +471,9 @@ export function ConsoleApp() {
     approval: Approval,
     decision: "approved" | "rejected",
   ) {
+    const ticket = sessionGeneration.capture();
     try {
-      const result = await client.request<ApprovalResolution>(
+      const result = await authenticatedRequest<ApprovalResolution>(
         "/api/console/approvals",
         {
           method: "POST",
@@ -425,11 +492,13 @@ export function ConsoleApp() {
         telemetry: loadTelemetry,
       };
       await refreshAfterApproval(result, decision, refreshers);
-      setStatus({
-        message: decision === "approved" ? "操作已批准" : "操作已拒绝",
-        tone: "success",
-      });
+      sessionGeneration.commit(ticket, () =>
+        setStatus({
+          message: decision === "approved" ? "操作已批准" : "操作已拒绝",
+          tone: "success",
+        }));
     } catch (error) {
+      if (ignoreAfterSessionReset(error)) return;
       setStatus({
         message: error instanceof Error ? error.message : "审批失败",
         tone: "error",
@@ -589,7 +658,7 @@ export function ConsoleApp() {
                 pairing={pairing}
                 nodeDataStale={nodeDataStale}
                 lowPower={lowPower}
-                request={client.request}
+                request={authenticatedRequest}
                 onLowPower={setLowPower}
                 onGeneratePairing={generatePairing}
                 onRevokeNode={revokeNode}
@@ -976,4 +1045,9 @@ function ConsoleIcon({ name }: { name: string }) {
 function isAvailability(value: unknown): value is NodeAvailability {
   return value === "unknown" || value === "online" || value === "degraded" ||
     value === "offline";
+}
+
+function ignoreAfterSessionReset(error: unknown): boolean {
+  return error instanceof ConsoleStaleRequestError ||
+    (error instanceof ConsoleClientError && error.status === 401);
 }

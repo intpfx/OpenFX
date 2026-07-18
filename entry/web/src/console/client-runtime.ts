@@ -221,5 +221,100 @@ export const parseAgentDelta = (value: unknown): AgentDelta | null => {
     : null;
 };
 
+export type SessionGeneration = {
+  activate(): void;
+  invalidate(): void;
+  capture(): number;
+  isCurrent(ticket: number): boolean;
+  isAuthenticated(ticket: number): boolean;
+  commit(ticket: number, effect: () => void): boolean;
+};
+
+export function createSessionGeneration(): SessionGeneration {
+  let generation = 0;
+  let authenticated = false;
+  const advance = () => {
+    generation += 1;
+  };
+  const isCurrent = (ticket: number) => ticket === generation;
+  return {
+    activate() {
+      authenticated = true;
+      advance();
+    },
+    invalidate() {
+      authenticated = false;
+      advance();
+    },
+    capture: () => generation,
+    isCurrent,
+    isAuthenticated: (ticket) => authenticated && isCurrent(ticket),
+    commit(ticket, effect) {
+      if (!authenticated || !isCurrent(ticket)) return false;
+      effect();
+      return true;
+    },
+  };
+}
+
+export class ConsoleStaleRequestError extends Error {
+  constructor() {
+    super("stale_authenticated_request");
+    this.name = "ConsoleStaleRequestError";
+  }
+}
+
+export function createAuthenticatedConsoleRequest(
+  request: ConsoleRequest,
+  session: SessionGeneration,
+  onUnauthorized: () => void = () => undefined,
+): ConsoleRequest {
+  return async <T>(path: string, init?: RequestInit): Promise<T> => {
+    const ticket = session.capture();
+    if (!session.isAuthenticated(ticket)) throw new ConsoleStaleRequestError();
+    try {
+      const payload = await request<T>(path, init);
+      if (!session.isAuthenticated(ticket)) throw new ConsoleStaleRequestError();
+      return payload;
+    } catch (error) {
+      if (!session.isAuthenticated(ticket)) throw new ConsoleStaleRequestError();
+      if (error instanceof ConsoleClientError && error.status === 401) {
+        onUnauthorized();
+      }
+      throw error;
+    }
+  };
+}
+
+export type AgentTurnCompletionGate = {
+  begin(messageId: string): void;
+  reset(): void;
+  isCurrent(messageId: string): boolean;
+  complete(
+    messageId: string,
+    returnedMessageId: unknown,
+    effect: () => void,
+  ): boolean;
+};
+
+export function createAgentTurnCompletionGate(): AgentTurnCompletionGate {
+  let currentMessageId: string | null = null;
+  const isCurrent = (messageId: string) => currentMessageId === messageId;
+  return {
+    begin(messageId) {
+      currentMessageId = messageId;
+    },
+    reset() {
+      currentMessageId = null;
+    },
+    isCurrent,
+    complete(messageId, returnedMessageId, effect) {
+      if (!isCurrent(messageId) || returnedMessageId !== messageId) return false;
+      effect();
+      return true;
+    },
+  };
+}
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);

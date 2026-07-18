@@ -7,13 +7,22 @@ import {
   buildEventStreamUrl,
   type ConsoleMemory,
   createAgentTurn,
+  createAgentTurnCompletionGate,
+  createAuthenticatedConsoleRequest,
   createConsoleClient,
+  createSessionGeneration,
   emptyConsoleMemory,
   handleConsoleSessionMessage,
   heartbeatRefreshPlan,
   isConsoleLogoutMessage,
   refreshAfterApproval,
 } from "../src/console/client-runtime.ts";
+
+const deferred = <T>() => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => resolve = done);
+  return { promise, resolve };
+};
 
 Deno.test("console client rejects HTTP 200 payload failures", async () => {
   for (
@@ -183,4 +192,106 @@ Deno.test("cross-tab logout message actually invokes the session reset", () => {
   expect(handleConsoleSessionMessage({ type: "login" }, () => resets++)).toBe(false);
   expect(handleConsoleSessionMessage({ type: "logout" }, () => resets++)).toBe(true);
   expect(resets).toBe(1);
+});
+
+Deno.test("a request that resolves after session reset cannot commit authenticated state", async () => {
+  const response = deferred<Response>();
+  const client = createConsoleClient(() => response.promise);
+  const session = createSessionGeneration();
+  session.activate();
+  const request = createAuthenticatedConsoleRequest(client.request, session);
+  let overview: unknown = null;
+  const pending = request<{ overview: unknown }>("/api/console/overview")
+    .then((payload) => overview = payload.overview);
+
+  session.invalidate();
+  response.resolve(Response.json({ ok: true, overview: { cpu: 99 } }));
+
+  await expect(pending).rejects.toMatchObject({
+    name: "ConsoleStaleRequestError",
+  });
+  expect(overview).toBe(null);
+});
+
+Deno.test("Agent requests completing in reverse order cannot overwrite the current turn", async () => {
+  const first = deferred<Response>();
+  const second = deferred<Response>();
+  let call = 0;
+  const client = createConsoleClient(() =>
+    call++ === 0 ? first.promise : second.promise
+  );
+  const turns = createAgentTurnCompletionGate();
+  let status = "";
+
+  turns.begin("turn-a");
+  const pendingA = client.request<{ messageId: string; message: string }>("/agent")
+    .then((payload) =>
+      turns.complete("turn-a", payload.messageId, () => status = payload.message)
+    );
+  turns.begin("turn-b");
+  const pendingB = client.request<{ messageId: string; message: string }>("/agent")
+    .then((payload) =>
+      turns.complete("turn-b", payload.messageId, () => status = payload.message)
+    );
+
+  second.resolve(Response.json({ ok: true, messageId: "turn-b", message: "B" }));
+  await expect(pendingB).resolves.toBe(true);
+  first.resolve(Response.json({ ok: true, messageId: "turn-a", message: "A" }));
+  await expect(pendingA).resolves.toBe(false);
+  expect(status).toBe("B");
+});
+
+Deno.test("an old Agent error completing after a new success cannot overwrite status", async () => {
+  const first = deferred<Response>();
+  const second = deferred<Response>();
+  let call = 0;
+  const client = createConsoleClient(() =>
+    call++ === 0 ? first.promise : second.promise
+  );
+  const turns = createAgentTurnCompletionGate();
+  let status = "";
+
+  turns.begin("turn-a");
+  const pendingA = client.request<{ messageId: string; message: string }>("/agent")
+    .catch((error) =>
+      turns.complete("turn-a", error.payload?.messageId, () => status = error.message)
+    );
+  turns.begin("turn-b");
+  const pendingB = client.request<{ messageId: string; message: string }>("/agent")
+    .then((payload) =>
+      turns.complete("turn-b", payload.messageId, () => status = payload.message)
+    );
+
+  second.resolve(Response.json({ ok: true, messageId: "turn-b", message: "B" }));
+  await expect(pendingB).resolves.toBe(true);
+  first.resolve(Response.json({
+    ok: false,
+    error: "agent_offline",
+    messageId: "turn-a",
+  }));
+  await expect(pendingA).resolves.toBe(false);
+  expect(status).toBe("B");
+});
+
+Deno.test("only a 401 from the current authenticated generation resets the session", async () => {
+  const oldResponse = deferred<Response>();
+  let resets = 0;
+  const session = createSessionGeneration();
+  session.activate();
+  const oldRequest = createAuthenticatedConsoleRequest(
+    createConsoleClient(() => oldResponse.promise).request,
+    session,
+    () => resets++,
+  );
+  const pending = oldRequest("/api/console/overview");
+
+  session.invalidate();
+  session.activate();
+  oldResponse.resolve(Response.json(
+    { ok: false, error: "unauthorized" },
+    { status: 401 },
+  ));
+
+  await expect(pending).rejects.toMatchObject({ name: "ConsoleStaleRequestError" });
+  expect(resets).toBe(0);
 });
