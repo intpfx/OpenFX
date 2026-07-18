@@ -7,18 +7,8 @@ import {
   createMemoryApprovalRequestRepository,
 } from "../src/core/agent-runtime.ts";
 import { createAuditLog } from "../src/core/audit-log.ts";
-import { PersistentApprovalConsumptionStore } from "../src/core/persistent-approval-store.ts";
 
 Deno.test("effectful Agent tools wait for a durable Task 1 approval before execution", async () => {
-  let approvalState: string | null = null;
-  const persistence = {
-    read: () => Promise.resolve(approvalState),
-    compareAndSet(expected: string | null, next: string) {
-      if (approvalState !== expected) return Promise.resolve(false);
-      approvalState = next;
-      return Promise.resolve(true);
-    },
-  };
   const approvals = createMemoryApprovalRequestRepository();
   const auditLines: string[] = [];
   const audit = createAuditLog({
@@ -34,7 +24,7 @@ Deno.test("effectful Agent tools wait for a durable Task 1 approval before execu
     new SafetyActionGate({
       now: () => now,
       createId: () => `id-${++nextId}`,
-      consumptionStore: new PersistentApprovalConsumptionStore(persistence),
+      consumptionStore: approvals,
     });
   const killed: number[] = [];
   const baseDependencies: Omit<
@@ -42,6 +32,7 @@ Deno.test("effectful Agent tools wait for a durable Task 1 approval before execu
     "gate" | "approvals" | "audit"
   > = {
     nodeId: () => "node-1",
+    ownPid: () => 99,
     now: () => now,
     createId: () => `tool-${++nextId}`,
     read: {
@@ -51,6 +42,8 @@ Deno.test("effectful Agent tools wait for a durable Task 1 approval before execu
       relay: () => Promise.resolve({ enabled: true }),
     },
     effects: {
+      inspectProcess: (pid) =>
+        Promise.resolve({ pid, command: "worker", startedAt: "start-a" }),
       kill(pid) {
         killed.push(pid);
         return Promise.resolve({ pid });
@@ -86,8 +79,9 @@ Deno.test("effectful Agent tools wait for a durable Task 1 approval before execu
 
   assertEquals(applied.applied, true);
   assertEquals(killed, [42]);
-  assertEquals((await audit.list()).map((event) => event.action), [
+  assertEquals((await approvals.listAudit()).map((event) => event.action), [
     "process.kill.requested",
+    "process.kill.approved",
     "process.kill.applied",
   ]);
 });
@@ -97,11 +91,17 @@ Deno.test("read-only Agent tools execute directly and unknown tools stay closed"
     appendLine: () => Promise.resolve(),
     readText: () => Promise.resolve(""),
   });
+  const approvals = createMemoryApprovalRequestRepository();
   const runtime = createAgentToolRuntime({
-    gate: new SafetyActionGate({ now: () => 1, createId: () => "id" }),
-    approvals: createMemoryApprovalRequestRepository(),
+    gate: new SafetyActionGate({
+      now: () => 1,
+      createId: () => "id",
+      consumptionStore: approvals,
+    }),
+    approvals,
     audit,
     nodeId: () => "node-1",
+    ownPid: () => 99,
     now: () => 1,
     createId: () => "tool-1",
     read: {
@@ -111,6 +111,8 @@ Deno.test("read-only Agent tools execute directly and unknown tools stay closed"
       relay: () => Promise.resolve({ enabled: true }),
     },
     effects: {
+      inspectProcess: (pid) =>
+        Promise.resolve({ pid, command: "worker", startedAt: "start-a" }),
       kill: () => Promise.resolve({}),
       openApplication: () => Promise.resolve({}),
       updateRelay: () => Promise.resolve({}),
@@ -130,20 +132,11 @@ Deno.test("read-only Agent tools execute directly and unknown tools stay closed"
 });
 
 Deno.test("a mismatched resolution fingerprint does not consume the pending approval", async () => {
-  let approvalState: string | null = null;
-  const persistence = {
-    read: () => Promise.resolve(approvalState),
-    compareAndSet(expected: string | null, next: string) {
-      if (approvalState !== expected) return Promise.resolve(false);
-      approvalState = next;
-      return Promise.resolve(true);
-    },
-  };
   const approvals = createMemoryApprovalRequestRepository();
   const gate = new SafetyActionGate({
     now: () => 100,
     createId: () => "request-1",
-    consumptionStore: new PersistentApprovalConsumptionStore(persistence),
+    consumptionStore: approvals,
   });
   let applications = 0;
   const runtime = createAgentToolRuntime({
@@ -154,6 +147,7 @@ Deno.test("a mismatched resolution fingerprint does not consume the pending appr
       readText: () => Promise.resolve(""),
     }),
     nodeId: () => "node-1",
+    ownPid: () => 99,
     now: () => 100,
     createId: () => "action-1",
     read: {
@@ -163,6 +157,8 @@ Deno.test("a mismatched resolution fingerprint does not consume the pending appr
       relay: () => Promise.resolve({}),
     },
     effects: {
+      inspectProcess: (pid) =>
+        Promise.resolve({ pid, command: "worker", startedAt: "start-a" }),
       kill: () => Promise.resolve(++applications),
       openApplication: () => Promise.resolve({}),
       updateRelay: () => Promise.resolve({}),
@@ -192,4 +188,149 @@ Deno.test("a mismatched resolution fingerprint does not consume the pending appr
     true,
   );
   assertEquals(applications, 1);
+});
+
+Deno.test("invalid applications and the node process pid are rejected before approval", async () => {
+  const approvals = createMemoryApprovalRequestRepository();
+  const runtime = createAgentToolRuntime({
+    gate: new SafetyActionGate({
+      now: () => 1,
+      createId: () => "request",
+      consumptionStore: approvals,
+    }),
+    approvals,
+    audit: createAuditLog({
+      appendLine: () => Promise.resolve(),
+      readText: () => Promise.resolve(""),
+    }),
+    nodeId: () => "node-1",
+    ownPid: () => 99,
+    now: () => 1,
+    createId: () => "action",
+    read: {
+      overview: () => Promise.resolve({}),
+      processes: () => Promise.resolve([]),
+      network: () => Promise.resolve({}),
+      relay: () => Promise.resolve({}),
+    },
+    effects: {
+      inspectProcess: () => Promise.resolve(null),
+      kill: () => Promise.resolve({ ok: true }),
+      openApplication: () => Promise.resolve({ ok: true }),
+      updateRelay: () => Promise.resolve({ ok: true }),
+    },
+  });
+
+  assertEquals(await runtime.invoke("app.open", { application: "Calculator" }), {
+    ok: false,
+    approvalRequired: false,
+    error: "node_invalid_request",
+  });
+  assertEquals(await runtime.invoke("process.kill", { pid: 99 }), {
+    ok: false,
+    approvalRequired: false,
+    error: "node_invalid_request",
+  });
+  assertEquals(await approvals.list(), []);
+});
+
+Deno.test("process approval binds identity and a changed pid identity fails the effect", async () => {
+  const approvals = createMemoryApprovalRequestRepository();
+  const gate = new SafetyActionGate({
+    now: () => 1_000,
+    createId: () => "request-1",
+    consumptionStore: approvals,
+  });
+  let identity = { pid: 42, command: "worker", startedAt: "start-a" };
+  let kills = 0;
+  const runtime = createAgentToolRuntime({
+    gate,
+    approvals,
+    audit: createAuditLog({
+      appendLine: () => Promise.resolve(),
+      readText: () => Promise.resolve(""),
+    }),
+    nodeId: () => "node-1",
+    ownPid: () => 99,
+    now: () => 1_000,
+    createId: () => "action-1",
+    read: {
+      overview: () => Promise.resolve({}),
+      processes: () => Promise.resolve([]),
+      network: () => Promise.resolve({}),
+      relay: () => Promise.resolve({}),
+    },
+    effects: {
+      inspectProcess: () => Promise.resolve(identity),
+      kill(_pid, expected) {
+        if (
+          expected.command !== identity.command ||
+          expected.startedAt !== identity.startedAt
+        ) return Promise.reject(new Error("process_identity_changed"));
+        kills += 1;
+        return Promise.resolve({ ok: true });
+      },
+      openApplication: () => Promise.resolve({ ok: true }),
+      updateRelay: () => Promise.resolve({ ok: true }),
+    },
+  });
+
+  await runtime.invoke("process.kill", { pid: 42 });
+  const request = (await approvals.list())[0]!;
+  assertEquals(JSON.parse(request.action.preview!), {
+    pid: 42,
+    command: "worker",
+    startedAt: "start-a",
+  });
+  identity = { ...identity, startedAt: "start-b" };
+  const result = await runtime.resolve({
+    id: request.id,
+    decision: "approved",
+    parameterFingerprint: request.parameterFingerprint!,
+  });
+  assertEquals(result.applied, false);
+  assertEquals(result.error, "action_failed");
+  assertEquals(kills, 0);
+});
+
+Deno.test("a resolved native ok:false is recorded as effect failure", async () => {
+  const approvals = createMemoryApprovalRequestRepository();
+  const runtime = createAgentToolRuntime({
+    gate: new SafetyActionGate({
+      now: () => 1_000,
+      createId: () => "request-1",
+      consumptionStore: approvals,
+    }),
+    approvals,
+    audit: createAuditLog({
+      appendLine: () => Promise.resolve(),
+      readText: () => Promise.resolve(""),
+    }),
+    nodeId: () => "node-1",
+    ownPid: () => 99,
+    now: () => 1_000,
+    createId: () => "action-1",
+    read: {
+      overview: () => Promise.resolve({}),
+      processes: () => Promise.resolve([]),
+      network: () => Promise.resolve({}),
+      relay: () => Promise.resolve({}),
+    },
+    effects: {
+      inspectProcess: () => Promise.resolve(null),
+      kill: () => Promise.resolve({ ok: true }),
+      openApplication: () => Promise.resolve({ ok: false }),
+      updateRelay: () => Promise.resolve({ ok: true }),
+    },
+  });
+
+  await runtime.invoke("app.open", { application: "Safari" });
+  const request = (await approvals.list())[0]!;
+  const result = await runtime.resolve({
+    id: request.id,
+    decision: "approved",
+    parameterFingerprint: request.parameterFingerprint!,
+  });
+  assertEquals(result.applied, false);
+  assertEquals(result.error, "action_failed");
 });

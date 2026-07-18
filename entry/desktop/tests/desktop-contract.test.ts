@@ -7,8 +7,10 @@ Deno.test("desktop entry is an accessory tray app with the required native bound
   const source = await readTypeScriptTree(SRC_URL);
   const main = await Deno.readTextFile(MAIN_URL);
 
-  assert(main.includes('activationPolicy: "accessory"'));
+  assert(main.includes('appSetActivationPolicy("accessory")'));
   assert(main.includes("trayCreate("));
+  assert(main.includes('"perryShowMainWindow:"'));
+  assertEquals(main.includes("Window("), false);
   assert(source.includes('from "node:http"'));
   assert(source.includes('from "node:https"'));
   assert(source.includes('from "node:crypto"'));

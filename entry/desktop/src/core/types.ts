@@ -23,6 +23,9 @@ export interface NetworkStatus {
   publicIpv6: string | null;
   ipv6Addresses: string[];
   collectedAt: number;
+  observedIpv6?: string[];
+  mismatch?: boolean;
+  observationErrors?: string[];
 }
 
 export interface RelayStatus {

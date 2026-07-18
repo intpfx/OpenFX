@@ -19,6 +19,11 @@ export type JsonRequester = (
   request: HttpJsonRequest,
 ) => Promise<HttpJsonResponse>;
 
+export type TextStreamRequester = (
+  request: HttpJsonRequest,
+  onChunk: (chunk: string) => void,
+) => Promise<{ status: number }>;
+
 export interface OmlxToolCall {
   id: string;
   name: string;
@@ -32,7 +37,10 @@ export interface OmlxChatResult {
 
 export interface OmlxClient {
   readonly tools: unknown[];
-  chat(message: string): Promise<OmlxChatResult>;
+  chat(
+    message: string,
+    onDelta?: (delta: string) => void | Promise<void>,
+  ): Promise<OmlxChatResult>;
   status(): Promise<{ online: boolean; errorMessage: string | null }>;
 }
 
@@ -45,10 +53,16 @@ const tools = AGENT_TOOLS.map((tool) => ({
   },
 }));
 
-export const createOmlxClient = (requestJson: JsonRequester): OmlxClient => {
+export const createOmlxClient = (
+  requestJson: JsonRequester,
+  requestStream?: TextStreamRequester,
+): OmlxClient => {
   const client: OmlxClient = {
     tools,
-    async chat(message) {
+    async chat(message, onDelta) {
+      if (requestStream && onDelta) {
+        return await streamChat(client.tools, message, requestStream, onDelta);
+      }
       const response = await requestJson({
         protocol: "http:",
         hostname: "127.0.0.1",
@@ -79,6 +93,83 @@ export const createOmlxClient = (requestJson: JsonRequester): OmlxClient => {
     },
   };
   return client;
+};
+
+const streamChat = async (
+  tools: unknown[],
+  message: string,
+  requestStream: TextStreamRequester,
+  onDelta: (delta: string) => void | Promise<void>,
+): Promise<OmlxChatResult> => {
+  let lineBuffer = "";
+  let content = "";
+  let callbacks = Promise.resolve();
+  const calls = new Map<
+    number,
+    { id: string; name: string; arguments: string }
+  >();
+  const consumeLine = (line: string): void => {
+    if (!line.startsWith("data:")) return;
+    const data = line.slice(5).trim();
+    if (!data || data === "[DONE]") return;
+    const chunk = objectValue(JSON.parse(data));
+    const choices = Array.isArray(chunk.choices) ? chunk.choices : [];
+    const delta = objectValue(objectValue(choices[0]).delta);
+    const text = stringValue(delta.content);
+    if (text) {
+      content += text;
+      callbacks = callbacks.then(() => onDelta(text));
+    }
+    const toolCalls = Array.isArray(delta.tool_calls) ? delta.tool_calls : [];
+    for (const raw of toolCalls) {
+      const part = objectValue(raw);
+      const index = Number.isSafeInteger(part.index) ? Number(part.index) : 0;
+      const previous = calls.get(index) ?? { id: "", name: "", arguments: "" };
+      const fn = objectValue(part.function);
+      calls.set(index, {
+        id: previous.id + stringValue(part.id),
+        name: previous.name + stringValue(fn.name),
+        arguments: previous.arguments + stringValue(fn.arguments),
+      });
+    }
+  };
+  const response = await requestStream({
+    protocol: "http:",
+    hostname: "127.0.0.1",
+    port: 8000,
+    path: "/v1/chat/completions",
+    method: "POST",
+    body: {
+      model: "local",
+      messages: [{ role: "user", content: message }],
+      tools,
+      stream: true,
+    },
+  }, (chunk) => {
+    lineBuffer += chunk;
+    let newline = lineBuffer.indexOf("\n");
+    while (newline >= 0) {
+      consumeLine(lineBuffer.slice(0, newline).replace(/\r$/, ""));
+      lineBuffer = lineBuffer.slice(newline + 1);
+      newline = lineBuffer.indexOf("\n");
+    }
+  });
+  if (lineBuffer.trim()) consumeLine(lineBuffer.trim());
+  await callbacks;
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(`omlx_http_${response.status}`);
+  }
+  return {
+    content,
+    toolCalls: [...calls.entries()].sort(([left], [right]) => left - right).map(([
+      index,
+      call,
+    ]) => ({
+      id: call.id || `tool-${index + 1}`,
+      name: call.name,
+      arguments: parseArguments(call.arguments),
+    })).filter((call) => call.name !== ""),
+  };
 };
 
 const parseChatResponse = (value: unknown): OmlxChatResult => {

@@ -1,10 +1,12 @@
 import {
   App,
+  appSetActivationPolicy,
   Button,
   Divider,
   HStack,
   menuAddItem,
   menuAddSeparator,
+  menuAddStandardAction,
   menuCreate,
   onTerminate,
   Spacer,
@@ -14,44 +16,44 @@ import {
   TextField,
   trayAttachMenu,
   trayCreate,
-  trayOnClick,
   traySetTooltip,
   VStack,
-  Window,
 } from "perry/ui";
 import { exit } from "node:process";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 import { decodeBase64Url } from "../../../domains/_shared/openfx-node/encoding.ts";
 import { SafetyActionGate } from "../../../domains/e/src/core/safety-action-gate.ts";
 import { createAgentToolRuntime } from "./core/agent-runtime.ts";
-import { createAuditLog } from "./core/audit-log.ts";
+import type { AuditLog } from "./core/audit-log.ts";
 import {
   DEFAULT_DESKTOP_PREFERENCES,
   sanitizeDesktopPreferences,
 } from "./core/desktop-state.ts";
-import { PersistentApprovalConsumptionStore } from "./core/persistent-approval-store.ts";
-import { PersistentApprovalRequestRepository } from "./core/persistent-approval-requests.ts";
+import { createDesktopJournal } from "./core/durable-journal.ts";
+import { createDesktopLifecycleController } from "./core/lifecycle-controller.ts";
 import { createDesktopRouteDispatcher } from "./core/route-dispatcher.ts";
 import type { DesktopPreferences } from "./core/types.ts";
 import { createControlPlaneClient } from "./native/control-plane-client.ts";
-import { createFileAuditStorage } from "./native/file-audit-storage.ts";
-import { requestJson } from "./native/http-json.ts";
+import { createFileJournalStorage } from "./native/file-journal-storage.ts";
+import { requestJson, requestTextStream } from "./native/http-json.ts";
 import { createKeychain } from "./native/keychain.ts";
 import { createMacSystemAdapter } from "./native/mac-system.ts";
+import { createNodeEventReporter } from "./native/node-event-reporter.ts";
 import { createNodeCryptoAdapter } from "./native/node-crypto.ts";
 import { type RunningNodeServer, startNodeServer } from "./native/node-server.ts";
 import { createOmlxClient } from "./native/omlx-client.ts";
-import {
-  APPROVAL_AUTHORITY_KEY,
-  APPROVAL_REQUESTS_KEY,
-  createDesktopPreferenceStore,
-  createPreferenceStringPersistence,
-} from "./native/preferences.ts";
+import { createDesktopPreferenceStore } from "./native/preferences.ts";
 import {
   createPairingService,
   type RestoredPairing,
 } from "./native/pairing-service.ts";
 import { createRelayReporter } from "./native/relay-reporter.ts";
+import {
+  createObservedSystemCollector,
+  createPublicIpv6Observer,
+} from "./native/public-ipv6-observer.ts";
 import { createSystemMonitor } from "./native/system-monitor.ts";
 
 const cryptoAdapter = createNodeCryptoAdapter();
@@ -64,8 +66,23 @@ const pairingService = createPairingService({
   keychain,
 });
 const reporter = createRelayReporter(controlPlane);
-const audit = createAuditLog(createFileAuditStorage());
+const eventReporter = createNodeEventReporter(controlPlane);
+const journal = createDesktopJournal(createFileJournalStorage(join(
+  homedir(),
+  "Library",
+  "Application Support",
+  "OpenFX Node",
+  "journal.jsonl",
+)));
+const audit: AuditLog = {
+  append: (event) => journal.appendAudit(event),
+  list: (limit) => journal.listAudit(limit),
+};
 const macSystem = createMacSystemAdapter();
+const systemCollector = createObservedSystemCollector(
+  macSystem,
+  createPublicIpv6Observer(requestJson),
+);
 
 let pairing: RestoredPairing | null = null;
 let nodeServer: RunningNodeServer | null = null;
@@ -78,7 +95,7 @@ const serverUrl = State("");
 const nodeName = State("OpenFX Mac");
 
 const systemMonitor = createSystemMonitor({
-  collector: macSystem,
+  collector: systemCollector,
   async onSample(state) {
     const ipv6 = state.network.publicIpv6 ?? "未检测到公网 IPv6";
     monitorStatus.set(
@@ -97,23 +114,18 @@ const systemMonitor = createSystemMonitor({
   },
 });
 
-const approvalAuthority = new PersistentApprovalConsumptionStore(
-  createPreferenceStringPersistence(APPROVAL_AUTHORITY_KEY),
-);
-const approvals = new PersistentApprovalRequestRepository(
-  createPreferenceStringPersistence(APPROVAL_REQUESTS_KEY),
-);
 const gate = new SafetyActionGate({
   now: Date.now,
   createId: () => createId("approval"),
-  consumptionStore: approvalAuthority,
+  consumptionStore: journal,
 });
 
 const agentTools = createAgentToolRuntime({
   gate,
-  approvals,
+  approvals: journal,
   audit,
   nodeId: () => preferences.value.nodeId,
+  ownPid: () => process.pid,
   now: Date.now,
   createId: () => createId("action"),
   read: {
@@ -123,7 +135,8 @@ const agentTools = createAgentToolRuntime({
     relay: () => Promise.resolve(reporter.status()),
   },
   effects: {
-    kill: (pid) => macSystem.kill(pid),
+    inspectProcess: (pid) => macSystem.inspectProcess(pid),
+    kill: (pid, expected) => macSystem.kill(pid, expected),
     openApplication: (application) => macSystem.openApplication(application),
     async updateRelay(enabled) {
       const next = sanitizeDesktopPreferences({
@@ -139,19 +152,32 @@ const agentTools = createAgentToolRuntime({
       return reporter.status();
     },
   },
+  events: {
+    approvalRequested: (request) =>
+      eventReporter.emit({
+        type: "approval.requested",
+        data: { id: request.id, summary: request.reason },
+      }),
+    approvalResolved: (request, decision) =>
+      eventReporter.emit({
+        type: "approval.resolved",
+        data: { id: request.id, decision },
+      }),
+  },
 });
 
-const omlx = createOmlxClient(requestJson);
+const omlx = createOmlxClient(requestJson, requestTextStream);
 const dispatchRoute = createDesktopRouteDispatcher({
   overview: () => Promise.resolve(systemMonitor.overview()),
   processes: () => Promise.resolve(systemMonitor.processes()),
   network: () => Promise.resolve(systemMonitor.network()),
   relay: () => Promise.resolve(reporter.status()),
-  chat: (message) => omlx.chat(message),
+  chat: (message, onDelta) => omlx.chat(message, onDelta),
+  agentDelta: (data) => eventReporter.emit({ type: "agent.delta", data }),
   invokeTool: (toolId, input) => agentTools.invoke(toolId, input),
   listApprovals: () => agentTools.listApprovals(),
   resolveApproval: (input) => agentTools.resolve(input),
-});
+}, { createId: () => createId("message") });
 
 const pairWithControlPlane = async (): Promise<void> => {
   serviceStatus.set("正在配对…");
@@ -173,6 +199,7 @@ const pairWithControlPlane = async (): Promise<void> => {
     });
     preferences.set(pairing.preferences);
     reporter.setPairing(pairing);
+    eventReporter.setPairing(pairing);
     serverUrl.set(pairing.preferences.serverUrl);
     nodeName.set(pairing.preferences.nodeName);
     pairingCode.set("");
@@ -184,10 +211,15 @@ const pairWithControlPlane = async (): Promise<void> => {
 
 const bootstrap = async (): Promise<void> => {
   try {
+    const recovered = await journal.recoverIncompleteExecutions();
+    if (recovered > 0) {
+      serviceStatus.set(`已恢复 ${recovered} 个中断的执行记录。`);
+    }
     pairing = await pairingService.restore();
     if (pairing) {
       preferences.set(pairing.preferences);
       reporter.setPairing(pairing);
+      eventReporter.setPairing(pairing);
       serverUrl.set(pairing.preferences.serverUrl);
       nodeName.set(pairing.preferences.nodeName);
       serviceStatus.set(`已恢复配对：${pairing.preferences.nodeName}`);
@@ -205,12 +237,22 @@ const bootstrap = async (): Promise<void> => {
       loadSecret: () =>
         Promise.resolve(pairing ? decodeBase64Url(pairing.nodeSecret) : null),
       dispatch: dispatchRoute,
+      replayStore: journal,
     });
     systemMonitor.start();
   } catch (error) {
     serviceStatus.set(`节点启动失败：${errorMessage(error)}`);
   }
 };
+
+const lifecycle = createDesktopLifecycleController({
+  startServices: bootstrap,
+  async stopServices() {
+    systemMonitor.stop();
+    if (nodeServer) await nodeServer.close();
+    nodeServer = null;
+  },
+});
 
 const buildControlPanel = () => {
   const serverField = TextField(
@@ -251,30 +293,33 @@ const buildControlPanel = () => {
 const tray = trayCreate("");
 traySetTooltip(tray, "OpenFX Node");
 const trayMenu = menuCreate();
-const controlWindow = Window("OpenFX Node", 680, 520);
-controlWindow.setBody(buildControlPanel());
-controlWindow.onFocusLost(() => controlWindow.hide());
-menuAddItem(trayMenu, "显示 OpenFX Node", () => controlWindow.show());
+menuAddStandardAction(
+  trayMenu,
+  "显示 OpenFX Node",
+  "perryShowMainWindow:",
+  "",
+);
 menuAddItem(trayMenu, "立即采样", () => void systemMonitor.sampleNow());
 menuAddSeparator(trayMenu);
-menuAddItem(trayMenu, "退出", () => exit(0));
+menuAddItem(trayMenu, "退出", () => {
+  void lifecycle.terminate().finally(() => exit(0));
+});
 trayAttachMenu(tray, trayMenu);
-trayOnClick(tray, () => controlWindow.show());
 
 onTerminate(() => {
-  systemMonitor.stop();
-  if (nodeServer) void nodeServer.close();
+  void lifecycle.terminate();
 });
 
-void bootstrap();
+void lifecycle.start();
 
+appSetActivationPolicy("accessory");
 App({
   title: "OpenFX Node",
   width: 680,
   height: 520,
-  activationPolicy: "accessory",
   body: buildControlPanel(),
 });
+lifecycle.mainWindowShown();
 
 function createId(prefix: string): string {
   const bytes = cryptoAdapter.randomBytes(12);

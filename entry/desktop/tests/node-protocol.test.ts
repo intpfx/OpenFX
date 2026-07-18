@@ -11,6 +11,10 @@ import {
   createNodeRelayProtocol,
   PUBLIC_NODE_HEALTH,
 } from "../src/core/node-protocol.ts";
+import {
+  createDesktopJournal,
+  createMemoryJournalStorage,
+} from "../src/core/durable-journal.ts";
 
 const NOW = 5_000_000;
 const SECRET = new TextEncoder().encode("0123456789abcdef0123456789abcdef");
@@ -102,6 +106,45 @@ Deno.test("node relay rejects a replayed authenticated envelope", async () => {
   await protocol.handle(envelope);
   await assertRejects(
     () => protocol.handle(envelope),
+    Error,
+    "node_replay_detected",
+  );
+});
+
+Deno.test("node relay rejects a nonce replay after protocol reconstruction", async () => {
+  const crypto = createWebCryptoAdapter(globalThis.crypto);
+  const storage = createMemoryJournalStorage();
+  const signed = await signRequest(
+    crypto,
+    SECRET,
+    { method: "GET", path: "/v1/processes", body: null },
+    {
+      now: () => NOW,
+      randomBytes: () => new Uint8Array(16).fill(7),
+    },
+  );
+  const envelope = await sealRelayEnvelope(crypto, SECRET, signed, {
+    now: () => NOW,
+    randomBytes: () => new Uint8Array(16).fill(8),
+  });
+  const first = createNodeRelayProtocol({
+    crypto,
+    secret: SECRET,
+    now: () => NOW,
+    replayStore: createDesktopJournal(storage),
+    dispatch: () => Promise.resolve({ ok: true }),
+  });
+  await first.handle(envelope);
+
+  const reconstructed = createNodeRelayProtocol({
+    crypto,
+    secret: SECRET,
+    now: () => NOW + 1,
+    replayStore: createDesktopJournal(storage),
+    dispatch: () => Promise.resolve({ ok: true }),
+  });
+  await assertRejects(
+    () => reconstructed.handle(envelope),
     Error,
     "node_replay_detected",
   );

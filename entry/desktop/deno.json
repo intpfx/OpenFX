@@ -5,8 +5,8 @@
     "perry/ui": "./src/perry-ui-stub.ts"
   },
   "tasks": {
-    "test": "deno test --allow-read --allow-net tests",
-    "check": "deno fmt --check src tests README.md deno.json && deno lint src tests && deno test --allow-read --allow-net tests"
+    "test": "deno test --allow-read --allow-write --allow-net tests",
+    "check": "deno fmt --check src tests README.md deno.json && deno lint src tests && deno test --allow-read --allow-write --allow-net tests"
   },
   "fmt": {
     "lineWidth": 88,

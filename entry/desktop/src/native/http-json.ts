@@ -3,6 +3,7 @@ import { request as httpsRequest } from "node:https";
 import { Buffer } from "node:buffer";
 
 import type { HttpJsonRequest, HttpJsonResponse } from "./omlx-client.ts";
+import type { TextStreamRequester } from "./omlx-client.ts";
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 
@@ -62,5 +63,37 @@ export const requestJson = (
     outgoing.on("error", reject);
     if (payload) outgoing.write(payload);
     outgoing.end();
+  });
+};
+
+export const requestTextStream: TextStreamRequester = (request, onChunk) => {
+  if (request.protocol !== "http:" || request.hostname !== "127.0.0.1") {
+    return Promise.reject(new Error("stream_endpoint_must_be_loopback_http"));
+  }
+  return new Promise((resolve, reject) => {
+    const payload = request.body === undefined ? "" : JSON.stringify(request.body);
+    const outgoing = httpRequest({
+      protocol: request.protocol,
+      hostname: request.hostname,
+      port: request.port,
+      path: request.path,
+      method: request.method,
+      headers: {
+        "content-type": "application/json",
+        "content-length": String(Buffer.byteLength(payload)),
+        accept: "text/event-stream",
+      },
+    }, (response) => {
+      response.setEncoding("utf8");
+      response.on("data", (chunk: string) => onChunk(chunk));
+      response.on("end", () => resolve({ status: response.statusCode ?? 0 }));
+      response.on("error", reject);
+    });
+    outgoing.setTimeout(
+      30_000,
+      () => outgoing.destroy(new Error("http_stream_timeout")),
+    );
+    outgoing.on("error", reject);
+    outgoing.end(payload);
   });
 };

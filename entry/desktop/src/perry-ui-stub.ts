@@ -87,7 +87,6 @@ export const App = (_config: {
   width: number;
   height: number;
   body: unknown;
-  activationPolicy?: "regular" | "accessory" | "background";
 }): void => {
   // Deno/LSP stub only. Real builds are handled by Perry.
 };
@@ -108,6 +107,9 @@ export const trayCreate = (_iconPath: string): Widget => ({});
 export const traySetTooltip = (_tray: Widget, _tooltip: string): void => {};
 export const trayAttachMenu = (_tray: Widget, _menu: Widget): void => {};
 export const trayOnClick = (_tray: Widget, _callback: () => void): void => {};
+export const appSetActivationPolicy = (
+  _policy: "regular" | "accessory" | "background",
+): void => {};
 export const menuCreate = (): Widget => ({});
 export const menuAddItem = (
   _menu: Widget,
@@ -115,4 +117,10 @@ export const menuAddItem = (
   _callback: () => void,
 ): void => {};
 export const menuAddSeparator = (_menu: Widget): void => {};
+export const menuAddStandardAction = (
+  _menu: Widget,
+  _label: string,
+  _selector: string,
+  _keyEquivalent: string,
+): void => {};
 export const onTerminate = (_callback: () => void): void => {};

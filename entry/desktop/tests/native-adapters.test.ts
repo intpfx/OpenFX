@@ -27,11 +27,17 @@ Deno.test("node:crypto adapter interoperates with the shared WebCrypto envelope"
   );
 });
 
-Deno.test("Keychain adapter uses /usr/bin/security argument arrays without a shell", async () => {
-  const calls: Array<{ file: string; args: readonly string[] }> = [];
-  const keychain = createKeychain((file, args) => {
-    calls.push({ file, args: [...args] });
-    return args[0] === "find-generic-password" ? "secret-value\n" : "";
+Deno.test("Keychain sends the secret through stdin and never exposes it in argv", async () => {
+  const calls: Array<{
+    file: string;
+    args: readonly string[];
+    input?: string;
+  }> = [];
+  const keychain = createKeychain((file, args, input) => {
+    calls.push({ file, args: [...args], input });
+    return Promise.resolve(
+      args[0] === "find-generic-password" ? "secret-value\n" : "",
+    );
   });
 
   await keychain.write("node-1", "secret-value");
@@ -50,8 +56,8 @@ Deno.test("Keychain adapter uses /usr/bin/security argument arrays without a she
         "-a",
         "node-1",
         "-w",
-        "secret-value",
       ],
+      input: "secret-value\n",
     },
     {
       file: "/usr/bin/security",
@@ -63,12 +69,15 @@ Deno.test("Keychain adapter uses /usr/bin/security argument arrays without a she
         "node-1",
         "-w",
       ],
+      input: undefined,
     },
     {
       file: "/usr/bin/security",
       args: ["delete-generic-password", "-s", "OpenFX Node", "-a", "node-1"],
+      input: undefined,
     },
   ]);
+  assertEquals(calls.some((call) => call.args.includes("secret-value")), false);
 });
 
 Deno.test("OMLX client is fixed to the loopback v1 chat endpoint and reports offline", async () => {
@@ -103,4 +112,51 @@ Deno.test("OMLX client is fixed to the loopback v1 chat endpoint and reports off
     online: false,
     errorMessage: "connection refused",
   });
+});
+
+Deno.test("OMLX SSE chunks emit deltas as produced and reconstruct tool calls", async () => {
+  const deltas: string[] = [];
+  const requests: unknown[] = [];
+  const client = createOmlxClient(
+    () => Promise.reject(new Error("unexpected JSON request")),
+    (request, onChunk) => {
+      requests.push(request);
+      onChunk('data: {"choices":[{"delta":{"content":"Hel"}}]}\n');
+      onChunk(
+        'data: {"choices":[{"delta":{"content":"lo","tool_calls":[{"index":0,"id":"call-1","function":{"name":"app.","arguments":"{\\"application\\":\\""}}]}}]}\n',
+      );
+      onChunk(
+        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"open","arguments":"Safari\\"}"}}]}}]}\n\ndata: [DONE]\n',
+      );
+      return Promise.resolve({ status: 200 });
+    },
+  );
+
+  assertEquals(
+    await client.chat("hello", (delta) => {
+      deltas.push(delta);
+    }),
+    {
+      content: "Hello",
+      toolCalls: [{
+        id: "call-1",
+        name: "app.open",
+        arguments: { application: "Safari" },
+      }],
+    },
+  );
+  assertEquals(deltas, ["Hel", "lo"]);
+  assertEquals(requests, [{
+    protocol: "http:",
+    hostname: "127.0.0.1",
+    port: 8000,
+    path: "/v1/chat/completions",
+    method: "POST",
+    body: {
+      model: "local",
+      messages: [{ role: "user", content: "hello" }],
+      tools: client.tools,
+      stream: true,
+    },
+  }]);
 });

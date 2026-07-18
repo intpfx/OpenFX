@@ -1,9 +1,9 @@
 import {
-  createReplayProtector,
   OPENFX_NODE_ERROR_CODES,
   OpenFxNodeProtocolError,
   openRelayEnvelope,
   PROTOCOL_VERSION,
+  RELAY_NONCE_TTL_MS,
   sealRelayEnvelope,
   verifySignedRequest,
 } from "../../../../domains/_shared/openfx-node/mod.ts";
@@ -38,6 +38,11 @@ export interface NodeRelayProtocolOptions {
   dispatch(request: SignableNodeRequest): Promise<unknown>;
   now?: () => number;
   randomBytes?: (length: number) => Uint8Array;
+  replayStore?: PersistentReplayStore;
+}
+
+export interface PersistentReplayStore {
+  claimReplayNonce(nonce: string, expiresAt: number, now: number): Promise<boolean>;
 }
 
 export interface NodeRelayProtocol {
@@ -47,21 +52,23 @@ export interface NodeRelayProtocol {
 export const createNodeRelayProtocol = (
   options: NodeRelayProtocolOptions,
 ): NodeRelayProtocol => {
-  const envelopeReplay = createReplayProtector();
-  const requestReplay = createReplayProtector();
   const now = options.now ?? Date.now;
+  const replayStore = options.replayStore ?? createMemoryReplayStore();
+  const noReplay = { consume() {} };
   return {
     async handle(envelope) {
       const signed = await openRelayEnvelope<SignedNodeRequest>(
         options.crypto,
         options.secret,
         envelope,
-        { now, replayProtector: envelopeReplay },
+        { now, replayProtector: noReplay },
       );
+      await claimNonce(replayStore, envelope.nonce, envelope.timestamp, now());
       await verifySignedRequest(options.crypto, options.secret, signed, {
         now,
-        replayProtector: requestReplay,
+        replayProtector: noReplay,
       });
+      await claimNonce(replayStore, signed.nonce, signed.timestamp, now());
       const method = signed.method.toUpperCase();
       if (!isAllowedNodeRoute(method, signed.path)) {
         throw new OpenFxNodeProtocolError(
@@ -80,6 +87,40 @@ export const createNodeRelayProtocol = (
         response,
         { now, randomBytes: options.randomBytes },
       );
+    },
+  };
+};
+
+const claimNonce = async (
+  replayStore: PersistentReplayStore,
+  nonce: string,
+  timestamp: number,
+  currentTime: number,
+): Promise<void> => {
+  if (
+    !await replayStore.claimReplayNonce(
+      nonce,
+      Math.max(timestamp, currentTime) + RELAY_NONCE_TTL_MS,
+      currentTime,
+    )
+  ) {
+    throw new OpenFxNodeProtocolError(
+      OPENFX_NODE_ERROR_CODES.replayDetected,
+      "Authenticated nonce has already been consumed.",
+    );
+  }
+};
+
+const createMemoryReplayStore = (): PersistentReplayStore => {
+  const nonces = new Map<string, number>();
+  return {
+    claimReplayNonce(nonce, expiresAt, currentTime) {
+      const existing = nonces.get(nonce);
+      if (existing !== undefined && existing > currentTime) {
+        return Promise.resolve(false);
+      }
+      nonces.set(nonce, expiresAt);
+      return Promise.resolve(true);
     },
   };
 };

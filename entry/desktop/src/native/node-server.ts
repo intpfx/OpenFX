@@ -9,8 +9,10 @@ import type { NodeCryptoAdapter } from "../../../../domains/_shared/openfx-node/
 import type { SealedRelayEnvelope } from "../../../../domains/_shared/openfx-node/types.ts";
 import type { SignableNodeRequest } from "../../../../domains/_shared/openfx-node/request-signing.ts";
 import { createNodeRelayProtocol, PUBLIC_NODE_HEALTH } from "../core/node-protocol.ts";
+import type { PersistentReplayStore } from "../core/node-protocol.ts";
 
 const MAX_REQUEST_BYTES = 64 * 1024;
+const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 
 export interface NodeServerOptions {
   crypto: NodeCryptoAdapter;
@@ -18,6 +20,10 @@ export interface NodeServerOptions {
   dispatch(request: SignableNodeRequest): Promise<unknown>;
   host?: string;
   port?: number;
+  replayStore?: PersistentReplayStore;
+  requestTimeoutMs?: number;
+  headersTimeoutMs?: number;
+  keepAliveTimeoutMs?: number;
 }
 
 export interface RunningNodeServer {
@@ -41,10 +47,16 @@ export const startNodeServer = (
         );
         return;
       }
-      const code = error instanceof OpenFxNodeProtocolError
+      const code = error instanceof NodeHttpError
+        ? error.code
+        : error instanceof OpenFxNodeProtocolError
         ? error.code
         : OPENFX_NODE_ERROR_CODES.internal;
-      json(response, protocolStatus(code), { ok: false, error: code });
+      const status = error instanceof NodeHttpError
+        ? error.status
+        : protocolStatus(code);
+      request.resume();
+      json(response, status, { ok: false, error: code });
     });
   });
 
@@ -79,11 +91,20 @@ export const startNodeServer = (
         crypto: options.crypto,
         secret,
         dispatch: options.dispatch,
+        replayStore: options.replayStore,
       });
     }
-    const envelope = await readJson(request) as SealedRelayEnvelope;
+    const envelope = await readJson(
+      request,
+      options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
+    ) as SealedRelayEnvelope;
     json(response, 200, await protocol.handle(envelope));
   };
+
+  server.requestTimeout = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+  server.headersTimeout = options.headersTimeoutMs ?? 5_000;
+  server.keepAliveTimeout = options.keepAliveTimeoutMs ?? 5_000;
+  server.maxHeadersCount = 64;
 
   return new Promise((resolve, reject) => {
     server.once("error", reject);
@@ -103,37 +124,74 @@ export const startNodeServer = (
   });
 };
 
-const readJson = (request: IncomingMessage): Promise<unknown> =>
+class NodeHttpError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+const readJson = (
+  request: IncomingMessage,
+  timeoutMs: number,
+): Promise<unknown> =>
   new Promise((resolve, reject) => {
     const chunks: Uint8Array[] = [];
     let length = 0;
+    let settled = false;
+    const finish = (operation: () => void): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      operation();
+    };
+    const timer = setTimeout(() => {
+      finish(() =>
+        reject(
+          new NodeHttpError(
+            408,
+            OPENFX_NODE_ERROR_CODES.invalidRequest,
+            "Node request timed out.",
+          ),
+        )
+      );
+    }, timeoutMs);
     request.on("data", (chunk: Uint8Array) => {
+      if (settled) return;
       length += chunk.length;
       if (length > MAX_REQUEST_BYTES) {
-        reject(
-          new OpenFxNodeProtocolError(
-            OPENFX_NODE_ERROR_CODES.invalidRequest,
-            "Node request exceeded 64 KiB.",
-          ),
+        finish(() =>
+          reject(
+            new NodeHttpError(
+              413,
+              OPENFX_NODE_ERROR_CODES.invalidRequest,
+              "Node request exceeded 64 KiB.",
+            ),
+          )
         );
-        request.destroy();
         return;
       }
       chunks.push(chunk);
     });
     request.on("end", () => {
+      if (settled) return;
       try {
-        resolve(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+        finish(() => resolve(JSON.parse(Buffer.concat(chunks).toString("utf8"))));
       } catch {
-        reject(
-          new OpenFxNodeProtocolError(
-            OPENFX_NODE_ERROR_CODES.invalidRequest,
-            "Node request body is not valid JSON.",
-          ),
+        finish(() =>
+          reject(
+            new OpenFxNodeProtocolError(
+              OPENFX_NODE_ERROR_CODES.invalidRequest,
+              "Node request body is not valid JSON.",
+            ),
+          )
         );
       }
     });
-    request.on("error", reject);
+    request.on("error", (error) => finish(() => reject(error)));
   });
 
 const json = (

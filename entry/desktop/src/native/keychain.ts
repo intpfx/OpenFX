@@ -1,11 +1,12 @@
-import { execFileSync } from "node:child_process";
+import { spawn } from "node:child_process";
 
 export const KEYCHAIN_SERVICE = "OpenFX Node";
 
 export type ExecFileText = (
   file: string,
   args: readonly string[],
-) => string;
+  input?: string,
+) => Promise<string>;
 
 export interface NodeKeychain {
   write(account: string, secret: string): Promise<void>;
@@ -13,14 +14,31 @@ export interface NodeKeychain {
   remove(account: string): Promise<void>;
 }
 
-const systemExecFileText: ExecFileText = (file, args) =>
-  String(execFileSync(file, [...args], { encoding: "utf8" }));
+const systemExecFileText: ExecFileText = (file, args, input) =>
+  new Promise((resolve, reject) => {
+    const child = spawn(file, [...args], {
+      shell: false,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => stdout += chunk);
+    child.stderr.on("data", (chunk: string) => stderr += chunk);
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) resolve(stdout);
+      else reject(new Error(`security_exit_${code}: ${stderr.trim()}`));
+    });
+    child.stdin.end(input ?? "");
+  });
 
 export const createKeychain = (
   execute: ExecFileText = systemExecFileText,
 ): NodeKeychain => ({
-  write(account, secret) {
-    execute("/usr/bin/security", [
+  async write(account, secret) {
+    await execute("/usr/bin/security", [
       "add-generic-password",
       "-U",
       "-s",
@@ -28,29 +46,27 @@ export const createKeychain = (
       "-a",
       account,
       "-w",
-      secret,
-    ]);
-    return Promise.resolve();
+    ], `${secret}\n`);
   },
-  read(account) {
+  async read(account) {
     try {
-      return Promise.resolve(
-        execute("/usr/bin/security", [
+      return (
+        await execute("/usr/bin/security", [
           "find-generic-password",
           "-s",
           KEYCHAIN_SERVICE,
           "-a",
           account,
           "-w",
-        ]).trim() || null,
-      );
+        ])
+      ).trim() || null;
     } catch {
-      return Promise.resolve(null);
+      return null;
     }
   },
-  remove(account) {
+  async remove(account) {
     try {
-      execute("/usr/bin/security", [
+      await execute("/usr/bin/security", [
         "delete-generic-password",
         "-s",
         KEYCHAIN_SERVICE,
@@ -60,6 +76,5 @@ export const createKeychain = (
     } catch {
       // Deleting a missing item is idempotent.
     }
-    return Promise.resolve();
   },
 });

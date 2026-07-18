@@ -15,7 +15,15 @@ export interface DesktopRouteDependencies {
   processes(): Promise<unknown>;
   network(): Promise<unknown>;
   relay(): Promise<unknown>;
-  chat(message: string): Promise<AgentChatResult>;
+  chat(
+    message: string,
+    onDelta: (delta: string) => void | Promise<void>,
+  ): Promise<AgentChatResult>;
+  agentDelta(input: {
+    messageId: string;
+    delta: string;
+    sequence: number;
+  }): Promise<void>;
   invokeTool(toolId: string, input: Record<string, unknown>): Promise<unknown>;
   listApprovals(): Promise<unknown>;
   resolveApproval(input: {
@@ -37,6 +45,7 @@ export type DesktopRouteDispatcher = (
 
 export const createDesktopRouteDispatcher = (
   dependencies: DesktopRouteDependencies,
+  options: { createId?: () => string } = {},
 ): DesktopRouteDispatcher => {
   const messages: AgentMessage[] = [];
   let agent = { online: true, errorMessage: null as string | null };
@@ -100,7 +109,15 @@ export const createDesktopRouteDispatcher = (
       createdAt: Date.now(),
     });
     try {
-      const response = await dependencies.chat(input.message);
+      const messageId = options.createId?.() ?? crypto.randomUUID();
+      let sequence = 0;
+      const response = await dependencies.chat(input.message, async (delta) => {
+        await dependencies.agentDelta({
+          messageId,
+          delta,
+          sequence: ++sequence,
+        });
+      });
       agent = { online: true, errorMessage: null };
       const toolResults: unknown[] = [];
       for (const call of response.toolCalls) {
