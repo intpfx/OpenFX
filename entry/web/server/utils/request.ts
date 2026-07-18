@@ -5,6 +5,7 @@ import {
   getRequestURL,
   getRequestWebStream,
 } from "h3";
+import { TRUSTED_REMOTE_ADDRESS_HEADER } from "../runtime/deno-request.ts";
 
 export const WEB_REQUEST_BODY_LIMIT = 64 * 1024;
 
@@ -56,7 +57,8 @@ export const isRequestBodyTooLarge = (req: Request): boolean =>
   oversizedRequests.has(req);
 
 export const getTrustedClientIdentity = (req: Request): string =>
-  trustedClientIds.get(req) ?? normalizeClientId(req.headers.get("cf-connecting-ip")) ??
+  trustedClientIds.get(req) ??
+    normalizeClientId(req.headers.get(TRUSTED_REMOTE_ADDRESS_HEADER)) ??
     "unknown";
 
 const readBoundedBody = async (
@@ -103,8 +105,8 @@ const oversizedRequest = (
 };
 
 const trustedClientId = (event: H3Event, headers: Headers): string =>
-  normalizeClientId(event.context.clientAddress) ??
-    normalizeClientId(headers.get("cf-connecting-ip")) ??
+  normalizeClientId(headers.get(TRUSTED_REMOTE_ADDRESS_HEADER)) ??
+    normalizeClientId(event.context.clientAddress) ??
     normalizeClientId(getRequestIP(event)) ?? "unknown";
 
 const normalizeClientId = (value: unknown): string | null => {

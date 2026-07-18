@@ -1,3 +1,5 @@
+import { assertSafeDenoBundle } from "./verify-deno-entry.ts";
+
 type BuildMetadataEnv = {
   DENO_DEPLOY_BUILD_ID?: string;
   VITE_OPENFX_BUILD_HASH?: string;
@@ -146,6 +148,11 @@ async function main() {
       NITRO_PRESET: "deno_deploy",
     },
   );
+
+  assertSafeDenoBundle(
+    await Deno.readTextFile(new URL("../.output/server/index.ts", import.meta.url)),
+  );
+  console.log("[openfx:web] bounded Deno entry verified");
 }
 
 if (import.meta.main) {

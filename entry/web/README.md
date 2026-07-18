@@ -92,3 +92,7 @@ header 不再授权 `/api/admin/*` 或 `/api/console/*`。
 
 Relay 不接受目标 URL。服务端只连接当前配对节点上报的全局 IPv6，端口固定为
 `24531`，并使用共享 OpenFX Node v1 协议签名、加密请求和解密响应。
+
+Deno Deploy 构建使用项目自有的流式入口：请求体在进入 Nitro 应用前硬限制为 64 KiB，
+超限立即返回 `413`；入口同时以运行时提供的真实远端地址覆盖外部伪造的转发地址。构建
+流程会检查最终 bundle，阻止 Nitro 预设中不受限的 `request.arrayBuffer()` 路径回归。

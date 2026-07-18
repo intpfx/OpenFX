@@ -11,6 +11,10 @@ import type {
   ConsoleListOptions,
   ConsoleStore,
 } from "../server/console/store.ts";
+import {
+  ConsoleStoreUnavailableError,
+  createDenoConsoleStore,
+} from "../server/console/store.ts";
 import { checkProjectAccess } from "../server/utils/access.ts";
 import { createWebRequest } from "../server/utils/request.ts";
 import { createAdminSessionHandler } from "../server/routes/api/admin/session.post.ts";
@@ -413,6 +417,94 @@ Deno.test("telemetry rejects future timestamps and retention uses server receipt
   expect((await history.json()).minutes).toHaveLength(0);
 });
 
+Deno.test("SSE catch-up keeps all retained ids ordered before a live event", async () => {
+  const { plane } = harness();
+  const cookie = await login(plane);
+  for (let id = 1; id <= 300; id += 1) {
+    await plane.events.append("agent.delta", { id });
+  }
+
+  const response = await plane.events.stream(
+    new Request("http://localhost/api/console/events", { headers: { cookie } }),
+  );
+  const reader = response.body!.getReader();
+  await plane.events.append("agent.delta", { id: 301 });
+
+  const decoder = new TextDecoder();
+  let text = "";
+  const completed = (async () => {
+    while (true) {
+      const result = await reader.read();
+      if (result.done) return false;
+      text += decoder.decode(result.value, { stream: true });
+      if ([...text.matchAll(/^id: (\d+)$/gm)].length === 301) return true;
+    }
+  })();
+  const caughtUp = await Promise.race([
+    completed,
+    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 250)),
+  ]);
+  await reader.cancel();
+  expect(caughtUp).toBe(true);
+
+  const ids = [...text.matchAll(/^id: (\d+)$/gm)].map((match) => Number(match[1]));
+  expect(ids).toEqual(Array.from({ length: 301 }, (_, index) => index + 1));
+});
+
+Deno.test("Deno KV failures after initialization are stable unavailable errors", async () => {
+  const failingKv = {
+    get() {
+      throw new Error("kv get offline");
+    },
+  } as unknown as Deno.Kv;
+  const store = createDenoConsoleStore(failingKv);
+  await expect(store.get(["key"])).rejects.toBeInstanceOf(
+    ConsoleStoreUnavailableError,
+  );
+
+  const plane = createConsoleControlPlane({
+    store,
+    env: { OPENFX_ADMIN_KEY: "correct horse battery staple" },
+  });
+  const response = await createAdminSessionHandler(
+    jsonRequest("https://openfx.example/api/admin/session", {
+      key: "correct horse battery staple",
+    }),
+    plane,
+  );
+  expect(response.status).toBe(503);
+  await expect(response.json()).resolves.toMatchObject({
+    ok: false,
+    error: "control_plane_unavailable",
+  });
+});
+
+Deno.test("Deno KV adapter wraps every runtime operation but preserves conflicts", async () => {
+  const unavailable = (operation: "get" | "set" | "delete" | "list" | "atomic") =>
+    createDenoConsoleStore(failingDenoKv(operation));
+
+  await expect(unavailable("get").get(["key"])).rejects.toBeInstanceOf(
+    ConsoleStoreUnavailableError,
+  );
+  await expect(unavailable("set").set(["key"], true)).rejects.toBeInstanceOf(
+    ConsoleStoreUnavailableError,
+  );
+  await expect(unavailable("delete").delete(["key"])).rejects.toBeInstanceOf(
+    ConsoleStoreUnavailableError,
+  );
+  await expect(
+    unavailable("list").list({ prefix: ["key"] }),
+  ).rejects.toBeInstanceOf(ConsoleStoreUnavailableError);
+  await expect(
+    unavailable("atomic").atomic({ checks: [], sets: [] }),
+  ).rejects.toBeInstanceOf(ConsoleStoreUnavailableError);
+
+  const conflict = createDenoConsoleStore({
+    atomic: () => atomicOperation(() => Promise.resolve({ ok: false })),
+  } as unknown as Deno.Kv);
+  await expect(conflict.atomic({ checks: [], sets: [] })).resolves.toBe(false);
+});
+
 function telemetrySample(collectedAt: number) {
   return {
     collectedAt,
@@ -426,4 +518,42 @@ function telemetrySample(collectedAt: number) {
     batteryPercent: null,
     processCount: 4,
   };
+}
+
+function failingDenoKv(
+  operation: "get" | "set" | "delete" | "list" | "atomic",
+): Deno.Kv {
+  const fail = () => {
+    throw new Error(`kv ${operation} offline`);
+  };
+  return {
+    get: operation === "get" ? fail : undefined,
+    set: operation === "set" ? fail : undefined,
+    delete: operation === "delete" ? fail : undefined,
+    list: operation === "list"
+      ? () => ({
+        [Symbol.asyncIterator]() {
+          return {
+            next() {
+              fail();
+              return Promise.resolve({ done: true, value: undefined });
+            },
+          };
+        },
+      })
+      : undefined,
+    atomic: operation === "atomic"
+      ? () => atomicOperation(() => Promise.reject(new Error("kv atomic offline")))
+      : undefined,
+  } as unknown as Deno.Kv;
+}
+
+function atomicOperation(commit: () => Promise<{ ok: boolean }>) {
+  const operation = {
+    check: () => operation,
+    set: () => operation,
+    delete: () => operation,
+    commit,
+  };
+  return operation;
 }

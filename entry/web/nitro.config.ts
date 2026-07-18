@@ -24,9 +24,14 @@ const bewlyScriptPublicDir = fileURLToPath(
   new URL("../../domains/BewlyScript/public", import.meta.url),
 );
 const nitroDevPort = Number(process.env.OPENFX_NITRO_DEV_PORT ?? "3000");
+const denoDeployEntry = process.env.NITRO_PRESET === "deno_deploy" ||
+    process.env.NITRO_PRESET === "deno-deploy"
+  ? "./runtime/deno-deploy.ts"
+  : undefined;
 
 export default defineNitroConfig({
   srcDir: fileURLToPath(new URL("./server", import.meta.url)),
+  entry: denoDeployEntry,
   serveStatic: "inline",
   devServer: {
     port: nitroDevPort,

@@ -31,8 +31,6 @@ export const createConsoleEventService = (options: {
   pollMs: number;
   requireSession: (req: Request) => Promise<Response | null>;
 }): ConsoleEventService => {
-  const listeners = new Set<(event: StoredConsoleEvent) => void>();
-
   const append = async (
     type: ConsoleEventType,
     data: unknown,
@@ -61,7 +59,6 @@ export const createConsoleEventService = (options: {
           ],
         })
       ) {
-        for (const listener of listeners) listener(event);
         return event;
       }
     }
@@ -88,7 +85,6 @@ export const createConsoleEventService = (options: {
     const initialId = parseLastEventId(req);
     const backlog = await retainedEvents(await options.store, initialId, options.now());
     const encoder = new TextEncoder();
-    let listener: ((event: StoredConsoleEvent) => void) | undefined;
     let keepalive: number | undefined;
     let poller: number | undefined;
     let polling = false;
@@ -99,12 +95,11 @@ export const createConsoleEventService = (options: {
         for (const event of backlog) {
           controller.enqueue(encoder.encode(formatSseEvent(event)));
         }
-        listener = (event) => {
+        const send = (event: StoredConsoleEvent) => {
           if (event.id <= lastSent) return;
           lastSent = event.id;
           controller.enqueue(encoder.encode(formatSseEvent(event)));
         };
-        listeners.add(listener);
         poller = setInterval(async () => {
           if (polling) return;
           polling = true;
@@ -114,7 +109,7 @@ export const createConsoleEventService = (options: {
               lastSent,
               options.now(),
             );
-            for (const event of events) listener?.(event);
+            for (const event of events) send(event);
           } catch {
             // A transient KV read failure must not terminate an established stream.
           } finally {
@@ -133,7 +128,6 @@ export const createConsoleEventService = (options: {
     });
 
     function cleanup(): void {
-      if (listener) listeners.delete(listener);
       if (keepalive !== undefined) clearInterval(keepalive);
       if (poller !== undefined) clearInterval(poller);
     }

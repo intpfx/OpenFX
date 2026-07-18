@@ -162,56 +162,62 @@ export const createMemoryConsoleStore = (
 export const createDenoConsoleStore = (kv: Deno.Kv): ConsoleStore => {
   const store: ConsoleStore = {
     async get<T>(key: ConsoleKey) {
-      const entry = await kv.get<T>([...key]);
-      return entry.value === null ? null : {
-        key: entry.key as ConsoleKey,
-        value: entry.value,
-        versionstamp: entry.versionstamp!,
-      };
+      return await wrapDenoKvFailure(async () => {
+        const entry = await kv.get<T>([...key]);
+        return entry.value === null ? null : {
+          key: entry.key as ConsoleKey,
+          value: entry.value,
+          versionstamp: entry.versionstamp!,
+        };
+      });
     },
     async set(key, value, options) {
-      await kv.set([...key], value, options);
+      await wrapDenoKvFailure(() => kv.set([...key], value, options));
     },
     async delete(key) {
-      await kv.delete([...key]);
+      await wrapDenoKvFailure(() => kv.delete([...key]));
     },
     async list<T>(options: ConsoleListOptions) {
-      const entries: ConsoleStoreEntry<T>[] = [];
-      const selector: Deno.KvListSelector = options.start || options.end
-        ? {
-          prefix: [...options.prefix],
-          start: options.start ? [...options.start] : undefined,
-          end: options.end ? [...options.end] : undefined,
+      return await wrapDenoKvFailure(async () => {
+        const entries: ConsoleStoreEntry<T>[] = [];
+        const selector: Deno.KvListSelector = options.start || options.end
+          ? {
+            prefix: [...options.prefix],
+            start: options.start ? [...options.start] : undefined,
+            end: options.end ? [...options.end] : undefined,
+          }
+          : { prefix: [...options.prefix] };
+        for await (
+          const entry of kv.list<T>(selector, {
+            limit: options.limit,
+          })
+        ) {
+          if (entry.value !== null && entry.versionstamp !== null) {
+            entries.push({
+              key: entry.key as ConsoleKey,
+              value: entry.value,
+              versionstamp: entry.versionstamp,
+            });
+          }
         }
-        : { prefix: [...options.prefix] };
-      for await (
-        const entry of kv.list<T>(selector, {
-          limit: options.limit,
-        })
-      ) {
-        if (entry.value !== null && entry.versionstamp !== null) {
-          entries.push({
-            key: entry.key as ConsoleKey,
-            value: entry.value,
-            versionstamp: entry.versionstamp,
-          });
-        }
-      }
-      return entries;
+        return entries;
+      });
     },
     async atomic(operation) {
-      let atomic = kv.atomic();
-      for (const check of operation.checks) {
-        atomic = atomic.check({
-          key: [...check.key],
-          versionstamp: check.versionstamp,
-        });
-      }
-      for (const key of operation.deletes ?? []) atomic = atomic.delete([...key]);
-      for (const item of operation.sets) {
-        atomic = atomic.set([...item.key], item.value, item.options);
-      }
-      return (await atomic.commit()).ok;
+      return await wrapDenoKvFailure(async () => {
+        let atomic = kv.atomic();
+        for (const check of operation.checks) {
+          atomic = atomic.check({
+            key: [...check.key],
+            versionstamp: check.versionstamp,
+          });
+        }
+        for (const key of operation.deletes ?? []) atomic = atomic.delete([...key]);
+        for (const item of operation.sets) {
+          atomic = atomic.set([...item.key], item.value, item.options);
+        }
+        return (await atomic.commit()).ok;
+      });
     },
     compareAndSet(key, expectedVersionstamp, value, options) {
       return store.atomic({
@@ -229,6 +235,15 @@ export class ConsoleStoreUnavailableError extends Error {
     this.name = "ConsoleStoreUnavailableError";
   }
 }
+
+const wrapDenoKvFailure = async <T>(operation: () => Promise<T>): Promise<T> => {
+  try {
+    return await operation();
+  } catch (error) {
+    if (error instanceof ConsoleStoreUnavailableError) throw error;
+    throw new ConsoleStoreUnavailableError(error);
+  }
+};
 
 export const createDefaultConsoleStore = async (
   openKv: () => Promise<Deno.Kv> = () => Deno.openKv(),
