@@ -4,7 +4,6 @@ import {
   mkdir,
   open,
   readFile,
-  stat,
   unlink,
   writeFile,
 } from "node:fs/promises";
@@ -17,15 +16,30 @@ const FILE_MODE = 0o600;
 const LOCK_STALE_MS = 10_000;
 const LOCK_ATTEMPTS = 400;
 
+interface LockRecord {
+  token: string;
+  pid: number;
+  createdAt: number;
+}
+
+export interface FileJournalLockOptions {
+  now?: () => number;
+  staleMs?: number;
+  attempts?: number;
+  retryDelayMs?: number;
+  createToken?: () => string;
+  pid?: number;
+  isProcessAlive?: (pid: number) => boolean | Promise<boolean>;
+}
+
 export const createFileJournalStorage = (path: string): JournalStorage => {
-  const lockPath = `${path}.lock`;
   return {
     async transact<Result>(
       operation: (
         events: readonly JournalEvent[],
       ) => { result: Result; append?: JournalEvent[] },
     ): Promise<Result> {
-      const release = await acquireLock(path, lockPath);
+      const release = await acquireFileJournalLock(path);
       try {
         const events = await readEvents(path);
         const mutation = operation(events);
@@ -51,40 +65,102 @@ export const createFileJournalStorage = (path: string): JournalStorage => {
   };
 };
 
-const acquireLock = async (
+export const acquireFileJournalLock = async (
   path: string,
-  lockPath: string,
+  options: FileJournalLockOptions = {},
 ): Promise<() => Promise<void>> => {
+  const lockPath = `${path}.lock`;
   const directory = dirname(path);
+  const now = options.now ?? Date.now;
+  const staleMs = options.staleMs ?? LOCK_STALE_MS;
+  const attempts = options.attempts ?? LOCK_ATTEMPTS;
+  const retryDelayMs = options.retryDelayMs ?? 5;
+  const isProcessAlive = options.isProcessAlive ?? defaultProcessAlive;
+  const record: LockRecord = {
+    token: options.createToken?.() ?? crypto.randomUUID(),
+    pid: options.pid ?? process.pid,
+    createdAt: now(),
+  };
   await mkdir(directory, { recursive: true, mode: DIRECTORY_MODE });
   await chmod(directory, DIRECTORY_MODE);
-  for (let attempt = 0; attempt < LOCK_ATTEMPTS; attempt += 1) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
       const handle = await open(lockPath, "wx", FILE_MODE);
-      await handle.writeFile(`${process.pid}\n${Date.now()}\n`, "utf8");
-      await handle.sync();
+      try {
+        await handle.writeFile(`${JSON.stringify(record)}\n`, "utf8");
+        await handle.sync();
+      } catch (error) {
+        await handle.close();
+        await unlink(lockPath).catch(() => undefined);
+        throw error;
+      }
       return async () => {
         await handle.close();
-        await unlink(lockPath).catch((error) => {
-          if ((error as { code?: string }).code !== "ENOENT") throw error;
-        });
+        const current = await readLockRecord(lockPath);
+        if (current?.token !== record.token) return;
+        await unlink(lockPath).catch(ignoreMissing);
       };
     } catch (error) {
       if ((error as { code?: string }).code !== "EEXIST") throw error;
-      await removeStaleLock(lockPath);
-      await new Promise((resolve) => setTimeout(resolve, 5));
+      await removeDeadOwnerLock(lockPath, {
+        now: now(),
+        staleMs,
+        isProcessAlive,
+      });
+      if (retryDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+      }
     }
   }
   throw new Error("journal_lock_timeout");
 };
 
-const removeStaleLock = async (lockPath: string): Promise<void> => {
+const removeDeadOwnerLock = async (
+  lockPath: string,
+  options: {
+    now: number;
+    staleMs: number;
+    isProcessAlive(pid: number): boolean | Promise<boolean>;
+  },
+): Promise<void> => {
+  const candidate = await readLockRecord(lockPath);
+  if (!candidate || options.now - candidate.createdAt <= options.staleMs) return;
+  if (await options.isProcessAlive(candidate.pid)) return;
+  const current = await readLockRecord(lockPath);
+  if (current?.token !== candidate.token) return;
+  await unlink(lockPath).catch(ignoreMissing);
+};
+
+const readLockRecord = async (lockPath: string): Promise<LockRecord | null> => {
   try {
-    const info = await stat(lockPath);
-    if (Date.now() - info.mtimeMs > LOCK_STALE_MS) await unlink(lockPath);
+    const value = JSON.parse(await readFile(lockPath, "utf8")) as Partial<LockRecord>;
+    return typeof value.token === "string" && value.token.length > 0 &&
+        Number.isSafeInteger(value.pid) && Number(value.pid) > 0 &&
+        typeof value.createdAt === "number" && Number.isFinite(value.createdAt)
+      ? {
+        token: value.token,
+        pid: Number(value.pid),
+        createdAt: value.createdAt,
+      }
+      : null;
   } catch (error) {
-    if ((error as { code?: string }).code !== "ENOENT") throw error;
+    if ((error as { code?: string }).code === "ENOENT") return null;
+    if (error instanceof SyntaxError) return null;
+    throw error;
   }
+};
+
+const defaultProcessAlive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as { code?: string }).code !== "ESRCH";
+  }
+};
+
+const ignoreMissing = (error: unknown): void => {
+  if ((error as { code?: string }).code !== "ENOENT") throw error;
 };
 
 const readEvents = async (path: string): Promise<JournalEvent[]> => {

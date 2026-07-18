@@ -27,6 +27,12 @@ import { pairNodeHandler } from "../server/routes/api/node/pair.post.ts";
 import { nodeHeartbeatHandler } from "../server/routes/api/node/heartbeat.post.ts";
 import { nodeTelemetryHandler } from "../server/routes/api/node/telemetry.post.ts";
 import { nodeEventsHandler } from "../server/routes/api/node/events.post.ts";
+import {
+  createWebCryptoAdapter,
+  openRelayEnvelope,
+  sealRelayEnvelope,
+} from "../../../domains/_shared/openfx-node/mod.ts";
+import { decodeBase64Url } from "../../../domains/_shared/openfx-node/encoding.ts";
 
 const CREDENTIAL_KEY = "0123456789abcdef0123456789abcdef";
 const START = Date.parse("2026-07-18T00:00:00Z");
@@ -42,6 +48,7 @@ const harness = (options: {
   store?: ConsoleStore;
   now?: () => number;
   openKv?: () => Promise<Deno.Kv>;
+  fetch?: typeof fetch;
 } = {}) => {
   const store = options.store ?? createMemoryConsoleStore({ now: options.now });
   const plane = createConsoleControlPlane({
@@ -53,6 +60,7 @@ const harness = (options: {
     },
     now: options.now ?? (() => START),
     ssePollMs: 5,
+    fetch: options.fetch,
   });
   return { plane, store };
 };
@@ -303,6 +311,82 @@ Deno.test("public node handlers ingest and persist every required SSE event type
   ) expect(text).toContain(`event: ${type}`);
   expect(text).toContain('"delta":"A"');
   expect(text).toContain('"delta":"B"');
+});
+
+Deno.test("successful Relay effects do not synthesize events or fail on event storage", async () => {
+  const base = createMemoryConsoleStore();
+  let rejectEventWrites = false;
+  let syntheticWriteAttempts = 0;
+  const store: ConsoleStore = {
+    ...base,
+    atomic(operation) {
+      if (
+        rejectEventWrites &&
+        operation.sets.some((item) => item.key[1] === "events")
+      ) {
+        syntheticWriteAttempts += 1;
+        throw new Error("event append unavailable");
+      }
+      return base.atomic(operation);
+    },
+  };
+  const cryptoAdapter = createWebCryptoAdapter();
+  let nodeSecret = "";
+  const { plane } = harness({
+    store,
+    fetch: async (_input, init) => {
+      const request = await openRelayEnvelope(
+        cryptoAdapter,
+        decodeBase64Url(nodeSecret),
+        JSON.parse(String(init?.body)),
+        { now: () => START, replayProtector: { consume() {} } },
+      );
+      expect(request).toMatchObject({
+        method: "POST",
+        path: "/v1/approvals/resolve",
+      });
+      const reply = await sealRelayEnvelope(
+        cryptoAdapter,
+        decodeBase64Url(nodeSecret),
+        { ok: true, applied: true, result: { opened: "Safari" } },
+        { now: () => START },
+      );
+      return Response.json(reply);
+    },
+  });
+  const cookie = await login(plane);
+  const paired = await pair(plane, cookie);
+  nodeSecret = paired.nodeSecret;
+  await nodeHeartbeatHandler(
+    jsonRequest("http://localhost/api/node/heartbeat", {
+      nodeId: paired.node.id,
+      protocolVersion: 1,
+      publicIpv6: "2001:4860:4860::8844",
+      port: 24531,
+      availability: "online",
+    }, { authorization: `Bearer ${paired.nodeSecret}` }),
+    plane,
+  );
+  const before = await base.list({ prefix: ["openfx-console", "events"] });
+  rejectEventWrites = true;
+
+  const response = await plane.console.handle(
+    jsonRequest("http://localhost/api/console/approvals/resolve", {
+      id: "approval-1",
+      decision: "approved",
+      parameterFingerprint: "fingerprint-1",
+    }, { cookie }),
+    "approvals.resolve",
+  );
+
+  expect(response.status).toBe(200);
+  await expect(response.json()).resolves.toEqual({
+    ok: true,
+    applied: true,
+    result: { opened: "Safari" },
+  });
+  expect(syntheticWriteAttempts).toBe(0);
+  expect(await base.list({ prefix: ["openfx-console", "events"] })).toEqual(before);
 });
 
 Deno.test("pairing atomically consumes the code with matching node and credential", async () => {

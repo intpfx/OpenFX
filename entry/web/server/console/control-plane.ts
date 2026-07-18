@@ -644,11 +644,6 @@ export const createConsoleControlPlane = (
         outcome: "succeeded",
         nodeId: node.value.id,
       });
-      if (operation === "agent.messages.post") {
-        await eventService.append("agent.delta", reply);
-      } else if (operation === "approvals.resolve") {
-        await eventService.append("approval.resolved", reply);
-      }
       return Response.json(reply);
     } catch (error) {
       if (error instanceof OpenFxNodeProtocolError) {
