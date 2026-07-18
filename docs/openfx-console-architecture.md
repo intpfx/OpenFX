@@ -35,12 +35,17 @@ Freemac 清理必须等待 Perry 修复后重新验证。
    `SameSite=Strict` cookie；生产 cookie 同时带 `Secure`。
 2. 控制台生成 8 位 Crockford Base32 配对码。配对码逻辑有效期为 10 分钟，并通过 Deno KV
    原子事务保证只能消费一次；10 分钟 live marker 与消费事务一起校验，11 分钟 grace
-   record 的最后 1 分钟只用于保留 `node_pairing_expired`
-   错误语义。服务端在消费提交后再次检查绝对
-   截止时间，若提交跨过边界，会用带版本检查和重试的补偿事务移除新节点凭据并恢复过期记录，
-   不会返回 `nodeSecret`。补偿所需的旧状态快照只暂存在 grace record；若 KV 暂时不可用，
-   后续同码请求会识别未完成的 `usedByNodeId`、继续幂等补偿并返回
-   `node_pairing_expired`。按时完成的配对会在返回 secret 前清除该临时恢复状态。
+   record 的最后 1 分钟只用于保留 `node_pairing_expired` 错误语义。消费事务先写入显式
+   `incomplete` 状态和旧节点状态快照，最终化 CAS 再把它改为 `completed`，但在 grace
+   record 生命周期内保留快照。`incomplete` 不设置物理 TTL，以免存储故障期间恢复依据先于
+   临时节点丢失；完成或补偿后才恢复短 TTL。CAS 返回后的第一步是同步检查绝对
+   截止时间；若调用期间跨过边界，服务端会用带版本和所有权检查的补偿事务移除临时凭据、
+   恢复旧状态并返回 `node_pairing_expired`，不会返回 `nodeSecret`。成功的截止检查与
+   secret 响应之间不再执行存储 I/O。Deno KV 不能把服务端墙钟比较纳入原子提交，
+   因此这里的边界定义为 CAS 返回后立即观察到的时间。若最终化存储失败，grace record
+   会保持 `incomplete`；后续同码请求先幂等清理临时节点，未过期时恢复 live marker 并以新
+   secret 重新配对，已过期时返回 410。`completed` 重放始终返回
+   `node_pairing_used`，不会补偿或移除已成功的活动节点。
 3. Perry 节点通过 HTTPS 提交配对码和经本机、外部观察共同确认的公网 IPv6。服务端只在
    配对响应中返回一次 32 字节 `nodeSecret`。
 4. 节点把 secret 写入 macOS Keychain 的 `OpenFX Node` service；普通偏好只保存

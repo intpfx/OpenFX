@@ -94,8 +94,16 @@ interface PairingRecord {
   createdAt: number;
   expiresAt: number;
   usedAt?: number;
+  consumption?: PairingConsumption;
+  /** Legacy incomplete-state fields retained only for recovery. */
   usedByNodeId?: string;
   compensation?: PairingCompensation;
+}
+
+interface PairingConsumption {
+  state: "incomplete" | "completed";
+  nodeId: string;
+  recovery: PairingCompensation;
 }
 
 interface PairingCompensation {
@@ -103,6 +111,22 @@ interface PairingCompensation {
   previousCredential: StoredCredential | null;
   previousStatus: NodeStatus | null;
 }
+
+const readPairingConsumption = (
+  record: PairingRecord,
+): PairingConsumption | undefined => {
+  if (record.consumption) return record.consumption;
+  if (!record.usedByNodeId) return undefined;
+  return {
+    state: "incomplete",
+    nodeId: record.usedByNodeId,
+    recovery: record.compensation ?? {
+      previousActive: null,
+      previousCredential: null,
+      previousStatus: null,
+    },
+  };
+};
 
 interface StoredCredential {
   nodeId: string;
@@ -393,25 +417,35 @@ export const createConsoleControlPlane = (
     let pairing = await store.get<PairingRecord>(key);
     if (!pairing) return nodeError(OPENFX_NODE_ERROR_CODES.pairingInvalid, 404);
     if (pairing.value.usedAt !== undefined) {
-      if (
-        pairing.value.usedByNodeId && pairing.value.expiresAt <= now()
-      ) {
-        const compensation = pairing.value.compensation;
-        await compensateExpiredPairing({
-          store,
-          pairingKey: key,
-          nodeId: pairing.value.usedByNodeId,
-          originalPairing: {
-            createdAt: pairing.value.createdAt,
-            expiresAt: pairing.value.expiresAt,
-          },
-          previousActive: compensation?.previousActive ?? null,
-          previousCredential: compensation?.previousCredential ?? null,
-          previousStatus: compensation?.previousStatus ?? null,
-        });
+      const consumption = readPairingConsumption(pairing.value);
+      if (!consumption || consumption.state === "completed") {
+        return nodeError(OPENFX_NODE_ERROR_CODES.pairingUsed, 409);
+      }
+      const recovered = await restorePairingConsumption({
+        store,
+        pairingKey: key,
+        liveKey,
+        nodeId: consumption.nodeId,
+        expectedState: "incomplete",
+        originalPairing: {
+          createdAt: pairing.value.createdAt,
+          expiresAt: pairing.value.expiresAt,
+        },
+        recovery: consumption.recovery,
+      });
+      if (recovered === "completed") {
+        return nodeError(OPENFX_NODE_ERROR_CODES.pairingUsed, 409);
+      }
+      pairing = await store.get<PairingRecord>(key);
+      if (!pairing) {
+        return nodeError(OPENFX_NODE_ERROR_CODES.pairingInvalid, 404);
+      }
+      if (pairing.value.usedAt !== undefined) {
+        return nodeError(OPENFX_NODE_ERROR_CODES.pairingUsed, 409);
+      }
+      if (pairing.value.expiresAt <= now()) {
         return nodeError(OPENFX_NODE_ERROR_CODES.pairingExpired, 410);
       }
-      return nodeError(OPENFX_NODE_ERROR_CODES.pairingUsed, 409);
     }
     const initialExpiresAt = pairing.value.expiresAt;
     let live = await store.get<{ expiresAt: number }>(liveKey);
@@ -454,11 +488,14 @@ export const createConsoleControlPlane = (
     const consumed = {
       ...originalPairing,
       usedAt: now(),
-      usedByNodeId: nodeId,
-      compensation: {
-        previousActive: active?.value ?? null,
-        previousCredential: previousCredential?.value ?? null,
-        previousStatus: previousStatus?.value ?? null,
+      consumption: {
+        state: "incomplete",
+        nodeId,
+        recovery: {
+          previousActive: active?.value ?? null,
+          previousCredential: previousCredential?.value ?? null,
+          previousStatus: previousStatus?.value ?? null,
+        },
       },
     } satisfies PairingRecord;
     if (
@@ -480,12 +517,6 @@ export const createConsoleControlPlane = (
           {
             key,
             value: consumed,
-            options: {
-              expireIn: Math.max(
-                1,
-                pairing.value.expiresAt + PAIRING_EXPIRY_GRACE_MS - now(),
-              ),
-            },
           },
           { key: activeKey, value: node },
           { key: credentialRecordKey, value: credential },
@@ -507,36 +538,30 @@ export const createConsoleControlPlane = (
       );
     }
     if (initialExpiresAt <= now()) {
-      await compensateExpiredPairing({
+      await restorePairingConsumption({
         store,
         pairingKey: key,
+        liveKey,
         nodeId,
+        expectedState: "incomplete",
         originalPairing,
-        previousActive: active?.value ?? null,
-        previousCredential: previousCredential?.value ?? null,
-        previousStatus: previousStatus?.value ?? null,
+        recovery: consumed.consumption.recovery,
       });
       return nodeError(OPENFX_NODE_ERROR_CODES.pairingExpired, 410);
     }
-    if (!await finalizePairingConsumption(store, key, nodeId, initialExpiresAt)) {
-      await compensateExpiredPairing({
+    await finalizePairingConsumption(store, key, nodeId, initialExpiresAt);
+    if (initialExpiresAt <= now()) {
+      await restorePairingConsumption({
         store,
         pairingKey: key,
+        liveKey,
         nodeId,
+        expectedState: "completed",
         originalPairing,
-        previousActive: active?.value ?? null,
-        previousCredential: previousCredential?.value ?? null,
-        previousStatus: previousStatus?.value ?? null,
+        recovery: consumed.consumption.recovery,
       });
       return nodeError(OPENFX_NODE_ERROR_CODES.pairingExpired, 410);
     }
-    await appendAudit({
-      category: "pairing",
-      action: "node.paired",
-      outcome: "succeeded",
-      nodeId,
-      subjectId: nodeId,
-    });
     return Response.json(
       { ok: true, node, nodeSecret: encodeBase64Url(nodeSecret) },
       { status: 201 },
@@ -548,22 +573,27 @@ export const createConsoleControlPlane = (
     pairingKey: ConsoleKey,
     nodeId: string,
     expiresAt: number,
-  ): Promise<boolean> => {
+  ): Promise<void> => {
     for (let attempt = 0; attempt < 16; attempt += 1) {
-      if (expiresAt <= now()) return false;
       const pairing = await store.get<PairingRecord>(pairingKey);
       if (!pairing) throw new ConsoleStoreUnavailableError();
-      if (pairing.value.usedByNodeId !== nodeId) {
-        if (
-          pairing.value.usedAt !== undefined &&
-          pairing.value.usedByNodeId === undefined
-        ) return true;
+      const consumption = readPairingConsumption(pairing.value);
+      if (
+        consumption?.state === "completed" && consumption.nodeId === nodeId
+      ) return;
+      if (
+        consumption?.state !== "incomplete" || consumption.nodeId !== nodeId
+      ) {
         throw new ConsoleStoreUnavailableError();
       }
       const finalized = {
         createdAt: pairing.value.createdAt,
         expiresAt: pairing.value.expiresAt,
         usedAt: pairing.value.usedAt,
+        consumption: {
+          ...consumption,
+          state: "completed",
+        },
       } satisfies PairingRecord;
       if (
         await store.compareAndSet(
@@ -577,34 +607,46 @@ export const createConsoleControlPlane = (
             ),
           },
         )
-      ) return true;
+      ) return;
     }
     throw new ConsoleStoreUnavailableError();
   };
 
-  const compensateExpiredPairing = async (input: {
+  const restorePairingConsumption = async (input: {
     store: ConsoleStore;
     pairingKey: ConsoleKey;
+    liveKey: ConsoleKey;
     nodeId: string;
+    expectedState: PairingConsumption["state"];
     originalPairing: PairingRecord;
-    previousActive: NodeRecord | null;
-    previousCredential: StoredCredential | null;
-    previousStatus: NodeStatus | null;
-  }): Promise<void> => {
+    recovery: PairingCompensation;
+  }): Promise<"restored" | "completed"> => {
     const activeKey = [...ROOT, "node", "active"] as const;
     const credentialKey = [...ROOT, "node", "credential"] as const;
     const statusKey = [...ROOT, "node", "status"] as const;
     for (let attempt = 0; attempt < 16; attempt += 1) {
-      const [pairing, active, credential, status] = await Promise.all([
+      const [pairing, live, active, credential, status] = await Promise.all([
         input.store.get<PairingRecord>(input.pairingKey),
+        input.store.get<{ expiresAt: number }>(input.liveKey),
         input.store.get<NodeRecord>(activeKey),
         input.store.get<StoredCredential>(credentialKey),
         input.store.get<NodeStatus>(statusKey),
       ]);
-      const pairingOwned = pairing?.value.usedByNodeId === input.nodeId;
+      const consumption = pairing && readPairingConsumption(pairing.value);
+      const recoveryNow = now();
+      const remainsLive = input.originalPairing.expiresAt > recoveryNow;
+      if (
+        input.expectedState === "incomplete" &&
+        consumption?.state === "completed"
+      ) return "completed";
+      const pairingOwned = consumption?.nodeId === input.nodeId &&
+        consumption.state === input.expectedState;
       const activeOwned = active?.value.id === input.nodeId;
       const credentialOwned = credential?.value.nodeId === input.nodeId;
-      if (!pairingOwned && !activeOwned && !credentialOwned) return;
+      const alreadyRestored = pairing?.value.usedAt === undefined;
+      if (
+        !pairingOwned && !activeOwned && !credentialOwned && alreadyRestored
+      ) return "restored";
 
       const sets = [] as Array<{
         key: ConsoleKey;
@@ -619,21 +661,37 @@ export const createConsoleControlPlane = (
           options: {
             expireIn: Math.max(
               1,
-              input.originalPairing.expiresAt + PAIRING_EXPIRY_GRACE_MS - now(),
+              input.originalPairing.expiresAt + PAIRING_EXPIRY_GRACE_MS -
+                recoveryNow,
             ),
           },
         });
+        if (remainsLive) {
+          sets.push({
+            key: input.liveKey,
+            value: { expiresAt: input.originalPairing.expiresAt },
+            options: {
+              expireIn: Math.max(
+                1,
+                input.originalPairing.expiresAt - recoveryNow,
+              ),
+            },
+          });
+        }
       }
 
       if (activeOwned && credentialOwned) {
-        if (input.previousActive) {
-          sets.push({ key: activeKey, value: input.previousActive });
+        if (input.recovery.previousActive) {
+          sets.push({ key: activeKey, value: input.recovery.previousActive });
         } else deletes.push(activeKey);
-        if (input.previousCredential) {
-          sets.push({ key: credentialKey, value: input.previousCredential });
+        if (input.recovery.previousCredential) {
+          sets.push({
+            key: credentialKey,
+            value: input.recovery.previousCredential,
+          });
         } else deletes.push(credentialKey);
-        if (input.previousStatus) {
-          sets.push({ key: statusKey, value: input.previousStatus });
+        if (input.recovery.previousStatus) {
+          sets.push({ key: statusKey, value: input.recovery.previousStatus });
         } else deletes.push(statusKey);
       } else {
         if (activeOwned) deletes.push(activeKey);
@@ -647,6 +705,7 @@ export const createConsoleControlPlane = (
               key: input.pairingKey,
               versionstamp: pairing?.versionstamp ?? null,
             },
+            { key: input.liveKey, versionstamp: live?.versionstamp ?? null },
             { key: activeKey, versionstamp: active?.versionstamp ?? null },
             {
               key: credentialKey,
@@ -655,9 +714,9 @@ export const createConsoleControlPlane = (
             { key: statusKey, versionstamp: status?.versionstamp ?? null },
           ],
           sets,
-          deletes,
+          deletes: remainsLive ? deletes : [...deletes, input.liveKey],
         })
-      ) return;
+      ) return "restored";
     }
     throw new ConsoleStoreUnavailableError();
   };
