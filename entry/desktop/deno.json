@@ -1,6 +1,16 @@
 {
   "imports": {
+    "@std/assert": "jsr:@std/assert@^1.0.19",
     "perry/system": "./src/perry-system-stub.ts",
     "perry/ui": "./src/perry-ui-stub.ts"
+  },
+  "tasks": {
+    "test": "deno test --allow-read --allow-net tests",
+    "check": "deno fmt --check src tests README.md deno.json && deno lint src tests && deno test --allow-read --allow-net tests"
+  },
+  "fmt": {
+    "lineWidth": 88,
+    "semiColons": true,
+    "singleQuote": false
   }
 }

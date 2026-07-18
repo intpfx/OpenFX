@@ -1,0 +1,66 @@
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
+import { Buffer } from "node:buffer";
+
+import type { HttpJsonRequest, HttpJsonResponse } from "./omlx-client.ts";
+
+const MAX_RESPONSE_BYTES = 1024 * 1024;
+
+export const requestJson = (
+  request: HttpJsonRequest,
+): Promise<HttpJsonResponse> => {
+  if (
+    request.protocol === "http:" &&
+    request.hostname !== "127.0.0.1" && request.hostname !== "::1"
+  ) return Promise.reject(new Error("plaintext_http_must_be_loopback"));
+  return new Promise((resolve, reject) => {
+    const payload = request.body === undefined ? "" : JSON.stringify(request.body);
+    const headers = {
+      ...(payload
+        ? {
+          "content-type": "application/json",
+          "content-length": String(Buffer.byteLength(payload)),
+        }
+        : {}),
+      ...request.headers,
+    };
+    const send = request.protocol === "https:" ? httpsRequest : httpRequest;
+    const outgoing = send({
+      protocol: request.protocol,
+      hostname: request.hostname,
+      port: request.port,
+      path: request.path,
+      method: request.method,
+      headers,
+    }, (response) => {
+      const chunks: Uint8Array[] = [];
+      let length = 0;
+      response.on("data", (chunk: Uint8Array) => {
+        length += chunk.length;
+        if (length > MAX_RESPONSE_BYTES) {
+          outgoing.destroy(new Error("http_response_too_large"));
+          return;
+        }
+        chunks.push(chunk);
+      });
+      response.on("end", () => {
+        try {
+          const text = Buffer.concat(chunks).toString("utf8");
+          resolve({
+            status: response.statusCode ?? 0,
+            body: text ? JSON.parse(text) : null,
+          });
+        } catch (error) {
+          reject(error);
+        }
+      });
+    });
+    outgoing.setTimeout(
+      8_000,
+      () => outgoing.destroy(new Error("http_timeout")),
+    );
+    outgoing.on("error", reject);
+    if (payload) outgoing.write(payload);
+    outgoing.end();
+  });
+};

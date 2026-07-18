@@ -3380,6 +3380,11 @@
           "jsr:@std/assert@^1.0.19"
         ]
       },
+      "entry/desktop": {
+        "dependencies": [
+          "jsr:@std/assert@^1.0.19"
+        ]
+      },
       "entry/web": {
         "dependencies": [
           "jsr:@std/expect@^1.0.17",

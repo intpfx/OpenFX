@@ -13,7 +13,7 @@ domains/          独立领域模块
   e/              Agent 执行框架
   esn/            Edge Storage Node
   finlyzer/       本地优先账单分析器
-  freemac/        Mac 仪表盘 & IPv6 relay
+  freemac/        待完成删除门禁的旧 Mac 仪表盘 & IPv6 relay
   gasmap/         燃气工程单线图工具
   hlc/            圣灯社区 PWA/CMS
   how-much/       商品比价应用
@@ -22,7 +22,7 @@ domains/          独立领域模块
   proxy/          HTTP 中继
   wanone/         编程生涯第一个项目
 entry/            入口应用
-  desktop/        Perry 原生桌面应用
+  desktop/        Perry 原生 OpenFX Node（监控、Relay、Agent）
   web/            VitePlus + React + Nitro Web 应用
 ```
 
