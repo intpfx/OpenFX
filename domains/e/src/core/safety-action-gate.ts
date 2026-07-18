@@ -10,6 +10,10 @@ import {
   APPROVAL_TTL_MS,
   OPENFX_NODE_ERROR_CODES,
 } from "../../../_shared/openfx-node/constants.ts";
+import {
+  type ApprovalConsumptionStore,
+  InMemoryApprovalConsumptionStore,
+} from "./approval-consumption-store.ts";
 
 export { APPROVAL_TTL_MS } from "../../../_shared/openfx-node/constants.ts";
 
@@ -18,6 +22,8 @@ export interface SafetyActionGateContext {
   createId: () => string;
   approvalTtlMs?: number;
   fingerprintAction?: (action: ProposedAction) => string;
+  consumptionStore?: ApprovalConsumptionStore;
+  allowLegacyUnregisteredApprovals?: boolean;
 }
 
 export interface ApplyActionInput {
@@ -54,16 +60,21 @@ export class ApprovalGateError extends Error {
 
 export class SafetyActionGate {
   readonly #context: SafetyActionGateContext;
-  readonly #resolvedRequestIds = new Set<string>();
-  readonly #appliedActionIds = new Set<string>();
+  readonly #fingerprintAction: (action: ProposedAction) => string;
+  readonly #consumptionStore: ApprovalConsumptionStore;
+  readonly #allowLegacyUnregisteredApprovals: boolean;
 
   constructor(context: SafetyActionGateContext) {
     this.#context = context;
+    this.#fingerprintAction = context.fingerprintAction ?? fingerprintAction;
+    this.#consumptionStore = context.consumptionStore ??
+      new InMemoryApprovalConsumptionStore();
+    this.#allowLegacyUnregisteredApprovals =
+      context.allowLegacyUnregisteredApprovals === true;
   }
 
   prepareAction(action: ProposedAction): ProposedAction {
-    const parameterFingerprint = action.parameterFingerprint ??
-      (this.#context.fingerprintAction ?? fingerprintAction)(action);
+    const parameterFingerprint = this.#fingerprintAction(action);
     return {
       ...action,
       parameterFingerprint,
@@ -77,7 +88,7 @@ export class SafetyActionGate {
   ): SecuredBoundaryRequest {
     const createdAt = this.#context.now();
     const preparedAction = this.prepareAction(action);
-    return {
+    const request: SecuredBoundaryRequest = {
       id: this.#context.createId(),
       reason,
       action: preparedAction,
@@ -86,6 +97,13 @@ export class SafetyActionGate {
       createdAt,
       expiresAt: createdAt + (this.#context.approvalTtlMs ?? APPROVAL_TTL_MS),
     };
+    this.#consumptionStore.registerIfAbsent({
+      requestId: request.id,
+      actionId: preparedAction.id,
+      parameterFingerprint: request.parameterFingerprint,
+      expiresAt: request.expiresAt,
+    });
+    return request;
   }
 
   approveBoundaryRequest(request: BoundaryRequest): BoundaryRequest {
@@ -107,8 +125,7 @@ export class SafetyActionGate {
 
   async applyAction(input: ApplyActionInput): Promise<ApplyActionResult> {
     if (
-      input.action.state === "applied" || input.action.state === "failed" ||
-      this.#appliedActionIds.has(input.action.id)
+      input.action.state === "applied" || input.action.state === "failed"
     ) {
       const error = {
         code: OPENFX_NODE_ERROR_CODES.approvalAlreadyApplied,
@@ -145,25 +162,10 @@ export class SafetyActionGate {
       };
     }
 
+    const currentFingerprint = this.#fingerprintAction(input.action);
     if (
-      input.action.approvalExpiresAt !== undefined &&
-      this.#context.now() >= input.action.approvalExpiresAt
-    ) {
-      const error = {
-        code: OPENFX_NODE_ERROR_CODES.approvalExpired,
-        message: "Approval expired before the action could be applied.",
-      };
-      return {
-        action: { ...input.action, state: "expired" },
-        applied: false,
-        error,
-        record: this.#appliedActionRecord(input.action.id, "expired", undefined, error),
-      };
-    }
-
-    if (
-      input.parameterFingerprint !== undefined &&
-      input.action.parameterFingerprint !== input.parameterFingerprint
+      (input.parameterFingerprint !== undefined &&
+        input.parameterFingerprint !== currentFingerprint)
     ) {
       const error = {
         code: OPENFX_NODE_ERROR_CODES.approvalFingerprintMismatch,
@@ -194,7 +196,70 @@ export class SafetyActionGate {
       };
     }
 
-    this.#appliedActionIds.add(input.action.id);
+    const applicationClaim = this.#consumptionStore.claimApplication({
+      actionId: input.action.id,
+      parameterFingerprint: currentFingerprint,
+      now: this.#context.now(),
+    });
+    if (applicationClaim.status === "already_claimed") {
+      const error = {
+        code: OPENFX_NODE_ERROR_CODES.approvalAlreadyApplied,
+        message: "Approval has already been consumed by an application attempt.",
+      };
+      return {
+        action: input.action,
+        applied: false,
+        error,
+        record: this.#appliedActionRecord(
+          input.action.id,
+          "replayed",
+          undefined,
+          error,
+        ),
+      };
+    }
+    if (applicationClaim.status === "fingerprint_mismatch") {
+      const error = {
+        code: OPENFX_NODE_ERROR_CODES.approvalFingerprintMismatch,
+        message: "Approved parameters do not match the action being applied.",
+      };
+      return {
+        action: { ...input.action, state: "stale" },
+        applied: false,
+        error,
+        record: this.#appliedActionRecord(input.action.id, "stale", undefined, error),
+      };
+    }
+    if (applicationClaim.status === "expired") {
+      const error = {
+        code: OPENFX_NODE_ERROR_CODES.approvalExpired,
+        message: "Approval expired before the action could be applied.",
+      };
+      return {
+        action: { ...input.action, state: "expired" },
+        applied: false,
+        error,
+        record: this.#appliedActionRecord(input.action.id, "expired", undefined, error),
+      };
+    }
+    if (applicationClaim.status === "unknown_approval") {
+      const error = {
+        code: OPENFX_NODE_ERROR_CODES.approvalNotRegistered,
+        message: "Approval is not registered with the consumption store.",
+      };
+      return {
+        action: input.action,
+        applied: false,
+        error,
+        record: this.#appliedActionRecord(
+          input.action.id,
+          "rejected",
+          undefined,
+          error,
+        ),
+      };
+    }
+
     try {
       const result = await input.apply(input.action);
       return {
@@ -229,7 +294,17 @@ export class SafetyActionGate {
     const now = this.#context.now();
     const expiresAt = request.expiresAt ??
       request.createdAt + (this.#context.approvalTtlMs ?? APPROVAL_TTL_MS);
-    if (request.state !== "pending" || this.#resolvedRequestIds.has(request.id)) {
+    const preparedAction = this.prepareAction(request.action);
+    if (this.#allowLegacyUnregisteredApprovals) {
+      this.#consumptionStore.registerIfAbsent({
+        requestId: request.id,
+        actionId: preparedAction.id,
+        parameterFingerprint: preparedAction.parameterFingerprint!,
+        expiresAt,
+      });
+    }
+    const resolutionClaim = this.#consumptionStore.claimResolution(request.id);
+    if (request.state !== "pending" || resolutionClaim.status === "already_claimed") {
       const error = {
         code: OPENFX_NODE_ERROR_CODES.approvalAlreadyResolved,
         message: "Approval request has already been resolved.",
@@ -239,8 +314,17 @@ export class SafetyActionGate {
         this.#resolutionRecord(request, "replayed", now, error),
       );
     }
-    if (now >= expiresAt) {
-      this.#resolvedRequestIds.add(request.id);
+    if (resolutionClaim.status === "unknown_approval") {
+      const error = {
+        code: OPENFX_NODE_ERROR_CODES.approvalNotRegistered,
+        message: "Approval is not registered with the consumption store.",
+      };
+      throw new ApprovalGateError(
+        error,
+        this.#resolutionRecord(request, "stale", now, error),
+      );
+    }
+    if (now >= resolutionClaim.approval.expiresAt) {
       const error = {
         code: OPENFX_NODE_ERROR_CODES.approvalExpired,
         message: "Approval request expired before resolution.",
@@ -251,18 +335,30 @@ export class SafetyActionGate {
       );
     }
 
-    this.#resolvedRequestIds.add(request.id);
-    const action = this.prepareAction(request.action);
+    if (
+      preparedAction.parameterFingerprint !==
+        resolutionClaim.approval.parameterFingerprint
+    ) {
+      const error = {
+        code: OPENFX_NODE_ERROR_CODES.approvalFingerprintMismatch,
+        message: "Approved parameters changed before resolution.",
+      };
+      throw new ApprovalGateError(
+        error,
+        this.#resolutionRecord(request, "stale", now, error),
+      );
+    }
     return {
       ...request,
-      parameterFingerprint: request.parameterFingerprint ?? action.parameterFingerprint,
-      expiresAt,
+      parameterFingerprint: resolutionClaim.approval.parameterFingerprint,
+      expiresAt: resolutionClaim.approval.expiresAt,
       state: resolution,
       resolvedAt: now,
       action: {
-        ...action,
+        ...preparedAction,
+        parameterFingerprint: resolutionClaim.approval.parameterFingerprint,
         state: resolution,
-        approvalExpiresAt: expiresAt,
+        approvalExpiresAt: resolutionClaim.approval.expiresAt,
       },
     };
   }

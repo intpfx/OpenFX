@@ -83,7 +83,7 @@ export interface ApprovalResolutionRecord {
   id: string;
   requestId: string;
   actionId: string;
-  state: "approved" | "rejected" | "expired" | "replayed";
+  state: "approved" | "rejected" | "expired" | "replayed" | "stale";
   error?: KernelError;
   at: number;
 }

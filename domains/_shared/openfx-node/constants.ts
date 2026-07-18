@@ -33,6 +33,7 @@ export const OPENFX_NODE_ERROR_CODES = {
   approvalFingerprintMismatch: "approval_fingerprint_mismatch",
   approvalAlreadyResolved: "approval_already_resolved",
   approvalAlreadyApplied: "approval_already_applied",
+  approvalNotRegistered: "approval_not_registered",
   internal: "node_internal_error",
 } as const;
 

@@ -1,5 +1,6 @@
 export * from "./agent-policy.ts";
 export * from "./agent-state.ts";
+export * from "./approval-consumption-store.ts";
 export * from "./agent-loop.ts";
 export * from "./artifact.ts";
 export * from "./channel.ts";

@@ -39,6 +39,10 @@ deno task check
 - **副作用先过边界**：文件修改、外部副作用和高风险动作先形成 `ProposedAction` /
   `BoundaryRequest`，再审批、apply、replay。审批绑定参数指纹，默认五分钟过期，且
   resolution 和 apply 均为单次消费；过期、参数陈旧与重放都会生成稳定错误和可审计记录。
+- **审批消费必须原子持久化**：跨进程或多 isolate 的产品运行时必须注入原子、持久化的
+  `ApprovalConsumptionStore`；`InMemoryApprovalConsumptionStore`
+  只用于单进程兼容和测试。 未注册的旧审批默认拒绝，只有明确设置
+  `allowLegacyUnregisteredApprovals` 时才启用迁移 兼容路径。
 - **供应商无关，DeepSeek-first reference adapter**：内核不绑定 DeepSeek，但提供
   `DeepSeekProvider` 作为首个可测参考适配器。
 
