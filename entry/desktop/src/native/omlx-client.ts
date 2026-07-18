@@ -22,7 +22,12 @@ export type JsonRequester = (
 export type TextStreamRequester = (
   request: HttpJsonRequest,
   onChunk: (chunk: string) => void | Promise<void>,
+  options?: { deadlineAt?: number },
 ) => Promise<{ status: number }>;
+
+export interface OmlxClientOptions {
+  streamDeadlineMs?: number;
+}
 
 export interface OmlxToolCall {
   id: string;
@@ -53,6 +58,7 @@ const MAX_TOOL_CALLS = 32;
 const MAX_TOOL_ARGUMENT_CHARS = 64 * 1024;
 const MAX_TOOL_ID_CHARS = 256;
 const MAX_TOOL_NAME_CHARS = 128;
+const MAX_STREAM_DURATION_MS = 30_000;
 
 const tools = AGENT_TOOLS.map((tool) => ({
   type: "function",
@@ -66,12 +72,19 @@ const tools = AGENT_TOOLS.map((tool) => ({
 export const createOmlxClient = (
   requestJson: JsonRequester,
   requestStream?: TextStreamRequester,
+  options: OmlxClientOptions = {},
 ): OmlxClient => {
   const client: OmlxClient = {
     tools,
     async chat(message, onDelta) {
       if (requestStream && onDelta) {
-        return await streamChat(client.tools, message, requestStream, onDelta);
+        return await streamChat(
+          client.tools,
+          message,
+          requestStream,
+          onDelta,
+          normalizeStreamDuration(options.streamDeadlineMs),
+        );
       }
       const response = await requestJson({
         protocol: "http:",
@@ -110,7 +123,9 @@ const streamChat = async (
   message: string,
   requestStream: TextStreamRequester,
   onDelta: (delta: string) => void | Promise<void>,
+  streamDeadlineMs: number,
 ): Promise<OmlxChatResult> => {
+  const deadlineAt = Date.now() + streamDeadlineMs;
   let lineBuffer = "";
   let content = "";
   let inputChars = 0;
@@ -118,6 +133,7 @@ const streamChat = async (
   let frameCount = 0;
   let streamError: Error | null = null;
   let callbackError: Error | null = null;
+  let deadlineExpired = false;
   let callbacks = Promise.resolve();
   const calls = new Map<
     number,
@@ -156,7 +172,11 @@ const streamChat = async (
       content += text;
       callbacks = observeRejection(
         callbacks.then(async () => {
-          if (callbackError) return;
+          if (callbackError || deadlineExpired) return;
+          if (Date.now() >= deadlineAt) {
+            deadlineExpired = true;
+            throw new Error("omlx_stream_deadline");
+          }
           try {
             await onDelta(text);
           } catch {
@@ -196,7 +216,7 @@ const streamChat = async (
   };
   let response: { status: number };
   try {
-    response = await requestStream({
+    const request = requestStream({
       protocol: "http:",
       hostname: "127.0.0.1",
       port: 8000,
@@ -209,6 +229,7 @@ const streamChat = async (
         stream: true,
       },
     }, (chunk) => {
+      if (deadlineExpired) throw new Error("omlx_stream_deadline");
       if (callbackError) throw callbackError;
       if (streamError) throw streamError;
       try {
@@ -233,15 +254,23 @@ const streamChat = async (
         throw streamError;
       }
       return callbacks;
+    }, { deadlineAt });
+    response = await settleBeforeDeadline(request, deadlineAt, () => {
+      deadlineExpired = true;
     });
   } catch (error) {
     if (streamError) throw streamError;
     if (callbackError) throw callbackError;
+    if (deadlineExpired || errorMessage(error) === "http_stream_deadline") {
+      throw new Error("omlx_stream_deadline");
+    }
     throw error;
   }
   if (streamError) throw streamError;
   if (lineBuffer.trim()) consumeLine(lineBuffer.trim());
-  await callbacks;
+  await settleBeforeDeadline(callbacks, deadlineAt, () => {
+    deadlineExpired = true;
+  });
   if (callbackError) throw callbackError;
   if (response.status < 200 || response.status >= 300) {
     throw new Error(`omlx_http_${response.status}`);
@@ -323,3 +352,50 @@ const observeRejection = (promise: Promise<void>): Promise<void> => {
   );
   return promise;
 };
+
+const normalizeStreamDuration = (value: number | undefined): number =>
+  typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.min(value, MAX_STREAM_DURATION_MS)
+    : MAX_STREAM_DURATION_MS;
+
+const settleBeforeDeadline = <Value>(
+  promise: Promise<Value>,
+  deadlineAt: number,
+  onDeadline: () => void,
+): Promise<Value> => {
+  const remainingMs = deadlineAt - Date.now();
+  if (remainingMs <= 0) {
+    onDeadline();
+    promise.then(
+      () => {},
+      () => {},
+    );
+    return Promise.reject(new Error("omlx_stream_deadline"));
+  }
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      onDeadline();
+      reject(new Error("omlx_stream_deadline"));
+    }, remainingMs);
+    promise.then(
+      (value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+};
+
+const errorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);

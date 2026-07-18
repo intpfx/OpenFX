@@ -76,7 +76,7 @@ export const requestJson = (
 export const requestTextStream = (
   request: HttpJsonRequest,
   onChunk: (chunk: string) => void | Promise<void>,
-  options: { absoluteDeadlineMs?: number } = {},
+  options: { absoluteDeadlineMs?: number; deadlineAt?: number } = {},
 ): Promise<{ status: number }> => {
   if (request.protocol !== "http:" || request.hostname !== "127.0.0.1") {
     return Promise.reject(new Error("stream_endpoint_must_be_loopback_http"));
@@ -106,11 +106,22 @@ export const requestTextStream = (
       resolve({ status });
     };
     const payload = request.body === undefined ? "" : JSON.stringify(request.body);
-    const configuredDeadline = options.absoluteDeadlineMs;
-    const absoluteDeadlineMs = typeof configuredDeadline === "number" &&
-        Number.isFinite(configuredDeadline) && configuredDeadline > 0
-      ? Math.min(configuredDeadline, MAX_STREAM_DURATION_MS)
+    const now = Date.now();
+    const configuredDuration = options.absoluteDeadlineMs;
+    const durationMs = typeof configuredDuration === "number" &&
+        Number.isFinite(configuredDuration) && configuredDuration > 0
+      ? Math.min(configuredDuration, MAX_STREAM_DURATION_MS)
       : MAX_STREAM_DURATION_MS;
+    const configuredDeadline = options.deadlineAt;
+    const deadlineAt = typeof configuredDeadline === "number" &&
+        Number.isFinite(configuredDeadline)
+      ? Math.min(configuredDeadline, now + MAX_STREAM_DURATION_MS)
+      : now + durationMs;
+    const absoluteDeadlineMs = deadlineAt - now;
+    if (absoluteDeadlineMs <= 0) {
+      fail(new Error("http_stream_deadline"));
+      return;
+    }
     absoluteTimer = setTimeout(
       () => fail(new Error("http_stream_deadline")),
       absoluteDeadlineMs,

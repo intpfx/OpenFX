@@ -495,6 +495,50 @@ Deno.test("OMLX observes rejecting deltas when a later line in the same chunk fa
   }
 });
 
+Deno.test("OMLX deadline covers a never-settling delta after the stream completes", async () => {
+  const client = createOmlxClient(
+    () => Promise.reject(new Error("unexpected JSON request")),
+    (_request, onChunk) => {
+      onChunk('data: {"choices":[{"delta":{"content":"hello"}}]}\n');
+      return Promise.resolve({ status: 200 });
+    },
+    { streamDeadlineMs: 40 },
+  );
+  const chat = client.chat("hello", () => new Promise<void>(() => {})).then(
+    () => "unexpected_success",
+    (error) => error instanceof Error ? error.message : String(error),
+  );
+
+  assertEquals(await settleWithin(chat, 250), "omlx_stream_deadline");
+});
+
+Deno.test("OMLX queued deltas share one total deadline", async () => {
+  const invoked: string[] = [];
+  const client = createOmlxClient(
+    () => Promise.reject(new Error("unexpected JSON request")),
+    (_request, onChunk) => {
+      onChunk(
+        'data: {"choices":[{"delta":{"content":"A"}}]}\n' +
+          'data: {"choices":[{"delta":{"content":"B"}}]}\n' +
+          'data: {"choices":[{"delta":{"content":"C"}}]}\n',
+      );
+      return Promise.resolve({ status: 200 });
+    },
+    { streamDeadlineMs: 50 },
+  );
+  const chat = client.chat("hello", async (delta) => {
+    invoked.push(delta);
+    await new Promise((resolve) => setTimeout(resolve, 35));
+  }).then(
+    () => "unexpected_success",
+    (error) => error instanceof Error ? error.message : String(error),
+  );
+
+  assertEquals(await settleWithin(chat, 250), "omlx_stream_deadline");
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assertEquals(invoked, ["A", "B"]);
+});
+
 const settleWithin = async (
   promise: Promise<string>,
   timeoutMs: number,
