@@ -1507,6 +1507,33 @@ Deno.test("completed pairing retries recover only the matching active credential
   });
 });
 
+Deno.test("completed pairing cannot recover a secret after logical grace when KV deletion lags", async () => {
+  let now = START;
+  const delayedTtlStore = createMemoryConsoleStore();
+  const { plane } = harness({ store: delayedTtlStore, now: () => now });
+  const cookie = await login(plane);
+  const code = await createPairingCode(plane, cookie);
+  const paired = await pairNodeHandler(
+    jsonRequest("http://localhost/api/node/pair", pairBody(code)),
+    plane,
+  );
+  expect(paired.status).toBe(201);
+  now += 11 * 60_000 + 1;
+  expect(
+    await delayedTtlStore.list({ prefix: ["openfx-console", "pairings"] }),
+  ).toHaveLength(1);
+
+  const delayedRetry = await pairNodeHandler(
+    jsonRequest("http://localhost/api/node/pair", pairBody(code)),
+    plane,
+  );
+
+  expect(delayedRetry.status).toBe(404);
+  const body = await delayedRetry.json();
+  expect(body).toMatchObject({ error: "node_pairing_invalid" });
+  expect(body.nodeSecret).toBeUndefined();
+});
+
 Deno.test("bounded finalization conflicts leave only expiring pending state", async () => {
   const base = createMemoryConsoleStore();
   const failing: ConsoleStore = {

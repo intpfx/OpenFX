@@ -429,6 +429,9 @@ export const createConsoleControlPlane = (
 
     if (pairing.value.state === "completed") {
       if (
+        now() > pairing.value.expiresAt + PAIRING_EXPIRY_GRACE_MS
+      ) return nodeError(OPENFX_NODE_ERROR_CODES.pairingInvalid, 404);
+      if (
         !pairing.value.pending ||
         pairing.value.pending.requestFingerprint !== requestFingerprint
       ) return nodeError(OPENFX_NODE_ERROR_CODES.pairingUsed, 409);
