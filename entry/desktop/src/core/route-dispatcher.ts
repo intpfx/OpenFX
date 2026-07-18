@@ -108,8 +108,12 @@ export const createDesktopRouteDispatcher = (
       content: input.message,
       createdAt: Date.now(),
     });
+    const clientMessageId = typeof input.conversationId === "string" &&
+        input.conversationId.length > 0 && input.conversationId.length <= 128
+      ? input.conversationId
+      : null;
     try {
-      const messageId = options.createId?.() ?? crypto.randomUUID();
+      const messageId = clientMessageId ?? options.createId?.() ?? crypto.randomUUID();
       let sequence = 0;
       const response = await dependencies.chat(input.message, async (delta) => {
         await dependencies.agentDelta({
@@ -133,6 +137,7 @@ export const createDesktopRouteDispatcher = (
       return {
         ok: true,
         message: response.content,
+        ...(clientMessageId ? { messageId } : {}),
         toolResults,
         agent,
       };
@@ -141,7 +146,12 @@ export const createDesktopRouteDispatcher = (
         online: false,
         errorMessage: error instanceof Error ? error.message : String(error),
       };
-      return { ok: false, error: "agent_offline", agent };
+      return {
+        ok: false,
+        error: "agent_offline",
+        ...(clientMessageId ? { messageId: clientMessageId } : {}),
+        agent,
+      };
     }
   }
 };

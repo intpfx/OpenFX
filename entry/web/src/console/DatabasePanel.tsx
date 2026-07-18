@@ -1,11 +1,12 @@
 import { type FormEvent, useEffect, useMemo, useState } from "react";
+import type { ConsoleRequest } from "./client-runtime.ts";
 
 type KeyPart = string | number | boolean;
 type KvEntry = { key: KeyPart[]; value: unknown; versionstamp: string };
 
 const pretty = (value: unknown) => JSON.stringify(value, null, 2);
 
-export function DatabasePanel() {
+export function DatabasePanel(props: { request: ConsoleRequest }) {
   const [entries, setEntries] = useState<KvEntry[]>([]);
   const [prefix, setPrefix] = useState("[]");
   const [query, setQuery] = useState("");
@@ -32,11 +33,9 @@ export function DatabasePanel() {
     setBusy(true);
     try {
       const params = new URLSearchParams({ prefix: pretty(parsed), limit: "1000" });
-      const response = await fetch(`/api/admin/kv?${params}`, {
-        credentials: "same-origin",
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.hint ?? payload.error ?? "读取失败");
+      const payload = await props.request<{ entries?: KvEntry[] }>(
+        `/api/admin/kv?${params}`,
+      );
       setEntries(Array.isArray(payload.entries) ? payload.entries : []);
       setStatus(`已读取 ${payload.entries?.length ?? 0} 条记录`);
     } catch (error) {
@@ -60,14 +59,10 @@ export function DatabasePanel() {
     }
     setBusy(true);
     try {
-      const response = await fetch("/api/admin/kv", {
+      await props.request("/api/admin/kv", {
         method: "POST",
-        credentials: "same-origin",
-        headers: { "content-type": "application/json" },
         body: JSON.stringify({ key, value }),
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error ?? "保存失败");
       setStatus("记录已保存");
       await load();
     } catch (error) {
@@ -80,12 +75,9 @@ export function DatabasePanel() {
     setBusy(true);
     try {
       const params = new URLSearchParams({ key: pretty(key) });
-      const response = await fetch(`/api/admin/kv?${params}`, {
+      await props.request(`/api/admin/kv?${params}`, {
         method: "DELETE",
-        credentials: "same-origin",
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error ?? "删除失败");
       setStatus("记录已删除");
       await load();
     } catch (error) {

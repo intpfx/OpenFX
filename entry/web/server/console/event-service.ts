@@ -68,9 +68,10 @@ export const createConsoleEventService = (options: {
   const snapshot = async (req: Request): Promise<Response> => {
     const denied = await options.requireSession(req);
     if (denied) return denied;
+    const store = await options.store;
     const events = await retainedEvents(
-      await options.store,
-      parseLastEventId(req),
+      store,
+      await parseLastEventId(req, store),
       options.now(),
     );
     return new Response(
@@ -82,12 +83,14 @@ export const createConsoleEventService = (options: {
   const stream = async (req: Request): Promise<Response> => {
     const denied = await options.requireSession(req);
     if (denied) return denied;
-    const initialId = parseLastEventId(req);
-    const backlog = await retainedEvents(await options.store, initialId, options.now());
+    const store = await options.store;
+    const initialId = await parseLastEventId(req, store);
+    const backlog = await retainedEvents(store, initialId, options.now());
     const encoder = new TextEncoder();
     let keepalive: number | undefined;
     let poller: number | undefined;
     let polling = false;
+    let closed = false;
     let lastSent = backlog.at(-1)?.id ?? initialId;
     const body = new ReadableStream<Uint8Array>({
       start(controller) {
@@ -101,9 +104,19 @@ export const createConsoleEventService = (options: {
           controller.enqueue(encoder.encode(formatSseEvent(event)));
         };
         poller = setInterval(async () => {
-          if (polling) return;
+          if (polling || closed) return;
           polling = true;
           try {
+            const denied = await options.requireSession(req);
+            if (denied) {
+              cleanup();
+              try {
+                controller.close();
+              } catch {
+                // The browser may have canceled while session validation was pending.
+              }
+              return;
+            }
             const events = await retainedEvents(
               await options.store,
               lastSent,
@@ -128,6 +141,7 @@ export const createConsoleEventService = (options: {
     });
 
     function cleanup(): void {
+      closed = true;
       if (keepalive !== undefined) clearInterval(keepalive);
       if (poller !== undefined) clearInterval(poller);
     }
@@ -157,8 +171,17 @@ const retainedEvents = async (
     .filter((event) => event.createdAt >= now - EVENT_RETENTION_MS)
     .sort((left, right) => left.id - right.id);
 
-const parseLastEventId = (req: Request): number => {
-  const value = Number(req.headers.get("last-event-id") ?? "0");
+const parseLastEventId = async (
+  req: Request,
+  store: ConsoleStore,
+): Promise<number> => {
+  const resumeId = Number(req.headers.get("last-event-id"));
+  if (Number.isSafeInteger(resumeId) && resumeId > 0) return resumeId;
+  const query = new URL(req.url).searchParams.get("after");
+  if (query === "latest") {
+    return (await store.get<number>([...ROOT, "event-counter"]))?.value ?? 0;
+  }
+  const value = Number(query ?? req.headers.get("last-event-id") ?? "0");
   return Number.isSafeInteger(value) && value >= 0 ? value : 0;
 };
 

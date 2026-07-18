@@ -7,6 +7,7 @@ import {
   formatSseEvent,
 } from "../server/console/control-plane.ts";
 import {
+  ADMIN_SESSION_TTL_MS,
   createWebCryptoAdapter,
   openRelayEnvelope,
   sealRelayEnvelope,
@@ -28,6 +29,7 @@ const cookieFrom = (response: Response): string =>
 const createHarness = (overrides: {
   now?: () => number;
   fetch?: typeof fetch;
+  ssePollMs?: number;
 } = {}) => {
   const store = createMemoryConsoleStore();
   const plane = createConsoleControlPlane({
@@ -38,6 +40,7 @@ const createHarness = (overrides: {
     },
     now: overrides.now ?? (() => Date.parse("2026-07-18T00:00:00Z")),
     fetch: overrides.fetch,
+    ssePollMs: overrides.ssePollMs,
   });
   return { plane, store };
 };
@@ -284,6 +287,77 @@ Deno.test("administrator can atomically revoke the active node credential", asyn
   );
 });
 
+Deno.test("paused authorized heartbeat cannot resurrect or overwrite a re-paired node", async () => {
+  const base = createMemoryConsoleStore();
+  let pauseHeartbeat = false;
+  let releaseHeartbeat!: () => void;
+  let markPaused!: () => void;
+  const paused = new Promise<void>((resolve) => markPaused = resolve);
+  const released = new Promise<void>((resolve) => releaseHeartbeat = resolve);
+  const isActiveKey = (key: readonly (string | number | boolean)[]) =>
+    JSON.stringify(key) === JSON.stringify(["openfx-console", "node", "active"]);
+  const pause = async () => {
+    pauseHeartbeat = false;
+    markPaused();
+    await released;
+  };
+  const store = {
+    ...base,
+    async set(
+      key: readonly (string | number | boolean)[],
+      value: unknown,
+      options?: { expireIn?: number },
+    ) {
+      if (pauseHeartbeat && isActiveKey(key)) await pause();
+      await base.set(key, value, options);
+    },
+    async atomic(operation: Parameters<typeof base.atomic>[0]) {
+      if (pauseHeartbeat && operation.sets.some((item) => isActiveKey(item.key))) {
+        await pause();
+      }
+      return await base.atomic(operation);
+    },
+  };
+  const plane = createConsoleControlPlane({
+    store,
+    env: {
+      OPENFX_ADMIN_KEY: "correct horse battery staple",
+      OPENFX_NODE_CREDENTIAL_KEY: CREDENTIAL_KEY,
+    },
+    now: () => Date.parse("2026-07-18T00:00:00Z"),
+  });
+  const cookie = await login(plane);
+  const first = await pair(plane, cookie);
+  pauseHeartbeat = true;
+  const heartbeat = plane.node.heartbeat(
+    jsonRequest("http://localhost/api/node/heartbeat", {
+      nodeId: first.node.id,
+      protocolVersion: 1,
+      publicIpv6: "2001:4860:4860::8844",
+      port: 24531,
+      availability: "online",
+    }, { authorization: `Bearer ${first.nodeSecret}` }),
+  );
+  await paused;
+
+  expect(
+    (await plane.node.revoke(
+      new Request("http://localhost/api/console/node", {
+        method: "DELETE",
+        headers: { cookie },
+      }),
+    )).status,
+  ).toBe(200);
+  const replacement = await pair(plane, cookie);
+  releaseHeartbeat();
+
+  expect((await heartbeat).status).toBe(401);
+  const active = await store.get<{ id: string }>(["openfx-console", "node", "active"]);
+  expect(active?.value.id).toBe(replacement.node.id);
+  expect(active?.value.id).not.toBe(first.node.id);
+  expect(await store.get(["openfx-console", "node", "status"])).toBeNull();
+});
+
 Deno.test("heartbeat and telemetry require the node secret and retain seven days", async () => {
   let now = Date.parse("2026-07-18T00:00:00Z");
   const { plane } = createHarness({ now: () => now });
@@ -493,6 +567,64 @@ Deno.test("SSE formats supported event names, monotonic ids, keepalive, and resu
   expect(text).not.toContain("id: 2\n");
   expect(text).toContain("id: 3\nevent: approval.requested");
   expect(text).toContain("id: 5\nevent: heartbeat");
+});
+
+Deno.test("SSE latest cursor skips retained backlog before opening live stream", async () => {
+  const { plane } = createHarness();
+  const cookie = await login(plane);
+  await plane.events.append("agent.delta", {
+    messageId: "historical",
+    sequence: 1,
+    delta: "old",
+  });
+
+  const response = await plane.events.snapshot(
+    new Request("http://localhost/api/console/events?after=latest", {
+      headers: { cookie },
+    }),
+  );
+
+  expect(await response.text()).not.toContain("historical");
+});
+
+Deno.test("SSE reconnect resumes Last-Event-ID even with the initial latest URL", async () => {
+  const { plane } = createHarness();
+  const cookie = await login(plane);
+  await plane.events.append("heartbeat", { availability: "online" });
+  await plane.events.append("heartbeat", { availability: "degraded" });
+
+  const response = await plane.events.snapshot(
+    new Request("http://localhost/api/console/events?after=latest", {
+      headers: { cookie, "last-event-id": "1" },
+    }),
+  );
+  const text = await response.text();
+  expect(text).not.toContain("id: 1\n");
+  expect(text).toContain("id: 2\nevent: heartbeat");
+});
+
+Deno.test("SSE closes when its admin session expires during the stream", async () => {
+  let now = Date.parse("2026-07-18T00:00:00Z");
+  const { plane } = createHarness({ now: () => now, ssePollMs: 5 });
+  const cookie = await login(plane);
+  const response = await plane.events.stream(
+    new Request("http://localhost/api/console/events?after=latest", {
+      headers: { cookie },
+    }),
+  );
+  const reader = response.body!.getReader();
+  expect(new TextDecoder().decode((await reader.read()).value)).toContain(
+    ": keepalive",
+  );
+
+  now += ADMIN_SESSION_TTL_MS + 1;
+  const expired = await Promise.race([
+    reader.read(),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("SSE did not close after session expiry")), 200)
+    ),
+  ]).finally(() => reader.cancel());
+  expect(expired.done).toBe(true);
 });
 
 Deno.test("SSE observes retained events appended by another control-plane isolate", async () => {

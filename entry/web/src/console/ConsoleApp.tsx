@@ -1,8 +1,23 @@
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 import { AccessRulesPanel } from "./AccessRulesPanel.tsx";
 import { CoreScene } from "./CoreScene.tsx";
 import { DatabasePanel } from "./DatabasePanel.tsx";
+import {
+  type AgentTurn,
+  appendAgentDelta,
+  applyHeartbeatTransition,
+  type ApprovalResolution,
+  buildEventStreamUrl,
+  ConsoleClientError,
+  type ConsoleRequest,
+  createAgentTurn,
+  createConsoleClient,
+  emptyConsoleMemory,
+  handleConsoleSessionMessage,
+  parseAgentDelta,
+  refreshAfterApproval,
+} from "./client-runtime.ts";
 import {
   CONSOLE_ENDPOINTS,
   CONSOLE_MODULES,
@@ -63,40 +78,6 @@ type AuditEvent = {
   createdAt: number;
 };
 
-const REQUEST_INIT = { credentials: "same-origin" as const };
-
-async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(path, {
-    ...REQUEST_INIT,
-    ...init,
-    headers: {
-      ...(init.body ? { "content-type": "application/json" } : {}),
-      ...init.headers,
-    },
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const code = typeof payload.error === "string" ? payload.error : "request_failed";
-    throw Object.assign(new Error(errorLabel(code)), { status: response.status, code });
-  }
-  return payload as T;
-}
-
-function errorLabel(code: string): string {
-  const labels: Record<string, string> = {
-    unauthorized: "会话无效，请重新登录",
-    rate_limited: "尝试次数过多，请稍后再试",
-    admin_not_configured: "服务端尚未配置管理密钥",
-    node_unpaired: "尚未配对 Mac 节点",
-    node_offline: "Mac 节点当前离线",
-    node_relay_unavailable: "远程接入暂不可用",
-    control_plane_unavailable: "控制面存储暂不可用",
-    kv_unavailable: "当前运行时无法访问 Deno KV",
-    agent_offline: "Agent 当前不可用",
-  };
-  return labels[code] ?? code.replaceAll("_", " ");
-}
-
 export function ConsoleApp() {
   const [session, setSession] = useState<SessionState>("checking");
   const [password, setPassword] = useState("");
@@ -117,7 +98,8 @@ export function ConsoleApp() {
   );
   const [whisper, setWhisper] = useState("");
   const [whisperStatus, setWhisperStatus] = useState("");
-  const [liveDelta, setLiveDelta] = useState("");
+  const [agentTurn, setAgentTurn] = useState<AgentTurn | null>(null);
+  const [nodeDataStale, setNodeDataStale] = useState(false);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<{ message: string; tone: Tone }>({
     message: "正在连接控制面",
@@ -131,39 +113,98 @@ export function ConsoleApp() {
   const activeModule = CONSOLE_MODULES.find((item) => item.id === module)!;
   const core = corePresentation(availability);
 
+  const resetAuthenticatedState = useCallback(() => {
+    const empty = emptyConsoleMemory();
+    setSession("anonymous");
+    setPassword("");
+    setModule("overview");
+    setAvailability(empty.availability);
+    setOverview(null);
+    setRelay(null);
+    setProcesses([]);
+    setTelemetry([]);
+    setMessages([]);
+    setApprovals([]);
+    setAudit([]);
+    setPairing(null);
+    setAgentTurn(null);
+    setNodeDataStale(false);
+    setWhisper("");
+    setWhisperStatus("");
+    setLoading(false);
+    setStatus({ message: "会话已结束，请重新登录", tone: "neutral" });
+  }, []);
+  const client = useMemo(
+    () => createConsoleClient(fetch, resetAuthenticatedState),
+    [resetAuthenticatedState],
+  );
+
   useEffect(() => {
-    requestJson<{ authenticated: true }>("/api/admin/session")
+    client.request<{ authenticated: true }>("/api/admin/session")
       .then(() => setSession("authenticated"))
       .catch(() => setSession("anonymous"));
-  }, []);
+  }, [client]);
+
+  useEffect(() => {
+    if (!("BroadcastChannel" in globalThis)) return;
+    const channel = new BroadcastChannel("openfx-console-session");
+    channel.onmessage = (event) => {
+      handleConsoleSessionMessage(event.data, resetAuthenticatedState);
+    };
+    return () => channel.close();
+  }, [resetAuthenticatedState]);
 
   useEffect(() => {
     if (session !== "authenticated") return;
     void refreshAll();
     const timer = window.setInterval(() => void refreshOverview(), 15_000);
-    const events = new EventSource("/api/console/events");
-    const refreshAgent = () => void Promise.all([loadMessages(), loadApprovals()]);
+    const sessionTimer = window.setInterval(
+      () => void client.request("/api/admin/session").catch(() => undefined),
+      30_000,
+    );
+    const events = new EventSource(buildEventStreamUrl());
+    const refreshAgent = () =>
+      void Promise.all([loadMessages(), loadApprovals()]).catch(() => undefined);
     events.addEventListener("agent.delta", (event) => {
       try {
-        const data = JSON.parse((event as MessageEvent).data);
-        if (typeof data.delta === "string") setLiveDelta((value) => value + data.delta);
+        const delta = parseAgentDelta(JSON.parse((event as MessageEvent).data));
+        if (delta) {
+          setAgentTurn((turn) => turn ? appendAgentDelta(turn, delta) : turn);
+        }
       } catch {
         // A malformed ambient event must not interrupt the working console.
       }
     });
+    events.addEventListener("heartbeat", (event) => {
+      try {
+        const data = JSON.parse((event as MessageEvent).data);
+        if (!isAvailability(data?.availability)) return;
+        void applyHeartbeatTransition(data.availability, {
+          setAvailability,
+          setStale: setNodeDataStale,
+          refreshNodeData,
+        });
+      } catch {
+        // Ignore malformed node lifecycle events.
+      }
+    });
     events.addEventListener("approval.requested", refreshAgent);
     events.addEventListener("approval.resolved", refreshAgent);
+    events.onerror = () => {
+      void client.request("/api/admin/session").catch(() => undefined);
+    };
     return () => {
       clearInterval(timer);
+      clearInterval(sessionTimer);
       events.close();
     };
-  }, [session]);
+  }, [client, session]);
 
   async function login(event: FormEvent) {
     event.preventDefault();
     setLoginStatus("验证中");
     try {
-      await requestJson("/api/admin/session", {
+      await client.request("/api/admin/session", {
         method: "POST",
         body: JSON.stringify({ key: password }),
       });
@@ -176,72 +217,87 @@ export function ConsoleApp() {
   }
 
   async function logout() {
-    await requestJson("/api/admin/session", { method: "DELETE" }).catch(() =>
+    await client.request("/api/admin/session", { method: "DELETE" }).catch(() =>
       undefined
     );
-    setSession("anonymous");
-    setModule("overview");
-    setOverview(null);
+    if ("BroadcastChannel" in globalThis) {
+      const channel = new BroadcastChannel("openfx-console-session");
+      channel.postMessage({ type: "logout" });
+      channel.close();
+    }
+    resetAuthenticatedState();
   }
 
   async function refreshOverview() {
     try {
-      const payload = await requestJson<{ overview?: Overview; relay?: Relay }>(
+      const payload = await client.request<{ overview?: Overview; relay?: Relay }>(
         "/api/console/overview",
       );
       setOverview(payload.overview ?? null);
       setRelay(payload.relay ?? null);
       const relayError = payload.relay?.errorMessage;
       setAvailability(relayError ? "degraded" : "online");
+      setNodeDataStale(Boolean(relayError));
       setStatus({
         message: `节点数据更新于 ${formatTime(payload.overview?.collectedAt)}`,
         tone: relayError ? "error" : "success",
       });
     } catch (error) {
+      if (error instanceof ConsoleClientError && error.status === 401) return;
       const message = error instanceof Error ? error.message : "节点状态读取失败";
       setAvailability(message.includes("离线") ? "offline" : "unknown");
+      setNodeDataStale(true);
       setStatus({ message, tone: "error" });
     }
   }
 
   async function loadProcesses() {
-    const payload = await requestJson<{ processes?: ProcessInfo[] }>(
+    const payload = await client.request<{ processes?: ProcessInfo[] }>(
       "/api/console/processes",
     );
     setProcesses(Array.isArray(payload.processes) ? payload.processes : []);
   }
 
   async function loadTelemetry() {
-    const payload = await requestJson<{ minutes?: TelemetryMinute[] }>(
+    const payload = await client.request<{ minutes?: TelemetryMinute[] }>(
       "/api/console/telemetry",
     );
     setTelemetry(Array.isArray(payload.minutes) ? payload.minutes : []);
   }
 
   async function loadMessages() {
-    const payload = await requestJson<{ messages?: AgentMessage[] }>(
+    const payload = await client.request<{ messages?: AgentMessage[] }>(
       "/api/console/agent/messages",
     );
     setMessages(Array.isArray(payload.messages) ? payload.messages : []);
   }
 
   async function loadApprovals() {
-    const payload = await requestJson<{ approvals?: Approval[] }>(
+    const payload = await client.request<{ approvals?: Approval[] }>(
       "/api/console/approvals",
     );
     setApprovals(Array.isArray(payload.approvals) ? payload.approvals : []);
   }
 
   async function loadAudit() {
-    const payload = await requestJson<{ events?: AuditEvent[] }>(
+    const payload = await client.request<{ events?: AuditEvent[] }>(
       "/api/console/audit",
     );
     setAudit(Array.isArray(payload.events) ? payload.events : []);
   }
 
   async function loadRelay() {
-    const payload = await requestJson<{ relay?: Relay }>("/api/console/relay");
+    const payload = await client.request<{ relay?: Relay }>("/api/console/relay");
     setRelay(payload.relay ?? null);
+  }
+
+  async function refreshNodeData() {
+    await Promise.allSettled([
+      refreshOverview(),
+      loadProcesses(),
+      loadTelemetry(),
+      loadRelay(),
+    ]);
   }
 
   async function refreshAll() {
@@ -260,7 +316,7 @@ export function ConsoleApp() {
 
   async function generatePairing() {
     try {
-      const payload = await requestJson<{ code: string; expiresAt: number }>(
+      const payload = await client.request<{ code: string; expiresAt: number }>(
         CONSOLE_ENDPOINTS.pairings,
         { method: "POST", body: "{}" },
       );
@@ -276,14 +332,16 @@ export function ConsoleApp() {
 
   async function revokeNode() {
     try {
-      const payload = await requestJson<{ revokedNodeId: string | null }>(
+      const payload = await client.request<{ revokedNodeId: string | null }>(
         CONSOLE_ENDPOINTS.node,
         { method: "DELETE" },
       );
       setOverview(null);
       setRelay(null);
       setProcesses([]);
+      setTelemetry([]);
       setAvailability("unknown");
+      setNodeDataStale(false);
       setPairing(null);
       setStatus({
         message: payload.revokedNodeId ? "节点凭据已撤销" : "当前没有已配对节点",
@@ -299,7 +357,7 @@ export function ConsoleApp() {
 
   async function updateRelay(enabled: boolean) {
     try {
-      const result = await requestJson<{ approvalRequired?: boolean }>(
+      const result = await client.request<{ approvalRequired?: boolean }>(
         "/api/console/relay",
         {
           method: "POST",
@@ -324,13 +382,17 @@ export function ConsoleApp() {
     event.preventDefault();
     const message = whisper.trim();
     if (!message) return;
+    const messageId = crypto.randomUUID();
     setWhisperStatus("Agent 正在处理");
-    setLiveDelta("");
+    setAgentTurn(createAgentTurn(messageId));
     setWhisper("");
     try {
-      const payload = await requestJson<{ message?: string }>(
+      const payload = await client.request<{ message?: string }>(
         "/api/console/agent/messages",
-        { method: "POST", body: JSON.stringify({ message }) },
+        {
+          method: "POST",
+          body: JSON.stringify({ message, conversationId: messageId }),
+        },
       );
       setWhisperStatus(payload.message || "Agent 已响应");
       await Promise.all([loadMessages(), loadApprovals()]);
@@ -344,15 +406,25 @@ export function ConsoleApp() {
     decision: "approved" | "rejected",
   ) {
     try {
-      await requestJson("/api/console/approvals", {
-        method: "POST",
-        body: JSON.stringify({
-          id: approval.id,
-          decision,
-          parameterFingerprint: approval.parameterFingerprint,
-        }),
-      });
-      await loadApprovals();
+      const result = await client.request<ApprovalResolution>(
+        "/api/console/approvals",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            id: approval.id,
+            decision,
+            parameterFingerprint: approval.parameterFingerprint,
+          }),
+        },
+      );
+      const refreshers: Record<string, () => Promise<void>> = {
+        approvals: loadApprovals,
+        overview: refreshOverview,
+        relay: loadRelay,
+        processes: loadProcesses,
+        telemetry: loadTelemetry,
+      };
+      await refreshAfterApproval(result, decision, refreshers);
       setStatus({
         message: decision === "approved" ? "操作已批准" : "操作已拒绝",
         tone: "success",
@@ -515,7 +587,9 @@ export function ConsoleApp() {
                 approvals={approvals}
                 audit={audit}
                 pairing={pairing}
+                nodeDataStale={nodeDataStale}
                 lowPower={lowPower}
+                request={client.request}
                 onLowPower={setLowPower}
                 onGeneratePairing={generatePairing}
                 onRevokeNode={revokeNode}
@@ -537,8 +611,8 @@ export function ConsoleApp() {
           onChange={(event) => setWhisper(event.target.value)}
         />
         <button disabled={!whisper.trim()} type="submit">发送</button>
-        {whisperStatus || liveDelta
-          ? <output title={whisperStatus}>{liveDelta || whisperStatus}</output>
+        {whisperStatus || agentTurn?.text
+          ? <output title={whisperStatus}>{agentTurn?.text || whisperStatus}</output>
           : null}
       </form>
     </main>
@@ -555,7 +629,9 @@ function Workbench(props: {
   approvals: Approval[];
   audit: AuditEvent[];
   pairing: { code: string; expiresAt: number } | null;
+  nodeDataStale: boolean;
   lowPower: boolean;
+  request: ConsoleRequest;
   onLowPower: (value: boolean) => void;
   onGeneratePairing: () => void;
   onRevokeNode: () => void;
@@ -563,8 +639,8 @@ function Workbench(props: {
   onResolve: (approval: Approval, decision: "approved" | "rejected") => void;
   onLogout: () => void;
 }) {
-  if (props.module === "access") return <AccessRulesPanel />;
-  if (props.module === "database") return <DatabasePanel />;
+  if (props.module === "access") return <AccessRulesPanel request={props.request} />;
+  if (props.module === "database") return <DatabasePanel request={props.request} />;
   if (props.module === "mac") {
     const maxCpu = Math.max(
       1,
@@ -572,6 +648,13 @@ function Workbench(props: {
     );
     return (
       <div className="console-stack">
+        {props.nodeDataStale
+          ? (
+            <p className="console-callout error">
+              节点状态已变化，以下数据可能已过期。
+            </p>
+          )
+          : null}
         <div className="console-metric-grid">
           <Metric
             label="CPU 使用"
@@ -658,6 +741,13 @@ function Workbench(props: {
   if (props.module === "relay") {
     return (
       <div className="console-stack">
+        {props.nodeDataStale
+          ? (
+            <p className="console-callout error">
+              节点状态已变化，以下数据可能已过期。
+            </p>
+          )
+          : null}
         <div className="console-detail-list">
           <Metric label="Relay" value={props.relay?.enabled ? "已启用" : "已停用"} />
           <Metric label="公网 IPv6" value={props.relay?.publicIpv6 ?? "—"} />
@@ -881,4 +971,9 @@ function ConsoleIcon({ name }: { name: string }) {
       <path d={paths[name]} />
     </svg>
   );
+}
+
+function isAvailability(value: unknown): value is NodeAvailability {
+  return value === "unknown" || value === "online" || value === "degraded" ||
+    value === "offline";
 }

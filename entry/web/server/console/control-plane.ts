@@ -469,7 +469,14 @@ export const createConsoleControlPlane = (
   const authorizeNode = async (
     req: Request,
     nodeId: unknown,
-  ): Promise<{ store: ConsoleStore; node: NodeRecord } | Response> => {
+  ): Promise<
+    {
+      store: ConsoleStore;
+      node: NodeRecord;
+      activeVersion: string;
+      credentialVersion: string;
+    } | Response
+  > => {
     const store = await storePromise;
     const active = await store.get<NodeRecord>([...ROOT, "node", "active"]);
     const credential = await store.get<StoredCredential>([
@@ -495,7 +502,12 @@ export const createConsoleControlPlane = (
       utf8(credential.value.digest),
     );
     return valid
-      ? { store, node: active.value }
+      ? {
+        store,
+        node: active.value,
+        activeVersion: active.versionstamp,
+        credentialVersion: credential.versionstamp,
+      }
       : nodeError(OPENFX_NODE_ERROR_CODES.unauthorized, 401);
   };
 
@@ -504,25 +516,44 @@ export const createConsoleControlPlane = (
     if (parsed instanceof Response) return parsed;
     const validation = validateNodeEndpoint(parsed);
     if (validation) return validation;
-    const authorization = await authorizeNode(req, parsed.nodeId);
-    if (authorization instanceof Response) return authorization;
     const availability = parsed.availability;
     if (!["online", "offline", "degraded"].includes(String(availability))) {
       return nodeError(OPENFX_NODE_ERROR_CODES.invalidRequest, 400);
     }
-    const status: NodeStatus = {
-      nodeId: authorization.node.id,
-      availability: availability as NodeStatus["availability"],
-      protocolVersion: PROTOCOL_VERSION,
-      publicIpv6: String(parsed.publicIpv6),
-      port: NODE_PORT,
-      lastSeenAt: now(),
-    };
-    const node = { ...authorization.node, ...status, status: status.availability };
-    await authorization.store.set([...ROOT, "node", "active"], node);
-    await authorization.store.set([...ROOT, "node", "status"], status);
-    await eventService.append("heartbeat", status);
-    return Response.json({ ok: true, receivedAt: now() });
+    const activeKey = [...ROOT, "node", "active"] as const;
+    const credentialKey = [...ROOT, "node", "credential"] as const;
+    const statusKey = [...ROOT, "node", "status"] as const;
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const authorization = await authorizeNode(req, parsed.nodeId);
+      if (authorization instanceof Response) return authorization;
+      const currentStatus = await authorization.store.get<NodeStatus>(statusKey);
+      const status: NodeStatus = {
+        nodeId: authorization.node.id,
+        availability: availability as NodeStatus["availability"],
+        protocolVersion: PROTOCOL_VERSION,
+        publicIpv6: String(parsed.publicIpv6),
+        port: NODE_PORT,
+        lastSeenAt: now(),
+      };
+      const node = { ...authorization.node, ...status, status: status.availability };
+      if (
+        await authorization.store.atomic({
+          checks: [
+            { key: activeKey, versionstamp: authorization.activeVersion },
+            { key: credentialKey, versionstamp: authorization.credentialVersion },
+            { key: statusKey, versionstamp: currentStatus?.versionstamp ?? null },
+          ],
+          sets: [
+            { key: activeKey, value: node },
+            { key: statusKey, value: status },
+          ],
+        })
+      ) {
+        await eventService.append("heartbeat", status);
+        return Response.json({ ok: true, receivedAt: now() });
+      }
+    }
+    return nodeError(OPENFX_NODE_ERROR_CODES.internal, 503);
   };
 
   const telemetry = async (req: Request): Promise<Response> => {

@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 
 import { listHiddenHomepageProjects } from "../../homepage-projects.ts";
+import type { ConsoleRequest } from "./client-runtime.ts";
 
 type UnlockRule = {
   key: string;
@@ -15,7 +16,7 @@ const defaultExpiry = () => {
     .toISOString().slice(0, 16);
 };
 
-export function AccessRulesPanel() {
+export function AccessRulesPanel(props: { request: ConsoleRequest }) {
   const projects = useMemo(() => listHiddenHomepageProjects(), []);
   const names = useMemo(
     () => new Map(projects.map((project) => [project.id, project.name])),
@@ -33,11 +34,9 @@ export function AccessRulesPanel() {
   async function load() {
     setBusy(true);
     try {
-      const response = await fetch("/api/admin/unlocks", {
-        credentials: "same-origin",
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error ?? "规则读取失败");
+      const payload = await props.request<{ rules?: UnlockRule[] }>(
+        "/api/admin/unlocks",
+      );
       setRules(Array.isArray(payload.rules) ? payload.rules : []);
       setStatus(`共 ${payload.rules?.length ?? 0} 条规则`);
     } catch (error) {
@@ -51,14 +50,13 @@ export function AccessRulesPanel() {
     event.preventDefault();
     setBusy(true);
     try {
-      const response = await fetch("/api/admin/unlocks", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(form),
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error ?? "规则保存失败");
+      const payload = await props.request<{ rule?: UnlockRule }>(
+        "/api/admin/unlocks",
+        {
+          method: "POST",
+          body: JSON.stringify(form),
+        },
+      );
       setForm({ label: "", expiresAt: defaultExpiry(), projectIds: [] });
       setStatus(`已生成访问码 ${payload.rule?.key ?? ""}`);
       await load();
@@ -71,12 +69,10 @@ export function AccessRulesPanel() {
   async function remove(key: string) {
     setBusy(true);
     try {
-      const response = await fetch(
+      await props.request(
         `/api/admin/unlocks?key=${encodeURIComponent(key)}`,
-        { method: "DELETE", credentials: "same-origin" },
+        { method: "DELETE" },
       );
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error ?? "删除失败");
       await load();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "删除失败");

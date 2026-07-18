@@ -113,3 +113,41 @@ Deno.test("real chat deltas flow through the route callback with stable ordering
     { messageId: "message-1", delta: "B", sequence: 2 },
   ]);
 });
+
+Deno.test("client conversation id correlates every streamed Agent delta", async () => {
+  const events: unknown[] = [];
+  const dispatcher = createDesktopRouteDispatcher({
+    overview: () => Promise.resolve({}),
+    processes: () => Promise.resolve([]),
+    network: () => Promise.resolve({}),
+    relay: () => Promise.resolve({}),
+    async chat(_message, onDelta) {
+      await onDelta("A");
+      return { content: "A", toolCalls: [] };
+    },
+    agentDelta(input) {
+      events.push(input);
+      return Promise.resolve();
+    },
+    invokeTool: () => Promise.resolve({}),
+    listApprovals: () => Promise.resolve([]),
+    resolveApproval: () => Promise.resolve({}),
+  }, { createId: () => "server-generated" });
+
+  const result = await dispatcher({
+    method: "POST",
+    path: "/v1/agent/messages",
+    body: { message: "hello", conversationId: "client-turn" },
+  });
+
+  assertEquals(result, {
+    ok: true,
+    message: "A",
+    messageId: "client-turn",
+    toolResults: [],
+    agent: { online: true, errorMessage: null },
+  });
+  assertEquals(events, [
+    { messageId: "client-turn", delta: "A", sequence: 1 },
+  ]);
+});
