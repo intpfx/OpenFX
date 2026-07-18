@@ -7,10 +7,17 @@ import {
   validateUnlockRule,
 } from "../../../admin/unlocks.ts";
 import { requireAdminSession } from "../../../console/admin.ts";
+import {
+  type ConsoleControlPlane,
+  getConsoleControlPlane,
+} from "../../../console/control-plane.ts";
 import { createWebRequest } from "../../../utils/request.ts";
 
-export const saveAdminUnlockRuleHandler = async (req: Request): Promise<Response> => {
-  const denied = await requireAdminSession(req);
+export const saveAdminUnlockRuleHandler = async (
+  req: Request,
+  plane: ConsoleControlPlane = getConsoleControlPlane(),
+): Promise<Response> => {
+  const denied = await requireAdminSession(req, plane);
   if (denied) return denied;
 
   let body: unknown;

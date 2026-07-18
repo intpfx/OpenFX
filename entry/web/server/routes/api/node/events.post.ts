@@ -5,11 +5,11 @@ import {
 } from "../../../console/control-plane.ts";
 import { createWebRequest } from "../../../utils/request.ts";
 
-export const createAdminSessionHandler = (
+export const nodeEventsHandler = (
   req: Request,
   plane: ConsoleControlPlane = getConsoleControlPlane(),
-): Promise<Response> => plane.adminSession.create(req);
+): Promise<Response> => plane.node.events(req);
 
 export default defineEventHandler(async (event) =>
-  await createAdminSessionHandler(await createWebRequest(event, "POST"))
+  await nodeEventsHandler(await createWebRequest(event, "POST"))
 );

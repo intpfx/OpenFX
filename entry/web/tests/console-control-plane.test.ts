@@ -86,7 +86,7 @@ Deno.test("admin session stores a digest and emits strict localhost cookie attri
   expect(cookie).toContain("Path=/");
   expect(cookie).toContain("Max-Age=43200");
   expect(cookie).not.toContain("Secure");
-  const stored = await store.list(["openfx-console", "sessions"]);
+  const stored = await store.list({ prefix: ["openfx-console", "sessions"] });
   expect(stored).toHaveLength(1);
   expect(JSON.stringify(stored)).not.toContain(cookieFrom(response).split("=")[1]);
 
@@ -237,7 +237,9 @@ Deno.test("pairing validates protocol and fixed global IPv6 endpoint without lea
 
   const paired = await pair(plane, cookie);
   expect(decodeBase64Url(paired.nodeSecret)).toHaveLength(32);
-  const persisted = JSON.stringify(await store.list(["openfx-console"]));
+  const persisted = JSON.stringify(
+    await store.list({ prefix: ["openfx-console"] }),
+  );
   expect(persisted).not.toContain(paired.nodeSecret);
   const overview = await plane.console.handle(
     new Request("http://localhost/api/console/overview", { headers: { cookie } }),

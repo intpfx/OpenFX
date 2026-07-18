@@ -2,10 +2,17 @@ import { defineEventHandler } from "h3";
 
 import { deleteUnlockRule } from "../../../admin/unlocks.ts";
 import { requireAdminSession } from "../../../console/admin.ts";
+import {
+  type ConsoleControlPlane,
+  getConsoleControlPlane,
+} from "../../../console/control-plane.ts";
 import { createWebRequest } from "../../../utils/request.ts";
 
-export const deleteAdminUnlockRuleHandler = async (req: Request): Promise<Response> => {
-  const denied = await requireAdminSession(req);
+export const deleteAdminUnlockRuleHandler = async (
+  req: Request,
+  plane: ConsoleControlPlane = getConsoleControlPlane(),
+): Promise<Response> => {
+  const denied = await requireAdminSession(req, plane);
   if (denied) return denied;
 
   const url = new URL(req.url);

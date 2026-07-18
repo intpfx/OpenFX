@@ -27,16 +27,36 @@ import {
   utf8,
 } from "../../../../domains/_shared/openfx-node/encoding.ts";
 import { openRelayEnvelope } from "../../../../domains/_shared/openfx-node/relay.ts";
-import { type ConsoleKey, type ConsoleStore, getDefaultConsoleStore } from "./store.ts";
+import {
+  type ConsoleKey,
+  type ConsoleStore,
+  ConsoleStoreUnavailableError,
+  createDefaultConsoleStore,
+  getDefaultConsoleStore,
+} from "./store.ts";
+import { getTrustedClientIdentity } from "../utils/request.ts";
+import {
+  type ConsoleEventType,
+  createConsoleEventService,
+  type StoredConsoleEvent,
+} from "./event-service.ts";
+import {
+  isAllowedRelayBody,
+  isGlobalIpv6,
+  parseNodeEvent,
+  parseTelemetrySample,
+  readJsonObject,
+  validateNodeEndpoint,
+} from "./validation.ts";
 
 export { createMemoryConsoleStore } from "./store.ts";
+export { formatSseEvent } from "./event-service.ts";
 
 const ROOT = ["openfx-console"] as const;
 const LOGIN_LIMIT = 5;
 const LOGIN_WINDOW_MS = 15 * 60_000;
 const NODE_ONLINE_WINDOW_MS = 45_000;
-const REQUEST_LIMIT_BYTES = 64 * 1024;
-const EVENT_RETENTION_MS = TELEMETRY_RETENTION_MS;
+const TELEMETRY_CLOCK_SKEW_MS = 60_000;
 const SESSION_COOKIE = "openfx_admin_session";
 const CREDENTIAL_AAD = utf8("openfx-node/v1/credential");
 
@@ -52,19 +72,6 @@ export const CONSOLE_RELAY_OPERATIONS = {
 } as const;
 
 export type ConsoleRelayOperation = keyof typeof CONSOLE_RELAY_OPERATIONS;
-export type ConsoleEventType =
-  | "telemetry"
-  | "agent.delta"
-  | "approval.requested"
-  | "approval.resolved"
-  | "heartbeat";
-
-export interface StoredConsoleEvent {
-  id: number;
-  type: ConsoleEventType;
-  data: unknown;
-  createdAt: number;
-}
 
 interface SessionRecord {
   createdAt: number;
@@ -83,6 +90,7 @@ interface PairingRecord {
 }
 
 interface StoredCredential {
+  nodeId: string;
   digest: string;
   iv: string;
   ciphertext: string;
@@ -91,6 +99,7 @@ interface StoredCredential {
 interface TelemetryBucket {
   minute: TelemetryMinute;
   samples: TelemetrySample[];
+  receivedAt: number;
 }
 
 export interface ConsoleControlPlaneOptions {
@@ -100,6 +109,7 @@ export interface ConsoleControlPlaneOptions {
   randomBytes?: (length: number) => Uint8Array;
   fetch?: typeof fetch;
   ssePollMs?: number;
+  openKv?: () => Promise<Deno.Kv>;
 }
 
 export interface ConsoleControlPlane {
@@ -113,6 +123,7 @@ export interface ConsoleControlPlane {
     pair(req: Request): Promise<Response>;
     heartbeat(req: Request): Promise<Response>;
     telemetry(req: Request): Promise<Response>;
+    events(req: Request): Promise<Response>;
   };
   console: {
     handle(
@@ -136,13 +147,15 @@ export const createConsoleControlPlane = (
 ): ConsoleControlPlane => {
   const storePromise = options.store
     ? Promise.resolve(options.store)
+    : options.openKv
+    ? createDefaultConsoleStore(options.openKv)
     : getDefaultConsoleStore();
+  void storePromise.catch(() => undefined);
   const now = options.now ?? Date.now;
   const cryptoAdapter = createWebCryptoAdapter();
   const randomBytes = options.randomBytes ?? cryptoAdapter.randomBytes;
   const relayFetch = options.fetch ?? globalThis.fetch;
   const ssePollMs = options.ssePollMs ?? 1_000;
-  const listeners = new Set<(event: StoredConsoleEvent) => void>();
 
   const env = (name: string): string => {
     if (options.env) return (options.env[name] ?? "").trim();
@@ -174,24 +187,6 @@ export const createConsoleControlPlane = (
     await (await storePromise).set([...ROOT, "audit", id], value);
   };
 
-  const appendEvent = async (
-    type: ConsoleEventType,
-    data: unknown,
-  ): Promise<StoredConsoleEvent> => {
-    const store = await storePromise;
-    const id = await nextCounter(store, "event-counter");
-    const event = { id, type, data, createdAt: now() } satisfies StoredConsoleEvent;
-    await store.set([...ROOT, "events", id], event);
-    await pruneBefore<StoredConsoleEvent>(
-      store,
-      [...ROOT, "events"],
-      now() - EVENT_RETENTION_MS,
-      (value) => value.createdAt,
-    );
-    for (const listener of listeners) listener(event);
-    return event;
-  };
-
   const authorize = async (req: Request): Promise<boolean> => {
     if (!configuredAdminKey(req)) return false;
     const token = parseCookie(req.headers.get("cookie") ?? "", SESSION_COOKIE);
@@ -208,6 +203,13 @@ export const createConsoleControlPlane = (
 
   const requireSession = async (req: Request): Promise<Response | null> =>
     await authorize(req) ? null : jsonError("unauthorized", 401);
+
+  const eventService = createConsoleEventService({
+    store: storePromise,
+    now,
+    pollMs: ssePollMs,
+    requireSession,
+  });
 
   const createSession = async (req: Request): Promise<Response> => {
     const adminKey = configuredAdminKey(req);
@@ -251,6 +253,7 @@ export const createConsoleControlPlane = (
         createdAt: now(),
         expiresAt: now() + ADMIN_SESSION_TTL_MS,
       } satisfies SessionRecord,
+      { expireIn: ADMIN_SESSION_TTL_MS },
     );
     await appendAudit({
       category: "admin",
@@ -333,20 +336,11 @@ export const createConsoleControlPlane = (
     if (pairing.value.expiresAt <= now()) {
       return nodeError(OPENFX_NODE_ERROR_CODES.pairingExpired, 410);
     }
-    const consumed = { ...pairing.value, usedAt: now() } satisfies PairingRecord;
-    if (!await store.compareAndSet(key, pairing.versionstamp, consumed)) {
-      pairing = await store.get<PairingRecord>(key);
-      return nodeError(
-        pairing?.value.usedAt !== undefined
-          ? OPENFX_NODE_ERROR_CODES.pairingUsed
-          : OPENFX_NODE_ERROR_CODES.pairingInvalid,
-        pairing?.value.usedAt !== undefined ? 409 : 404,
-      );
-    }
     const nodeSecret = randomBytes(32);
     const nodeId = encodeBase64Url(randomBytes(16));
     const iv = randomBytes(12);
     const credential: StoredCredential = {
+      nodeId,
       digest: await digest(nodeSecret),
       iv: encodeBase64Url(iv),
       ciphertext: encodeBase64Url(
@@ -368,8 +362,43 @@ export const createConsoleControlPlane = (
       pairedAt: now(),
       lastSeenAt: 0,
     };
-    await store.set([...ROOT, "node", "active"], node);
-    await store.set([...ROOT, "node", "credential"], credential);
+    const activeKey = [...ROOT, "node", "active"] as const;
+    const credentialRecordKey = [...ROOT, "node", "credential"] as const;
+    const statusKey = [...ROOT, "node", "status"] as const;
+    const active = await store.get<NodeRecord>(activeKey);
+    const previousCredential = await store.get<StoredCredential>(credentialRecordKey);
+    const previousStatus = await store.get<NodeStatus>(statusKey);
+    const consumed = { ...pairing.value, usedAt: now() } satisfies PairingRecord;
+    if (
+      !await store.atomic({
+        checks: [
+          { key, versionstamp: pairing.versionstamp },
+          { key: activeKey, versionstamp: active?.versionstamp ?? null },
+          {
+            key: credentialRecordKey,
+            versionstamp: previousCredential?.versionstamp ?? null,
+          },
+          {
+            key: statusKey,
+            versionstamp: previousStatus?.versionstamp ?? null,
+          },
+        ],
+        sets: [
+          { key, value: consumed },
+          { key: activeKey, value: node },
+          { key: credentialRecordKey, value: credential },
+        ],
+        deletes: [statusKey],
+      })
+    ) {
+      pairing = await store.get<PairingRecord>(key);
+      return nodeError(
+        pairing?.value.usedAt !== undefined
+          ? OPENFX_NODE_ERROR_CODES.pairingUsed
+          : OPENFX_NODE_ERROR_CODES.pairingInvalid,
+        409,
+      );
+    }
     await appendAudit({
       category: "pairing",
       action: "node.paired",
@@ -395,7 +424,10 @@ export const createConsoleControlPlane = (
       "credential",
     ]);
     const token = bearerToken(req.headers.get("authorization") ?? "");
-    if (!active || !credential || active.value.id !== nodeId || !token) {
+    if (
+      !active || !credential || active.value.id !== nodeId ||
+      credential.value.nodeId !== active.value.id || !token
+    ) {
       return nodeError(OPENFX_NODE_ERROR_CODES.unauthorized, 401);
     }
     let supplied: Uint8Array;
@@ -435,7 +467,7 @@ export const createConsoleControlPlane = (
     const node = { ...authorization.node, ...status, status: status.availability };
     await authorization.store.set([...ROOT, "node", "active"], node);
     await authorization.store.set([...ROOT, "node", "status"], status);
-    await appendEvent("heartbeat", status);
+    await eventService.append("heartbeat", status);
     return Response.json({ ok: true, receivedAt: now() });
   };
 
@@ -449,6 +481,9 @@ export const createConsoleControlPlane = (
     if (authorization instanceof Response) return authorization;
     const sample = parseTelemetrySample(parsed.sample);
     if (!sample) return nodeError(OPENFX_NODE_ERROR_CODES.invalidRequest, 400);
+    if (Math.abs(sample.collectedAt - now()) > TELEMETRY_CLOCK_SKEW_MS) {
+      return nodeError(OPENFX_NODE_ERROR_CODES.invalidRequest, 400);
+    }
     const minuteStart = Math.floor(sample.collectedAt / TELEMETRY_AGGREGATE_MS) *
       TELEMETRY_AGGREGATE_MS;
     const key = [...ROOT, "telemetry", minuteStart] as const;
@@ -460,24 +495,52 @@ export const createConsoleControlPlane = (
         await authorization.store.compareAndSet(
           key,
           current?.versionstamp ?? null,
-          { minute, samples } satisfies TelemetryBucket,
+          { minute, samples, receivedAt: now() } satisfies TelemetryBucket,
+          { expireIn: TELEMETRY_RETENTION_MS },
         )
       ) break;
       if (attempt === 7) return nodeError(OPENFX_NODE_ERROR_CODES.internal, 503);
     }
-    await pruneTelemetry(authorization.store, now());
-    await appendEvent("telemetry", aggregateTelemetrySamples([sample])[0]);
+    await eventService.append("telemetry", aggregateTelemetrySamples([sample])[0]);
     return Response.json({ ok: true, minuteStart }, { status: 202 });
+  };
+
+  const ingestNodeEvents = async (req: Request): Promise<Response> => {
+    const parsed = await readJsonObject(req);
+    if (parsed instanceof Response) return parsed;
+    if (parsed.protocolVersion !== PROTOCOL_VERSION) {
+      return nodeError(OPENFX_NODE_ERROR_CODES.protocolMismatch, 400);
+    }
+    const authorization = await authorizeNode(req, parsed.nodeId);
+    if (authorization instanceof Response) return authorization;
+    if (
+      !Array.isArray(parsed.events) || parsed.events.length === 0 ||
+      parsed.events.length > 64
+    ) {
+      return nodeError(OPENFX_NODE_ERROR_CODES.invalidRequest, 400);
+    }
+    const events = parsed.events.map(parseNodeEvent);
+    if (events.some((event) => event === null)) {
+      return nodeError(OPENFX_NODE_ERROR_CODES.invalidRequest, 400);
+    }
+    for (const event of events) {
+      await eventService.append(event!.type, event!.data);
+    }
+    return Response.json({ ok: true, accepted: events.length }, { status: 202 });
   };
 
   const listTelemetry = async (req: Request): Promise<Response> => {
     const denied = await requireSession(req);
     if (denied) return denied;
     const store = await storePromise;
-    await pruneTelemetry(store, now());
-    const buckets = await store.list<TelemetryBucket>([...ROOT, "telemetry"]);
+    const buckets = await store.list<TelemetryBucket>({
+      prefix: [...ROOT, "telemetry"],
+      limit: 10_081,
+    });
     const minutes = retainTelemetryMinutes(
-      buckets.map((entry) => entry.value.minute),
+      buckets
+        .filter((entry) => entry.value.receivedAt >= now() - TELEMETRY_RETENTION_MS)
+        .map((entry) => entry.value.minute),
       now(),
     ).sort((left, right) => left.minuteStart - right.minuteStart);
     return Response.json({ ok: true, minutes });
@@ -486,7 +549,10 @@ export const createConsoleControlPlane = (
   const listAudit = async (req: Request): Promise<Response> => {
     const denied = await requireSession(req);
     if (denied) return denied;
-    const entries = await (await storePromise).list<AuditEvent>([...ROOT, "audit"]);
+    const entries = await (await storePromise).list<AuditEvent>({
+      prefix: [...ROOT, "audit"],
+      limit: 1_000,
+    });
     return Response.json({ ok: true, events: entries.map((entry) => entry.value) });
   };
 
@@ -523,7 +589,7 @@ export const createConsoleControlPlane = (
       if (parsed instanceof Response) return parsed;
       body = parsed;
     }
-    if (!isAllowedRelayBody(operation, body)) {
+    if (!isAllowedRelayBody(operation, route.method, body)) {
       return nodeError(OPENFX_NODE_ERROR_CODES.routeNotAllowed, 400);
     }
     const signed = await signRequest(cryptoAdapter, secret, {
@@ -571,9 +637,9 @@ export const createConsoleControlPlane = (
         nodeId: node.value.id,
       });
       if (operation === "agent.messages.post") {
-        await appendEvent("agent.delta", reply);
+        await eventService.append("agent.delta", reply);
       } else if (operation === "approvals.resolve") {
-        await appendEvent("approval.resolved", reply);
+        await eventService.append("approval.resolved", reply);
       }
       return Response.json(reply);
     } catch (error) {
@@ -584,78 +650,49 @@ export const createConsoleControlPlane = (
     }
   };
 
-  const eventSnapshot = async (req: Request): Promise<Response> => {
-    const denied = await requireSession(req);
-    if (denied) return denied;
-    const after = parseLastEventId(req);
-    const events = await retainedEvents(await storePromise, after, now());
-    return new Response(
-      `: keepalive\n\n${events.map(formatSseEvent).join("")}`,
-      { headers: sseHeaders() },
-    );
-  };
-
-  const eventStream = async (req: Request): Promise<Response> => {
-    const denied = await requireSession(req);
-    if (denied) return denied;
-    const initialId = parseLastEventId(req);
-    const backlog = await retainedEvents(await storePromise, initialId, now());
-    const encoder = new TextEncoder();
-    let listener: ((event: StoredConsoleEvent) => void) | undefined;
-    let keepalive: number | undefined;
-    let poller: number | undefined;
-    let polling = false;
-    let lastSent = backlog.at(-1)?.id ?? initialId;
-    const stream = new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(encoder.encode(": keepalive\n\n"));
-        for (const event of backlog) {
-          controller.enqueue(encoder.encode(formatSseEvent(event)));
-        }
-        listener = (event) => {
-          if (event.id <= lastSent) return;
-          lastSent = event.id;
-          controller.enqueue(encoder.encode(formatSseEvent(event)));
-        };
-        listeners.add(listener);
-        poller = setInterval(async () => {
-          if (polling) return;
-          polling = true;
-          try {
-            const events = await retainedEvents(await storePromise, lastSent, now());
-            for (const event of events) listener?.(event);
-          } catch {
-            // A transient KV read failure must not terminate an established SSE stream.
-          } finally {
-            polling = false;
-          }
-        }, ssePollMs);
-        keepalive = setInterval(() => {
-          try {
-            controller.enqueue(encoder.encode(": keepalive\n\n"));
-          } catch {
-            if (listener) listeners.delete(listener);
-            if (keepalive !== undefined) clearInterval(keepalive);
-            if (poller !== undefined) clearInterval(poller);
-          }
-        }, 15_000);
-      },
-      cancel() {
-        if (listener) listeners.delete(listener);
-        if (keepalive !== undefined) clearInterval(keepalive);
-        if (poller !== undefined) clearInterval(poller);
-      },
-    });
-    return new Response(stream, { headers: sseHeaders() });
+  const stableResponse = <Args extends unknown[]>(
+    handler: (...args: Args) => Promise<Response>,
+  ) =>
+  async (...args: Args): Promise<Response> => {
+    try {
+      return await handler(...args);
+    } catch (error) {
+      return error instanceof ConsoleStoreUnavailableError
+        ? jsonError("control_plane_unavailable", 503)
+        : nodeError(OPENFX_NODE_ERROR_CODES.internal, 500);
+    }
   };
 
   return {
-    adminSession: { create: createSession, get: getSession, delete: deleteSession },
-    pairings: { create: createPairing },
-    node: { pair: pairNode, heartbeat, telemetry },
-    console: { handle: relay, telemetry: listTelemetry, audit: listAudit },
-    events: { append: appendEvent, snapshot: eventSnapshot, stream: eventStream },
-    authorize,
+    adminSession: {
+      create: stableResponse(createSession),
+      get: stableResponse(getSession),
+      delete: stableResponse(deleteSession),
+    },
+    pairings: { create: stableResponse(createPairing) },
+    node: {
+      pair: stableResponse(pairNode),
+      heartbeat: stableResponse(heartbeat),
+      telemetry: stableResponse(telemetry),
+      events: stableResponse(ingestNodeEvents),
+    },
+    console: {
+      handle: stableResponse(relay),
+      telemetry: stableResponse(listTelemetry),
+      audit: stableResponse(listAudit),
+    },
+    events: {
+      append: eventService.append,
+      snapshot: stableResponse(eventService.snapshot),
+      stream: stableResponse(eventService.stream),
+    },
+    authorize: async (req) => {
+      try {
+        return await authorize(req);
+      } catch {
+        return false;
+      }
+    },
   };
 };
 
@@ -663,33 +700,6 @@ export const getConsoleControlPlane = (() => {
   let instance: ConsoleControlPlane | undefined;
   return (): ConsoleControlPlane => instance ??= createConsoleControlPlane();
 })();
-
-export const formatSseEvent = (
-  event: Pick<StoredConsoleEvent, "id" | "type" | "data">,
-): string =>
-  `id: ${event.id}\nevent: ${event.type}\ndata: ${JSON.stringify(event.data)}\n\n`;
-
-const sseHeaders = (): HeadersInit => ({
-  "content-type": "text/event-stream; charset=utf-8",
-  "cache-control": "no-cache, no-transform",
-  connection: "keep-alive",
-  "x-accel-buffering": "no",
-});
-
-const retainedEvents = async (
-  store: ConsoleStore,
-  after: number,
-  now: number,
-): Promise<StoredConsoleEvent[]> =>
-  (await store.list<StoredConsoleEvent>([...ROOT, "events"]))
-    .map((entry) => entry.value)
-    .filter((event) => event.id > after && event.createdAt >= now - EVENT_RETENTION_MS)
-    .sort((left, right) => left.id - right.id);
-
-const parseLastEventId = (req: Request): number => {
-  const value = Number(req.headers.get("last-event-id") ?? "0");
-  return Number.isSafeInteger(value) && value >= 0 ? value : 0;
-};
 
 const nextCounter = async (store: ConsoleStore, name: string): Promise<number> => {
   const key = [...ROOT, name] as const;
@@ -716,138 +726,18 @@ const recordLoginFailure = async (
       attempts: failures,
       resetAt: active ? current.value.resetAt : now + LOGIN_WINDOW_MS,
     };
-    if (await store.compareAndSet(key, current?.versionstamp ?? null, value)) {
+    if (
+      await store.compareAndSet(
+        key,
+        current?.versionstamp ?? null,
+        value,
+        { expireIn: LOGIN_WINDOW_MS },
+      )
+    ) {
       return failures;
     }
   }
   return LOGIN_LIMIT;
-};
-
-const pruneBefore = async <T>(
-  store: ConsoleStore,
-  prefix: ConsoleKey,
-  cutoff: number,
-  timestamp: (value: T) => number,
-): Promise<void> => {
-  for (const entry of await store.list<T>(prefix)) {
-    if (timestamp(entry.value) < cutoff) await store.delete(entry.key);
-  }
-};
-
-const pruneTelemetry = async (store: ConsoleStore, now: number): Promise<void> => {
-  const cutoff = now - TELEMETRY_RETENTION_MS;
-  for (const entry of await store.list<TelemetryBucket>([...ROOT, "telemetry"])) {
-    if (entry.value.minute.minuteStart < cutoff) await store.delete(entry.key);
-  }
-};
-
-const readJsonObject = async (
-  req: Request,
-): Promise<Record<string, unknown> | Response> => {
-  const length = Number(req.headers.get("content-length") ?? "0");
-  if (Number.isFinite(length) && length > REQUEST_LIMIT_BYTES) {
-    return nodeError(OPENFX_NODE_ERROR_CODES.invalidRequest, 413);
-  }
-  let text: string;
-  try {
-    text = await req.text();
-  } catch {
-    return nodeError(OPENFX_NODE_ERROR_CODES.invalidRequest, 400);
-  }
-  if (new TextEncoder().encode(text).length > REQUEST_LIMIT_BYTES) {
-    return nodeError(OPENFX_NODE_ERROR_CODES.invalidRequest, 413);
-  }
-  try {
-    const value = text ? JSON.parse(text) : {};
-    return value !== null && !Array.isArray(value) && typeof value === "object"
-      ? value as Record<string, unknown>
-      : nodeError(OPENFX_NODE_ERROR_CODES.invalidRequest, 400);
-  } catch {
-    return nodeError(OPENFX_NODE_ERROR_CODES.invalidRequest, 400);
-  }
-};
-
-const validateNodeEndpoint = (input: Record<string, unknown>): Response | null => {
-  if (input.protocolVersion !== PROTOCOL_VERSION) {
-    return nodeError(OPENFX_NODE_ERROR_CODES.protocolMismatch, 400);
-  }
-  if (
-    typeof input.name !== "string" && input.nodeId === undefined ||
-    (typeof input.name === "string" &&
-      (input.name.trim().length === 0 || input.name.length > 128)) ||
-    typeof input.publicIpv6 !== "string" || !isGlobalIpv6(input.publicIpv6) ||
-    input.port !== NODE_PORT
-  ) return nodeError(OPENFX_NODE_ERROR_CODES.invalidRequest, 400);
-  return null;
-};
-
-const isGlobalIpv6 = (value: string): boolean => {
-  const normalized = value.trim().toLowerCase();
-  if (!normalized.includes(":") || !/^[0-9a-f:]+$/.test(normalized)) return false;
-  try {
-    new URL(`http://[${normalized}]/`);
-  } catch {
-    return false;
-  }
-  if (normalized === "::" || normalized === "::1" || normalized.startsWith("ff")) {
-    return false;
-  }
-  const first = Number.parseInt(normalized.split(":", 1)[0] || "0", 16);
-  if (!Number.isFinite(first)) return false;
-  if ((first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80) return false;
-  return first >= 0x2000 && first <= 0x3fff;
-};
-
-const isAllowedRelayBody = (
-  operation: ConsoleRelayOperation,
-  body: unknown,
-): boolean => {
-  if (CONSOLE_RELAY_OPERATIONS[operation].method === "GET") return body === null;
-  if (!body || typeof body !== "object" || Array.isArray(body)) return false;
-  const record = body as Record<string, unknown>;
-  const exactKeys = (allowed: readonly string[]) =>
-    Object.keys(record).every((key) => allowed.includes(key));
-  switch (operation) {
-    case "agent.messages.post":
-      return exactKeys(["message", "conversationId"]) &&
-        typeof record.message === "string" && record.message.length > 0 &&
-        record.message.length <= 16_384;
-    case "approvals.resolve":
-      return exactKeys(["id", "decision", "parameterFingerprint"]) &&
-        typeof record.id === "string" &&
-        (record.decision === "approved" || record.decision === "rejected") &&
-        typeof record.parameterFingerprint === "string";
-    case "relay.settings.update":
-      return exactKeys(["enabled"]) && typeof record.enabled === "boolean";
-    default:
-      return false;
-  }
-};
-
-const parseTelemetrySample = (value: unknown): TelemetrySample | null => {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const sample = value as Record<string, unknown>;
-  const finiteNonNegative = (key: string) =>
-    typeof sample[key] === "number" && Number.isFinite(sample[key]) &&
-    (sample[key] as number) >= 0;
-  const keys = [
-    "collectedAt",
-    "cpuUsagePercent",
-    "memoryUsedBytes",
-    "memoryTotalBytes",
-    "diskUsedBytes",
-    "diskTotalBytes",
-    "networkRxBytes",
-    "networkTxBytes",
-    "processCount",
-  ];
-  if (!keys.every(finiteNonNegative)) return null;
-  if ((sample.cpuUsagePercent as number) > 100) return null;
-  if (
-    sample.batteryPercent !== null &&
-    (!finiteNonNegative("batteryPercent") || (sample.batteryPercent as number) > 100)
-  ) return null;
-  return sample as unknown as TelemetrySample;
 };
 
 const parseCredentialKey = (value: string): Uint8Array | null => {
@@ -894,6 +784,7 @@ const consumeNonce = async (
     key,
     current?.versionstamp ?? null,
     { expiresAt: now + 60_000 },
+    { expireIn: 60_000 },
   );
 };
 
@@ -927,9 +818,7 @@ const parseCookie = (header: string, name: string): string => {
 const bearerToken = (value: string): string =>
   value.toLowerCase().startsWith("bearer ") ? value.slice(7).trim() : "";
 
-const clientIdentity = (req: Request): string =>
-  (req.headers.get("x-forwarded-for") ?? req.headers.get("cf-connecting-ip") ?? "local")
-    .split(",", 1)[0]!.trim();
+const clientIdentity = (req: Request): string => getTrustedClientIdentity(req);
 
 const jsonError = (
   error: string,

@@ -12,17 +12,6 @@ const GENERATED_KEY_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 let kvPromise: Promise<Deno.Kv | null> | null = null;
 
-const getEnvString = (name: string): string => {
-  if (typeof Deno !== "undefined") {
-    return (Deno.env.get(name) ?? "").trim();
-  }
-
-  const processEnv = (globalThis as typeof globalThis & {
-    process?: { env?: Record<string, string | undefined> };
-  }).process?.env;
-  return (processEnv?.[name] ?? "").trim();
-};
-
 const getKv = async (): Promise<Deno.Kv | null> => {
   if (typeof Deno === "undefined" || typeof Deno.openKv !== "function") {
     return null;
@@ -32,15 +21,6 @@ const getKv = async (): Promise<Deno.Kv | null> => {
     kvPromise = Deno.openKv().catch(() => null);
   }
   return await kvPromise;
-};
-
-export const getAdminUnlockKey = (): string => {
-  const configured = getEnvString("OPENFX_ADMIN_KEY");
-  if (configured) {
-    return configured;
-  }
-
-  return getEnvString("DENO_DEPLOYMENT_ID") ? "" : "TEST";
 };
 
 export const validateUnlockRule = (rule: UnlockRule): string | null => {
@@ -145,9 +125,4 @@ export const deleteUnlockRule = async (key: string): Promise<void> => {
   }
 
   await kv.delete([...UNLOCK_PREFIX, key]);
-};
-
-export const isAdminUnlockKey = (key: string): boolean => {
-  const adminKey = getAdminUnlockKey();
-  return !!adminKey && key.trim() === adminKey;
 };

@@ -82,6 +82,7 @@ header 不再授权 `/api/admin/*` 或 `/api/console/*`。
 - `POST /api/console/pairings` — 创建 10 分钟、原子单次使用的配对码
 - `POST /api/node/pair` — 配对唯一活动节点并一次性返回节点 secret
 - `POST /api/node/heartbeat`、`POST /api/node/telemetry` — 上报节点状态和遥测
+- `POST /api/node/events` — 使用节点身份上报 Agent 增量、审批请求与审批结果事件
 - `GET /api/console/overview`、`GET /api/console/processes` — 固定 Relay 查询
 - `GET|POST /api/console/agent/messages`、`GET|POST /api/console/approvals` — Agent
   消息和审批固定操作

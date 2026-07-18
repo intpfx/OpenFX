@@ -1,10 +1,6 @@
 import { defineEventHandler } from "h3";
 
-import {
-  getUnlockRule,
-  isAdminUnlockKey,
-  isUnlockRuleExpired,
-} from "../../admin/unlocks.ts";
+import { getUnlockRule, isUnlockRuleExpired } from "../../admin/unlocks.ts";
 import { createWebRequest } from "../../utils/request.ts";
 
 export const unlockHandler = async (req: Request): Promise<Response> => {
@@ -22,10 +18,6 @@ export const unlockHandler = async (req: Request): Promise<Response> => {
 
   if (!key) {
     return Response.json({ ok: false, error: "missing_key" }, { status: 400 });
-  }
-
-  if (isAdminUnlockKey(key)) {
-    return Response.json({ ok: true, mode: "admin", redirect: "/admin" });
   }
 
   const rule = await getUnlockRule(key);

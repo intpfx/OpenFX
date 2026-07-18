@@ -9,6 +9,15 @@ import { handleProtectedDownipUpdateRequest } from "../server/routes/update.post
 import { handleProxyRequest } from "../server/routes/api/proxy/[...path].ts";
 import { handleRootProxyRequest } from "../server/routes/api/proxy.ts";
 import { createAdminSessionHandler } from "../server/routes/api/admin/session.post.ts";
+import {
+  createConsoleControlPlane,
+  createMemoryConsoleStore,
+} from "../server/console/control-plane.ts";
+
+const plane = createConsoleControlPlane({
+  store: createMemoryConsoleStore(),
+  env: { OPENFX_ADMIN_KEY: "TEST" },
+});
 
 const adminCookie = async (): Promise<string> => {
   const response = await createAdminSessionHandler(
@@ -17,6 +26,7 @@ const adminCookie = async (): Promise<string> => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ key: "TEST" }),
     }),
+    plane,
   );
   return response.headers.get("set-cookie")!.split(";", 1)[0]!;
 };
@@ -37,7 +47,7 @@ Deno.test("unlock handler rejects requests without a key", async () => {
   });
 });
 
-Deno.test("unlock handler routes TEST key to admin mode locally", async () => {
+Deno.test("unlock handler no longer routes admin keys", async () => {
   const response = await unlockHandler(
     new Request("http://localhost/api/unlock", {
       method: "POST",
@@ -46,11 +56,10 @@ Deno.test("unlock handler routes TEST key to admin mode locally", async () => {
     }),
   );
 
-  expect(response.status).toBe(200);
+  expect(response.status).toBe(404);
   await expect(response.json()).resolves.toMatchObject({
-    ok: true,
-    mode: "admin",
-    redirect: "/admin",
+    ok: false,
+    error: "invalid_key",
   });
 });
 
@@ -70,11 +79,12 @@ Deno.test("unlock handler rejects wrong-cased admin key locally", async () => {
   });
 });
 
-Deno.test("admin unlock list rejects wrong-cased admin key locally", async () => {
+Deno.test("admin unlock list rejects the legacy admin header", async () => {
   const response = await listAdminUnlockRulesHandler(
     new Request("http://localhost/api/admin/unlocks", {
       headers: { "x-openfx-admin-key": "test" },
     }),
+    plane,
   );
 
   expect(response.status).toBe(401);
@@ -161,6 +171,7 @@ Deno.test("admin unlock save generates a five-character key", async () => {
         expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
       }),
     }),
+    plane,
   );
 
   expect(response.status).toBe(200);
@@ -175,16 +186,16 @@ Deno.test("admin unlock save generates a five-character key", async () => {
   await deleteUnlockRule(payload.rule.key);
 });
 
-Deno.test("project access accepts admin key", async () => {
+Deno.test("project access rejects legacy admin key header", async () => {
   const result = await checkProjectAccess(
     new Request("http://localhost/update", {
       headers: { "x-openfx-admin-key": "TEST" },
     }),
     "ipv6-sync-suite",
-    { public: false },
+    { public: false, authorizeAdmin: plane.authorize },
   );
 
-  expect(result).toMatchObject({ ok: true, mode: "admin" });
+  expect(result).toMatchObject({ ok: false, error: "unauthorized" });
 });
 
 Deno.test("project access accepts unlock key scoped to the project", async () => {

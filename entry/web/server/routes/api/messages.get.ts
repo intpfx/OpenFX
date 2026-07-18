@@ -1,14 +1,12 @@
 import { defineEventHandler } from "h3";
 
-import { getAdminUnlockKey } from "../../admin/unlocks.ts";
+import {
+  type ConsoleControlPlane,
+  getConsoleControlPlane,
+} from "../../console/control-plane.ts";
+import { requireAdminSession } from "../../console/admin.ts";
 import { listHomepageMessages } from "../../messages.ts";
 import { createWebRequest } from "../../utils/request.ts";
-
-const isAuthorized = (req: Request): boolean => {
-  const configured = getAdminUnlockKey();
-  const provided = (req.headers.get("x-openfx-admin-key") ?? "").trim();
-  return !!configured && provided === configured;
-};
 
 const parseLimit = (req: Request) => {
   const url = new URL(req.url);
@@ -20,13 +18,16 @@ const parseLimit = (req: Request) => {
   return Math.min(Math.max(Math.trunc(rawLimit), 1), 50);
 };
 
-export const listHomepageMessagesHandler = async (req: Request): Promise<Response> => {
-  if (!isAuthorized(req)) {
-    return Response.json({ ok: false, error: "unauthorized" }, { status: 401 });
-  }
+export const listHomepageMessagesHandler = async (
+  req: Request,
+  plane: ConsoleControlPlane = getConsoleControlPlane(),
+  listMessages: typeof listHomepageMessages = listHomepageMessages,
+): Promise<Response> => {
+  const denied = await requireAdminSession(req, plane);
+  if (denied) return denied;
 
   try {
-    const messages = await listHomepageMessages(parseLimit(req));
+    const messages = await listMessages(parseLimit(req));
     return Response.json({ ok: true, messages });
   } catch {
     return Response.json({

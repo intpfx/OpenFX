@@ -2,6 +2,10 @@ import { defineEventHandler } from "h3";
 
 import { getKv } from "../../../../../../domains/_shared/kv.ts";
 import { requireAdminSession } from "../../../console/admin.ts";
+import {
+  type ConsoleControlPlane,
+  getConsoleControlPlane,
+} from "../../../console/control-plane.ts";
 import { createWebRequest } from "../../../utils/request.ts";
 
 type JsonKvKeyPart = string | number | boolean;
@@ -14,8 +18,11 @@ const isJsonKvKey = (value: unknown): value is JsonKvKeyPart[] => {
     );
 };
 
-export const saveAdminKvHandler = async (req: Request): Promise<Response> => {
-  const denied = await requireAdminSession(req);
+export const saveAdminKvHandler = async (
+  req: Request,
+  plane: ConsoleControlPlane = getConsoleControlPlane(),
+): Promise<Response> => {
+  const denied = await requireAdminSession(req, plane);
   if (denied) return denied;
 
   let body: unknown;

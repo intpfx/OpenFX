@@ -5,6 +5,15 @@ import { deleteAdminKvHandler } from "../server/routes/api/admin/kv.delete.ts";
 import { listAdminKvHandler } from "../server/routes/api/admin/kv.get.ts";
 import { saveAdminKvHandler } from "../server/routes/api/admin/kv.post.ts";
 import { createAdminSessionHandler } from "../server/routes/api/admin/session.post.ts";
+import {
+  createConsoleControlPlane,
+  createMemoryConsoleStore,
+} from "../server/console/control-plane.ts";
+
+const plane = createConsoleControlPlane({
+  store: createMemoryConsoleStore(),
+  env: { OPENFX_ADMIN_KEY: "TEST" },
+});
 
 const adminCookie = async (): Promise<string> => {
   const response = await createAdminSessionHandler(
@@ -13,6 +22,7 @@ const adminCookie = async (): Promise<string> => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ key: "TEST" }),
     }),
+    plane,
   );
   expect(response.status).toBe(200);
   return response.headers.get("set-cookie")!.split(";", 1)[0]!;
@@ -21,6 +31,7 @@ const adminCookie = async (): Promise<string> => {
 Deno.test("admin access check validates the cookie session", async () => {
   const rejected = await checkAdminAccessHandler(
     new Request("http://localhost/api/admin/access"),
+    plane,
   );
   expect(rejected.status).toBe(401);
   await expect(rejected.json()).resolves.toMatchObject({
@@ -32,6 +43,7 @@ Deno.test("admin access check validates the cookie session", async () => {
     new Request("http://localhost/api/admin/access", {
       headers: { "x-openfx-admin-key": "TEST" },
     }),
+    plane,
   );
   expect(legacy.status).toBe(401);
 
@@ -39,14 +51,16 @@ Deno.test("admin access check validates the cookie session", async () => {
     new Request("http://localhost/api/admin/access", {
       headers: { cookie: await adminCookie() },
     }),
+    plane,
   );
   expect(accepted.status).toBe(200);
   await expect(accepted.json()).resolves.toMatchObject({ ok: true });
 });
 
-Deno.test("admin KV list rejects requests without the admin key", async () => {
+Deno.test("admin KV list rejects requests without a session", async () => {
   const response = await listAdminKvHandler(
     new Request("http://localhost/api/admin/kv"),
+    plane,
   );
 
   expect(response.status).toBe(401);
@@ -73,6 +87,7 @@ Deno.test("admin KV handler can save, list, and delete a record", async () => {
       },
       body: JSON.stringify({ key, value }),
     }),
+    plane,
   );
 
   if (saveResponse.status === 503) {
@@ -93,6 +108,7 @@ Deno.test("admin KV handler can save, list, and delete a record", async () => {
       new Request(`http://localhost/api/admin/kv?${params.toString()}`, {
         headers: { cookie },
       }),
+      plane,
     );
 
     expect(listResponse.status).toBe(200);
@@ -112,6 +128,7 @@ Deno.test("admin KV handler can save, list, and delete a record", async () => {
         method: "DELETE",
         headers: { cookie },
       }),
+      plane,
     );
 
     expect(deleteResponse.status).toBe(200);

@@ -1,9 +1,6 @@
-import {
-  getUnlockRule,
-  isAdminUnlockKey,
-  isUnlockRuleExpired,
-} from "../admin/unlocks.ts";
+import { getUnlockRule, isUnlockRuleExpired } from "../admin/unlocks.ts";
 import { DOMAIN_CONTENT_PUBLIC } from "../../domain-access.ts";
+import { getConsoleControlPlane } from "../console/control-plane.ts";
 
 export type ProjectAccessResult =
   | { ok: true; mode: "public" | "admin" | "unlock" }
@@ -11,6 +8,7 @@ export type ProjectAccessResult =
 
 export type ProjectAccessOptions = {
   public?: boolean;
+  authorizeAdmin?: (req: Request) => Promise<boolean>;
 };
 
 const getBearerToken = (value: string): string => {
@@ -25,9 +23,6 @@ export const getProjectAccessKey = (req: Request): string => {
   const url = new URL(req.url);
   const explicitHeader = req.headers.get("x-openfx-unlock-key")?.trim();
   if (explicitHeader) return explicitHeader;
-
-  const adminHeader = req.headers.get("x-openfx-admin-key")?.trim();
-  if (adminHeader) return adminHeader;
 
   const bearer = getBearerToken(req.headers.get("authorization") ?? "");
   if (bearer) return bearer;
@@ -45,13 +40,14 @@ export const checkProjectAccess = async (
     return { ok: true, mode: "public" };
   }
 
+  const authorizeAdmin = options.authorizeAdmin ?? getConsoleControlPlane().authorize;
+  if (await authorizeAdmin(req)) {
+    return { ok: true, mode: "admin" };
+  }
+
   const key = getProjectAccessKey(req);
   if (!key) {
     return { ok: false, error: "unauthorized" };
-  }
-
-  if (isAdminUnlockKey(key)) {
-    return { ok: true, mode: "admin" };
   }
 
   const rule = await getUnlockRule(key);

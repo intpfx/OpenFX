@@ -9,6 +9,28 @@ import {
 } from "../server/messages.ts";
 import { listHomepageMessagesHandler } from "../server/routes/api/messages.get.ts";
 import { saveHomepageMessageHandler } from "../server/routes/api/messages.post.ts";
+import { createAdminSessionHandler } from "../server/routes/api/admin/session.post.ts";
+import {
+  createConsoleControlPlane,
+  createMemoryConsoleStore,
+} from "../server/console/control-plane.ts";
+
+const plane = createConsoleControlPlane({
+  store: createMemoryConsoleStore(),
+  env: { OPENFX_ADMIN_KEY: "TEST" },
+});
+
+const adminCookie = async (): Promise<string> => {
+  const response = await createAdminSessionHandler(
+    new Request("http://localhost/api/admin/session", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key: "TEST" }),
+    }),
+    plane,
+  );
+  return response.headers.get("set-cookie")!.split(";", 1)[0]!;
+};
 
 const createMessageRequest = (content: string, clientIp = "203.0.113.42") => {
   return new Request("http://localhost/api/messages", {
@@ -39,9 +61,10 @@ Deno.test("homepage message handler rejects empty content", async () => {
   });
 });
 
-Deno.test("homepage message list rejects requests without the admin key", async () => {
+Deno.test("homepage message list rejects requests without a session", async () => {
   const response = await listHomepageMessagesHandler(
     new Request("http://localhost/api/messages?limit=50"),
+    plane,
   );
 
   expect(response.status).toBe(401);
@@ -75,8 +98,9 @@ Deno.test("homepage messages can be saved and listed when KV is available", asyn
 
     const listResponse = await listHomepageMessagesHandler(
       new Request("http://localhost/api/messages?limit=50", {
-        headers: { "x-openfx-admin-key": "TEST" },
+        headers: { cookie: await adminCookie() },
       }),
+      plane,
     );
     expect(listResponse.status).toBe(200);
     const listPayload = await listResponse.json();
