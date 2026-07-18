@@ -123,3 +123,8 @@ export interface SignedNodeRequest {
   nonce: string;
   signature: string;
 }
+
+export interface RelayReply<T = unknown> {
+  request: Pick<SignedNodeRequest, "nonce" | "method" | "path">;
+  result: T;
+}

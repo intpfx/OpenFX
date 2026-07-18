@@ -747,12 +747,17 @@ Deno.test("Relay uses only the paired IPv6, port 24531, and fixed operation path
   let pairedSecret = "";
   let calledUrl = "";
   let tamperReply = false;
+  let wrongCorrelation = false;
   const cryptoAdapter = createWebCryptoAdapter();
   const { plane } = createHarness({
     fetch: async (input, init) => {
       calledUrl = String(input);
       const requestEnvelope = JSON.parse(String(init?.body));
-      const request = await openRelayEnvelope(
+      const request = await openRelayEnvelope<{
+        nonce: string;
+        method: string;
+        path: string;
+      }>(
         cryptoAdapter,
         decodeBase64Url(pairedSecret),
         requestEnvelope,
@@ -765,7 +770,14 @@ Deno.test("Relay uses only the paired IPv6, port 24531, and fixed operation path
       const reply = await sealRelayEnvelope(
         cryptoAdapter,
         decodeBase64Url(pairedSecret),
-        { ok: true, overview: { hostname: "studio" } },
+        {
+          request: {
+            nonce: wrongCorrelation ? "different-request" : request.nonce,
+            method: request.method,
+            path: request.path,
+          },
+          result: { ok: true, overview: { hostname: "studio" } },
+        },
         { now: () => Date.parse("2026-07-18T00:00:00Z") },
       );
       return Response.json(tamperReply ? { ...reply, signature: "AAAA" } : reply);
@@ -787,7 +799,22 @@ Deno.test("Relay uses only the paired IPv6, port 24531, and fixed operation path
     "overview",
   );
   expect(response.status).toBe(200);
+  await expect(response.json()).resolves.toEqual({
+    ok: true,
+    overview: { hostname: "studio" },
+  });
   expect(calledUrl).toBe("http://[2001:4860:4860::8844]:24531/v1/relay");
+
+  wrongCorrelation = true;
+  const mismatched = await plane.console.handle(
+    new Request("http://localhost/api/console/overview", { headers: { cookie } }),
+    "overview",
+  );
+  expect(mismatched.status).toBe(502);
+  await expect(mismatched.json()).resolves.toMatchObject({
+    error: "node_envelope_invalid",
+  });
+  wrongCorrelation = false;
 
   tamperReply = true;
   const tampered = await plane.console.handle(

@@ -13,6 +13,7 @@ import {
   PAIRING_TTL_MS,
   PROTOCOL_VERSION,
   RELAY_NONCE_TTL_MS,
+  type RelayReply,
   retainTelemetryMinutes,
   type SealedRelayEnvelope,
   sealRelayEnvelope,
@@ -61,6 +62,8 @@ const LOGIN_LIMIT = 5;
 const LOGIN_WINDOW_MS = 15 * 60_000;
 const NODE_ONLINE_WINDOW_MS = 45_000;
 const TELEMETRY_CLOCK_SKEW_MS = 60_000;
+const RELAY_RESPONSE_MAX_BYTES = 64 * 1024;
+const PAIRING_EXPIRY_GRACE_MS = 60_000;
 const SESSION_COOKIE = "openfx_admin_session";
 const CREDENTIAL_AAD = utf8("openfx-node/v1/credential");
 
@@ -322,11 +325,16 @@ export const createConsoleControlPlane = (
     if (denied) return denied;
     const code = generatePairingCode(randomBytes);
     const codeDigest = await digest(code);
+    const createdAt = now();
     const record = {
-      createdAt: now(),
-      expiresAt: now() + PAIRING_TTL_MS,
+      createdAt,
+      expiresAt: createdAt + PAIRING_TTL_MS,
     } satisfies PairingRecord;
-    await (await storePromise).set([...ROOT, "pairings", codeDigest], record);
+    await (await storePromise).set(
+      [...ROOT, "pairings", codeDigest],
+      record,
+      { expireIn: PAIRING_TTL_MS + PAIRING_EXPIRY_GRACE_MS },
+    );
     await appendAudit({
       category: "pairing",
       action: "pairing.created",
@@ -409,7 +417,16 @@ export const createConsoleControlPlane = (
           },
         ],
         sets: [
-          { key, value: consumed },
+          {
+            key,
+            value: consumed,
+            options: {
+              expireIn: Math.max(
+                1,
+                pairing.value.expiresAt + PAIRING_EXPIRY_GRACE_MS - now(),
+              ),
+            },
+          },
           { key: activeKey, value: node },
           { key: credentialRecordKey, value: credential },
         ],
@@ -882,6 +899,41 @@ export const createConsoleControlPlane = (
       now,
       randomBytes,
     });
+    const auditContext = {
+      nodeId: node.value.id,
+      actor: clientIdentity(req),
+      subjectId: signed.nonce,
+      metadata: {
+        operation,
+        method: signed.method,
+        path: signed.path,
+      },
+    } as const;
+    await appendAudit({
+      category: "relay",
+      action: "relay.intent",
+      outcome: "succeeded",
+      ...auditContext,
+    });
+    const appendRelayOutcome = async (
+      outcome: "succeeded" | "failed" | "replayed",
+      errorCode?:
+        (typeof OPENFX_NODE_ERROR_CODES)[keyof typeof OPENFX_NODE_ERROR_CODES],
+      metadata: Record<string, unknown> = {},
+    ): Promise<void> => {
+      try {
+        await appendAudit({
+          category: "relay",
+          action: "relay.outcome",
+          outcome,
+          errorCode,
+          ...auditContext,
+          metadata: { ...auditContext.metadata, ...metadata },
+        });
+      } catch {
+        // Intent is already durable; outcome enrichment is best-effort.
+      }
+    };
     let upstream: Response;
     try {
       upstream = await relayFetch(
@@ -894,11 +946,24 @@ export const createConsoleControlPlane = (
         },
       );
     } catch {
+      await appendRelayOutcome(
+        "failed",
+        OPENFX_NODE_ERROR_CODES.nodeOffline,
+      );
       return nodeError(OPENFX_NODE_ERROR_CODES.nodeOffline, 503);
     }
-    if (!upstream.ok) return nodeError(OPENFX_NODE_ERROR_CODES.relayUnavailable, 502);
+    if (!upstream.ok) {
+      await appendRelayOutcome(
+        "failed",
+        OPENFX_NODE_ERROR_CODES.relayUnavailable,
+        { upstreamStatus: upstream.status },
+      );
+      return nodeError(OPENFX_NODE_ERROR_CODES.relayUnavailable, 502);
+    }
     try {
-      const replyEnvelope = await upstream.json() as SealedRelayEnvelope;
+      const replyEnvelope = await readBoundedRelayResponse(
+        upstream,
+      ) as SealedRelayEnvelope;
       const reply = await openRelayEnvelope<unknown>(
         cryptoAdapter,
         secret,
@@ -909,25 +974,97 @@ export const createConsoleControlPlane = (
         },
       );
       if (!await consumeNonce(store, replyEnvelope.nonce, now())) {
+        await appendRelayOutcome(
+          "replayed",
+          OPENFX_NODE_ERROR_CODES.replayDetected,
+        );
         return nodeError(OPENFX_NODE_ERROR_CODES.replayDetected, 409);
       }
-      try {
-        await appendAudit({
-          category: "relay",
-          action: route.path,
-          outcome: "succeeded",
-          nodeId: node.value.id,
-        });
-      } catch {
-        // The authenticated node result is authoritative; audit is best-effort
-        // after the external effect or Agent turn has already completed.
+      if (!isCorrelatedRelayReply(reply, signed)) {
+        await appendRelayOutcome(
+          "failed",
+          OPENFX_NODE_ERROR_CODES.envelopeInvalid,
+        );
+        return nodeError(OPENFX_NODE_ERROR_CODES.envelopeInvalid, 502);
       }
-      return Response.json(reply);
+      await appendRelayOutcome("succeeded");
+      return Response.json(reply.result);
     } catch (error) {
       if (error instanceof OpenFxNodeProtocolError) {
+        await appendRelayOutcome("failed", error.code);
         return nodeError(error.code, 502);
       }
+      await appendRelayOutcome(
+        "failed",
+        OPENFX_NODE_ERROR_CODES.envelopeInvalid,
+      );
       return nodeError(OPENFX_NODE_ERROR_CODES.envelopeInvalid, 502);
+    }
+  };
+
+  const isCorrelatedRelayReply = (
+    value: unknown,
+    request: { nonce: string; method: string; path: string },
+  ): value is RelayReply => {
+    if (!value || typeof value !== "object") return false;
+    const reply = value as Partial<RelayReply>;
+    if (!reply.request || typeof reply.request !== "object") return false;
+    return reply.request.nonce === request.nonce &&
+      reply.request.method === request.method &&
+      reply.request.path === request.path &&
+      Object.hasOwn(reply, "result");
+  };
+
+  const readBoundedRelayResponse = async (response: Response): Promise<unknown> => {
+    const declaredLength = Number(response.headers.get("content-length"));
+    if (Number.isFinite(declaredLength) && declaredLength > RELAY_RESPONSE_MAX_BYTES) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new OpenFxNodeProtocolError(
+        OPENFX_NODE_ERROR_CODES.envelopeInvalid,
+        "Relay response exceeded 64 KiB.",
+      );
+    }
+    if (!response.body) {
+      throw new OpenFxNodeProtocolError(
+        OPENFX_NODE_ERROR_CODES.envelopeInvalid,
+        "Relay response body is missing.",
+      );
+    }
+
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let length = 0;
+    try {
+      while (true) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        length += chunk.value.byteLength;
+        if (length > RELAY_RESPONSE_MAX_BYTES) {
+          await reader.cancel().catch(() => undefined);
+          throw new OpenFxNodeProtocolError(
+            OPENFX_NODE_ERROR_CODES.envelopeInvalid,
+            "Relay response exceeded 64 KiB.",
+          );
+        }
+        chunks.push(chunk.value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    const payload = new Uint8Array(length);
+    let offset = 0;
+    for (const chunk of chunks) {
+      payload.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    try {
+      return JSON.parse(new TextDecoder().decode(payload));
+    } catch {
+      throw new OpenFxNodeProtocolError(
+        OPENFX_NODE_ERROR_CODES.envelopeInvalid,
+        "Relay response body is not valid JSON.",
+      );
     }
   };
 

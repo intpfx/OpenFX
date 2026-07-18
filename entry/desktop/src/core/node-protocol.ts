@@ -9,6 +9,7 @@ import {
 } from "../../../../domains/_shared/openfx-node/mod.ts";
 import type { NodeCryptoAdapter } from "../../../../domains/_shared/openfx-node/crypto.ts";
 import type {
+  RelayReply,
   SealedRelayEnvelope,
   SignedNodeRequest,
 } from "../../../../domains/_shared/openfx-node/types.ts";
@@ -84,7 +85,14 @@ export const createNodeRelayProtocol = (
       return await sealRelayEnvelope(
         options.crypto,
         options.secret,
-        response,
+        {
+          request: {
+            nonce: signed.nonce,
+            method,
+            path: signed.path,
+          },
+          result: response,
+        } satisfies RelayReply,
         { now, randomBytes: options.randomBytes },
       );
     },

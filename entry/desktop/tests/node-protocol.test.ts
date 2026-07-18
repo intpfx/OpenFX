@@ -57,7 +57,14 @@ Deno.test("node relay opens, verifies, dispatches, and seals an allowed fixed ro
     path: "/v1/system/overview",
     body: null,
   }]);
-  assertEquals(response, { ok: true, overview: { cpuUsagePercent: 12 } });
+  assertEquals(response, {
+    request: {
+      nonce: signed.nonce,
+      method: "GET",
+      path: "/v1/system/overview",
+    },
+    result: { ok: true, overview: { cpuUsagePercent: 12 } },
+  });
 });
 
 Deno.test("node relay rejects authenticated routes outside the Task 2 fixed map", async () => {

@@ -51,7 +51,14 @@ Deno.test("node:http server exposes minimal health and encrypted relay only", as
       await openRelayEnvelope(crypto, secret, response.body as never, {
         replayProtector: createReplayProtector(),
       }),
-      { ok: true, route: "/v1/processes" },
+      {
+        request: {
+          nonce: signed.nonce,
+          method: "GET",
+          path: "/v1/processes",
+        },
+        result: { ok: true, route: "/v1/processes" },
+      },
     );
     assertEquals(
       await requestJson({

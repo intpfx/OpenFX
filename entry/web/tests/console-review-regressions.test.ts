@@ -399,7 +399,11 @@ Deno.test("successful Relay effects do not synthesize events or fail on event st
   const { plane } = harness({
     store,
     fetch: async (_input, init) => {
-      const request = await openRelayEnvelope(
+      const request = await openRelayEnvelope<{
+        nonce: string;
+        method: string;
+        path: string;
+      }>(
         cryptoAdapter,
         decodeBase64Url(nodeSecret),
         JSON.parse(String(init?.body)),
@@ -412,7 +416,14 @@ Deno.test("successful Relay effects do not synthesize events or fail on event st
       const reply = await sealRelayEnvelope(
         cryptoAdapter,
         decodeBase64Url(nodeSecret),
-        { ok: true, applied: true, result: { opened: "Safari" } },
+        {
+          request: {
+            nonce: request.nonce,
+            method: request.method,
+            path: request.path,
+          },
+          result: { ok: true, applied: true, result: { opened: "Safari" } },
+        },
         { now: () => START },
       );
       return Response.json(reply);
@@ -457,14 +468,72 @@ Deno.test("successful Relay effects do not synthesize events or fail on event st
   expect(await base.list({ prefix: ["openfx-console", "events"] })).toEqual(before);
 });
 
+Deno.test("Relay persists intent before dispatch and does not dispatch when intent storage fails", async () => {
+  const base = createMemoryConsoleStore();
+  let rejectIntent = false;
+  let dispatches = 0;
+  const store: ConsoleStore = {
+    ...base,
+    set(key, value, options) {
+      if (
+        rejectIntent && key[1] === "audit" &&
+        (value as { action?: string }).action === "relay.intent"
+      ) {
+        return Promise.reject(new ConsoleStoreUnavailableError());
+      }
+      return base.set(key, value, options);
+    },
+  };
+  const { plane } = harness({
+    store,
+    fetch: () => {
+      dispatches += 1;
+      return Promise.resolve(new Response(null, { status: 502 }));
+    },
+  });
+  const cookie = await login(plane);
+  const paired = await pair(plane, cookie);
+  await nodeHeartbeatHandler(
+    await signedJsonRequest(
+      "http://localhost/api/node/heartbeat",
+      {
+        nodeId: paired.node.id,
+        protocolVersion: 1,
+        publicIpv6: "2001:4860:4860::8844",
+        port: 24531,
+        availability: "online",
+      },
+      paired.nodeSecret,
+    ),
+    plane,
+  );
+  rejectIntent = true;
+
+  const response = await plane.console.handle(
+    new Request("http://localhost/api/console/overview", { headers: { cookie } }),
+    "overview",
+  );
+
+  expect(response.status).toBe(503);
+  expect(dispatches).toBe(0);
+  expect(
+    (await base.list<{ action: string }>({
+      prefix: ["openfx-console", "audit"],
+    })).some((entry) => entry.value.action === "relay.intent"),
+  ).toBe(false);
+});
+
 Deno.test("a post-result audit failure cannot replace a successful Relay effect", async () => {
   const base = createMemoryConsoleStore();
-  let rejectAuditWrites = false;
+  let rejectOutcomeWrites = false;
   let failedAuditWrites = 0;
   const store: ConsoleStore = {
     ...base,
     set(key, value, options) {
-      if (rejectAuditWrites && key[1] === "audit") {
+      if (
+        rejectOutcomeWrites && key[1] === "audit" &&
+        (value as { action?: string }).action === "relay.outcome"
+      ) {
         failedAuditWrites += 1;
         return Promise.reject(new Error("audit storage unavailable"));
       }
@@ -481,7 +550,11 @@ Deno.test("a post-result audit failure cannot replace a successful Relay effect"
   const { plane } = harness({
     store,
     fetch: async (_input, init) => {
-      const request = await openRelayEnvelope(
+      const request = await openRelayEnvelope<{
+        nonce: string;
+        method: string;
+        path: string;
+      }>(
         cryptoAdapter,
         decodeBase64Url(nodeSecret),
         JSON.parse(String(init?.body)),
@@ -495,7 +568,14 @@ Deno.test("a post-result audit failure cannot replace a successful Relay effect"
         await sealRelayEnvelope(
           cryptoAdapter,
           decodeBase64Url(nodeSecret),
-          effectResult,
+          {
+            request: {
+              nonce: request.nonce,
+              method: request.method,
+              path: request.path,
+            },
+            result: effectResult,
+          },
           { now: () => START },
         ),
       );
@@ -518,7 +598,7 @@ Deno.test("a post-result audit failure cannot replace a successful Relay effect"
     ),
     plane,
   );
-  rejectAuditWrites = true;
+  rejectOutcomeWrites = true;
 
   const response = await plane.console.handle(
     jsonRequest("http://localhost/api/console/approvals/resolve", {
@@ -532,6 +612,63 @@ Deno.test("a post-result audit failure cannot replace a successful Relay effect"
   expect(response.status).toBe(200);
   await expect(response.json()).resolves.toEqual(effectResult);
   expect(failedAuditWrites).toBe(1);
+  expect(
+    (await base.list<{ action: string }>({
+      prefix: ["openfx-console", "audit"],
+    })).filter((entry) => entry.value.action.startsWith("relay."))
+      .map((entry) => entry.value.action),
+  ).toEqual(["relay.intent"]);
+});
+
+Deno.test("Relay cancels an oversized streamed node response before JSON or auth parsing", async () => {
+  let pulls = 0;
+  let cancelled = false;
+  const { plane } = harness({
+    fetch: () =>
+      Promise.resolve(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            pull(controller) {
+              pulls += 1;
+              controller.enqueue(new Uint8Array(16 * 1024));
+              if (pulls >= 20) controller.close();
+            },
+            cancel() {
+              cancelled = true;
+            },
+          }),
+          { status: 200 },
+        ),
+      ),
+  });
+  const cookie = await login(plane);
+  const paired = await pair(plane, cookie);
+  await nodeHeartbeatHandler(
+    await signedJsonRequest(
+      "http://localhost/api/node/heartbeat",
+      {
+        nodeId: paired.node.id,
+        protocolVersion: 1,
+        publicIpv6: "2001:4860:4860::8844",
+        port: 24531,
+        availability: "online",
+      },
+      paired.nodeSecret,
+    ),
+    plane,
+  );
+
+  const response = await plane.console.handle(
+    new Request("http://localhost/api/console/overview", { headers: { cookie } }),
+    "overview",
+  );
+
+  expect(response.status).toBe(502);
+  await expect(response.json()).resolves.toMatchObject({
+    error: "node_envelope_invalid",
+  });
+  expect(cancelled).toBe(true);
+  expect(pulls).toBeLessThan(20);
 });
 
 Deno.test("pairing atomically consumes the code with matching node and credential", async () => {
@@ -556,6 +693,38 @@ Deno.test("pairing atomically consumes the code with matching node and credentia
     "credential",
   ]);
   expect(credential?.value.nodeId).toBe(active?.value.id);
+});
+
+Deno.test("pairing records have a physical TTL with a short logical-expiry grace", async () => {
+  const base = createMemoryConsoleStore();
+  const pairingExpiries: Array<number | undefined> = [];
+  const store: ConsoleStore = {
+    ...base,
+    set(key, value, options) {
+      if (key[1] === "pairings") pairingExpiries.push(options?.expireIn);
+      return base.set(key, value, options);
+    },
+    atomic(operation) {
+      for (const item of operation.sets) {
+        if (item.key[1] === "pairings") {
+          pairingExpiries.push(item.options?.expireIn);
+        }
+      }
+      return base.atomic(operation);
+    },
+  };
+  const { plane } = harness({ store });
+  const cookie = await login(plane);
+  const response = await pairNodeHandler(
+    jsonRequest(
+      "http://localhost/api/node/pair",
+      pairBody(await createPairingCode(plane, cookie)),
+    ),
+    plane,
+  );
+
+  expect(response.status).toBe(201);
+  expect(pairingExpiries).toEqual([11 * 60_000, 11 * 60_000]);
 });
 
 Deno.test("failed pairing transaction leaves code, node, and credential unchanged", async () => {

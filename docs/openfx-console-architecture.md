@@ -33,8 +33,9 @@ Freemac 清理必须等待 Perry 修复后重新验证。
 
 1. 管理员通过 `POST /api/admin/session` 登录，获得 12 小时绝对有效的 `HttpOnly`、
    `SameSite=Strict` cookie；生产 cookie 同时带 `Secure`。
-2. 控制台生成 8 位 Crockford Base32 配对码。配对码 10 分钟后过期，并通过 Deno KV
-   原子事务保证只能消费一次。
+2. 控制台生成 8 位 Crockford Base32 配对码。配对码逻辑有效期为 10 分钟，并通过 Deno KV
+   原子事务保证只能消费一次；底层记录设置 11 分钟物理 TTL，其中最后 1 分钟只用于保留
+   `node_pairing_expired` 错误语义，不允许继续配对。
 3. Perry 节点通过 HTTPS 提交配对码和经本机、外部观察共同确认的公网 IPv6。服务端只在
    配对响应中返回一次 32 字节 `nodeSecret`。
 4. 节点把 secret 写入 macOS Keychain 的 `OpenFX Node` service；普通偏好只保存
@@ -54,6 +55,10 @@ nonce 消费与权威业务写入放在同一个 Deno KV 原子事务中。时�
 `24531`，并且只允许共享协议中列出的 v1 路由。云端到节点的 Relay 使用 HKDF、
 AES-256-GCM、HMAC-SHA256、时间戳和双层 nonce；节点以 SQLite 主键 TTL 表持久化防重放
 状态，claim 不写入或扫描追加式审计 journal，旧 `replay.claimed` 事件只迁移一次。
+节点的加密回包必须回显已签名请求的 nonce、HTTP 方法和固定路径，控制面认证信封后逐项
+校验关联信息，再只向浏览器返回结果。Relay HTTP 响应按流读取并硬限制为 64 KiB，超限时
+立即取消读取，不进入 JSON 或密码学验证。控制面在发出网络请求前先持久化 `relay.intent`
+审计；结果审计为尽力追加，因此外部效果成功后即使审计存储短暂失败，已有意图证据仍保留。
 
 只读工具可以直接执行：系统概览、进程列表、网络状态、Relay 状态和审计查询。终止进程、
 打开允许列表内的应用和修改 Relay 开关必须审批。审批保存工具参数指纹和 5 分钟过期时间；

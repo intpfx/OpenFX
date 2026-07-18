@@ -92,7 +92,9 @@ header 不再授权 `/api/admin/*` 或 `/api/console/*`。
 - `GET /api/console/events` — 支持 `Last-Event-ID` 的 SSE 事件流
 
 Relay 不接受目标 URL。服务端只连接当前配对节点上报的全局 IPv6，端口固定为
-`24531`，并使用共享 OpenFX Node v1 协议签名、加密请求和解密响应。
+`24531`，并使用共享 OpenFX Node v1 协议签名、加密请求和解密响应。节点回包在加密载荷中
+绑定请求 nonce、HTTP 方法和固定路径；服务端流式读取最多 64 KiB，认证并校验关联后才返回
+结果。每次 Relay 会在实际网络请求前持久化意图审计，结果审计则尽力追加。
 
 配对响应只返回一次节点 secret。此后的心跳、遥测和事件上报使用
 `x-openfx-node-version`、`x-openfx-node-timestamp`、`x-openfx-node-nonce`、
