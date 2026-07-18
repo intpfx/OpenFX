@@ -3,10 +3,10 @@ import { request as httpsRequest } from "node:https";
 import { Buffer } from "node:buffer";
 
 import type { HttpJsonRequest, HttpJsonResponse } from "./omlx-client.ts";
-import type { TextStreamRequester } from "./omlx-client.ts";
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 const MAX_STREAM_RESPONSE_BYTES = 1024 * 1024;
+const MAX_STREAM_DURATION_MS = 30_000;
 
 export const requestJson = (
   request: HttpJsonRequest,
@@ -73,7 +73,11 @@ export const requestJson = (
   });
 };
 
-export const requestTextStream: TextStreamRequester = (request, onChunk) => {
+export const requestTextStream = (
+  request: HttpJsonRequest,
+  onChunk: (chunk: string) => void | Promise<void>,
+  options: { absoluteDeadlineMs?: number } = {},
+): Promise<{ status: number }> => {
   if (request.protocol !== "http:" || request.hostname !== "127.0.0.1") {
     return Promise.reject(new Error("stream_endpoint_must_be_loopback_http"));
   }
@@ -81,9 +85,16 @@ export const requestTextStream: TextStreamRequester = (request, onChunk) => {
     let settled = false;
     let responseRef: IncomingMessage | null = null;
     let outgoing: ReturnType<typeof httpRequest> | null = null;
+    let absoluteTimer: ReturnType<typeof setTimeout> | null = null;
+    const clearAbsoluteTimer = (): void => {
+      if (absoluteTimer === null) return;
+      clearTimeout(absoluteTimer);
+      absoluteTimer = null;
+    };
     const fail = (error: Error): void => {
       if (settled) return;
       settled = true;
+      clearAbsoluteTimer();
       responseRef?.destroy();
       outgoing?.destroy();
       reject(error);
@@ -91,44 +102,67 @@ export const requestTextStream: TextStreamRequester = (request, onChunk) => {
     const succeed = (status: number): void => {
       if (settled) return;
       settled = true;
+      clearAbsoluteTimer();
       resolve({ status });
     };
     const payload = request.body === undefined ? "" : JSON.stringify(request.body);
-    outgoing = httpRequest({
-      protocol: request.protocol,
-      hostname: request.hostname,
-      port: request.port,
-      path: request.path,
-      method: request.method,
-      headers: {
-        "content-type": "application/json",
-        "content-length": String(Buffer.byteLength(payload)),
-        accept: "text/event-stream",
-      },
-    }, (response) => {
-      responseRef = response;
-      let responseBytes = 0;
-      response.setEncoding("utf8");
-      response.on("data", (chunk: string) => {
-        if (settled) return;
-        responseBytes += Buffer.byteLength(chunk);
-        if (responseBytes > MAX_STREAM_RESPONSE_BYTES) {
-          fail(new Error("http_stream_response_too_large"));
-          return;
-        }
-        try {
-          onChunk(chunk);
-        } catch {
-          fail(new Error("http_stream_consumer_failed"));
-        }
+    const configuredDeadline = options.absoluteDeadlineMs;
+    const absoluteDeadlineMs = typeof configuredDeadline === "number" &&
+        Number.isFinite(configuredDeadline) && configuredDeadline > 0
+      ? Math.min(configuredDeadline, MAX_STREAM_DURATION_MS)
+      : MAX_STREAM_DURATION_MS;
+    absoluteTimer = setTimeout(
+      () => fail(new Error("http_stream_deadline")),
+      absoluteDeadlineMs,
+    );
+    try {
+      outgoing = httpRequest({
+        protocol: request.protocol,
+        hostname: request.hostname,
+        port: request.port,
+        path: request.path,
+        method: request.method,
+        headers: {
+          "content-type": "application/json",
+          "content-length": String(Buffer.byteLength(payload)),
+          accept: "text/event-stream",
+        },
+      }, (response) => {
+        responseRef = response;
+        let responseBytes = 0;
+        response.setEncoding("utf8");
+        response.on("data", (chunk: string) => {
+          if (settled) return;
+          responseBytes += Buffer.byteLength(chunk);
+          if (responseBytes > MAX_STREAM_RESPONSE_BYTES) {
+            fail(new Error("http_stream_response_too_large"));
+            return;
+          }
+          let consumed: void | Promise<void>;
+          try {
+            consumed = onChunk(chunk);
+          } catch {
+            fail(new Error("http_stream_consumer_failed"));
+            return;
+          }
+          if (consumed) {
+            Promise.resolve(consumed).then(
+              () => {},
+              () => fail(new Error("http_stream_consumer_failed")),
+            );
+          }
+        });
+        response.on("end", () => succeed(response.statusCode ?? 0));
+        response.on(
+          "error",
+          (error) =>
+            fail(error instanceof Error ? error : new Error("http_stream_failed")),
+        );
       });
-      response.on("end", () => succeed(response.statusCode ?? 0));
-      response.on(
-        "error",
-        (error) =>
-          fail(error instanceof Error ? error : new Error("http_stream_failed")),
-      );
-    });
+    } catch (error) {
+      fail(error instanceof Error ? error : new Error("http_stream_failed"));
+      return;
+    }
     outgoing.setTimeout(
       30_000,
       () => fail(new Error("http_stream_timeout")),

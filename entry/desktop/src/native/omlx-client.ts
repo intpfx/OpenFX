@@ -21,7 +21,7 @@ export type JsonRequester = (
 
 export type TextStreamRequester = (
   request: HttpJsonRequest,
-  onChunk: (chunk: string) => void,
+  onChunk: (chunk: string) => void | Promise<void>,
 ) => Promise<{ status: number }>;
 
 export interface OmlxToolCall {
@@ -46,6 +46,7 @@ export interface OmlxClient {
 
 const MAX_SSE_LINE_CHARS = 64 * 1024;
 const MAX_SSE_INPUT_CHARS = 1024 * 1024;
+const MAX_SSE_LINES = 4096;
 const MAX_SSE_FRAMES = 1024;
 const MAX_CONTENT_CHARS = 256 * 1024;
 const MAX_TOOL_CALLS = 32;
@@ -113,6 +114,7 @@ const streamChat = async (
   let lineBuffer = "";
   let content = "";
   let inputChars = 0;
+  let lineCount = 0;
   let frameCount = 0;
   let streamError: Error | null = null;
   let callbackError: Error | null = null;
@@ -122,6 +124,10 @@ const streamChat = async (
     { id: string; name: string; arguments: string }
   >();
   const consumeLine = (line: string): void => {
+    lineCount += 1;
+    if (lineCount > MAX_SSE_LINES) {
+      throw new Error("omlx_sse_too_many_lines");
+    }
     if (line.length > MAX_SSE_LINE_CHARS) {
       throw new Error("omlx_sse_line_too_large");
     }
@@ -154,6 +160,7 @@ const streamChat = async (
           await onDelta(text);
         } catch {
           callbackError = new Error("omlx_delta_callback_failed");
+          throw callbackError;
         }
       });
     }
@@ -200,6 +207,7 @@ const streamChat = async (
         stream: true,
       },
     }, (chunk) => {
+      if (callbackError) throw callbackError;
       if (streamError) throw streamError;
       try {
         inputChars += chunk.length;
@@ -207,12 +215,14 @@ const streamChat = async (
           throw new Error("omlx_sse_input_too_large");
         }
         lineBuffer += chunk;
-        let newline = lineBuffer.indexOf("\n");
+        let lineStart = 0;
+        let newline = lineBuffer.indexOf("\n", lineStart);
         while (newline >= 0) {
-          consumeLine(lineBuffer.slice(0, newline).replace(/\r$/, ""));
-          lineBuffer = lineBuffer.slice(newline + 1);
-          newline = lineBuffer.indexOf("\n");
+          consumeLine(lineBuffer.slice(lineStart, newline).replace(/\r$/, ""));
+          lineStart = newline + 1;
+          newline = lineBuffer.indexOf("\n", lineStart);
         }
+        if (lineStart > 0) lineBuffer = lineBuffer.slice(lineStart);
         if (lineBuffer.length > MAX_SSE_LINE_CHARS) {
           throw new Error("omlx_sse_line_too_large");
         }
@@ -220,8 +230,10 @@ const streamChat = async (
         streamError = error instanceof Error ? error : new Error("omlx_sse_invalid");
         throw streamError;
       }
+      return callbacks;
     });
   } catch (error) {
+    if (callbackError) throw callbackError;
     if (streamError) throw streamError;
     throw error;
   }

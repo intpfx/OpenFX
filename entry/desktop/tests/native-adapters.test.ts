@@ -210,9 +210,9 @@ Deno.test("OMLX rejects malformed SSE JSON with a bounded Agent error", async ()
 Deno.test("OMLX converts a throwing delta callback into an Agent error", async () => {
   const client = createOmlxClient(
     () => Promise.reject(new Error("unexpected JSON request")),
-    (_request, onChunk) => {
-      onChunk('data: {"choices":[{"delta":{"content":"hello"}}]}\n');
-      return Promise.resolve({ status: 200 });
+    async (_request, onChunk) => {
+      await onChunk('data: {"choices":[{"delta":{"content":"hello"}}]}\n');
+      return { status: 200 };
     },
   );
 
@@ -343,3 +343,154 @@ Deno.test("native text streaming catches a throwing chunk callback", async () =>
     await server.shutdown();
   }
 });
+
+Deno.test("rejecting Agent delta cancels an OMLX stream that never ends", async () => {
+  let streamController: ReadableStreamDefaultController<Uint8Array> | null = null;
+  let cancelled = false;
+  const encoder = new TextEncoder();
+  const server = Deno.serve(
+    { hostname: "127.0.0.1", port: 0, onListen: () => {} },
+    () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            streamController = controller;
+            controller.enqueue(
+              encoder.encode(
+                'data: {"choices":[{"delta":{"content":"hello"}}]}\n',
+              ),
+            );
+          },
+          cancel() {
+            cancelled = true;
+          },
+        }),
+        { headers: { "content-type": "text/event-stream" } },
+      ),
+  );
+  const address = server.addr as Deno.NetAddr;
+  const client = createOmlxClient(
+    () => Promise.reject(new Error("unexpected JSON request")),
+    (request, onChunk) =>
+      requestTextStream({ ...request, port: address.port }, onChunk),
+  );
+  const chat = client.chat(
+    "hello",
+    () => Promise.reject(new Error("delta sink unavailable")),
+  ).then(
+    () => "unexpected_success",
+    (error) => error instanceof Error ? error.message : String(error),
+  );
+
+  try {
+    assertEquals(await settleWithin(chat, 250), "omlx_delta_callback_failed");
+    assertEquals(await waitFor(() => cancelled, 100), true);
+  } finally {
+    closeStream(streamController);
+    await chat;
+    await server.shutdown();
+  }
+});
+
+Deno.test("native text streaming has an absolute deadline despite trickle traffic", async () => {
+  let streamController: ReadableStreamDefaultController<Uint8Array> | null = null;
+  let interval: ReturnType<typeof setInterval> | undefined;
+  let cancelled = false;
+  const encoder = new TextEncoder();
+  const server = Deno.serve(
+    { hostname: "127.0.0.1", port: 0, onListen: () => {} },
+    () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            streamController = controller;
+            controller.enqueue(encoder.encode(": keepalive\n"));
+            interval = setInterval(() => {
+              controller.enqueue(encoder.encode(": keepalive\n"));
+            }, 5);
+          },
+          cancel() {
+            cancelled = true;
+            clearInterval(interval);
+          },
+        }),
+        { headers: { "content-type": "text/event-stream" } },
+      ),
+  );
+  const address = server.addr as Deno.NetAddr;
+  const request = requestTextStream(
+    {
+      protocol: "http:",
+      hostname: "127.0.0.1",
+      port: address.port,
+      path: "/v1/chat/completions",
+      method: "POST",
+      body: {},
+    },
+    () => {},
+    { absoluteDeadlineMs: 40 },
+  ).then(
+    () => "unexpected_success",
+    (error) => error instanceof Error ? error.message : String(error),
+  );
+
+  try {
+    assertEquals(await settleWithin(request, 250), "http_stream_deadline");
+    assertEquals(await waitFor(() => cancelled, 100), true);
+  } finally {
+    clearInterval(interval);
+    closeStream(streamController);
+    await request;
+    await server.shutdown();
+  }
+});
+
+Deno.test("OMLX bounds blank and comment line parsing work", async () => {
+  const client = createOmlxClient(
+    () => Promise.reject(new Error("unexpected JSON request")),
+    (_request, onChunk) => {
+      onChunk("\n".repeat(1_000_000));
+      return Promise.resolve({ status: 200 });
+    },
+  );
+
+  await assertRejects(
+    () => client.chat("hello", () => {}),
+    Error,
+    "omlx_sse_too_many_lines",
+  );
+});
+
+const settleWithin = async (
+  promise: Promise<string>,
+  timeoutMs: number,
+): Promise<string> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<string>((resolve) => {
+    timer = setTimeout(() => resolve("test_timeout"), timeoutMs);
+  });
+  const result = await Promise.race([promise, timeout]);
+  clearTimeout(timer);
+  return result;
+};
+
+const waitFor = async (
+  predicate: () => boolean,
+  timeoutMs: number,
+): Promise<boolean> => {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate() && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  return predicate();
+};
+
+const closeStream = (
+  controller: ReadableStreamDefaultController<Uint8Array> | null,
+): void => {
+  try {
+    controller?.close();
+  } catch {
+    // The client already cancelled the stream.
+  }
+};
