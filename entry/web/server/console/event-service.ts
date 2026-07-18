@@ -1,5 +1,5 @@
 import { TELEMETRY_RETENTION_MS } from "../../../../domains/_shared/openfx-node/mod.ts";
-import type { ConsoleStore } from "./store.ts";
+import type { ConsoleAtomicCheck, ConsoleAtomicSet, ConsoleStore } from "./store.ts";
 
 const ROOT = ["openfx-console"] as const;
 const EVENT_RETENTION_MS = TELEMETRY_RETENTION_MS;
@@ -21,8 +21,17 @@ export interface StoredConsoleEvent {
 
 export interface ConsoleEventService {
   append(type: ConsoleEventType, data: unknown): Promise<StoredConsoleEvent>;
+  appendBatch(
+    events: readonly { type: ConsoleEventType; data: unknown }[],
+    guard?: ConsoleEventBatchGuard,
+  ): Promise<StoredConsoleEvent[] | null>;
   snapshot(req: Request): Promise<Response>;
   stream(req: Request): Promise<Response>;
+}
+
+export interface ConsoleEventBatchGuard {
+  checks: ConsoleAtomicCheck[];
+  sets: ConsoleAtomicSet[];
 }
 
 export const createConsoleEventService = (options: {
@@ -31,36 +40,45 @@ export const createConsoleEventService = (options: {
   pollMs: number;
   requireSession: (req: Request) => Promise<Response | null>;
 }): ConsoleEventService => {
+  const appendBatch = async (
+    inputs: readonly { type: ConsoleEventType; data: unknown }[],
+    guard: ConsoleEventBatchGuard = { checks: [], sets: [] },
+  ): Promise<StoredConsoleEvent[] | null> => {
+    const store = await options.store;
+    const counterKey = [...ROOT, "event-counter"] as const;
+    const counter = await store.get<number>(counterKey);
+    const firstId = (counter?.value ?? 0) + 1;
+    const events = inputs.map((input, index) => ({
+      id: firstId + index,
+      type: input.type,
+      data: input.data,
+      createdAt: options.now(),
+    } satisfies StoredConsoleEvent));
+    const committed = await store.atomic({
+      checks: [
+        { key: counterKey, versionstamp: counter?.versionstamp ?? null },
+        ...guard.checks,
+      ],
+      sets: [
+        { key: counterKey, value: firstId + events.length - 1 },
+        ...events.map((event) => ({
+          key: [...ROOT, "events", event.id],
+          value: event,
+          options: { expireIn: EVENT_RETENTION_MS },
+        })),
+        ...guard.sets,
+      ],
+    });
+    return committed ? events : null;
+  };
+
   const append = async (
     type: ConsoleEventType,
     data: unknown,
   ): Promise<StoredConsoleEvent> => {
-    const store = await options.store;
-    const counterKey = [...ROOT, "event-counter"] as const;
     for (let attempt = 0; attempt < 16; attempt += 1) {
-      const counter = await store.get<number>(counterKey);
-      const id = (counter?.value ?? 0) + 1;
-      const event = {
-        id,
-        type,
-        data,
-        createdAt: options.now(),
-      } satisfies StoredConsoleEvent;
-      if (
-        await store.atomic({
-          checks: [{ key: counterKey, versionstamp: counter?.versionstamp ?? null }],
-          sets: [
-            { key: counterKey, value: id },
-            {
-              key: [...ROOT, "events", id],
-              value: event,
-              options: { expireIn: EVENT_RETENTION_MS },
-            },
-          ],
-        })
-      ) {
-        return event;
-      }
+      const appended = await appendBatch([{ type, data }]);
+      if (appended) return appended[0]!;
     }
     throw new Error("event_counter_conflict");
   };
@@ -149,7 +167,7 @@ export const createConsoleEventService = (options: {
     return new Response(body, { headers: sseHeaders() });
   };
 
-  return { append, snapshot, stream };
+  return { append, appendBatch, snapshot, stream };
 };
 
 export const formatSseEvent = (

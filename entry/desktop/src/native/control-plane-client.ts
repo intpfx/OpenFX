@@ -1,8 +1,13 @@
 import {
+  createWebCryptoAdapter,
   NODE_PORT,
   PROTOCOL_VERSION,
+  signedRequestHeaders,
+  signRequest,
   validatePairingCode,
 } from "../../../../domains/_shared/openfx-node/mod.ts";
+import type { NodeCryptoAdapter } from "../../../../domains/_shared/openfx-node/crypto.ts";
+import { decodeBase64Url } from "../../../../domains/_shared/openfx-node/encoding.ts";
 import type { TelemetrySample } from "../../../../domains/_shared/openfx-node/types.ts";
 import type { HttpJsonRequest, JsonRequester } from "./omlx-client.ts";
 
@@ -43,65 +48,108 @@ export interface ControlPlaneClient {
   events(input: AuthenticatedNodeInput & { events: unknown[] }): Promise<void>;
 }
 
+export interface ControlPlaneClientOptions {
+  crypto?: NodeCryptoAdapter;
+  now?: () => number;
+  randomBytes?: (length: number) => Uint8Array;
+}
+
 export const createControlPlaneClient = (
   requestJson: JsonRequester,
-): ControlPlaneClient => ({
-  async pair(input) {
-    const origin = httpsOrigin(input.serverUrl);
-    const code = input.code.trim().toUpperCase();
-    if (!validatePairingCode(code)) throw new Error("node_pairing_invalid");
-    const response = await requestJson(nodeRequest(origin, "/api/node/pair", {
-      code,
-      name: input.name.trim(),
-      protocolVersion: PROTOCOL_VERSION,
-      publicIpv6: input.publicIpv6,
-      port: NODE_PORT,
-    }));
-    const body = objectValue(response.body);
-    const node = objectValue(body.node);
-    if (
-      response.status !== 201 || body.ok !== true ||
-      typeof node.id !== "string" || typeof node.name !== "string" ||
-      typeof body.nodeSecret !== "string" || body.nodeSecret.length === 0
-    ) throw new Error(errorCode(body, response.status));
-    return {
-      node: { id: node.id, name: node.name },
-      nodeSecret: body.nodeSecret,
-    };
-  },
-  async heartbeat(input) {
-    await sendAuthenticated(requestJson, input, "/api/node/heartbeat", {
-      nodeId: input.nodeId,
-      protocolVersion: PROTOCOL_VERSION,
-      publicIpv6: input.publicIpv6,
-      port: NODE_PORT,
-      availability: input.availability,
-    });
-  },
-  async telemetry(input) {
-    await sendAuthenticated(requestJson, input, "/api/node/telemetry", {
-      nodeId: input.nodeId,
-      protocolVersion: PROTOCOL_VERSION,
-      sample: input.sample,
-    });
-  },
-  async events(input) {
-    await sendAuthenticated(requestJson, input, "/api/node/events", {
-      nodeId: input.nodeId,
-      protocolVersion: PROTOCOL_VERSION,
-      events: input.events,
-    });
-  },
-});
+  options: ControlPlaneClientOptions = {},
+): ControlPlaneClient => {
+  const crypto = options.crypto ?? createWebCryptoAdapter();
+  const signingOptions = {
+    now: options.now,
+    randomBytes: options.randomBytes,
+  };
+  return ({
+    async pair(input) {
+      const origin = httpsOrigin(input.serverUrl);
+      const code = input.code.trim().toUpperCase();
+      if (!validatePairingCode(code)) throw new Error("node_pairing_invalid");
+      const response = await requestJson(nodeRequest(origin, "/api/node/pair", {
+        code,
+        name: input.name.trim(),
+        protocolVersion: PROTOCOL_VERSION,
+        publicIpv6: input.publicIpv6,
+        port: NODE_PORT,
+      }));
+      const body = objectValue(response.body);
+      const node = objectValue(body.node);
+      if (
+        response.status !== 201 || body.ok !== true ||
+        typeof node.id !== "string" || typeof node.name !== "string" ||
+        typeof body.nodeSecret !== "string" || body.nodeSecret.length === 0
+      ) throw new Error(errorCode(body, response.status));
+      return {
+        node: { id: node.id, name: node.name },
+        nodeSecret: body.nodeSecret,
+      };
+    },
+    async heartbeat(input) {
+      await sendAuthenticated(
+        requestJson,
+        crypto,
+        signingOptions,
+        input,
+        "/api/node/heartbeat",
+        {
+          nodeId: input.nodeId,
+          protocolVersion: PROTOCOL_VERSION,
+          publicIpv6: input.publicIpv6,
+          port: NODE_PORT,
+          availability: input.availability,
+        },
+      );
+    },
+    async telemetry(input) {
+      await sendAuthenticated(
+        requestJson,
+        crypto,
+        signingOptions,
+        input,
+        "/api/node/telemetry",
+        {
+          nodeId: input.nodeId,
+          protocolVersion: PROTOCOL_VERSION,
+          sample: input.sample,
+        },
+      );
+    },
+    async events(input) {
+      await sendAuthenticated(
+        requestJson,
+        crypto,
+        signingOptions,
+        input,
+        "/api/node/events",
+        {
+          nodeId: input.nodeId,
+          protocolVersion: PROTOCOL_VERSION,
+          events: input.events,
+        },
+      );
+    },
+  });
+};
 
 const sendAuthenticated = async (
   requestJson: JsonRequester,
+  crypto: NodeCryptoAdapter,
+  options: Pick<ControlPlaneClientOptions, "now" | "randomBytes">,
   input: AuthenticatedNodeInput,
   path: string,
   body: unknown,
 ): Promise<void> => {
   const request = nodeRequest(httpsOrigin(input.serverUrl), path, body);
-  request.headers = { authorization: `Bearer ${input.nodeSecret}` };
+  request.headers = signedRequestHeaders(
+    await signRequest(crypto, decodeBase64Url(input.nodeSecret), {
+      method: request.method,
+      path,
+      body,
+    }, options),
+  );
   const response = await requestJson(request);
   if (response.status < 200 || response.status >= 300) {
     throw new Error(errorCode(objectValue(response.body), response.status));

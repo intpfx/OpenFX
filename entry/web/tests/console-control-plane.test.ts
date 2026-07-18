@@ -11,6 +11,8 @@ import {
   createWebCryptoAdapter,
   openRelayEnvelope,
   sealRelayEnvelope,
+  signedRequestHeaders,
+  signRequest,
 } from "../../../domains/_shared/openfx-node/mod.ts";
 import { decodeBase64Url } from "../../../domains/_shared/openfx-node/encoding.ts";
 
@@ -22,6 +24,22 @@ const jsonRequest = (url: string, body: unknown, headers: HeadersInit = {}) =>
     headers: { "content-type": "application/json", ...headers },
     body: JSON.stringify(body),
   });
+
+const signedJsonRequest = async (
+  url: string,
+  body: unknown,
+  nodeSecret: string,
+  timestamp = Date.parse("2026-07-18T00:00:00Z"),
+) => {
+  const target = new URL(url);
+  const signed = await signRequest(
+    createWebCryptoAdapter(),
+    decodeBase64Url(nodeSecret),
+    { method: "POST", path: target.pathname, body },
+    { now: () => timestamp },
+  );
+  return jsonRequest(url, body, signedRequestHeaders(signed));
+};
 
 const cookieFrom = (response: Response): string =>
   response.headers.get("set-cookie")!.split(";", 1)[0]!;
@@ -73,6 +91,14 @@ const pair = async (plane: ConsoleControlPlane, cookie: string) => {
   expect(pairResponse.status).toBe(201);
   return await pairResponse.json() as { node: { id: string }; nodeSecret: string };
 };
+
+const heartbeatBody = (nodeId: string) => ({
+  nodeId,
+  protocolVersion: 1,
+  publicIpv6: "2001:4860:4860::8844",
+  port: 24531,
+  availability: "online",
+});
 
 Deno.test("admin session stores a digest and emits strict localhost cookie attributes", async () => {
   const { plane, store } = createHarness();
@@ -287,6 +313,278 @@ Deno.test("administrator can atomically revoke the active node credential", asyn
   );
 });
 
+Deno.test("node heartbeat accepts signed headers without receiving the credential", async () => {
+  const now = Date.parse("2026-07-18T00:00:00Z");
+  const { plane, store } = createHarness({ now: () => now });
+  const cookie = await login(plane);
+  const paired = await pair(plane, cookie);
+  const request = await signedJsonRequest(
+    "https://openfx.example/api/node/heartbeat",
+    {
+      nodeId: paired.node.id,
+      protocolVersion: 1,
+      publicIpv6: "2001:4860:4860::8844",
+      port: 24531,
+      availability: "online",
+    },
+    paired.nodeSecret,
+    now,
+  );
+
+  expect(request.headers.get("authorization")).toBeNull();
+  expect(JSON.stringify([...request.headers])).not.toContain(paired.nodeSecret);
+  expect((await plane.node.heartbeat(request)).status).toBe(200);
+  expect(
+    await store.list({ prefix: ["openfx-console", "node-request-nonces"] }),
+  ).toHaveLength(1);
+});
+
+Deno.test("node request nonce is consumed atomically and rejects a concurrent replay", async () => {
+  const now = Date.parse("2026-07-18T00:00:00Z");
+  const { plane, store } = createHarness({ now: () => now });
+  const cookie = await login(plane);
+  const paired = await pair(plane, cookie);
+  const signed = await signedJsonRequest(
+    "https://openfx.example/api/node/heartbeat",
+    heartbeatBody(paired.node.id),
+    paired.nodeSecret,
+    now,
+  );
+  const [first, replay] = await Promise.all([
+    plane.node.heartbeat(signed.clone()),
+    plane.node.heartbeat(signed.clone()),
+  ]);
+
+  expect([first.status, replay.status].sort()).toEqual([200, 409]);
+  const rejected = first.status === 409 ? first : replay;
+  await expect(rejected.json()).resolves.toMatchObject({
+    error: "node_replay_detected",
+  });
+  expect(
+    await store.list({ prefix: ["openfx-console", "node-request-nonces"] }),
+  ).toHaveLength(1);
+});
+
+Deno.test("heartbeat retries an effect CAS conflict without consuming its nonce early", async () => {
+  const now = Date.parse("2026-07-18T00:00:00Z");
+  const base = createMemoryConsoleStore({ now: () => now });
+  let rejectedStatusWrite = false;
+  const store = {
+    ...base,
+    atomic(operation: Parameters<typeof base.atomic>[0]) {
+      if (
+        !rejectedStatusWrite &&
+        operation.sets.some((item) =>
+          item.key[1] === "node" && item.key[2] === "status"
+        )
+      ) {
+        rejectedStatusWrite = true;
+        return Promise.resolve(false);
+      }
+      return base.atomic(operation);
+    },
+  };
+  const plane = createConsoleControlPlane({
+    store,
+    env: {
+      OPENFX_ADMIN_KEY: "correct horse battery staple",
+      OPENFX_NODE_CREDENTIAL_KEY: CREDENTIAL_KEY,
+    },
+    now: () => now,
+  });
+  const cookie = await login(plane);
+  const paired = await pair(plane, cookie);
+  const response = await plane.node.heartbeat(
+    await signedJsonRequest(
+      "https://openfx.example/api/node/heartbeat",
+      heartbeatBody(paired.node.id),
+      paired.nodeSecret,
+      now,
+    ),
+  );
+
+  expect(rejectedStatusWrite).toBe(true);
+  expect(response.status).toBe(200);
+  expect(await store.get(["openfx-console", "node", "status"])).not.toBeNull();
+  expect(
+    await store.list({ prefix: ["openfx-console", "node-request-nonces"] }),
+  ).toHaveLength(1);
+});
+
+Deno.test("telemetry retries an effect CAS conflict and stores the signed sample once", async () => {
+  const now = Date.parse("2026-07-18T00:00:00Z");
+  const base = createMemoryConsoleStore({ now: () => now });
+  let rejectedTelemetryWrite = false;
+  const store = {
+    ...base,
+    atomic(operation: Parameters<typeof base.atomic>[0]) {
+      if (
+        !rejectedTelemetryWrite &&
+        operation.sets.some((item) => item.key[1] === "telemetry")
+      ) {
+        rejectedTelemetryWrite = true;
+        return Promise.resolve(false);
+      }
+      return base.atomic(operation);
+    },
+  };
+  const plane = createConsoleControlPlane({
+    store,
+    env: {
+      OPENFX_ADMIN_KEY: "correct horse battery staple",
+      OPENFX_NODE_CREDENTIAL_KEY: CREDENTIAL_KEY,
+    },
+    now: () => now,
+  });
+  const cookie = await login(plane);
+  const paired = await pair(plane, cookie);
+  const body = {
+    nodeId: paired.node.id,
+    protocolVersion: 1,
+    sample: {
+      collectedAt: now,
+      cpuUsagePercent: 20,
+      memoryUsedBytes: 10,
+      memoryTotalBytes: 100,
+      diskUsedBytes: 20,
+      diskTotalBytes: 200,
+      networkRxBytes: 1000,
+      networkTxBytes: 2000,
+      batteryPercent: null,
+      processCount: 4,
+    },
+  };
+  const response = await plane.node.telemetry(
+    await signedJsonRequest(
+      "https://openfx.example/api/node/telemetry",
+      body,
+      paired.nodeSecret,
+      now,
+    ),
+  );
+
+  expect(rejectedTelemetryWrite).toBe(true);
+  expect(response.status).toBe(202);
+  const buckets = await store.list<{ samples: unknown[] }>({
+    prefix: ["openfx-console", "telemetry"],
+  });
+  expect(buckets).toHaveLength(1);
+  expect(buckets[0]?.value.samples).toHaveLength(1);
+  expect(
+    await store.list({ prefix: ["openfx-console", "node-request-nonces"] }),
+  ).toHaveLength(1);
+});
+
+Deno.test("node signatures reject stale timestamps, body tampering, and cross-route reuse", async () => {
+  const now = Date.parse("2026-07-18T00:00:00Z");
+  const { plane } = createHarness({ now: () => now });
+  const cookie = await login(plane);
+  const paired = await pair(plane, cookie);
+  const body = heartbeatBody(paired.node.id);
+
+  const stale = await plane.node.heartbeat(
+    await signedJsonRequest(
+      "https://openfx.example/api/node/heartbeat",
+      body,
+      paired.nodeSecret,
+      now - 30_001,
+    ),
+  );
+  expect(stale.status).toBe(401);
+  await expect(stale.json()).resolves.toMatchObject({
+    error: "node_timestamp_invalid",
+  });
+
+  const original = await signedJsonRequest(
+    "https://openfx.example/api/node/heartbeat",
+    body,
+    paired.nodeSecret,
+    now,
+  );
+  const headers = Object.fromEntries(original.headers);
+  const tampered = await plane.node.heartbeat(
+    jsonRequest(
+      "https://openfx.example/api/node/heartbeat",
+      { ...body, availability: "degraded" },
+      headers,
+    ),
+  );
+  expect(tampered.status).toBe(401);
+  await expect(tampered.json()).resolves.toMatchObject({
+    error: "node_signature_invalid",
+  });
+
+  const crossRouteBody = {
+    ...body,
+    events: [{
+      type: "agent.delta",
+      data: { messageId: "m1", delta: "x", sequence: 1 },
+    }],
+  };
+  const crossRouteSigned = await signedJsonRequest(
+    "https://openfx.example/api/node/heartbeat",
+    crossRouteBody,
+    paired.nodeSecret,
+    now,
+  );
+  const crossRoute = await plane.node.events(
+    jsonRequest(
+      "https://openfx.example/api/node/events",
+      crossRouteBody,
+      Object.fromEntries(crossRouteSigned.headers),
+    ),
+  );
+  expect(crossRoute.status).toBe(401);
+  await expect(crossRoute.json()).resolves.toMatchObject({
+    error: "node_signature_invalid",
+  });
+});
+
+Deno.test("credential rotation and revocation reject requests signed by retired secrets", async () => {
+  const now = Date.parse("2026-07-18T00:00:00Z");
+  const { plane } = createHarness({ now: () => now });
+  const cookie = await login(plane);
+  const first = await pair(plane, cookie);
+  const retired = await signedJsonRequest(
+    "https://openfx.example/api/node/heartbeat",
+    heartbeatBody(first.node.id),
+    first.nodeSecret,
+    now,
+  );
+
+  const replacement = await pair(plane, cookie);
+  expect((await plane.node.heartbeat(retired)).status).toBe(401);
+  expect(
+    (await plane.node.heartbeat(
+      await signedJsonRequest(
+        "https://openfx.example/api/node/heartbeat",
+        heartbeatBody(replacement.node.id),
+        replacement.nodeSecret,
+        now,
+      ),
+    )).status,
+  ).toBe(200);
+
+  expect(
+    (await plane.node.revoke(
+      new Request("http://localhost/api/console/node", {
+        method: "DELETE",
+        headers: { cookie },
+      }),
+    )).status,
+  ).toBe(200);
+  expect(
+    (await plane.node.heartbeat(
+      await signedJsonRequest(
+        "https://openfx.example/api/node/heartbeat",
+        heartbeatBody(replacement.node.id),
+        replacement.nodeSecret,
+        now,
+      ),
+    )).status,
+  ).toBe(401);
+});
+
 Deno.test("paused authorized heartbeat cannot resurrect or overwrite a re-paired node", async () => {
   const base = createMemoryConsoleStore();
   let pauseHeartbeat = false;
@@ -330,13 +628,11 @@ Deno.test("paused authorized heartbeat cannot resurrect or overwrite a re-paired
   const first = await pair(plane, cookie);
   pauseHeartbeat = true;
   const heartbeat = plane.node.heartbeat(
-    jsonRequest("http://localhost/api/node/heartbeat", {
-      nodeId: first.node.id,
-      protocolVersion: 1,
-      publicIpv6: "2001:4860:4860::8844",
-      port: 24531,
-      availability: "online",
-    }, { authorization: `Bearer ${first.nodeSecret}` }),
+    await signedJsonRequest(
+      "http://localhost/api/node/heartbeat",
+      heartbeatBody(first.node.id),
+      first.nodeSecret,
+    ),
   );
   await paused;
 
@@ -358,33 +654,27 @@ Deno.test("paused authorized heartbeat cannot resurrect or overwrite a re-paired
   expect(await store.get(["openfx-console", "node", "status"])).toBeNull();
 });
 
-Deno.test("heartbeat and telemetry require the node secret and retain seven days", async () => {
+Deno.test("heartbeat and telemetry require signed node credentials and retain seven days", async () => {
   let now = Date.parse("2026-07-18T00:00:00Z");
   const { plane } = createHarness({ now: () => now });
   const cookie = await login(plane);
   const paired = await pair(plane, cookie);
-  const authorization = `Bearer ${paired.nodeSecret}`;
-
   const unauthorized = await plane.node.heartbeat(
-    jsonRequest("http://localhost/api/node/heartbeat", {
-      nodeId: paired.node.id,
-      protocolVersion: 1,
-      publicIpv6: "2001:4860:4860::8844",
-      port: 24531,
-      availability: "online",
-    }),
+    jsonRequest(
+      "http://localhost/api/node/heartbeat",
+      heartbeatBody(paired.node.id),
+    ),
   );
   expect(unauthorized.status).toBe(401);
 
   expect(
     (await plane.node.heartbeat(
-      jsonRequest("http://localhost/api/node/heartbeat", {
-        nodeId: paired.node.id,
-        protocolVersion: 1,
-        publicIpv6: "2001:4860:4860::8844",
-        port: 24531,
-        availability: "online",
-      }, { authorization }),
+      await signedJsonRequest(
+        "http://localhost/api/node/heartbeat",
+        heartbeatBody(paired.node.id),
+        paired.nodeSecret,
+        now,
+      ),
     )).status,
   ).toBe(200);
 
@@ -402,22 +692,32 @@ Deno.test("heartbeat and telemetry require the node secret and retain seven days
   };
   expect(
     (await plane.node.telemetry(
-      jsonRequest("http://localhost/api/node/telemetry", {
-        nodeId: paired.node.id,
-        protocolVersion: 1,
-        sample,
-      }, { authorization }),
+      await signedJsonRequest(
+        "http://localhost/api/node/telemetry",
+        {
+          nodeId: paired.node.id,
+          protocolVersion: 1,
+          sample,
+        },
+        paired.nodeSecret,
+        now,
+      ),
     )).status,
   ).toBe(202);
 
   now += 7 * 24 * 60 * 60_000 + 60_000;
   expect(
     (await plane.node.telemetry(
-      jsonRequest("http://localhost/api/node/telemetry", {
-        nodeId: paired.node.id,
-        protocolVersion: 1,
-        sample: { ...sample, collectedAt: now },
-      }, { authorization }),
+      await signedJsonRequest(
+        "http://localhost/api/node/telemetry",
+        {
+          nodeId: paired.node.id,
+          protocolVersion: 1,
+          sample: { ...sample, collectedAt: now },
+        },
+        paired.nodeSecret,
+        now,
+      ),
     )).status,
   ).toBe(202);
   const freshCookie = await login(plane);
@@ -475,13 +775,11 @@ Deno.test("Relay uses only the paired IPv6, port 24531, and fixed operation path
   const paired = await pair(plane, cookie);
   pairedSecret = paired.nodeSecret;
   await plane.node.heartbeat(
-    jsonRequest("http://localhost/api/node/heartbeat", {
-      nodeId: paired.node.id,
-      protocolVersion: 1,
-      publicIpv6: "2001:4860:4860::8844",
-      port: 24531,
-      availability: "online",
-    }, { authorization: `Bearer ${paired.nodeSecret}` }),
+    await signedJsonRequest(
+      "http://localhost/api/node/heartbeat",
+      heartbeatBody(paired.node.id),
+      paired.nodeSecret,
+    ),
   );
 
   const response = await plane.console.handle(

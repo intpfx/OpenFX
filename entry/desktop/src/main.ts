@@ -59,7 +59,7 @@ import { createSystemMonitor } from "./native/system-monitor.ts";
 const cryptoAdapter = createNodeCryptoAdapter();
 const keychain = createKeychain();
 const preferenceStore = createDesktopPreferenceStore();
-const controlPlane = createControlPlaneClient(requestJson);
+const controlPlane = createControlPlaneClient(requestJson, { crypto: cryptoAdapter });
 const pairingService = createPairingService({
   client: controlPlane,
   preferences: preferenceStore,

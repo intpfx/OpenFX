@@ -15,6 +15,18 @@ export interface SignableNodeRequest {
   body: unknown;
 }
 
+export const SIGNED_NODE_REQUEST_HEADERS = {
+  version: "x-openfx-node-version",
+  timestamp: "x-openfx-node-timestamp",
+  nonce: "x-openfx-node-nonce",
+  bodyDigest: "x-openfx-node-content-sha256",
+  signature: "x-openfx-node-signature",
+} as const;
+
+export interface HeaderReader {
+  get(name: string): string | null;
+}
+
 export interface SignRequestOptions {
   now?: () => number;
   randomBytes?: (length: number) => Uint8Array;
@@ -24,6 +36,72 @@ export interface VerifySignedRequestOptions {
   now?: () => number;
   replayProtector: ReplayProtector;
   maxClockSkewMs?: number;
+}
+
+export function signedRequestHeaders(
+  request: SignedNodeRequest,
+): Record<string, string> {
+  return {
+    [SIGNED_NODE_REQUEST_HEADERS.version]: String(request.version),
+    [SIGNED_NODE_REQUEST_HEADERS.timestamp]: String(request.timestamp),
+    [SIGNED_NODE_REQUEST_HEADERS.nonce]: request.nonce,
+    [SIGNED_NODE_REQUEST_HEADERS.bodyDigest]: request.bodyDigest,
+    [SIGNED_NODE_REQUEST_HEADERS.signature]: request.signature,
+  };
+}
+
+export function signedRequestFromHeaders(
+  headers: HeaderReader,
+  request: SignableNodeRequest,
+): SignedNodeRequest {
+  const version = headers.get(SIGNED_NODE_REQUEST_HEADERS.version);
+  if (version === null) {
+    throw protocolError(
+      OPENFX_NODE_ERROR_CODES.signatureInvalid,
+      "Request signature headers are incomplete.",
+    );
+  }
+  if (version !== String(PROTOCOL_VERSION)) {
+    throw protocolError(
+      OPENFX_NODE_ERROR_CODES.protocolMismatch,
+      "Unsupported request version.",
+    );
+  }
+  const timestampValue = headers.get(SIGNED_NODE_REQUEST_HEADERS.timestamp) ?? "";
+  const timestamp = Number(timestampValue);
+  if (!/^\d+$/.test(timestampValue) || !Number.isSafeInteger(timestamp)) {
+    throw protocolError(
+      OPENFX_NODE_ERROR_CODES.timestampInvalid,
+      "Request timestamp is invalid.",
+    );
+  }
+  const nonce = headers.get(SIGNED_NODE_REQUEST_HEADERS.nonce) ?? "";
+  const bodyDigest = headers.get(SIGNED_NODE_REQUEST_HEADERS.bodyDigest) ?? "";
+  const signature = headers.get(SIGNED_NODE_REQUEST_HEADERS.signature) ?? "";
+  try {
+    if (decodeBase64Url(nonce).length !== 16) throw new TypeError("invalid nonce");
+  } catch {
+    throw protocolError(
+      OPENFX_NODE_ERROR_CODES.signatureInvalid,
+      "Request nonce encoding is invalid.",
+    );
+  }
+  if (!bodyDigest || !signature) {
+    throw protocolError(
+      OPENFX_NODE_ERROR_CODES.signatureInvalid,
+      "Request signature headers are incomplete.",
+    );
+  }
+  return {
+    version: PROTOCOL_VERSION,
+    method: request.method.toUpperCase(),
+    path: request.path,
+    body: request.body,
+    bodyDigest,
+    timestamp,
+    nonce,
+    signature,
+  };
 }
 
 export async function signRequest(

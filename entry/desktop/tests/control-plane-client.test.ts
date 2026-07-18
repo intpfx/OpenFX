@@ -1,8 +1,15 @@
-import { assertEquals } from "@std/assert";
+import { assert, assertEquals, assertRejects } from "@std/assert";
 
+import {
+  createWebCryptoAdapter,
+  signedRequestFromHeaders,
+  verifySignedRequest,
+} from "../../../domains/_shared/openfx-node/mod.ts";
+import { decodeBase64Url } from "../../../domains/_shared/openfx-node/encoding.ts";
 import { createControlPlaneClient } from "../src/native/control-plane-client.ts";
 import { createPairingService } from "../src/native/pairing-service.ts";
 import type { DesktopPreferences } from "../src/core/types.ts";
+import type { HttpJsonRequest } from "../src/native/omlx-client.ts";
 
 Deno.test("control-plane pairing and reports use HTTPS v1 contracts", async () => {
   const requests: unknown[] = [];
@@ -35,6 +42,36 @@ Deno.test("control-plane pairing and reports use HTTPS v1 contracts", async () =
     availability: "online",
   });
 
+  const heartbeat = requests[1] as HttpJsonRequest;
+  assertEquals(heartbeat.headers?.authorization, undefined);
+  assertEquals(heartbeat.headers?.["x-openfx-node-version"], "1");
+  assert(
+    Number.isSafeInteger(
+      Number(heartbeat.headers?.["x-openfx-node-timestamp"]),
+    ),
+  );
+  assert(heartbeat.headers?.["x-openfx-node-nonce"]);
+  assert(heartbeat.headers?.["x-openfx-node-content-sha256"]);
+  assert(heartbeat.headers?.["x-openfx-node-signature"]);
+  assertEquals(JSON.stringify(heartbeat).includes(pair.nodeSecret), false);
+  const signed = signedRequestFromHeaders(new Headers(heartbeat.headers), {
+    method: heartbeat.method,
+    path: heartbeat.path,
+    body: heartbeat.body,
+  });
+  assertEquals(
+    await verifySignedRequest(
+      createWebCryptoAdapter(),
+      decodeBase64Url(pair.nodeSecret),
+      signed,
+      {
+        now: () => signed.timestamp,
+        replayProtector: { consume() {} },
+      },
+    ),
+    true,
+  );
+
   assertEquals(requests, [
     {
       protocol: "https:",
@@ -56,7 +93,7 @@ Deno.test("control-plane pairing and reports use HTTPS v1 contracts", async () =
       port: 443,
       path: "/api/node/heartbeat",
       method: "POST",
-      headers: { authorization: "Bearer encoded-secret" },
+      headers: heartbeat.headers,
       body: {
         nodeId: "node-1",
         protocolVersion: 1,
@@ -125,4 +162,26 @@ Deno.test("pairing stores nodeSecret only in Keychain and recovers it after rest
     },
     nodeSecret: "encoded-secret",
   });
+});
+
+Deno.test("post-pair signed reports preserve the HTTPS-only control-plane boundary", async () => {
+  let requests = 0;
+  const client = createControlPlaneClient(() => {
+    requests += 1;
+    return Promise.resolve({ status: 202, body: { ok: true } });
+  });
+
+  await assertRejects(
+    () =>
+      client.heartbeat({
+        serverUrl: "http://openfx.example",
+        nodeId: "node-1",
+        nodeSecret: "encoded-secret",
+        publicIpv6: "240e::1",
+        availability: "online",
+      }),
+    Error,
+    "https_required",
+  );
+  assertEquals(requests, 0);
 });

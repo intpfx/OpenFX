@@ -12,16 +12,20 @@ import {
   OpenFxNodeProtocolError,
   PAIRING_TTL_MS,
   PROTOCOL_VERSION,
+  RELAY_NONCE_TTL_MS,
   retainTelemetryMinutes,
   type SealedRelayEnvelope,
   sealRelayEnvelope,
+  signedRequestFromHeaders,
   signRequest,
   TELEMETRY_AGGREGATE_MS,
   TELEMETRY_RETENTION_MS,
   type TelemetryMinute,
   type TelemetrySample,
+  verifySignedRequest,
 } from "../../../../domains/_shared/openfx-node/mod.ts";
 import {
+  canonicalJson,
   decodeBase64Url,
   encodeBase64Url,
   utf8,
@@ -100,6 +104,18 @@ interface TelemetryBucket {
   minute: TelemetryMinute;
   samples: TelemetrySample[];
   receivedAt: number;
+}
+
+interface VerifiedNodeAuthorization {
+  store: ConsoleStore;
+  node: NodeRecord;
+  credentialVersion: string;
+  nonceKey: ConsoleKey;
+  nonceValue: {
+    nodeId: string;
+    timestamp: number;
+    expiresAt: number;
+  };
 }
 
 export interface ConsoleControlPlaneOptions {
@@ -469,45 +485,106 @@ export const createConsoleControlPlane = (
   const authorizeNode = async (
     req: Request,
     nodeId: unknown,
+    body: Record<string, unknown>,
+    path: string,
   ): Promise<
-    {
-      store: ConsoleStore;
-      node: NodeRecord;
-      activeVersion: string;
-      credentialVersion: string;
-    } | Response
+    VerifiedNodeAuthorization | Response
   > => {
     const store = await storePromise;
-    const active = await store.get<NodeRecord>([...ROOT, "node", "active"]);
-    const credential = await store.get<StoredCredential>([
+    const activeKey = [...ROOT, "node", "active"] as const;
+    const credentialKey = [...ROOT, "node", "credential"] as const;
+    const active = await store.get<NodeRecord>(activeKey);
+    const credential = await store.get<StoredCredential>(credentialKey);
+    if (
+      !active || !credential || active.value.id !== nodeId ||
+      credential.value.nodeId !== active.value.id
+    ) {
+      return nodeError(OPENFX_NODE_ERROR_CODES.unauthorized, 401);
+    }
+    const secret = await decryptStoredCredential(
+      credential.value,
+      env("OPENFX_NODE_CREDENTIAL_KEY"),
+      cryptoAdapter,
+    );
+    if (
+      !secret ||
+      !constantTimeEqual(
+        utf8(await digest(secret)),
+        utf8(credential.value.digest),
+      )
+    ) return nodeError(OPENFX_NODE_ERROR_CODES.unauthorized, 401);
+
+    let signed;
+    try {
+      signed = signedRequestFromHeaders(req.headers, {
+        method: "POST",
+        path,
+        body,
+      });
+      await verifySignedRequest(cryptoAdapter, secret, signed, {
+        now,
+        replayProtector: { consume() {} },
+      });
+    } catch (error) {
+      return error instanceof OpenFxNodeProtocolError
+        ? nodeError(
+          error.code,
+          error.code === OPENFX_NODE_ERROR_CODES.protocolMismatch ? 400 : 401,
+        )
+        : nodeError(OPENFX_NODE_ERROR_CODES.unauthorized, 401);
+    }
+
+    const nonceKey = [
+      ...ROOT,
+      "node-request-nonces",
+      credential.value.nodeId,
+      signed.nonce,
+    ] as const;
+    if (await store.get(nonceKey)) {
+      return nodeError(OPENFX_NODE_ERROR_CODES.replayDetected, 409);
+    }
+    return {
+      store,
+      node: active.value,
+      credentialVersion: credential.versionstamp,
+      nonceKey,
+      nonceValue: {
+        nodeId: credential.value.nodeId,
+        timestamp: signed.timestamp,
+        expiresAt: now() + RELAY_NONCE_TTL_MS,
+      },
+    };
+  };
+
+  const authorizationGuard = (authorization: VerifiedNodeAuthorization) => ({
+    checks: [
+      {
+        key: [...ROOT, "node", "credential"],
+        versionstamp: authorization.credentialVersion,
+      },
+      { key: authorization.nonceKey, versionstamp: null },
+    ],
+    sets: [{
+      key: authorization.nonceKey,
+      value: authorization.nonceValue,
+      options: { expireIn: RELAY_NONCE_TTL_MS },
+    }],
+  });
+
+  const authorizationConflict = async (
+    authorization: VerifiedNodeAuthorization,
+  ): Promise<Response | null> => {
+    if (await authorization.store.get(authorization.nonceKey)) {
+      return nodeError(OPENFX_NODE_ERROR_CODES.replayDetected, 409);
+    }
+    const credential = await authorization.store.get<StoredCredential>([
       ...ROOT,
       "node",
       "credential",
     ]);
-    const token = bearerToken(req.headers.get("authorization") ?? "");
-    if (
-      !active || !credential || active.value.id !== nodeId ||
-      credential.value.nodeId !== active.value.id || !token
-    ) {
-      return nodeError(OPENFX_NODE_ERROR_CODES.unauthorized, 401);
-    }
-    let supplied: Uint8Array;
-    try {
-      supplied = decodeBase64Url(token);
-    } catch {
-      return nodeError(OPENFX_NODE_ERROR_CODES.unauthorized, 401);
-    }
-    const valid = constantTimeEqual(
-      utf8(await digest(supplied)),
-      utf8(credential.value.digest),
-    );
-    return valid
-      ? {
-        store,
-        node: active.value,
-        activeVersion: active.versionstamp,
-        credentialVersion: credential.versionstamp,
-      }
+    return credential?.versionstamp === authorization.credentialVersion &&
+        credential.value.nodeId === authorization.node.id
+      ? null
       : nodeError(OPENFX_NODE_ERROR_CODES.unauthorized, 401);
   };
 
@@ -521,11 +598,19 @@ export const createConsoleControlPlane = (
       return nodeError(OPENFX_NODE_ERROR_CODES.invalidRequest, 400);
     }
     const activeKey = [...ROOT, "node", "active"] as const;
-    const credentialKey = [...ROOT, "node", "credential"] as const;
     const statusKey = [...ROOT, "node", "status"] as const;
+    const authorization = await authorizeNode(
+      req,
+      parsed.nodeId,
+      parsed,
+      "/api/node/heartbeat",
+    );
+    if (authorization instanceof Response) return authorization;
     for (let attempt = 0; attempt < 8; attempt += 1) {
-      const authorization = await authorizeNode(req, parsed.nodeId);
-      if (authorization instanceof Response) return authorization;
+      const currentNode = await authorization.store.get<NodeRecord>(activeKey);
+      if (!currentNode || currentNode.value.id !== authorization.node.id) {
+        return nodeError(OPENFX_NODE_ERROR_CODES.unauthorized, 401);
+      }
       const currentStatus = await authorization.store.get<NodeStatus>(statusKey);
       const status: NodeStatus = {
         nodeId: authorization.node.id,
@@ -535,23 +620,31 @@ export const createConsoleControlPlane = (
         port: NODE_PORT,
         lastSeenAt: now(),
       };
-      const node = { ...authorization.node, ...status, status: status.availability };
+      const node = { ...currentNode.value, ...status, status: status.availability };
+      const guard = authorizationGuard(authorization);
       if (
         await authorization.store.atomic({
           checks: [
-            { key: activeKey, versionstamp: authorization.activeVersion },
-            { key: credentialKey, versionstamp: authorization.credentialVersion },
+            { key: activeKey, versionstamp: currentNode.versionstamp },
             { key: statusKey, versionstamp: currentStatus?.versionstamp ?? null },
+            ...guard.checks,
           ],
           sets: [
             { key: activeKey, value: node },
             { key: statusKey, value: status },
+            ...guard.sets,
           ],
         })
       ) {
-        await eventService.append("heartbeat", status);
+        try {
+          await eventService.append("heartbeat", status);
+        } catch {
+          // The atomic status and nonce write is authoritative; SSE is best-effort.
+        }
         return Response.json({ ok: true, receivedAt: now() });
       }
+      const conflict = await authorizationConflict(authorization);
+      if (conflict) return conflict;
     }
     return nodeError(OPENFX_NODE_ERROR_CODES.internal, 503);
   };
@@ -562,13 +655,18 @@ export const createConsoleControlPlane = (
     if (parsed.protocolVersion !== PROTOCOL_VERSION) {
       return nodeError(OPENFX_NODE_ERROR_CODES.protocolMismatch, 400);
     }
-    const authorization = await authorizeNode(req, parsed.nodeId);
-    if (authorization instanceof Response) return authorization;
     const sample = parseTelemetrySample(parsed.sample);
     if (!sample) return nodeError(OPENFX_NODE_ERROR_CODES.invalidRequest, 400);
     if (Math.abs(sample.collectedAt - now()) > TELEMETRY_CLOCK_SKEW_MS) {
       return nodeError(OPENFX_NODE_ERROR_CODES.invalidRequest, 400);
     }
+    const authorization = await authorizeNode(
+      req,
+      parsed.nodeId,
+      parsed,
+      "/api/node/telemetry",
+    );
+    if (authorization instanceof Response) return authorization;
     const minuteStart = Math.floor(sample.collectedAt / TELEMETRY_AGGREGATE_MS) *
       TELEMETRY_AGGREGATE_MS;
     const key = [...ROOT, "telemetry", minuteStart] as const;
@@ -576,18 +674,37 @@ export const createConsoleControlPlane = (
       const current = await authorization.store.get<TelemetryBucket>(key);
       const samples = [...(current?.value.samples ?? []), sample].slice(-60);
       const minute = aggregateTelemetrySamples(samples)[0]!;
+      const guard = authorizationGuard(authorization);
       if (
-        await authorization.store.compareAndSet(
-          key,
-          current?.versionstamp ?? null,
-          { minute, samples, receivedAt: now() } satisfies TelemetryBucket,
-          { expireIn: TELEMETRY_RETENTION_MS },
-        )
-      ) break;
-      if (attempt === 7) return nodeError(OPENFX_NODE_ERROR_CODES.internal, 503);
+        await authorization.store.atomic({
+          checks: [
+            { key, versionstamp: current?.versionstamp ?? null },
+            ...guard.checks,
+          ],
+          sets: [
+            {
+              key,
+              value: { minute, samples, receivedAt: now() } satisfies TelemetryBucket,
+              options: { expireIn: TELEMETRY_RETENTION_MS },
+            },
+            ...guard.sets,
+          ],
+        })
+      ) {
+        try {
+          await eventService.append(
+            "telemetry",
+            aggregateTelemetrySamples([sample])[0],
+          );
+        } catch {
+          // The atomic telemetry and nonce write is authoritative; SSE is best-effort.
+        }
+        return Response.json({ ok: true, minuteStart }, { status: 202 });
+      }
+      const conflict = await authorizationConflict(authorization);
+      if (conflict) return conflict;
     }
-    await eventService.append("telemetry", aggregateTelemetrySamples([sample])[0]);
-    return Response.json({ ok: true, minuteStart }, { status: 202 });
+    return nodeError(OPENFX_NODE_ERROR_CODES.internal, 503);
   };
 
   const ingestNodeEvents = async (req: Request): Promise<Response> => {
@@ -596,8 +713,6 @@ export const createConsoleControlPlane = (
     if (parsed.protocolVersion !== PROTOCOL_VERSION) {
       return nodeError(OPENFX_NODE_ERROR_CODES.protocolMismatch, 400);
     }
-    const authorization = await authorizeNode(req, parsed.nodeId);
-    if (authorization instanceof Response) return authorization;
     if (
       !Array.isArray(parsed.events) || parsed.events.length === 0 ||
       parsed.events.length > 64
@@ -608,10 +723,69 @@ export const createConsoleControlPlane = (
     if (events.some((event) => event === null)) {
       return nodeError(OPENFX_NODE_ERROR_CODES.invalidRequest, 400);
     }
-    for (const event of events) {
-      await eventService.append(event!.type, event!.data);
+    const authorization = await authorizeNode(
+      req,
+      parsed.nodeId,
+      parsed,
+      "/api/node/events",
+    );
+    if (authorization instanceof Response) return authorization;
+    const batchKey = [
+      ...ROOT,
+      "node-event-batches",
+      authorization.node.id,
+      await digest(canonicalJson({ nodeId: authorization.node.id, events })),
+    ] as const;
+    for (let attempt = 0; attempt < 16; attempt += 1) {
+      const batch = await authorization.store.get<{
+        accepted: number;
+        createdAt: number;
+      }>(batchKey);
+      const guard = authorizationGuard(authorization);
+      if (batch) {
+        if (
+          await authorization.store.atomic({
+            checks: [
+              ...guard.checks,
+              { key: batchKey, versionstamp: batch.versionstamp },
+            ],
+            sets: guard.sets,
+          })
+        ) {
+          return Response.json(
+            { ok: true, accepted: batch.value.accepted },
+            { status: 202 },
+          );
+        }
+      } else {
+        const appended = await eventService.appendBatch(
+          events as { type: ConsoleEventType; data: unknown }[],
+          {
+            checks: [
+              ...guard.checks,
+              { key: batchKey, versionstamp: null },
+            ],
+            sets: [
+              ...guard.sets,
+              {
+                key: batchKey,
+                value: { accepted: events.length, createdAt: now() },
+                options: { expireIn: TELEMETRY_RETENTION_MS },
+              },
+            ],
+          },
+        );
+        if (appended) {
+          return Response.json(
+            { ok: true, accepted: appended.length },
+            { status: 202 },
+          );
+        }
+      }
+      const conflict = await authorizationConflict(authorization);
+      if (conflict) return conflict;
     }
-    return Response.json({ ok: true, accepted: events.length }, { status: 202 });
+    return nodeError(OPENFX_NODE_ERROR_CODES.internal, 503);
   };
 
   const listTelemetry = async (req: Request): Promise<Response> => {
@@ -843,14 +1017,24 @@ const decryptNodeSecret = async (
   keyValue: string,
   cryptoAdapter: ReturnType<typeof createWebCryptoAdapter>,
 ): Promise<Uint8Array | null> => {
-  const key = parseCredentialKey(keyValue);
   const credential = await store.get<StoredCredential>([...ROOT, "node", "credential"]);
-  if (!key || !credential) return null;
+  return credential
+    ? await decryptStoredCredential(credential.value, keyValue, cryptoAdapter)
+    : null;
+};
+
+const decryptStoredCredential = async (
+  credential: StoredCredential,
+  keyValue: string,
+  cryptoAdapter: ReturnType<typeof createWebCryptoAdapter>,
+): Promise<Uint8Array | null> => {
+  const key = parseCredentialKey(keyValue);
+  if (!key) return null;
   try {
     return await cryptoAdapter.aes256GcmDecrypt(
       key,
-      decodeBase64Url(credential.value.iv),
-      decodeBase64Url(credential.value.ciphertext),
+      decodeBase64Url(credential.iv),
+      decodeBase64Url(credential.ciphertext),
       CREDENTIAL_AAD,
     );
   } catch {
@@ -906,9 +1090,6 @@ const parseCookie = (header: string, name: string): string => {
   }
   return "";
 };
-
-const bearerToken = (value: string): string =>
-  value.toLowerCase().startsWith("bearer ") ? value.slice(7).trim() : "";
 
 const clientIdentity = (req: Request): string => getTrustedClientIdentity(req);
 

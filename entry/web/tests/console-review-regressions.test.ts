@@ -31,6 +31,8 @@ import {
   createWebCryptoAdapter,
   openRelayEnvelope,
   sealRelayEnvelope,
+  signedRequestHeaders,
+  signRequest,
 } from "../../../domains/_shared/openfx-node/mod.ts";
 import { decodeBase64Url } from "../../../domains/_shared/openfx-node/encoding.ts";
 
@@ -43,6 +45,22 @@ const jsonRequest = (url: string, body: unknown, headers: HeadersInit = {}) =>
     headers: { "content-type": "application/json", ...headers },
     body: JSON.stringify(body),
   });
+
+const signedJsonRequest = async (
+  url: string,
+  body: unknown,
+  nodeSecret: string,
+  timestamp = START,
+) => {
+  const target = new URL(url);
+  const signed = await signRequest(
+    createWebCryptoAdapter(),
+    decodeBase64Url(nodeSecret),
+    { method: "POST", path: target.pathname, body },
+    { now: () => timestamp },
+  );
+  return jsonRequest(url, body, signedRequestHeaders(signed));
+};
 
 const harness = (options: {
   store?: ConsoleStore;
@@ -286,7 +304,6 @@ Deno.test("public node handlers ingest and persist every required SSE event type
   const { plane } = harness();
   const cookie = await login(plane);
   const paired = await pair(plane, cookie);
-  const authorization = `Bearer ${paired.nodeSecret}`;
   const node = {
     nodeId: paired.node.id,
     protocolVersion: 1,
@@ -296,17 +313,25 @@ Deno.test("public node handlers ingest and persist every required SSE event type
   };
   expect(
     (await nodeHeartbeatHandler(
-      jsonRequest("http://localhost/api/node/heartbeat", node, { authorization }),
+      await signedJsonRequest(
+        "http://localhost/api/node/heartbeat",
+        node,
+        paired.nodeSecret,
+      ),
       plane,
     )).status,
   ).toBe(200);
   expect(
     (await nodeTelemetryHandler(
-      jsonRequest("http://localhost/api/node/telemetry", {
-        nodeId: paired.node.id,
-        protocolVersion: 1,
-        sample: telemetrySample(START),
-      }, { authorization }),
+      await signedJsonRequest(
+        "http://localhost/api/node/telemetry",
+        {
+          nodeId: paired.node.id,
+          protocolVersion: 1,
+          sample: telemetrySample(START),
+        },
+        paired.nodeSecret,
+      ),
       plane,
     )).status,
   ).toBe(202);
@@ -321,11 +346,15 @@ Deno.test("public node handlers ingest and persist every required SSE event type
   ) {
     expect(
       (await nodeEventsHandler(
-        jsonRequest("http://localhost/api/node/events", {
-          nodeId: paired.node.id,
-          protocolVersion: 1,
-          events: [event],
-        }, { authorization }),
+        await signedJsonRequest(
+          "http://localhost/api/node/events",
+          {
+            nodeId: paired.node.id,
+            protocolVersion: 1,
+            events: [event],
+          },
+          paired.nodeSecret,
+        ),
         plane,
       )).status,
     ).toBe(202);
@@ -393,13 +422,17 @@ Deno.test("successful Relay effects do not synthesize events or fail on event st
   const paired = await pair(plane, cookie);
   nodeSecret = paired.nodeSecret;
   await nodeHeartbeatHandler(
-    jsonRequest("http://localhost/api/node/heartbeat", {
-      nodeId: paired.node.id,
-      protocolVersion: 1,
-      publicIpv6: "2001:4860:4860::8844",
-      port: 24531,
-      availability: "online",
-    }, { authorization: `Bearer ${paired.nodeSecret}` }),
+    await signedJsonRequest(
+      "http://localhost/api/node/heartbeat",
+      {
+        nodeId: paired.node.id,
+        protocolVersion: 1,
+        publicIpv6: "2001:4860:4860::8844",
+        port: 24531,
+        availability: "online",
+      },
+      paired.nodeSecret,
+    ),
     plane,
   );
   const before = await base.list({ prefix: ["openfx-console", "events"] });
@@ -472,13 +505,17 @@ Deno.test("a post-result audit failure cannot replace a successful Relay effect"
   const paired = await pair(plane, cookie);
   nodeSecret = paired.nodeSecret;
   await nodeHeartbeatHandler(
-    jsonRequest("http://localhost/api/node/heartbeat", {
-      nodeId: paired.node.id,
-      protocolVersion: 1,
-      publicIpv6: "2001:4860:4860::8844",
-      port: 24531,
-      availability: "online",
-    }, { authorization: `Bearer ${paired.nodeSecret}` }),
+    await signedJsonRequest(
+      "http://localhost/api/node/heartbeat",
+      {
+        nodeId: paired.node.id,
+        protocolVersion: 1,
+        publicIpv6: "2001:4860:4860::8844",
+        port: 24531,
+        availability: "online",
+      },
+      paired.nodeSecret,
+    ),
     plane,
   );
   rejectAuditWrites = true;
@@ -614,14 +651,18 @@ Deno.test("SSE append uses expiry and resume uses a bounded cursor range", async
   const cookie = await login(plane);
   const paired = await pair(plane, cookie);
   await nodeEventsHandler(
-    jsonRequest("http://localhost/api/node/events", {
-      nodeId: paired.node.id,
-      protocolVersion: 1,
-      events: [{
-        type: "agent.delta",
-        data: { messageId: "m1", delta: "x", sequence: 1 },
-      }],
-    }, { authorization: `Bearer ${paired.nodeSecret}` }),
+    await signedJsonRequest(
+      "http://localhost/api/node/events",
+      {
+        nodeId: paired.node.id,
+        protocolVersion: 1,
+        events: [{
+          type: "agent.delta",
+          data: { messageId: "m1", delta: "x", sequence: 1 },
+        }],
+      },
+      paired.nodeSecret,
+    ),
     plane,
   );
   expect(listCalls.filter((call) => call.prefix[1] === "events")).toHaveLength(0);
@@ -637,20 +678,87 @@ Deno.test("SSE append uses expiry and resume uses a bounded cursor range", async
   expect(eventList?.limit).toBeGreaterThan(0);
 });
 
+Deno.test("node event batches are atomic and retry idempotently after storage failure", async () => {
+  const base = createMemoryConsoleStore();
+  let eventMutationCount = 0;
+  let failOnce = true;
+  const store: ConsoleStore = {
+    ...base,
+    atomic(operation) {
+      const eventMutations = operation.sets.filter((item) => item.key[1] === "events")
+        .length;
+      eventMutationCount += eventMutations;
+      if (failOnce && eventMutationCount >= 2) {
+        failOnce = false;
+        return Promise.reject(new Error("event batch storage unavailable"));
+      }
+      return base.atomic(operation);
+    },
+  };
+  const { plane } = harness({ store });
+  const cookie = await login(plane);
+  const paired = await pair(plane, cookie);
+  const body = {
+    nodeId: paired.node.id,
+    protocolVersion: 1,
+    events: [1, 2, 3].map((sequence) => ({
+      type: "agent.delta",
+      data: { messageId: "m1", delta: String(sequence), sequence },
+    })),
+  };
+  const signed = await signedJsonRequest(
+    "http://localhost/api/node/events",
+    body,
+    paired.nodeSecret,
+  );
+
+  const failed = await nodeEventsHandler(
+    signed.clone(),
+    plane,
+  );
+  expect(failed.status).toBe(500);
+  expect(await base.list({ prefix: ["openfx-console", "events"] })).toHaveLength(0);
+
+  const retried = await nodeEventsHandler(
+    signed.clone(),
+    plane,
+  );
+  expect(retried.status).toBe(202);
+  const stored = await base.list<{ data: { sequence: number } }>({
+    prefix: ["openfx-console", "events"],
+  });
+  expect(stored.map((entry) => entry.value.data.sequence)).toEqual([1, 2, 3]);
+
+  const duplicate = await nodeEventsHandler(
+    await signedJsonRequest(
+      "http://localhost/api/node/events",
+      body,
+      paired.nodeSecret,
+    ),
+    plane,
+  );
+  expect(duplicate.status).toBe(202);
+  expect(await base.list({ prefix: ["openfx-console", "events"] })).toHaveLength(3);
+});
+
 Deno.test("telemetry rejects future timestamps and retention uses server receipt time", async () => {
   let now = START;
   const store = createMemoryConsoleStore({ now: () => now });
   const { plane } = harness({ store, now: () => now });
   const cookie = await login(plane);
   const paired = await pair(plane, cookie);
-  const authorization = `Bearer ${paired.nodeSecret}`;
-  const post = (collectedAt: number) =>
+  const post = async (collectedAt: number) =>
     nodeTelemetryHandler(
-      jsonRequest("http://localhost/api/node/telemetry", {
-        nodeId: paired.node.id,
-        protocolVersion: 1,
-        sample: telemetrySample(collectedAt),
-      }, { authorization }),
+      await signedJsonRequest(
+        "http://localhost/api/node/telemetry",
+        {
+          nodeId: paired.node.id,
+          protocolVersion: 1,
+          sample: telemetrySample(collectedAt),
+        },
+        paired.nodeSecret,
+        now,
+      ),
       plane,
     );
   expect((await post(now + 10 * 60_000)).status).toBe(400);
