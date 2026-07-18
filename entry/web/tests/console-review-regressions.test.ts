@@ -793,6 +793,14 @@ Deno.test("pairing records have a physical TTL with a short logical-expiry grace
   expect(
     await base.list({ prefix: ["openfx-console", "pairings-live"] }),
   ).toHaveLength(0);
+  const finalized = await base.list<{
+    usedAt?: number;
+    usedByNodeId?: string;
+    compensation?: unknown;
+  }>({ prefix: ["openfx-console", "pairings"] });
+  expect(finalized[0]?.value.usedAt).toBeDefined();
+  expect(finalized[0]?.value.usedByNodeId).toBeUndefined();
+  expect(finalized[0]?.value.compensation).toBeUndefined();
 });
 
 Deno.test("pairing cannot commit after its live marker expires mid-request", async () => {
@@ -892,6 +900,72 @@ Deno.test("pairing compensates a commit that completes after the absolute deadli
   );
   expect(retry.status).toBe(410);
   await expect(retry.json()).resolves.toMatchObject({
+    error: "node_pairing_expired",
+  });
+});
+
+Deno.test("expired consumed pairing resumes compensation after storage recovers", async () => {
+  let now = START;
+  const base = createMemoryConsoleStore({ now: () => now });
+  let delayedCommit = false;
+  let failCleanup = true;
+  const store: ConsoleStore = {
+    ...base,
+    async atomic(operation) {
+      const createsNode = operation.sets.some(
+        (item) => item.key[1] === "node" && item.key[2] === "active",
+      );
+      const cleansNode = operation.deletes?.some(
+        (key) => key[1] === "node" && key[2] === "active",
+      ) ?? false;
+      if (createsNode && !delayedCommit) {
+        delayedCommit = true;
+        const committed = await base.atomic(operation);
+        now += 10 * 60_000 + 1;
+        return committed;
+      }
+      if (cleansNode && failCleanup) {
+        throw new ConsoleStoreUnavailableError();
+      }
+      return await base.atomic(operation);
+    },
+  };
+  const { plane } = harness({ store, now: () => now });
+  const cookie = await login(plane);
+  const code = await createPairingCode(plane, cookie);
+
+  const interrupted = await pairNodeHandler(
+    jsonRequest("http://localhost/api/node/pair", pairBody(code)),
+    plane,
+  );
+  expect(interrupted.status).toBe(503);
+  expect(await base.get(["openfx-console", "node", "active"])).not.toBeNull();
+  expect(await base.get(["openfx-console", "node", "credential"])).not.toBeNull();
+  const interruptedRecord = await base.list<{
+    usedAt?: number;
+    usedByNodeId?: string;
+  }>({ prefix: ["openfx-console", "pairings"] });
+  expect(interruptedRecord[0]?.value.usedAt).toBeDefined();
+  expect(interruptedRecord[0]?.value.usedByNodeId).toBeDefined();
+
+  failCleanup = false;
+  const recovered = await pairNodeHandler(
+    jsonRequest("http://localhost/api/node/pair", pairBody(code)),
+    plane,
+  );
+  expect(recovered.status).toBe(410);
+  await expect(recovered.json()).resolves.toMatchObject({
+    error: "node_pairing_expired",
+  });
+  expect(await base.get(["openfx-console", "node", "active"])).toBeNull();
+  expect(await base.get(["openfx-console", "node", "credential"])).toBeNull();
+
+  const finalRetry = await pairNodeHandler(
+    jsonRequest("http://localhost/api/node/pair", pairBody(code)),
+    plane,
+  );
+  expect(finalRetry.status).toBe(410);
+  await expect(finalRetry.json()).resolves.toMatchObject({
     error: "node_pairing_expired",
   });
 });

@@ -38,7 +38,9 @@ Freemac 清理必须等待 Perry 修复后重新验证。
    record 的最后 1 分钟只用于保留 `node_pairing_expired`
    错误语义。服务端在消费提交后再次检查绝对
    截止时间，若提交跨过边界，会用带版本检查和重试的补偿事务移除新节点凭据并恢复过期记录，
-   不会返回 `nodeSecret`。
+   不会返回 `nodeSecret`。补偿所需的旧状态快照只暂存在 grace record；若 KV 暂时不可用，
+   后续同码请求会识别未完成的 `usedByNodeId`、继续幂等补偿并返回
+   `node_pairing_expired`。按时完成的配对会在返回 secret 前清除该临时恢复状态。
 3. Perry 节点通过 HTTPS 提交配对码和经本机、外部观察共同确认的公网 IPv6。服务端只在
    配对响应中返回一次 32 字节 `nodeSecret`。
 4. 节点把 secret 写入 macOS Keychain 的 `OpenFX Node` service；普通偏好只保存
