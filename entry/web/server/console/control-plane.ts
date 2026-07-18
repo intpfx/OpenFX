@@ -63,6 +63,7 @@ const LOGIN_WINDOW_MS = 15 * 60_000;
 const NODE_ONLINE_WINDOW_MS = 45_000;
 const TELEMETRY_CLOCK_SKEW_MS = 60_000;
 const RELAY_RESPONSE_MAX_BYTES = 64 * 1024;
+const PROCESS_RELAY_RESPONSE_MAX_BYTES = 256 * 1024;
 const PAIRING_EXPIRY_GRACE_MS = 60_000;
 const SESSION_COOKIE = "openfx_admin_session";
 const CREDENTIAL_AAD = utf8("openfx-node/v1/credential");
@@ -426,7 +427,42 @@ export const createConsoleControlPlane = (
     let nodeSecret: Uint8Array;
     let live = await store.get<{ expiresAt: number }>(liveKey);
 
-    if (pairing.value.state === "incomplete") {
+    if (pairing.value.state === "completed") {
+      if (
+        !pairing.value.pending ||
+        pairing.value.pending.requestFingerprint !== requestFingerprint
+      ) return nodeError(OPENFX_NODE_ERROR_CODES.pairingUsed, 409);
+      const [active, activeCredential] = await Promise.all([
+        store.get<NodeRecord>([...ROOT, "node", "active"]),
+        store.get<StoredCredential>([...ROOT, "node", "credential"]),
+      ]);
+      if (
+        !active || !activeCredential ||
+        active.value.id !== pairing.value.pending.nodeId ||
+        activeCredential.value.nodeId !== pairing.value.pending.nodeId
+      ) return nodeError(OPENFX_NODE_ERROR_CODES.pairingUsed, 409);
+      try {
+        nodeSecret = await cryptoAdapter.aes256GcmDecrypt(
+          credentialKey,
+          decodeBase64Url(activeCredential.value.iv),
+          decodeBase64Url(activeCredential.value.ciphertext),
+          CREDENTIAL_AAD,
+        );
+      } catch {
+        throw new ConsoleStoreUnavailableError();
+      }
+      if (await digest(nodeSecret) !== activeCredential.value.digest) {
+        throw new ConsoleStoreUnavailableError();
+      }
+      return Response.json(
+        {
+          ok: true,
+          node: active.value,
+          nodeSecret: encodeBase64Url(nodeSecret),
+        },
+        { status: 201 },
+      );
+    } else if (pairing.value.state === "incomplete") {
       if (
         !pairing.value.pending ||
         pairing.value.pending.requestFingerprint !== requestFingerprint
@@ -1204,6 +1240,9 @@ export const createConsoleControlPlane = (
     try {
       const replyEnvelope = await readBoundedRelayResponse(
         upstream,
+        operation === "processes"
+          ? PROCESS_RELAY_RESPONSE_MAX_BYTES
+          : RELAY_RESPONSE_MAX_BYTES,
       ) as SealedRelayEnvelope;
       const reply = await openRelayEnvelope<unknown>(
         cryptoAdapter,
@@ -1256,13 +1295,16 @@ export const createConsoleControlPlane = (
       Object.hasOwn(reply, "result");
   };
 
-  const readBoundedRelayResponse = async (response: Response): Promise<unknown> => {
+  const readBoundedRelayResponse = async (
+    response: Response,
+    maxBytes: number,
+  ): Promise<unknown> => {
     const declaredLength = Number(response.headers.get("content-length"));
-    if (Number.isFinite(declaredLength) && declaredLength > RELAY_RESPONSE_MAX_BYTES) {
+    if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
       await response.body?.cancel().catch(() => undefined);
       throw new OpenFxNodeProtocolError(
         OPENFX_NODE_ERROR_CODES.envelopeInvalid,
-        "Relay response exceeded 64 KiB.",
+        `Relay response exceeded ${maxBytes / 1024} KiB.`,
       );
     }
     if (!response.body) {
@@ -1280,11 +1322,11 @@ export const createConsoleControlPlane = (
         const chunk = await reader.read();
         if (chunk.done) break;
         length += chunk.value.byteLength;
-        if (length > RELAY_RESPONSE_MAX_BYTES) {
+        if (length > maxBytes) {
           await reader.cancel().catch(() => undefined);
           throw new OpenFxNodeProtocolError(
             OPENFX_NODE_ERROR_CODES.envelopeInvalid,
-            "Relay response exceeded 64 KiB.",
+            `Relay response exceeded ${maxBytes / 1024} KiB.`,
           );
         }
         chunks.push(chunk.value);

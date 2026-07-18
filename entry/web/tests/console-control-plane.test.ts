@@ -49,7 +49,7 @@ const createHarness = (overrides: {
   fetch?: typeof fetch;
   ssePollMs?: number;
 } = {}) => {
-  const store = createMemoryConsoleStore();
+  const store = createMemoryConsoleStore({ now: overrides.now });
   const plane = createConsoleControlPlane({
     store,
     env: {
@@ -203,7 +203,7 @@ Deno.test("admin APIs require a session cookie and reject the legacy admin heade
   ).toBe(201);
 });
 
-Deno.test("pairing codes expire and are atomically single-use", async () => {
+Deno.test("completed pairing transport retries are idempotent only during grace", async () => {
   let now = Date.parse("2026-07-18T00:00:00Z");
   const { plane } = createHarness({ now: () => now });
   const cookie = await login(plane);
@@ -218,28 +218,59 @@ Deno.test("pairing codes expire and are atomically single-use", async () => {
     publicIpv6: "2001:4860:4860::8844",
     port: 24531,
   };
-  expect(
-    (await plane.node.pair(
-      jsonRequest("http://localhost/api/node/pair", body),
-    )).status,
-  ).toBe(201);
+  const first = await plane.node.pair(
+    jsonRequest("http://localhost/api/node/pair", body),
+  );
+  expect(first.status).toBe(201);
+  const firstBody = await first.json();
   const replay = await plane.node.pair(
     jsonRequest("http://localhost/api/node/pair", body),
   );
-  expect(replay.status).toBe(409);
-  await expect(replay.json()).resolves.toMatchObject({ error: "node_pairing_used" });
+  expect(replay.status).toBe(201);
+  await expect(replay.json()).resolves.toMatchObject({
+    node: { id: firstBody.node.id },
+    nodeSecret: firstBody.nodeSecret,
+  });
+
+  const mismatch = await plane.node.pair(
+    jsonRequest("http://localhost/api/node/pair", {
+      ...body,
+      name: "Different Mac",
+    }),
+  );
+  expect(mismatch.status).toBe(409);
+  await expect(mismatch.json()).resolves.toMatchObject({
+    error: "node_pairing_used",
+  });
 
   const expiring = await plane.pairings.create(
     jsonRequest("http://localhost/api/console/pairings", {}, { cookie }),
   );
   const expiringCode = (await expiring.json()).code;
   now += 10 * 60_000 + 1;
+  const graceRetry = await plane.node.pair(
+    jsonRequest("http://localhost/api/node/pair", body),
+  );
+  expect(graceRetry.status).toBe(201);
+  await expect(graceRetry.json()).resolves.toMatchObject({
+    node: { id: firstBody.node.id },
+    nodeSecret: firstBody.nodeSecret,
+  });
   const expired = await plane.node.pair(
     jsonRequest("http://localhost/api/node/pair", { ...body, code: expiringCode }),
   );
   expect(expired.status).toBe(410);
   await expect(expired.json()).resolves.toMatchObject({
     error: "node_pairing_expired",
+  });
+
+  now += 60_000;
+  const afterGrace = await plane.node.pair(
+    jsonRequest("http://localhost/api/node/pair", body),
+  );
+  expect(afterGrace.status).toBe(404);
+  await expect(afterGrace.json()).resolves.toMatchObject({
+    error: "node_pairing_invalid",
   });
 });
 

@@ -44,9 +44,12 @@ Freemac 清理必须等待 Perry 修复后重新验证。
    key。存储失败时旧 active 保持原样，pending 无调用方重试也会自动过期。Deno KV
    不能把服务端墙钟比较放进原子事务，因此截止时间线性化在最终化尝试前的时间检查和
    live-marker CAS；不存在可保证的“提交返回瞬间”墙钟判断，也不再做提交后补偿。
-   `completed` 重放始终返回 `node_pairing_used`，不会移除已成功的活动节点。
+
+   若最终 201 在传输中丢失，grace 期内同一规范化请求可从 `completed` 记录和当前 active
+   加密凭据幂等恢复相同 `nodeId` 与 `nodeSecret`；它不创建或替换状态。请求指纹不同、
+   active 已变化或 grace 已结束时不会返回 secret。管理员浏览器接口始终不读取节点凭据。
 3. Perry 节点通过 HTTPS 提交配对码和经本机、外部观察共同确认的公网 IPv6。服务端只在
-   配对响应中返回一次 32 字节 `nodeSecret`。
+   初次配对或上述同请求传输重试中返回 32 字节 `nodeSecret`。
 4. 节点把 secret 写入 macOS Keychain 的 `OpenFX Node` service；普通偏好只保存
    `nodeId`、节点名、服务端 URL、Relay 开关和配对时间。
 5. 服务端只保存校验摘要和由 `OPENFX_NODE_CREDENTIAL_KEY` 加密的凭据副本。浏览器 API
@@ -67,8 +70,9 @@ AES-256-GCM、HMAC-SHA256、时间戳和双层 nonce；节点以 SQLite 主键 T
 事务会安装持久 trigger，拒绝仍在运行的旧版本继续写入 legacy claim，避免混合版本下出现
 两个 nonce 权威来源；其他 journal 和 audit 事件不受影响。
 节点的加密回包必须回显已签名请求的 nonce、HTTP 方法和固定路径，控制面认证信封后逐项
-校验关联信息，再只向浏览器返回结果。Relay HTTP 响应按流读取并硬限制为 64 KiB，超限时
-立即取消读取，不进入 JSON 或密码学验证。控制面在发出网络请求前先持久化 `relay.intent`
+校验关联信息，再只向浏览器返回结果。Relay HTTP 响应默认按流读取并硬限制为 64 KiB；
+只有固定的 `/v1/processes` 操作允许 256 KiB。任一路由超限都会立即取消读取，不进入 JSON
+或密码学验证。控制面在发出网络请求前先持久化 `relay.intent`
 审计；结果审计为尽力追加，因此外部效果成功后即使审计存储短暂失败，已有意图证据仍保留。
 
 只读工具可以直接执行：系统概览、进程列表、网络状态、Relay 状态和审计查询。终止进程、

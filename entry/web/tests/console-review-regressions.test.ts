@@ -700,6 +700,123 @@ Deno.test("Relay cancels an oversized streamed node response before JSON or auth
   expect(pulls).toBeLessThan(20);
 });
 
+Deno.test("process Relay accepts an authenticated envelope near 163 KiB", async () => {
+  const cryptoAdapter = createWebCryptoAdapter();
+  let nodeSecret = "";
+  let envelopeBytes = 0;
+  const processPayload = "p".repeat(120 * 1024);
+  const { plane } = harness({
+    fetch: async (_input, init) => {
+      const request = await openRelayEnvelope<{
+        nonce: string;
+        method: string;
+        path: string;
+      }>(
+        cryptoAdapter,
+        decodeBase64Url(nodeSecret),
+        JSON.parse(String(init?.body)),
+        { now: () => START, replayProtector: { consume() {} } },
+      );
+      const reply = await sealRelayEnvelope(
+        cryptoAdapter,
+        decodeBase64Url(nodeSecret),
+        {
+          request: {
+            nonce: request.nonce,
+            method: request.method,
+            path: request.path,
+          },
+          result: { processes: processPayload },
+        },
+        { now: () => START },
+      );
+      const encoded = new TextEncoder().encode(JSON.stringify(reply));
+      envelopeBytes = encoded.byteLength;
+      return new Response(encoded, { status: 200 });
+    },
+  });
+  const cookie = await login(plane);
+  const paired = await pair(plane, cookie);
+  nodeSecret = paired.nodeSecret;
+  await nodeHeartbeatHandler(
+    await signedJsonRequest(
+      "http://localhost/api/node/heartbeat",
+      {
+        nodeId: paired.node.id,
+        protocolVersion: 1,
+        publicIpv6: "2001:4860:4860::8844",
+        port: 24531,
+        availability: "online",
+      },
+      paired.nodeSecret,
+    ),
+    plane,
+  );
+
+  const response = await plane.console.handle(
+    new Request("http://localhost/api/console/processes", {
+      headers: { cookie },
+    }),
+    "processes",
+  );
+
+  expect(envelopeBytes).toBeGreaterThan(160 * 1024);
+  expect(envelopeBytes).toBeLessThan(170 * 1024);
+  expect(response.status).toBe(200);
+  await expect(response.json()).resolves.toEqual({ processes: processPayload });
+});
+
+Deno.test("process Relay cancels a streamed response above 256 KiB", async () => {
+  let pulls = 0;
+  let cancelled = false;
+  const { plane } = harness({
+    fetch: () =>
+      Promise.resolve(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            pull(controller) {
+              pulls += 1;
+              controller.enqueue(new Uint8Array(32 * 1024));
+              if (pulls >= 20) controller.close();
+            },
+            cancel() {
+              cancelled = true;
+            },
+          }),
+          { status: 200 },
+        ),
+      ),
+  });
+  const cookie = await login(plane);
+  const paired = await pair(plane, cookie);
+  await nodeHeartbeatHandler(
+    await signedJsonRequest(
+      "http://localhost/api/node/heartbeat",
+      {
+        nodeId: paired.node.id,
+        protocolVersion: 1,
+        publicIpv6: "2001:4860:4860::8844",
+        port: 24531,
+        availability: "online",
+      },
+      paired.nodeSecret,
+    ),
+    plane,
+  );
+
+  const response = await plane.console.handle(
+    new Request("http://localhost/api/console/processes", {
+      headers: { cookie },
+    }),
+    "processes",
+  );
+
+  expect(response.status).toBe(502);
+  expect(cancelled).toBe(true);
+  expect(pulls).toBeGreaterThan(8);
+  expect(pulls).toBeLessThan(20);
+});
+
 Deno.test("Relay cancels a non-2xx response body before recording its outcome", async () => {
   const base = createMemoryConsoleStore();
   let cancelled = false;
@@ -919,6 +1036,7 @@ Deno.test("pairing expiry linearizes at the finalization attempt", async () => {
   );
 
   expect(response.status).toBe(201);
+  const responseBody = await response.json();
   expect(cleanupAttempts).toBe(0);
   expect(await base.get(["openfx-console", "node", "active"])).not.toBeNull();
   expect(await base.get(["openfx-console", "node", "credential"])).not.toBeNull();
@@ -935,9 +1053,10 @@ Deno.test("pairing expiry linearizes at the finalization attempt", async () => {
     jsonRequest("http://localhost/api/node/pair", pairBody(code)),
     plane,
   );
-  expect(retry.status).toBe(409);
+  expect(retry.status).toBe(201);
   await expect(retry.json()).resolves.toMatchObject({
-    error: "node_pairing_used",
+    node: { id: responseBody.node.id },
+    nodeSecret: responseBody.nodeSecret,
   });
 });
 
@@ -988,7 +1107,8 @@ Deno.test("pending pairing resumes after promotion storage recovers", async () =
     plane,
   );
   expect(recovered.status).toBe(201);
-  expect((await recovered.json()).nodeSecret).toEqual(expect.any(String));
+  const recoveredBody = await recovered.json();
+  expect(recoveredBody.nodeSecret).toEqual(expect.any(String));
   expect(await base.get(["openfx-console", "node", "active"])).not.toBeNull();
   expect(await base.get(["openfx-console", "node", "credential"])).not.toBeNull();
 
@@ -996,9 +1116,10 @@ Deno.test("pending pairing resumes after promotion storage recovers", async () =
     jsonRequest("http://localhost/api/node/pair", pairBody(code)),
     plane,
   );
-  expect(finalRetry.status).toBe(409);
+  expect(finalRetry.status).toBe(201);
   await expect(finalRetry.json()).resolves.toMatchObject({
-    error: "node_pairing_used",
+    node: { id: recoveredBody.node.id },
+    nodeSecret: recoveredBody.nodeSecret,
   });
 });
 
@@ -1333,7 +1454,7 @@ Deno.test("pairing expiry before finalization never promotes pending state", asy
   ).toHaveLength(3);
 });
 
-Deno.test("completed pairing replay stays used and preserves its active node", async () => {
+Deno.test("completed pairing retries recover only the matching active credential", async () => {
   let now = START;
   const base = createMemoryConsoleStore({ now: () => now });
   const { plane } = harness({ store: base, now: () => now });
@@ -1352,10 +1473,20 @@ Deno.test("completed pairing replay stays used and preserves its active node", a
     plane,
   );
 
-  expect(replay.status).toBe(409);
+  expect(replay.status).toBe(201);
   await expect(replay.json()).resolves.toMatchObject({
-    error: "node_pairing_used",
+    node: { id: pairedBody.node.id },
+    nodeSecret: pairedBody.nodeSecret,
   });
+  const mismatch = await pairNodeHandler(
+    jsonRequest(
+      "http://localhost/api/node/pair",
+      pairBody(code, "Different Mac"),
+    ),
+    plane,
+  );
+  expect(mismatch.status).toBe(409);
+  expect((await mismatch.json()).nodeSecret).toBeUndefined();
   expect(
     (await base.get<{ id: string }>([
       "openfx-console",

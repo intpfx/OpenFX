@@ -93,10 +93,13 @@ header 不再授权 `/api/admin/*` 或 `/api/console/*`。
 
 Relay 不接受目标 URL。服务端只连接当前配对节点上报的全局 IPv6，端口固定为
 `24531`，并使用共享 OpenFX Node v1 协议签名、加密请求和解密响应。节点回包在加密载荷中
-绑定请求 nonce、HTTP 方法和固定路径；服务端流式读取最多 64 KiB，认证并校验关联后才返回
-结果。每次 Relay 会在实际网络请求前持久化意图审计，结果审计则尽力追加。
+绑定请求 nonce、HTTP 方法和固定路径；服务端默认流式读取最多 64 KiB，只有固定
+`/v1/processes` 操作允许 256 KiB，认证并校验关联后才返回结果。每次 Relay 会在实际网络
+请求前持久化意图审计，结果审计则尽力追加。
 
-配对响应只返回一次节点 secret。此后的心跳、遥测和事件上报使用
+配对 201 在传输中丢失时，同一请求指纹可在 grace 期内幂等恢复相同节点 secret；不同请求、
+已替换的 active 节点和 grace 期外请求均不能恢复。管理员浏览器 API 不返回节点凭据。
+此后的心跳、遥测和事件上报使用
 `x-openfx-node-version`、`x-openfx-node-timestamp`、`x-openfx-node-nonce`、
 `x-openfx-node-content-sha256` 和 `x-openfx-node-signature`，不会传 Bearer
 secret。服务端 在同一个 Deno KV 原子事务中消费 nonce
