@@ -180,6 +180,41 @@ Deno.test("session DELETE audits only one actual valid-session invalidation", as
   expect(await store.list({ prefix: ["openfx-console", "sessions"] })).toHaveLength(0);
 });
 
+Deno.test("revocation stays successful when its post-effect audit write fails", async () => {
+  const base = createMemoryConsoleStore();
+  let failAudit = false;
+  const store: ConsoleStore = {
+    ...base,
+    set(key, value, options) {
+      if (failAudit && key[1] === "audit") {
+        return Promise.reject(new Error("audit unavailable"));
+      }
+      return base.set(key, value, options);
+    },
+  };
+  const plane = createConsoleControlPlane({
+    store,
+    env: {
+      OPENFX_ADMIN_KEY: "correct horse battery staple",
+      OPENFX_NODE_CREDENTIAL_KEY: CREDENTIAL_KEY,
+    },
+    now: () => START,
+  });
+  const cookie = await login(plane);
+  await pair(plane, cookie);
+  failAudit = true;
+
+  const response = await plane.node.revoke(
+    new Request("http://localhost/api/console/node", {
+      method: "DELETE",
+      headers: { cookie },
+    }),
+  );
+
+  expect(response.status).toBe(200);
+  expect(await store.list({ prefix: ["openfx-console", "node"] })).toEqual([]);
+});
+
 Deno.test("expired session DELETE cleans up without a logout audit", async () => {
   let now = START;
   const store = createMemoryConsoleStore();

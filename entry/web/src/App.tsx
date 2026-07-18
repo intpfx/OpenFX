@@ -22,6 +22,7 @@ import {
 } from "../homepage-projects";
 import { type ActiveDomainPanel, isProjectDetailPanelId } from "../homepage-panels";
 import { MapPosterPanelContent } from "./MapPosterPanel.tsx";
+import { ConsoleApp } from "./console/ConsoleApp.tsx";
 
 type UnlockRule = {
   key: string;
@@ -69,10 +70,6 @@ const BUILD_VERSION = createBuildVersion({
 });
 
 const BRAND_LOCK_PADDING_PX = 4;
-
-const STORAGE_KEYS = {
-  adminKey: "openfx_admin_key",
-} as const;
 
 function getEnvValue(value: string | undefined) {
   return value?.trim() ?? "";
@@ -131,8 +128,7 @@ function BuildVersion() {
 }
 
 function getDefaultAdminKey() {
-  return localStorage.getItem(STORAGE_KEYS.adminKey) ??
-    (globalThis.location?.hostname === "localhost" ? "TEST" : "");
+  return globalThis.location?.hostname === "localhost" ? "TEST" : "";
 }
 
 function getProjectSearchText(project: HomepageProjectCard) {
@@ -468,7 +464,7 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
   const [messageButtonText, setMessageButtonText] = useState("MESSAGE");
 
   const isPanelOpen = activePanel !== null;
-  const currentAccessKey = localStorage.getItem(STORAGE_KEYS.adminKey)?.trim() ?? "";
+  const currentAccessKey = "";
   const browsableProjectColumns = useMemo(() => {
     const query = projectQuery.trim().toLowerCase();
 
@@ -788,11 +784,6 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
       params.set("url", path);
     }
 
-    const accessKey = localStorage.getItem(STORAGE_KEYS.adminKey)?.trim() ?? "";
-    if (accessKey) {
-      params.set("unlock_key", accessKey);
-    }
-
     return `/api/proxy?${params.toString()}`;
   }
 
@@ -1034,7 +1025,7 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
               className="domain-panel admin-domain-panel"
               data-panel-id="admin-console"
             >
-              <AdminPage embedded />
+              <ConsoleApp />
             </div>
           )
           : null}
@@ -1427,7 +1418,7 @@ function AdminPage(props: { embedded?: boolean } = {}) {
 
     try {
       const response = await fetch("/api/admin/unlocks", {
-        headers: { "x-openfx-admin-key": key },
+        credentials: "same-origin",
       });
       const payload = await response.json();
       if (!response.ok) {
@@ -1441,7 +1432,6 @@ function AdminPage(props: { embedded?: boolean } = {}) {
         )
         : [];
 
-      localStorage.setItem(STORAGE_KEYS.adminKey, key);
       setRules(nextRules);
       reportStatus(`已加载 ${nextRules.length} 条规则`, "success");
     } finally {
@@ -1463,9 +1453,9 @@ function AdminPage(props: { embedded?: boolean } = {}) {
     try {
       const response = await fetch("/api/admin/unlocks", {
         method: "POST",
+        credentials: "same-origin",
         headers: {
           "content-type": "application/json",
-          "x-openfx-admin-key": key,
         },
         body: JSON.stringify(form),
       });
@@ -1500,7 +1490,7 @@ function AdminPage(props: { embedded?: boolean } = {}) {
         `/api/admin/unlocks?key=${encodeURIComponent(key)}`,
         {
           method: "DELETE",
-          headers: { "x-openfx-admin-key": providedKey },
+          credentials: "same-origin",
         },
       );
       const payload = await response.json();
@@ -1826,7 +1816,6 @@ function KvConsole(props: {
   }
 
   function rememberAdminKey(key: string) {
-    localStorage.setItem(STORAGE_KEYS.adminKey, key);
     props.onAdminKeyChange(key);
   }
 
@@ -1856,7 +1845,7 @@ function KvConsole(props: {
         limit: "1000",
       });
       const response = await fetch(`/api/admin/kv?${params.toString()}`, {
-        headers: { "x-openfx-admin-key": key },
+        credentials: "same-origin",
       });
       const payload = await response.json();
       if (!response.ok) {
@@ -1908,9 +1897,9 @@ function KvConsole(props: {
     try {
       const response = await fetch("/api/admin/kv", {
         method: "POST",
+        credentials: "same-origin",
         headers: {
           "content-type": "application/json",
-          "x-openfx-admin-key": key,
         },
         body: JSON.stringify({ key: kvKey, value: kvValue }),
       });
@@ -1942,7 +1931,7 @@ function KvConsole(props: {
       const params = new URLSearchParams({ key: encodedKey });
       const response = await fetch(`/api/admin/kv?${params.toString()}`, {
         method: "DELETE",
-        headers: { "x-openfx-admin-key": providedKey },
+        credentials: "same-origin",
       });
       const payload = await response.json();
       if (!response.ok) {
@@ -2187,7 +2176,7 @@ function MessageBoard(props: { adminKey: string }) {
 
     try {
       const response = await fetch("/api/messages?limit=8", {
-        headers: { "x-openfx-admin-key": props.adminKey },
+        credentials: "same-origin",
       });
       const payload = await response.json();
       if (!response.ok || payload.ok !== true) {
@@ -2270,15 +2259,17 @@ function DataPanel() {
     setAccessStatus("");
 
     try {
-      const response = await fetch("/api/admin/access", {
-        headers: { "x-openfx-admin-key": key },
+      const response = await fetch("/api/admin/session", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ key }),
       });
       const payload = await response.json();
       if (!response.ok || payload.ok !== true) {
         throw new Error("密码无效");
       }
 
-      localStorage.setItem(STORAGE_KEYS.adminKey, key);
       setAdminKey(key);
       setIsAuthorized(true);
       setAccessStatus("");
@@ -2719,7 +2710,7 @@ export function App() {
   const pathname = usePathname();
 
   if (pathname === "/admin") {
-    return <Homepage initialPanel="admin-console" />;
+    return <ConsoleApp />;
   }
 
   if (pathname !== "/downip") {

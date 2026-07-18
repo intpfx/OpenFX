@@ -248,6 +248,42 @@ Deno.test("pairing validates protocol and fixed global IPv6 endpoint without lea
   expect(JSON.stringify(await overview.json())).not.toContain(paired.nodeSecret);
 });
 
+Deno.test("administrator can atomically revoke the active node credential", async () => {
+  const { plane, store } = createHarness();
+  const cookie = await login(plane);
+  const paired = await pair(plane, cookie);
+
+  const unauthorized = await plane.node.revoke(
+    new Request("http://localhost/api/console/node", { method: "DELETE" }),
+  );
+  expect(unauthorized.status).toBe(401);
+
+  const revoked = await plane.node.revoke(
+    new Request("http://localhost/api/console/node", {
+      method: "DELETE",
+      headers: { cookie },
+    }),
+  );
+  expect(revoked.status).toBe(200);
+  await expect(revoked.json()).resolves.toMatchObject({
+    ok: true,
+    revokedNodeId: paired.node.id,
+  });
+  expect(await store.list({ prefix: ["openfx-console", "node"] })).toEqual([]);
+
+  const audits = await store.list<{ action: string; subjectId?: string }>({
+    prefix: ["openfx-console", "audit"],
+  });
+  expect(audits.map((entry) => entry.value)).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        action: "node.revoked",
+        subjectId: paired.node.id,
+      }),
+    ]),
+  );
+});
+
 Deno.test("heartbeat and telemetry require the node secret and retain seven days", async () => {
   let now = Date.parse("2026-07-18T00:00:00Z");
   const { plane } = createHarness({ now: () => now });

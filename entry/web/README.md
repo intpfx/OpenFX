@@ -80,6 +80,7 @@ header 不再授权 `/api/admin/*` 或 `/api/console/*`。
 
 - `POST|GET|DELETE /api/admin/session` — 登录、恢复和退出会话
 - `POST /api/console/pairings` — 创建 10 分钟、原子单次使用的配对码
+- `DELETE /api/console/node` — 撤销当前节点及其加密凭据，保留审计记录
 - `POST /api/node/pair` — 配对唯一活动节点并一次性返回节点 secret
 - `POST /api/node/heartbeat`、`POST /api/node/telemetry` — 上报节点状态和遥测
 - `POST /api/node/events` — 使用节点身份上报 Agent 增量、审批请求与审批结果事件

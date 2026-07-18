@@ -121,6 +121,7 @@ export interface ConsoleControlPlane {
   pairings: { create(req: Request): Promise<Response> };
   node: {
     pair(req: Request): Promise<Response>;
+    revoke(req: Request): Promise<Response>;
     heartbeat(req: Request): Promise<Response>;
     telemetry(req: Request): Promise<Response>;
     events(req: Request): Promise<Response>;
@@ -420,6 +421,51 @@ export const createConsoleControlPlane = (
     );
   };
 
+  const revokeNode = async (req: Request): Promise<Response> => {
+    const denied = await requireSession(req);
+    if (denied) return denied;
+    const store = await storePromise;
+    const activeKey = [...ROOT, "node", "active"] as const;
+    const credentialKey = [...ROOT, "node", "credential"] as const;
+    const statusKey = [...ROOT, "node", "status"] as const;
+
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const active = await store.get<NodeRecord>(activeKey);
+      const credential = await store.get<StoredCredential>(credentialKey);
+      const status = await store.get<NodeStatus>(statusKey);
+      if (
+        await store.atomic({
+          checks: [
+            { key: activeKey, versionstamp: active?.versionstamp ?? null },
+            { key: credentialKey, versionstamp: credential?.versionstamp ?? null },
+            { key: statusKey, versionstamp: status?.versionstamp ?? null },
+          ],
+          sets: [],
+          deletes: [activeKey, credentialKey, statusKey],
+        })
+      ) {
+        if (active) {
+          try {
+            await appendAudit({
+              category: "node",
+              action: "node.revoked",
+              outcome: "succeeded",
+              nodeId: active.value.id,
+              subjectId: active.value.id,
+            });
+          } catch {
+            // Revocation is authoritative after the atomic credential deletion.
+          }
+        }
+        return Response.json({
+          ok: true,
+          revokedNodeId: active?.value.id ?? null,
+        });
+      }
+    }
+    return nodeError(OPENFX_NODE_ERROR_CODES.internal, 503);
+  };
+
   const authorizeNode = async (
     req: Request,
     nodeId: unknown,
@@ -680,6 +726,7 @@ export const createConsoleControlPlane = (
     pairings: { create: stableResponse(createPairing) },
     node: {
       pair: stableResponse(pairNode),
+      revoke: stableResponse(revokeNode),
       heartbeat: stableResponse(heartbeat),
       telemetry: stableResponse(telemetry),
       events: stableResponse(ingestNodeEvents),
