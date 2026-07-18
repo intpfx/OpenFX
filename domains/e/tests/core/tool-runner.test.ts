@@ -139,7 +139,7 @@ Deno.test("SafetyActionGate rejects stale approved actions before apply", async 
 
 Deno.test("SafetyActionGate records boundary rejection and applied actions into TurnRecord", async () => {
   const gate = new SafetyActionGate({
-    createId: fixedIds("boundary-1", "applied-1"),
+    createId: fixedIds("boundary-1", "boundary-2", "applied-1"),
     now: fixedNow(6000),
   });
   const request = gate.createBoundaryRequest("edit file", {
@@ -173,13 +173,24 @@ Deno.test("SafetyActionGate records boundary rejection and applied actions into 
   assertEquals(rejectedRecord.boundaryRequests[0].state, "rejected");
   assertEquals(rejectedRecord.proposedActions[0].state, "rejected");
 
-  const approved = gate.resolveBoundaryRequest(request, "approved");
+  const approvedRequest = gate.createBoundaryRequest("edit file", {
+    id: "action-2",
+    kind: "file_edit",
+    title: "Edit file",
+    target: "file://note.txt",
+    state: "draft",
+  });
+  const approved = gate.resolveBoundaryRequest(approvedRequest, "approved");
   const applyResult = await gate.applyAction({
     action: approved.action,
     apply: () => Promise.resolve({ ok: true }),
   });
   const appliedRecord = gate.recordAppliedAction(
-    gate.recordBoundaryResolution(baseRecord, approved),
+    gate.recordBoundaryResolution({
+      ...baseRecord,
+      boundaryRequests: [approvedRequest],
+      proposedActions: [approvedRequest.action],
+    }, approved),
     applyResult,
   );
 

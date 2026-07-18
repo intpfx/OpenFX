@@ -22,6 +22,7 @@ ws-rpc.ts          # WebSocket 请求/响应模式
 ws-client.ts       # 浏览器 WebSocket 连接管理（心跳/重连）
 broadcast-relay.ts # BroadcastChannel 跨 region 消息中继
 node-registry.ts   # DenoKV 节点注册与状态追踪
+openfx-node/       # OpenFX 节点 v1 协议、遥测聚合与可注入密码接口
 ```
 
 ## 来源说明
@@ -72,6 +73,8 @@ await scoped?.set(["home"], { ipv6: "2001:db8::1", port: 3000 });
 - `getDomainKv()` 返回 `ScopedKv | null`。
 - 返回 `null` 表示当前环境不可用 Deno KV，业务层必须显式处理 fallback。
 - `_shared` 不保存业务默认值，不理解具体 domain 的 key 结构，也不负责数据迁移。
+- `openfx-node/` 不导入 Node API；Deno 使用内置 WebCrypto adapter，Perry 通过
+  `NodeCryptoAdapter` 注入 `node:crypto` 实现。节点密钥不会出现在 `NodeRecord` 中。
 - 浏览器端模块（`opfs-finder.ts`、`island-notice.ts`、`opfs-engine.ts`）需要 DOM 环境，
   Deno deny 检查会报 `HTMLElement` 未定义的错误，这是预期行为。
 

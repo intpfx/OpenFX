@@ -37,7 +37,8 @@ deno task check
   只用于导出、审计、迁移和 replay bundle。
 - **结构化决策优先**：模型输出必须落入 `AgentDecision`，再由内核路由。
 - **副作用先过边界**：文件修改、外部副作用和高风险动作先形成 `ProposedAction` /
-  `BoundaryRequest`，再审批、apply、replay。
+  `BoundaryRequest`，再审批、apply、replay。审批绑定参数指纹，默认五分钟过期，且
+  resolution 和 apply 均为单次消费；过期、参数陈旧与重放都会生成稳定错误和可审计记录。
 - **供应商无关，DeepSeek-first reference adapter**：内核不绑定 DeepSeek，但提供
   `DeepSeekProvider` 作为首个可测参考适配器。
 
@@ -170,7 +171,8 @@ Pi `agent-manager` 的源码没有整体迁入；`e` 只吸收运行时无关、
   verification、boundary plan 等类型。
 - `ModelRoute`：模型角色、供应商、fallback、token budget、latency budget 和 reasoning
   trace。
-- `BoundaryRequest` / `ProposedAction`：副作用审批与预览。
+- `BoundaryRequest` /
+  `ProposedAction`：副作用审批与预览，包括参数指纹、过期时间和单次消费 语义。
 - `WorkspaceBoundaryDecision`：inside workspace、outside workspace、external import
   的统一边界判定。
 - `WorkspaceToolAdapter`：workspace read/write/list/run command 的平台注入接口。

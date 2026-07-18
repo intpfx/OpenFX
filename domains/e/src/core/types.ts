@@ -43,8 +43,10 @@ export interface BoundaryRequest {
   id: string;
   reason: string;
   action: ProposedAction;
-  state: "pending" | "approved" | "rejected";
+  parameterFingerprint?: string;
+  state: "pending" | "approved" | "rejected" | "expired";
   createdAt: number;
+  expiresAt?: number;
   resolvedAt?: number;
 }
 
@@ -55,14 +57,33 @@ export interface ProposedAction {
   target: string;
   preview?: string;
   beforeHash?: string;
-  state: "draft" | "ready" | "approved" | "applied" | "rejected" | "stale";
+  parameterFingerprint?: string;
+  approvalExpiresAt?: number;
+  state:
+    | "draft"
+    | "ready"
+    | "approved"
+    | "applied"
+    | "rejected"
+    | "stale"
+    | "failed"
+    | "expired";
 }
 
 export interface AppliedActionRecord {
   id: string;
   actionId: string;
-  state: "applied" | "rejected" | "stale" | "failed";
+  state: "applied" | "rejected" | "stale" | "failed" | "expired" | "replayed";
   result?: unknown;
+  error?: KernelError;
+  at: number;
+}
+
+export interface ApprovalResolutionRecord {
+  id: string;
+  requestId: string;
+  actionId: string;
+  state: "approved" | "rejected" | "expired" | "replayed";
   error?: KernelError;
   at: number;
 }
