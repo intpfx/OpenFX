@@ -277,19 +277,27 @@ export const createConsoleControlPlane = (
 
   const deleteSession = async (req: Request): Promise<Response> => {
     const token = parseCookie(req.headers.get("cookie") ?? "", SESSION_COOKIE);
-    if (token) {
-      await (await storePromise).delete([...ROOT, "sessions", await digest(token)]);
-    }
-    await appendAudit({
-      category: "admin",
-      action: "session.logout",
-      outcome: "succeeded",
-      actor: clientIdentity(req),
+    if (!token) return clearedSessionResponse(req);
+
+    const store = await storePromise;
+    const key = [...ROOT, "sessions", await digest(token)] as const;
+    const record = await store.get<SessionRecord>(key);
+    if (!record) return clearedSessionResponse(req);
+
+    const invalidated = await store.atomic({
+      checks: [{ key, versionstamp: record.versionstamp }],
+      sets: [],
+      deletes: [key],
     });
-    return Response.json(
-      { ok: true },
-      { headers: { "set-cookie": sessionCookie(req, "", 0) } },
-    );
+    if (invalidated && record.value.expiresAt > now()) {
+      await appendAudit({
+        category: "admin",
+        action: "session.logout",
+        outcome: "succeeded",
+        actor: clientIdentity(req),
+      });
+    }
+    return clearedSessionResponse(req);
   };
 
   const createPairing = async (req: Request): Promise<Response> => {
@@ -787,6 +795,12 @@ const consumeNonce = async (
     { expireIn: 60_000 },
   );
 };
+
+const clearedSessionResponse = (req: Request): Response =>
+  Response.json(
+    { ok: true },
+    { headers: { "set-cookie": sessionCookie(req, "", 0) } },
+  );
 
 const sessionCookie = (req: Request, token: string, ttlMs: number): string => {
   const url = new URL(req.url);

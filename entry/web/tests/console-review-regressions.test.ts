@@ -18,6 +18,7 @@ import {
 import { checkProjectAccess } from "../server/utils/access.ts";
 import { createWebRequest } from "../server/utils/request.ts";
 import { createAdminSessionHandler } from "../server/routes/api/admin/session.post.ts";
+import { deleteAdminSessionHandler } from "../server/routes/api/admin/session.delete.ts";
 import { listAdminKvHandler } from "../server/routes/api/admin/kv.get.ts";
 import { listHomepageMessagesHandler } from "../server/routes/api/messages.get.ts";
 import { unlockHandler } from "../server/routes/api/unlock.post.ts";
@@ -135,6 +136,62 @@ Deno.test("admin key input no longer authorizes unlock, project access, or messa
       () => Promise.resolve([]),
     )).status,
   ).toBe(200);
+});
+
+Deno.test("session DELETE audits only one actual valid-session invalidation", async () => {
+  const { plane, store } = harness();
+  const request = (cookie?: string) =>
+    new Request("http://localhost/api/admin/session", {
+      method: "DELETE",
+      headers: cookie ? { cookie } : undefined,
+    });
+  const logoutAudits = async () =>
+    (await store.list<{ action: string }>({
+      prefix: ["openfx-console", "audit"],
+    })).filter((entry) => entry.value.action === "session.logout");
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    expect((await deleteAdminSessionHandler(request(), plane)).status).toBe(200);
+  }
+  expect(
+    (await deleteAdminSessionHandler(
+      request("openfx_admin_session=malformed"),
+      plane,
+    )).status,
+  ).toBe(200);
+  expect(await logoutAudits()).toHaveLength(0);
+
+  const cookie = await login(plane);
+  const responses = await Promise.all([
+    deleteAdminSessionHandler(request(cookie), plane),
+    deleteAdminSessionHandler(request(cookie), plane),
+    deleteAdminSessionHandler(request(cookie), plane),
+  ]);
+  expect(responses.map((response) => response.status)).toEqual([200, 200, 200]);
+  expect(await logoutAudits()).toHaveLength(1);
+  expect(await store.list({ prefix: ["openfx-console", "sessions"] })).toHaveLength(0);
+});
+
+Deno.test("expired session DELETE cleans up without a logout audit", async () => {
+  let now = START;
+  const store = createMemoryConsoleStore();
+  const { plane } = harness({ store, now: () => now });
+  const cookie = await login(plane);
+  now += 12 * 60 * 60_000 + 1;
+
+  const response = await deleteAdminSessionHandler(
+    new Request("http://localhost/api/admin/session", {
+      method: "DELETE",
+      headers: { cookie },
+    }),
+    plane,
+  );
+  expect(response.status).toBe(200);
+  expect(await store.list({ prefix: ["openfx-console", "sessions"] })).toHaveLength(0);
+  const logoutAudits = (await store.list<{ action: string }>({
+    prefix: ["openfx-console", "audit"],
+  })).filter((entry) => entry.value.action === "session.logout");
+  expect(logoutAudits).toHaveLength(0);
 });
 
 Deno.test("default KV initialization failure returns a stable unavailable response", async () => {
