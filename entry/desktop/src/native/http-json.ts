@@ -6,6 +6,7 @@ import type { HttpJsonRequest, HttpJsonResponse } from "./omlx-client.ts";
 import type { TextStreamRequester } from "./omlx-client.ts";
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
+const MAX_STREAM_RESPONSE_BYTES = 1024 * 1024;
 
 export const requestJson = (
   request: HttpJsonRequest,
@@ -77,8 +78,23 @@ export const requestTextStream: TextStreamRequester = (request, onChunk) => {
     return Promise.reject(new Error("stream_endpoint_must_be_loopback_http"));
   }
   return new Promise((resolve, reject) => {
+    let settled = false;
+    let responseRef: IncomingMessage | null = null;
+    let outgoing: ReturnType<typeof httpRequest> | null = null;
+    const fail = (error: Error): void => {
+      if (settled) return;
+      settled = true;
+      responseRef?.destroy();
+      outgoing?.destroy();
+      reject(error);
+    };
+    const succeed = (status: number): void => {
+      if (settled) return;
+      settled = true;
+      resolve({ status });
+    };
     const payload = request.body === undefined ? "" : JSON.stringify(request.body);
-    const outgoing = httpRequest({
+    outgoing = httpRequest({
       protocol: request.protocol,
       hostname: request.hostname,
       port: request.port,
@@ -90,16 +106,37 @@ export const requestTextStream: TextStreamRequester = (request, onChunk) => {
         accept: "text/event-stream",
       },
     }, (response) => {
+      responseRef = response;
+      let responseBytes = 0;
       response.setEncoding("utf8");
-      response.on("data", (chunk: string) => onChunk(chunk));
-      response.on("end", () => resolve({ status: response.statusCode ?? 0 }));
-      response.on("error", reject);
+      response.on("data", (chunk: string) => {
+        if (settled) return;
+        responseBytes += Buffer.byteLength(chunk);
+        if (responseBytes > MAX_STREAM_RESPONSE_BYTES) {
+          fail(new Error("http_stream_response_too_large"));
+          return;
+        }
+        try {
+          onChunk(chunk);
+        } catch {
+          fail(new Error("http_stream_consumer_failed"));
+        }
+      });
+      response.on("end", () => succeed(response.statusCode ?? 0));
+      response.on(
+        "error",
+        (error) =>
+          fail(error instanceof Error ? error : new Error("http_stream_failed")),
+      );
     });
     outgoing.setTimeout(
       30_000,
-      () => outgoing.destroy(new Error("http_stream_timeout")),
+      () => fail(new Error("http_stream_timeout")),
     );
-    outgoing.on("error", reject);
+    outgoing.on(
+      "error",
+      (error) => fail(error instanceof Error ? error : new Error("http_stream_failed")),
+    );
     outgoing.end(payload);
   });
 };

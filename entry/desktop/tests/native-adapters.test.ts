@@ -1,4 +1,4 @@
-import { assertEquals } from "@std/assert";
+import { assertEquals, assertRejects } from "@std/assert";
 
 import {
   createReplayProtector,
@@ -9,6 +9,7 @@ import {
 import { createKeychain, KEYCHAIN_SERVICE } from "../src/native/keychain.ts";
 import { createNodeCryptoAdapter } from "../src/native/node-crypto.ts";
 import { createOmlxClient } from "../src/native/omlx-client.ts";
+import { requestTextStream } from "../src/native/http-json.ts";
 
 Deno.test("node:crypto adapter interoperates with the shared WebCrypto envelope", async () => {
   const nodeCrypto = createNodeCryptoAdapter();
@@ -188,4 +189,157 @@ Deno.test("OMLX SSE chunks emit deltas as produced and reconstruct tool calls", 
       stream: true,
     },
   }]);
+});
+
+Deno.test("OMLX rejects malformed SSE JSON with a bounded Agent error", async () => {
+  const client = createOmlxClient(
+    () => Promise.reject(new Error("unexpected JSON request")),
+    (_request, onChunk) => {
+      onChunk("data: {not-json}\n");
+      return Promise.resolve({ status: 200 });
+    },
+  );
+
+  await assertRejects(
+    () => client.chat("hello", () => {}),
+    Error,
+    "omlx_sse_invalid_json",
+  );
+});
+
+Deno.test("OMLX converts a throwing delta callback into an Agent error", async () => {
+  const client = createOmlxClient(
+    () => Promise.reject(new Error("unexpected JSON request")),
+    (_request, onChunk) => {
+      onChunk('data: {"choices":[{"delta":{"content":"hello"}}]}\n');
+      return Promise.resolve({ status: 200 });
+    },
+  );
+
+  await assertRejects(
+    () =>
+      client.chat("hello", () => {
+        throw new Error("consumer exploded");
+      }),
+    Error,
+    "omlx_delta_callback_failed",
+  );
+});
+
+Deno.test("OMLX rejects oversized no-newline input before line accumulation grows", async () => {
+  const client = createOmlxClient(
+    () => Promise.reject(new Error("unexpected JSON request")),
+    (_request, onChunk) => {
+      onChunk(`data: ${"x".repeat(64 * 1024)}`);
+      return Promise.resolve({ status: 200 });
+    },
+  );
+
+  await assertRejects(
+    () => client.chat("hello", () => {}),
+    Error,
+    "omlx_sse_line_too_large",
+  );
+});
+
+Deno.test("OMLX bounds streamed content accumulation", async () => {
+  const client = createOmlxClient(
+    () => Promise.reject(new Error("unexpected JSON request")),
+    (_request, onChunk) => {
+      for (let index = 0; index < 5; index += 1) {
+        onChunk(`data: ${
+          JSON.stringify({
+            choices: [{ delta: { content: "x".repeat(60 * 1024) } }],
+          })
+        }\n`);
+      }
+      return Promise.resolve({ status: 200 });
+    },
+  );
+
+  await assertRejects(
+    () => client.chat("hello", () => {}),
+    Error,
+    "omlx_content_too_large",
+  );
+});
+
+Deno.test("OMLX bounds streamed tool argument accumulation", async () => {
+  const client = createOmlxClient(
+    () => Promise.reject(new Error("unexpected JSON request")),
+    (_request, onChunk) => {
+      for (let index = 0; index < 2; index += 1) {
+        onChunk(`data: ${
+          JSON.stringify({
+            choices: [{
+              delta: {
+                tool_calls: [{
+                  index: 0,
+                  function: {
+                    name: index === 0 ? "system.overview" : "",
+                    arguments: "x".repeat(40 * 1024),
+                  },
+                }],
+              },
+            }],
+          })
+        }\n`);
+      }
+      return Promise.resolve({ status: 200 });
+    },
+  );
+
+  await assertRejects(
+    () => client.chat("hello", () => {}),
+    Error,
+    "omlx_tool_arguments_too_large",
+  );
+});
+
+Deno.test("OMLX bounds the number of streamed data frames", async () => {
+  const client = createOmlxClient(
+    () => Promise.reject(new Error("unexpected JSON request")),
+    (_request, onChunk) => {
+      const frame = 'data: {"choices":[{"delta":{}}]}\n';
+      onChunk(frame.repeat(1_025));
+      return Promise.resolve({ status: 200 });
+    },
+  );
+
+  await assertRejects(
+    () => client.chat("hello", () => {}),
+    Error,
+    "omlx_sse_too_many_frames",
+  );
+});
+
+Deno.test("native text streaming catches a throwing chunk callback", async () => {
+  const server = Deno.serve(
+    { hostname: "127.0.0.1", port: 0, onListen: () => {} },
+    () =>
+      new Response('data: {"choices":[]}\n', {
+        headers: { "content-type": "text/event-stream" },
+      }),
+  );
+  const address = server.addr as Deno.NetAddr;
+
+  try {
+    await assertRejects(
+      () =>
+        requestTextStream({
+          protocol: "http:",
+          hostname: "127.0.0.1",
+          port: address.port,
+          path: "/v1/chat/completions",
+          method: "POST",
+          body: {},
+        }, () => {
+          throw new Error("consumer exploded");
+        }),
+      Error,
+      "http_stream_consumer_failed",
+    );
+  } finally {
+    await server.shutdown();
+  }
 });
