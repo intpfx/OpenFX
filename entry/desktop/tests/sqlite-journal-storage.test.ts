@@ -1,6 +1,7 @@
 import { assertEquals, assertRejects } from "@std/assert";
 import { chmod, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 
 import type { JournalEvent } from "../src/core/durable-journal.ts";
@@ -253,6 +254,112 @@ Deno.test("independent SQLite connections make one atomic replay claim", async (
     [false, true],
   );
   await assertRejects(() => readFile(`${databasePath}.lock`), Error, "ENOENT");
+});
+
+Deno.test("SQLite replay claims stay out of the append-only journal and prune expired rows", async () => {
+  const root = await Deno.makeTempDir({ prefix: "openfx-sqlite-replay-ttl-" });
+  const databasePath = join(root, "journal.sqlite");
+  const journal = createDesktopJournal(createSqliteJournalStorage(databasePath));
+  await journal.appendAudit({
+    category: "node",
+    action: "audit.must-remain",
+    outcome: "succeeded",
+  });
+
+  for (let index = 0; index < 200; index += 1) {
+    assertEquals(
+      await journal.claimReplayNonce(`expired-${index}`, 2_000, 1_000),
+      true,
+    );
+  }
+  assertEquals(await journal.claimReplayNonce("current", 3_001, 2_001), true);
+
+  const database = new DatabaseSync(databasePath);
+  try {
+    const journalRows = database.prepare(
+      "SELECT COUNT(*) AS count FROM journal_events",
+    ).get() as { count: number };
+    assertEquals(journalRows.count, 1);
+    const replayRows = database.prepare(
+      "SELECT nonce, expires_at FROM replay_nonces ORDER BY nonce",
+    ).all();
+    assertEquals(replayRows, [{ nonce: "current", expires_at: 3_001 }]);
+  } finally {
+    database.close();
+  }
+  assertEquals((await journal.listAudit()).map((event) => event.action), [
+    "audit.must-remain",
+  ]);
+});
+
+Deno.test("SQLite replay claims survive storage reconstruction until expiry", async () => {
+  const root = await Deno.makeTempDir({ prefix: "openfx-sqlite-replay-restart-" });
+  const databasePath = join(root, "journal.sqlite");
+  const first = createDesktopJournal(createSqliteJournalStorage(databasePath));
+  assertEquals(await first.claimReplayNonce("durable", 31_000, 1_000), true);
+
+  const reconstructed = createDesktopJournal(
+    createSqliteJournalStorage(databasePath),
+  );
+  assertEquals(
+    await reconstructed.claimReplayNonce("durable", 31_000, 1_001),
+    false,
+  );
+  assertEquals(
+    await reconstructed.claimReplayNonce("durable", 62_000, 31_000),
+    true,
+  );
+});
+
+Deno.test("SQLite migrates legacy replay events once and never scans them during claims", async () => {
+  const root = await Deno.makeTempDir({ prefix: "openfx-sqlite-replay-migrate-" });
+  const databasePath = join(root, "journal.sqlite");
+  const legacyExpiry = Date.now() + 30_000;
+  const legacy = new DatabaseSync(databasePath);
+  legacy.exec(`
+    CREATE TABLE journal_state (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      version INTEGER NOT NULL,
+      legacy_imported INTEGER NOT NULL CHECK (legacy_imported IN (0, 1))
+    );
+    INSERT INTO journal_state(id, version, legacy_imported) VALUES (1, 1, 1);
+    CREATE TABLE journal_events (
+      sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+      payload TEXT NOT NULL
+    );
+  `);
+  legacy.prepare("INSERT INTO journal_events(payload) VALUES (?)").run(
+    JSON.stringify({
+      type: "replay.claimed",
+      nonce: "legacy-live",
+      expiresAt: legacyExpiry,
+    }),
+  );
+  legacy.close();
+
+  const migrated = createDesktopJournal(createSqliteJournalStorage(databasePath));
+  assertEquals(
+    await migrated.claimReplayNonce("legacy-live", legacyExpiry, Date.now()),
+    false,
+  );
+
+  const corruptedAudit = new DatabaseSync(databasePath);
+  corruptedAudit.prepare("INSERT INTO journal_events(payload) VALUES (?)").run(
+    "not-json-and-must-not-be-scanned-by-replay-claims",
+  );
+  corruptedAudit.close();
+
+  const reconstructed = createDesktopJournal(
+    createSqliteJournalStorage(databasePath),
+  );
+  assertEquals(
+    await reconstructed.claimReplayNonce(
+      "new-without-journal-scan",
+      Date.now() + 30_000,
+      Date.now(),
+    ),
+    true,
+  );
 });
 
 Deno.test("independent SQLite connections cannot both claim one approval", async () => {

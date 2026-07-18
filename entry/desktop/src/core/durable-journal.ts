@@ -47,6 +47,7 @@ export type JournalEvent =
     audit: AuditEvent;
   }
   | { type: "audit.appended"; audit: AuditEvent }
+  /** @deprecated Read only for migration into the bounded replay nonce table. */
   | { type: "replay.claimed"; nonce: string; expiresAt: number };
 
 export interface JournalStorage {
@@ -55,6 +56,7 @@ export interface JournalStorage {
       events: readonly JournalEvent[],
     ) => { result: Result; append?: JournalEvent[] },
   ): Promise<Result>;
+  claimReplayNonce(nonce: string, expiresAt: number, now: number): Promise<boolean>;
 }
 
 export interface DesktopJournalOptions {
@@ -90,7 +92,6 @@ interface JournalState {
     { requestId: string; state: "intent" | "applied" | "failed" | "ambiguous" }
   >;
   audit: AuditEvent[];
-  replay: Map<string, number>;
 }
 
 export const createDesktopJournal = (
@@ -343,22 +344,14 @@ export const createDesktopJournal = (
     },
 
     claimReplayNonce(nonce, expiresAt, claimedAt) {
-      return storage.transact((events) => {
-        const current = reduceJournal(events).replay.get(nonce);
-        if (current !== undefined && current > claimedAt) {
-          return { result: false };
-        }
-        return {
-          result: true,
-          append: [{ type: "replay.claimed", nonce, expiresAt }],
-        };
-      });
+      return storage.claimReplayNonce(nonce, expiresAt, claimedAt);
     },
   };
 };
 
 export const createMemoryJournalStorage = (): JournalStorage => {
   const events: JournalEvent[] = [];
+  const replayNonces = new Map<string, number>();
   let queue = Promise.resolve();
   return {
     transact<Result>(
@@ -379,6 +372,14 @@ export const createMemoryJournalStorage = (): JournalStorage => {
       }, rejectResult).catch(rejectResult);
       return result;
     },
+    claimReplayNonce(nonce, expiresAt, now) {
+      for (const [retainedNonce, retainedUntil] of replayNonces) {
+        if (retainedUntil <= now) replayNonces.delete(retainedNonce);
+      }
+      if (replayNonces.has(nonce)) return Promise.resolve(false);
+      replayNonces.set(nonce, expiresAt);
+      return Promise.resolve(true);
+    },
   };
 };
 
@@ -389,7 +390,6 @@ const reduceJournal = (events: readonly JournalEvent[]): JournalState => {
     requests: new Map(),
     executions: new Map(),
     audit: [],
-    replay: new Map(),
   };
   for (const event of events) {
     switch (event.type) {
@@ -449,7 +449,8 @@ const reduceJournal = (events: readonly JournalEvent[]): JournalState => {
         state.audit.push(clone(event.audit));
         break;
       case "replay.claimed":
-        state.replay.set(event.nonce, event.expiresAt);
+        // Legacy replay claims are migrated by persistent storage. They are not
+        // part of the append-only approval/audit projection anymore.
         break;
     }
   }

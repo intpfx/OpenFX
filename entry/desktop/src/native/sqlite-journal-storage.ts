@@ -80,6 +80,32 @@ export const createSqliteJournalStorage = (
         throw error;
       }
     },
+    async claimReplayNonce(nonce, expiresAt, now) {
+      const db = await database();
+      let transactionOpen = false;
+      try {
+        db.exec("BEGIN IMMEDIATE");
+        transactionOpen = true;
+        db.prepare("DELETE FROM replay_nonces WHERE expires_at <= ?").run(now);
+        const claimed = db.prepare(
+          "INSERT OR IGNORE INTO replay_nonces(nonce, expires_at) VALUES (?, ?)",
+        ).run(nonce, expiresAt).changes === 1;
+        db.exec("COMMIT");
+        transactionOpen = false;
+        await secureDatabaseFiles(path);
+        return claimed;
+      } catch (error) {
+        if (transactionOpen) {
+          try {
+            db.exec("ROLLBACK");
+          } catch {
+            // SQLite already rolled the transaction back.
+          }
+        }
+        await secureDatabaseFiles(path);
+        throw error;
+      }
+    },
   };
 };
 
@@ -126,10 +152,22 @@ const initializeDatabase = async (
           sequence INTEGER PRIMARY KEY AUTOINCREMENT,
           payload TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS replay_state (
+          id INTEGER PRIMARY KEY CHECK (id = 1),
+          legacy_imported INTEGER NOT NULL CHECK (legacy_imported IN (0, 1))
+        );
+        INSERT OR IGNORE INTO replay_state(id, legacy_imported) VALUES (1, 0);
+        CREATE TABLE IF NOT EXISTS replay_nonces (
+          nonce TEXT PRIMARY KEY,
+          expires_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS replay_nonces_by_expiry
+          ON replay_nonces(expires_at);
         COMMIT;
       `);
       await secureDatabaseFiles(path);
       await migrateLegacyJournal(db, legacyJournalPath);
+      migrateLegacyReplayClaims(db);
       db.exec(`PRAGMA busy_timeout = ${TRANSACTION_BUSY_TIMEOUT_MS}`);
       await secureDatabaseFiles(path);
       return db;
@@ -148,6 +186,50 @@ const initializeDatabase = async (
     }
   }
   throw new Error("sqlite_initialization_attempts_exhausted");
+};
+
+const migrateLegacyReplayClaims = (db: DatabaseSync): void => {
+  const imported = db.prepare(
+    "SELECT legacy_imported FROM replay_state WHERE id = 1",
+  ).get() as { legacy_imported: number };
+  if (imported.legacy_imported === 1) return;
+
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const current = db.prepare(
+      "SELECT legacy_imported FROM replay_state WHERE id = 1",
+    ).get() as { legacy_imported: number };
+    if (current.legacy_imported === 0) {
+      const insert = db.prepare(`
+        INSERT INTO replay_nonces(nonce, expires_at) VALUES (?, ?)
+        ON CONFLICT(nonce) DO UPDATE SET
+          expires_at = MAX(replay_nonces.expires_at, excluded.expires_at)
+      `);
+      const rows = db.prepare(
+        "SELECT payload FROM journal_events ORDER BY sequence",
+      ).all() as Array<{ payload: unknown }>;
+      for (const row of rows) {
+        const event = JSON.parse(String(row.payload)) as JournalEvent;
+        if (event.type === "replay.claimed") {
+          insert.run(event.nonce, event.expiresAt);
+        }
+      }
+      db.prepare("DELETE FROM replay_nonces WHERE expires_at <= ?").run(Date.now());
+      const updated = db.prepare(
+        "UPDATE replay_state SET legacy_imported = 1 " +
+          "WHERE id = 1 AND legacy_imported = 0",
+      ).run();
+      if (updated.changes !== 1) throw new Error("replay_migration_conflict");
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    try {
+      db.exec("ROLLBACK");
+    } catch {
+      // SQLite already rolled the transaction back.
+    }
+    throw error;
+  }
 };
 
 const readJournalMode = (

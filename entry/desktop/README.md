@@ -23,13 +23,16 @@ OpenFX Node 是常驻 macOS 菜单栏的原生 Perry 节点候选实现。它用
 - OpenFX 控制面上报只走 `node:https.request`，包括实时 Agent delta 与审批事件；OMLX
   固定使用 `node:http.request` 流式访问 `127.0.0.1:8000/v1/chat/completions`。
 - Agent 工具是封闭的 v1 清单。三个有副作用的工具必须经过 `domains/e` 的
-  `SafetyActionGate`。审批、执行意图/结果、审计和 Relay nonce 使用同一个 SQLite 事务
-  journal；不完整执行在重启时终止为 `ambiguous`，不会重放原生副作用。
+  `SafetyActionGate`。审批、执行意图/结果和审计使用追加式 SQLite journal；Relay nonce
+  使用同一数据库中独立的带过期索引键表，不写入或扫描审计 journal。不完整执行在重启时
+  终止为 `ambiguous`，不会重放原生副作用。
 - journal 写入 `~/Library/Application Support/OpenFX Node/journal.sqlite`，使用
-  `BEGIN IMMEDIATE`、WAL 与 `synchronous=FULL`；首次启动会事务迁移旧
-  JSONL，并清理已废弃的 `.lock` 文件。并发冷启动遇到 SQLite busy/locked 时会有界
-  抖动重试，其他初始化错误立即返回。目录权限固定为 `0700`，数据库/WAL 文件固定为
-  `0600`。Keychain 密钥通过标准输入写入，不出现在进程参数中。
+  `BEGIN IMMEDIATE`、WAL 与 `synchronous=FULL`；首次启动会事务迁移旧 JSONL，也会把旧
+  `replay.claimed` 事件一次性迁移到有界 nonce 表。nonce claim 通过 `BEGIN IMMEDIATE`
+  和主键在多进程间只成功一次，并在每次 claim 时按 TTL 清理过期项，
+  不删除追加式审计。初始化会清理已废弃的 `.lock` 文件；并发冷启动遇到 SQLite busy/locked
+  时会有界抖动重试，其他初始化错误立即返回。目录权限固定为 `0700`；数据库/WAL 文件固定
+  为 `0600`。Keychain 密钥通过标准输入写入，不出现在进程参数中。
 
 ## 验证
 
