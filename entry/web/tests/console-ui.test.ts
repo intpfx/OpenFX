@@ -1,6 +1,12 @@
 import { expect } from "@std/expect";
 
 import {
+  type CoreRendererScheduler,
+  type CoreRenderTarget,
+  detectWebGLSupport,
+  startCoreRenderer,
+} from "../src/console/core-renderer.ts";
+import {
   CONSOLE_CLIENT_POLICY,
   CONSOLE_ENDPOINTS,
   CONSOLE_MODULES,
@@ -8,6 +14,32 @@ import {
   relayUpdateMessage,
   selectCoreRenderer,
 } from "../src/console/model.ts";
+
+type FakeCanvas = HTMLCanvasElement & {
+  dispatchContextLost: () => void;
+  listenerCount: () => number;
+};
+
+const createFakeCanvas = (): FakeCanvas => {
+  const listeners = new Set<EventListener>();
+  return {
+    addEventListener: (_name: string, listener: EventListenerOrEventListenerObject) => {
+      if (typeof listener === "function") listeners.add(listener);
+    },
+    dispatchContextLost: () => {
+      const event = { preventDefault: () => {} } as Event;
+      for (const listener of listeners) listener(event);
+    },
+    getBoundingClientRect: () => ({ width: 640, height: 360 } as DOMRect),
+    listenerCount: () => listeners.size,
+    removeEventListener: (
+      _name: string,
+      listener: EventListenerOrEventListenerObject,
+    ) => {
+      if (typeof listener === "function") listeners.delete(listener);
+    },
+  } as unknown as FakeCanvas;
+};
 
 Deno.test("console exposes the exact operator module order", () => {
   expect(CONSOLE_MODULES.map((item) => item.label)).toEqual([
@@ -27,22 +59,142 @@ Deno.test("console chooses a static core for every required fallback", () => {
     reducedMotion: false,
     lowPower: false,
     narrowViewport: false,
-    canvasAvailable: true,
+    webglAvailable: true,
     rendererFailed: false,
   };
 
-  expect(selectCoreRenderer(capable)).toBe("canvas");
+  expect(selectCoreRenderer(capable)).toBe("webgl");
   for (
     const override of [
       { reducedMotion: true },
       { lowPower: true },
       { narrowViewport: true },
-      { canvasAvailable: false },
+      { webglAvailable: false },
       { rendererFailed: true },
     ]
   ) {
     expect(selectCoreRenderer({ ...capable, ...override })).toBe("static");
   }
+});
+
+Deno.test("console detects WebGL support and releases its probe context", () => {
+  let released = 0;
+  expect(detectWebGLSupport(() => ({
+    getContext: (name) =>
+      name === "webgl"
+        ? {
+          getExtension: () => ({ loseContext: () => released += 1 }),
+        }
+        : null,
+  }))).toBe(true);
+  expect(released).toBe(1);
+  expect(detectWebGLSupport(() => ({ getContext: () => null }))).toBe(false);
+  expect(detectWebGLSupport(() => ({
+    getContext: () => {
+      throw new Error("blocked");
+    },
+  }))).toBe(false);
+});
+
+Deno.test("WebGL core reports renderer initialization failure", () => {
+  const canvas = createFakeCanvas();
+  let failures = 0;
+  const cleanup = startCoreRenderer(canvas, {
+    pulseSeconds: 4.8,
+    onFailure: () => failures += 1,
+    createRenderer: () => null,
+  });
+
+  expect(failures).toBe(1);
+  expect(canvas.listenerCount()).toBe(0);
+  cleanup();
+});
+
+Deno.test("WebGL core owns resize, frame, context loss, and cleanup lifecycle", () => {
+  const canvas = createFakeCanvas();
+  const callbacks = new Map<number, FrameRequestCallback>();
+  const canceled: number[] = [];
+  let nextFrame = 1;
+  let stoppedObserving = 0;
+  const scheduler: CoreRendererScheduler = {
+    requestFrame: (callback) => {
+      const handle = nextFrame++;
+      callbacks.set(handle, callback);
+      return handle;
+    },
+    cancelFrame: (handle) => canceled.push(handle),
+    observeResize: (_target, callback) => {
+      callback();
+      return () => stoppedObserving += 1;
+    },
+    pixelRatio: () => 1.5,
+  };
+  const resized: number[][] = [];
+  const rendered: number[] = [];
+  let disposed = 0;
+  let failures = 0;
+  const renderer: CoreRenderTarget = {
+    resize: (...values) => resized.push(values),
+    render: (timestamp) => rendered.push(timestamp),
+    dispose: () => disposed += 1,
+  };
+  const cleanup = startCoreRenderer(canvas, {
+    pulseSeconds: 4.8,
+    onFailure: () => failures += 1,
+    createRenderer: (_target, pulseSeconds) => {
+      expect(pulseSeconds).toBe(4.8);
+      return renderer;
+    },
+    scheduler,
+  });
+
+  expect(resized).toEqual([[640, 360, 1.5], [640, 360, 1.5]]);
+  expect(canvas.listenerCount()).toBe(1);
+  callbacks.get(1)?.(160);
+  expect(rendered).toEqual([160]);
+  expect(callbacks.has(2)).toBe(true);
+
+  canvas.dispatchContextLost();
+  expect(failures).toBe(1);
+  expect(canceled).toEqual([2]);
+  expect(stoppedObserving).toBe(1);
+  expect(disposed).toBe(1);
+  expect(canvas.listenerCount()).toBe(0);
+  cleanup();
+  expect(disposed).toBe(1);
+});
+
+Deno.test("WebGL core falls back when a render frame fails", () => {
+  const canvas = createFakeCanvas();
+  let callback: FrameRequestCallback | undefined;
+  let disposed = 0;
+  let failures = 0;
+  const scheduler: CoreRendererScheduler = {
+    requestFrame: (next) => {
+      callback = next;
+      return 11;
+    },
+    cancelFrame: () => {},
+    observeResize: () => () => {},
+    pixelRatio: () => 1,
+  };
+  startCoreRenderer(canvas, {
+    pulseSeconds: 4.8,
+    onFailure: () => failures += 1,
+    createRenderer: () => ({
+      resize: () => {},
+      render: () => {
+        throw new Error("context failed");
+      },
+      dispose: () => disposed += 1,
+    }),
+    scheduler,
+  });
+
+  callback?.(16);
+  expect(failures).toBe(1);
+  expect(disposed).toBe(1);
+  expect(canvas.listenerCount()).toBe(0);
 });
 
 Deno.test("node state drives one restrained cyan core presentation", () => {

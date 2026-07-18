@@ -44,18 +44,18 @@ export type CoreRendererCapabilities = {
   reducedMotion: boolean;
   lowPower: boolean;
   narrowViewport: boolean;
-  canvasAvailable: boolean;
+  webglAvailable: boolean;
   rendererFailed: boolean;
 };
 
 export function selectCoreRenderer(
   capabilities: CoreRendererCapabilities,
-): "canvas" | "static" {
+): "webgl" | "static" {
   return capabilities.reducedMotion || capabilities.lowPower ||
-      capabilities.narrowViewport || !capabilities.canvasAvailable ||
+      capabilities.narrowViewport || !capabilities.webglAvailable ||
       capabilities.rendererFailed
     ? "static"
-    : "canvas";
+    : "webgl";
 }
 
 export function corePresentation(availability: NodeAvailability): {
