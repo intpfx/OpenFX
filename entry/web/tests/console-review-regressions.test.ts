@@ -836,6 +836,66 @@ Deno.test("pairing cannot commit after its live marker expires mid-request", asy
   ).toHaveLength(1);
 });
 
+Deno.test("pairing compensates a commit that completes after the absolute deadline", async () => {
+  let now = START;
+  const base = createMemoryConsoleStore({ now: () => now });
+  let delayedCommit = false;
+  let cleanupAttempts = 0;
+  const store: ConsoleStore = {
+    ...base,
+    async atomic(operation) {
+      const createsNode = operation.sets.some(
+        (item) => item.key[1] === "node" && item.key[2] === "active",
+      );
+      const cleansNode = operation.deletes?.some(
+        (key) => key[1] === "node" && key[2] === "active",
+      ) ?? false;
+      if (createsNode && !delayedCommit) {
+        delayedCommit = true;
+        const committed = await base.atomic(operation);
+        now += 10 * 60_000 + 1;
+        return committed;
+      }
+      if (cleansNode) {
+        cleanupAttempts += 1;
+        if (cleanupAttempts === 1) return false;
+      }
+      return await base.atomic(operation);
+    },
+  };
+  const { plane } = harness({ store, now: () => now });
+  const cookie = await login(plane);
+  const code = await createPairingCode(plane, cookie);
+
+  const response = await pairNodeHandler(
+    jsonRequest("http://localhost/api/node/pair", pairBody(code)),
+    plane,
+  );
+
+  expect(response.status).toBe(410);
+  await expect(response.json()).resolves.toMatchObject({
+    error: "node_pairing_expired",
+  });
+  expect(cleanupAttempts).toBe(2);
+  expect(await base.get(["openfx-console", "node", "active"])).toBeNull();
+  expect(await base.get(["openfx-console", "node", "credential"])).toBeNull();
+  const graceRecord = await base.list<{
+    expiresAt: number;
+    usedAt?: number;
+  }>({ prefix: ["openfx-console", "pairings"] });
+  expect(graceRecord).toHaveLength(1);
+  expect(graceRecord[0]?.value.usedAt).toBeUndefined();
+
+  const retry = await pairNodeHandler(
+    jsonRequest("http://localhost/api/node/pair", pairBody(code)),
+    plane,
+  );
+  expect(retry.status).toBe(410);
+  await expect(retry.json()).resolves.toMatchObject({
+    error: "node_pairing_expired",
+  });
+});
+
 Deno.test("failed pairing transaction leaves code, node, and credential unchanged", async () => {
   const base = createMemoryConsoleStore();
   const failing: ConsoleStore = {

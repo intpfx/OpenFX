@@ -34,8 +34,11 @@ Freemac 清理必须等待 Perry 修复后重新验证。
 1. 管理员通过 `POST /api/admin/session` 登录，获得 12 小时绝对有效的 `HttpOnly`、
    `SameSite=Strict` cookie；生产 cookie 同时带 `Secure`。
 2. 控制台生成 8 位 Crockford Base32 配对码。配对码逻辑有效期为 10 分钟，并通过 Deno KV
-   原子事务保证只能消费一次；底层记录设置 11 分钟物理 TTL，其中最后 1 分钟只用于保留
-   `node_pairing_expired` 错误语义，不允许继续配对。
+   原子事务保证只能消费一次；10 分钟 live marker 与消费事务一起校验，11 分钟 grace
+   record 的最后 1 分钟只用于保留 `node_pairing_expired`
+   错误语义。服务端在消费提交后再次检查绝对
+   截止时间，若提交跨过边界，会用带版本检查和重试的补偿事务移除新节点凭据并恢复过期记录，
+   不会返回 `nodeSecret`。
 3. Perry 节点通过 HTTPS 提交配对码和经本机、外部观察共同确认的公网 IPv6。服务端只在
    配对响应中返回一次 32 字节 `nodeSecret`。
 4. 节点把 secret 写入 macOS Keychain 的 `OpenFX Node` service；普通偏好只保存

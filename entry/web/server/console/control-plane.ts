@@ -94,6 +94,7 @@ interface PairingRecord {
   createdAt: number;
   expiresAt: number;
   usedAt?: number;
+  usedByNodeId?: string;
 }
 
 interface StoredCredential {
@@ -332,6 +333,11 @@ export const createConsoleControlPlane = (
     } satisfies PairingRecord;
     const pairingKey = [...ROOT, "pairings", codeDigest] as const;
     const liveKey = [...ROOT, "pairings-live", codeDigest] as const;
+    const pairingExpireIn = Math.max(
+      1,
+      record.expiresAt + PAIRING_EXPIRY_GRACE_MS - now(),
+    );
+    const liveExpireIn = Math.max(1, record.expiresAt - now());
     if (
       !await (await storePromise).atomic({
         checks: [],
@@ -339,12 +345,12 @@ export const createConsoleControlPlane = (
           {
             key: pairingKey,
             value: record,
-            options: { expireIn: PAIRING_TTL_MS + PAIRING_EXPIRY_GRACE_MS },
+            options: { expireIn: pairingExpireIn },
           },
           {
             key: liveKey,
             value: { expiresAt: record.expiresAt },
-            options: { expireIn: PAIRING_TTL_MS },
+            options: { expireIn: liveExpireIn },
           },
         ],
       })
@@ -419,7 +425,12 @@ export const createConsoleControlPlane = (
     const active = await store.get<NodeRecord>(activeKey);
     const previousCredential = await store.get<StoredCredential>(credentialRecordKey);
     const previousStatus = await store.get<NodeStatus>(statusKey);
-    const consumed = { ...pairing.value, usedAt: now() } satisfies PairingRecord;
+    const originalPairing = pairing.value;
+    const consumed = {
+      ...originalPairing,
+      usedAt: now(),
+      usedByNodeId: nodeId,
+    } satisfies PairingRecord;
     if (
       !await store.atomic({
         checks: [
@@ -465,6 +476,18 @@ export const createConsoleControlPlane = (
         !usedAfterConflict && expiredAfterConflict ? 410 : 409,
       );
     }
+    if (initialExpiresAt <= now()) {
+      await compensateExpiredPairing({
+        store,
+        pairingKey: key,
+        nodeId,
+        originalPairing,
+        previousActive: active?.value ?? null,
+        previousCredential: previousCredential?.value ?? null,
+        previousStatus: previousStatus?.value ?? null,
+      });
+      return nodeError(OPENFX_NODE_ERROR_CODES.pairingExpired, 410);
+    }
     await appendAudit({
       category: "pairing",
       action: "node.paired",
@@ -476,6 +499,86 @@ export const createConsoleControlPlane = (
       { ok: true, node, nodeSecret: encodeBase64Url(nodeSecret) },
       { status: 201 },
     );
+  };
+
+  const compensateExpiredPairing = async (input: {
+    store: ConsoleStore;
+    pairingKey: ConsoleKey;
+    nodeId: string;
+    originalPairing: PairingRecord;
+    previousActive: NodeRecord | null;
+    previousCredential: StoredCredential | null;
+    previousStatus: NodeStatus | null;
+  }): Promise<void> => {
+    const activeKey = [...ROOT, "node", "active"] as const;
+    const credentialKey = [...ROOT, "node", "credential"] as const;
+    const statusKey = [...ROOT, "node", "status"] as const;
+    for (let attempt = 0; attempt < 16; attempt += 1) {
+      const [pairing, active, credential, status] = await Promise.all([
+        input.store.get<PairingRecord>(input.pairingKey),
+        input.store.get<NodeRecord>(activeKey),
+        input.store.get<StoredCredential>(credentialKey),
+        input.store.get<NodeStatus>(statusKey),
+      ]);
+      const pairingOwned = pairing?.value.usedByNodeId === input.nodeId;
+      const activeOwned = active?.value.id === input.nodeId;
+      const credentialOwned = credential?.value.nodeId === input.nodeId;
+      if (!pairingOwned && !activeOwned && !credentialOwned) return;
+
+      const sets = [] as Array<{
+        key: ConsoleKey;
+        value: unknown;
+        options?: { expireIn?: number };
+      }>;
+      const deletes: ConsoleKey[] = [];
+      if (pairingOwned) {
+        sets.push({
+          key: input.pairingKey,
+          value: input.originalPairing,
+          options: {
+            expireIn: Math.max(
+              1,
+              input.originalPairing.expiresAt + PAIRING_EXPIRY_GRACE_MS - now(),
+            ),
+          },
+        });
+      }
+
+      if (activeOwned && credentialOwned) {
+        if (input.previousActive) {
+          sets.push({ key: activeKey, value: input.previousActive });
+        } else deletes.push(activeKey);
+        if (input.previousCredential) {
+          sets.push({ key: credentialKey, value: input.previousCredential });
+        } else deletes.push(credentialKey);
+        if (input.previousStatus) {
+          sets.push({ key: statusKey, value: input.previousStatus });
+        } else deletes.push(statusKey);
+      } else {
+        if (activeOwned) deletes.push(activeKey);
+        if (credentialOwned) deletes.push(credentialKey);
+      }
+
+      if (
+        await input.store.atomic({
+          checks: [
+            {
+              key: input.pairingKey,
+              versionstamp: pairing?.versionstamp ?? null,
+            },
+            { key: activeKey, versionstamp: active?.versionstamp ?? null },
+            {
+              key: credentialKey,
+              versionstamp: credential?.versionstamp ?? null,
+            },
+            { key: statusKey, versionstamp: status?.versionstamp ?? null },
+          ],
+          sets,
+          deletes,
+        })
+      ) return;
+    }
+    throw new ConsoleStoreUnavailableError();
   };
 
   const revokeNode = async (req: Request): Promise<Response> => {
