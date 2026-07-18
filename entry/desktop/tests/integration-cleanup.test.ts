@@ -1,6 +1,9 @@
 import { assertEquals } from "@std/assert";
 
-import { cleanupIntegrationIdentity } from "../tools/integration-cleanup.ts";
+import {
+  cleanupIntegrationIdentity,
+  runBoundedCommand,
+} from "../tools/integration-cleanup.ts";
 
 Deno.test("integration cleanup removes the isolated Keychain service without a node id", async () => {
   const calls: string[] = [];
@@ -57,4 +60,23 @@ Deno.test("integration cleanup continues after a failed revocation", async () =>
     "account:OpenFX Node Integration test-run:node-test",
     "service:OpenFX Node Integration test-run",
   ]);
+});
+
+Deno.test("bounded cleanup command escalates and returns after its deadline", async () => {
+  let resolveStatus!: (status: { success: boolean }) => void;
+  const signals: string[] = [];
+  const status = new Promise<{ success: boolean }>((resolve) => {
+    resolveStatus = resolve;
+  });
+
+  const success = await runBoundedCommand(() => ({
+    status,
+    kill(signal) {
+      signals.push(signal);
+      if (signal === "SIGKILL") resolveStatus({ success: false });
+    },
+  }), { timeoutMs: 5, terminationGraceMs: 5 });
+
+  assertEquals(success, false);
+  assertEquals(signals, ["SIGTERM", "SIGKILL"]);
 });

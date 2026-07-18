@@ -1,7 +1,11 @@
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { cleanupIntegrationIdentity } from "./integration-cleanup.ts";
+import {
+  cleanupIntegrationIdentity,
+  runBoundedCommand,
+} from "./integration-cleanup.ts";
+import { readStartupMessages } from "./integration-startup.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const webRoot = join(root, "entry/web");
@@ -113,12 +117,19 @@ try {
     stdout: "piped",
     stderr: "piped",
   }).spawn();
-  const ready = await readStartupMessages(node, 45_000, (message) => {
-    if (message.phase !== "paired") return;
-    const pairedNodeId = stringValue(message.nodeId);
-    assert(pairedNodeId.length > 0, "compiled Perry node reported an empty nodeId");
-    nodeId = pairedNodeId;
+  const ready = await readStartupMessages(node.stdout, {
+    timeoutMs: 45_000,
+    onMessage(message) {
+      if (message.phase !== "paired") return;
+      const pairedNodeId = stringValue(message.nodeId);
+      assert(pairedNodeId.length > 0, "compiled Perry node reported an empty nodeId");
+      nodeId = pairedNodeId;
+    },
   });
+  if (!ready) {
+    const stderr = await new Response(node.stderr).text();
+    throw new Error(`Perry node did not report readiness: ${stderr.slice(-4_000)}`);
+  }
   assert(ready.ok === true, "compiled Perry node did not become ready");
   const readyNodeId = stringValue(ready.nodeId);
   assert(readyNodeId.length > 0, "compiled Perry node did not report nodeId");
@@ -481,39 +492,6 @@ function parseSseEvent(block: string): SseEvent | null {
     : null;
 }
 
-async function readStartupMessages(
-  child: Deno.ChildProcess,
-  timeoutMs: number,
-  onMessage: (message: Record<string, unknown>) => void,
-): Promise<Record<string, unknown>> {
-  const reader = child.stdout.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const result = await withTimeout(reader.read(), 5_000, "Perry startup timeout");
-    if (result.done) break;
-    buffer += decoder.decode(result.value, { stream: true });
-    let newline = buffer.indexOf("\n");
-    while (newline >= 0) {
-      const line = buffer.slice(0, newline).trim();
-      buffer = buffer.slice(newline + 1);
-      if (line) {
-        const message = objectValue(JSON.parse(line));
-        onMessage(message);
-        if (message.phase === "ready" || message.ok === true) {
-          reader.releaseLock();
-          return message;
-        }
-      }
-      newline = buffer.indexOf("\n");
-    }
-  }
-  reader.releaseLock();
-  const stderr = await new Response(child.stderr).text();
-  throw new Error(`Perry node did not report readiness: ${stderr.slice(-4_000)}`);
-}
-
 async function runRetentionProbe(): Promise<void> {
   const commandResult = await new Deno.Command(Deno.execPath(), {
     args: [
@@ -595,19 +573,27 @@ async function verifyKeychainRemoved(service: string, account: string) {
 }
 
 async function deleteKeychainAccount(service: string, account: string) {
-  await new Deno.Command("/usr/bin/security", {
-    args: ["delete-generic-password", "-s", service, "-a", account],
-    stdout: "null",
-    stderr: "null",
-  }).output().catch(() => undefined);
+  await runSecurityCleanup([
+    "delete-generic-password",
+    "-s",
+    service,
+    "-a",
+    account,
+  ]);
 }
 
 async function deleteKeychainService(service: string) {
-  await new Deno.Command("/usr/bin/security", {
-    args: ["delete-generic-password", "-s", service],
-    stdout: "null",
-    stderr: "null",
-  }).output().catch(() => undefined);
+  await runSecurityCleanup(["delete-generic-password", "-s", service]);
+}
+
+async function runSecurityCleanup(args: string[]): Promise<void> {
+  await runBoundedCommand(() =>
+    new Deno.Command("/usr/bin/security", {
+      args,
+      stdin: "null",
+      stdout: "null",
+      stderr: "null",
+    }).spawn(), { timeoutMs: 2_000, terminationGraceMs: 250 });
 }
 
 async function command(
