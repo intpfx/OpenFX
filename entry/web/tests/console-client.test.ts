@@ -16,6 +16,7 @@ import {
   heartbeatRefreshPlan,
   isConsoleLogoutMessage,
   refreshAfterApproval,
+  resolveAgentCompletionMessageId,
 } from "../src/console/client-runtime.ts";
 
 const deferred = <T>() => {
@@ -271,6 +272,29 @@ Deno.test("an old Agent error completing after a new success cannot overwrite st
   }));
   await expect(pendingA).resolves.toBe(false);
   expect(status).toBe("B");
+});
+
+Deno.test("the current Agent request owns an error that omits messageId", async () => {
+  const client = createConsoleClient(() =>
+    Promise.resolve(Response.json(
+      { ok: false, error: "node_offline" },
+      { status: 503 },
+    ))
+  );
+  const turns = createAgentTurnCompletionGate();
+  turns.begin("turn-current");
+  let status = "Agent 正在处理";
+
+  const applied = await client.request("/agent").catch((error) =>
+    turns.complete(
+      "turn-current",
+      resolveAgentCompletionMessageId(error, "turn-current"),
+      () => status = error.message,
+    )
+  );
+
+  expect(applied).toBe(true);
+  expect(status).toBe("Mac 节点当前离线");
 });
 
 Deno.test("only a 401 from the current authenticated generation resets the session", async () => {

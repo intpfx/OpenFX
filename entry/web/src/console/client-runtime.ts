@@ -316,5 +316,17 @@ export function createAgentTurnCompletionGate(): AgentTurnCompletionGate {
   };
 }
 
+export function resolveAgentCompletionMessageId(
+  error: unknown,
+  originatingMessageId: string,
+): string {
+  const returnedMessageId = error instanceof ConsoleClientError
+    ? error.payload.messageId
+    : undefined;
+  return typeof returnedMessageId === "string" && returnedMessageId.length > 0
+    ? returnedMessageId
+    : originatingMessageId;
+}
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);

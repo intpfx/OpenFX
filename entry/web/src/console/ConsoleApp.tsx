@@ -21,6 +21,7 @@ import {
   handleConsoleSessionMessage,
   parseAgentDelta,
   refreshAfterApproval,
+  resolveAgentCompletionMessageId,
 } from "./client-runtime.ts";
 import {
   CONSOLE_ENDPOINTS,
@@ -455,12 +456,9 @@ export function ConsoleApp() {
       if (ignoreAfterSessionReset(error) || !agentCompletion.isCurrent(messageId)) {
         return;
       }
-      const returnedMessageId = error instanceof ConsoleClientError
-        ? error.payload.messageId
-        : messageId;
       agentCompletion.complete(
         messageId,
-        returnedMessageId,
+        resolveAgentCompletionMessageId(error, messageId),
         () =>
           setWhisperStatus(error instanceof Error ? error.message : "Agent 请求失败"),
       );
