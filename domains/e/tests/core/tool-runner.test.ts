@@ -116,7 +116,7 @@ Deno.test("SafetyActionGate rejects stale approved actions before apply", async 
     now: fixedNow(5000),
   });
 
-  const request = gate.createBoundaryRequest("edit file", {
+  const request = await gate.createBoundaryRequest("edit file", {
     id: "action-1",
     kind: "file_edit",
     title: "Edit file",
@@ -124,7 +124,7 @@ Deno.test("SafetyActionGate rejects stale approved actions before apply", async 
     beforeHash: "old",
     state: "draft",
   });
-  const approved = gate.approveBoundaryRequest(request);
+  const approved = await gate.approveBoundaryRequest(request);
 
   const result = await gate.applyAction({
     action: approved.action,
@@ -142,14 +142,14 @@ Deno.test("SafetyActionGate records boundary rejection and applied actions into 
     createId: fixedIds("boundary-1", "boundary-2", "applied-1"),
     now: fixedNow(6000),
   });
-  const request = gate.createBoundaryRequest("edit file", {
+  const request = await gate.createBoundaryRequest("edit file", {
     id: "action-1",
     kind: "file_edit",
     title: "Edit file",
     target: "file://note.txt",
     state: "draft",
   });
-  const rejected = gate.resolveBoundaryRequest(request, "rejected");
+  const rejected = await gate.resolveBoundaryRequest(request, "rejected");
 
   const baseRecord = {
     id: "turn-1",
@@ -173,14 +173,14 @@ Deno.test("SafetyActionGate records boundary rejection and applied actions into 
   assertEquals(rejectedRecord.boundaryRequests[0].state, "rejected");
   assertEquals(rejectedRecord.proposedActions[0].state, "rejected");
 
-  const approvedRequest = gate.createBoundaryRequest("edit file", {
+  const approvedRequest = await gate.createBoundaryRequest("edit file", {
     id: "action-2",
     kind: "file_edit",
     title: "Edit file",
     target: "file://note.txt",
     state: "draft",
   });
-  const approved = gate.resolveBoundaryRequest(approvedRequest, "approved");
+  const approved = await gate.resolveBoundaryRequest(approvedRequest, "approved");
   const applyResult = await gate.applyAction({
     action: approved.action,
     apply: () => Promise.resolve({ ok: true }),

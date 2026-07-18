@@ -42,7 +42,10 @@ deno task check
 - **审批消费必须原子持久化**：跨进程或多 isolate 的产品运行时必须注入原子、持久化的
   `ApprovalConsumptionStore`；`InMemoryApprovalConsumptionStore`
   只用于单进程兼容和测试。 未注册的旧审批默认拒绝，只有明确设置
-  `allowLegacyUnregisteredApprovals` 时才启用迁移 兼容路径。
+  `allowLegacyUnregisteredApprovals` 时才启用迁移 兼容路径。注册、resolution 和 apply
+  claim 都是 awaited async 操作，Deno KV adapter 可以用事务原子实现；application 只接受
+  store 中原子记录为 `approved` 的 resolution， 不读取调用方提供的 action state
+  作为授权事实。
 - **供应商无关，DeepSeek-first reference adapter**：内核不绑定 DeepSeek，但提供
   `DeepSeekProvider` 作为首个可测参考适配器。
 
@@ -177,6 +180,8 @@ Pi `agent-manager` 的源码没有整体迁入；`e` 只吸收运行时无关、
   trace。
 - `BoundaryRequest` /
   `ProposedAction`：副作用审批与预览，包括参数指纹、过期时间和单次消费 语义。
+- `ApprovalConsumptionStore`：异步、原子、可持久化的审批登记、resolution outcome 和
+  application claim 注入边界。
 - `WorkspaceBoundaryDecision`：inside workspace、outside workspace、external import
   的统一边界判定。
 - `WorkspaceToolAdapter`：workspace read/write/list/run command 的平台注入接口。

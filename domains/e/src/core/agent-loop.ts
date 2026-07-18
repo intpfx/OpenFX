@@ -1,6 +1,10 @@
 import type { KvStore } from "../interfaces/kv-store.ts";
 import type { AgentPolicy } from "./agent-policy.ts";
 import type { AgentStateKernel } from "./agent-state.ts";
+import {
+  type ApprovalConsumptionStore,
+  InMemoryApprovalConsumptionStore,
+} from "./approval-consumption-store.ts";
 import type { EventEngine } from "./event-engine.ts";
 import type { ModelMessage, ModelRuntime } from "./model-runtime.ts";
 import { SafetyActionGate } from "./safety-action-gate.ts";
@@ -33,6 +37,7 @@ export interface RunAgentTurnInput {
   now?: () => number;
   createId?: () => string;
   cancellationToken?: CancellationToken;
+  approvalConsumptionStore?: ApprovalConsumptionStore;
 }
 
 export interface RunAgentTurnResult {
@@ -48,6 +53,8 @@ export async function runAgentTurn(
 ): Promise<RunAgentTurnResult> {
   const now = input.now ?? Date.now;
   const createId = input.createId ?? crypto.randomUUID;
+  const approvalConsumptionStore = input.approvalConsumptionStore ??
+    new InMemoryApprovalConsumptionStore();
   const startedAt = now();
   const turnId = createId();
   const events: EventRecord[] = [];
@@ -196,6 +203,7 @@ export async function runAgentTurn(
       pushEvent,
       agentPolicy: input.agentPolicy,
       tools: input.tools ?? [],
+      approvalConsumptionStore,
     });
 
     record.endedAt = now();
@@ -249,7 +257,7 @@ async function buildStateContext(
   return { systemPrompt, memories, insights };
 }
 
-function routeDecision(
+async function routeDecision(
   record: TurnRecord,
   decision: AgentDecision,
   context: {
@@ -258,8 +266,9 @@ function routeDecision(
     pushEvent: (type: string, payload?: unknown) => void;
     agentPolicy?: AgentPolicy;
     tools: ToolDefinition[];
+    approvalConsumptionStore: ApprovalConsumptionStore;
   },
-): Promise<void> | void {
+): Promise<void> {
   const { createId, now, pushEvent } = context;
 
   switch (decision.kind) {
@@ -273,11 +282,12 @@ function routeDecision(
       setState(record, "waiting_boundary", pushEvent);
       return;
     case "request_boundary": {
-      const request = createBoundaryRequest(
+      const request = await createBoundaryRequest(
         decision.reason,
         decision.action,
         now,
         createId,
+        context.approvalConsumptionStore,
       );
       record.proposedActions.push(request.action);
       record.boundaryRequests.push(request);
@@ -295,7 +305,7 @@ function routeDecision(
         if (policyResult.overrideDecision) {
           record.decision = policyResult.overrideDecision;
           pushEvent("decision:policy_overridden", policyResult.overrideDecision.kind);
-          return routeDecision(record, policyResult.overrideDecision, context);
+          return await routeDecision(record, policyResult.overrideDecision, context);
         }
       }
       return routeToolCall(record, decision, context);
@@ -311,6 +321,7 @@ async function routeToolCall(
     pushEvent: (type: string, payload?: unknown) => void;
     agentPolicy?: AgentPolicy;
     tools: ToolDefinition[];
+    approvalConsumptionStore: ApprovalConsumptionStore;
   },
 ): Promise<void> {
   setState(record, "calling_tool", context.pushEvent);
@@ -318,6 +329,7 @@ async function routeToolCall(
   const safetyGate = new SafetyActionGate({
     now: context.now,
     createId: context.createId,
+    consumptionStore: context.approvalConsumptionStore,
   });
   const toolRunner = new ToolRunner(context.tools, {
     now: context.now,
@@ -347,14 +359,15 @@ async function routeToolCall(
   setState(record, "completed", context.pushEvent);
 }
 
-function createBoundaryRequest(
+async function createBoundaryRequest(
   reason: string,
   action: ProposedAction,
   now: () => number,
   createId: () => string,
-): BoundaryRequest {
-  const safetyGate = new SafetyActionGate({ now, createId });
-  return safetyGate.createBoundaryRequest(reason, action);
+  consumptionStore: ApprovalConsumptionStore,
+): Promise<BoundaryRequest> {
+  const safetyGate = new SafetyActionGate({ now, createId, consumptionStore });
+  return await safetyGate.createBoundaryRequest(reason, action);
 }
 
 function setState(

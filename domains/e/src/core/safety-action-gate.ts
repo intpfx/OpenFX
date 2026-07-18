@@ -82,10 +82,10 @@ export class SafetyActionGate {
     };
   }
 
-  createBoundaryRequest(
+  async createBoundaryRequest(
     reason: string,
     action: ProposedAction,
-  ): SecuredBoundaryRequest {
+  ): Promise<SecuredBoundaryRequest> {
     const createdAt = this.#context.now();
     const preparedAction = this.prepareAction(action);
     const request: SecuredBoundaryRequest = {
@@ -97,7 +97,7 @@ export class SafetyActionGate {
       createdAt,
       expiresAt: createdAt + (this.#context.approvalTtlMs ?? APPROVAL_TTL_MS),
     };
-    this.#consumptionStore.registerIfAbsent({
+    await this.#consumptionStore.registerIfAbsent({
       requestId: request.id,
       actionId: preparedAction.id,
       parameterFingerprint: request.parameterFingerprint,
@@ -106,62 +106,22 @@ export class SafetyActionGate {
     return request;
   }
 
-  approveBoundaryRequest(request: BoundaryRequest): BoundaryRequest {
-    return this.#resolveBoundaryRequest(request, "approved");
+  async approveBoundaryRequest(request: BoundaryRequest): Promise<BoundaryRequest> {
+    return await this.#resolveBoundaryRequest(request, "approved");
   }
 
-  rejectBoundaryRequest(request: BoundaryRequest): BoundaryRequest {
-    return this.#resolveBoundaryRequest(request, "rejected");
+  async rejectBoundaryRequest(request: BoundaryRequest): Promise<BoundaryRequest> {
+    return await this.#resolveBoundaryRequest(request, "rejected");
   }
 
-  resolveBoundaryRequest(
+  async resolveBoundaryRequest(
     request: BoundaryRequest,
     resolution: "approved" | "rejected",
-  ): BoundaryRequest {
-    return resolution === "approved"
-      ? this.approveBoundaryRequest(request)
-      : this.rejectBoundaryRequest(request);
+  ): Promise<BoundaryRequest> {
+    return await this.#resolveBoundaryRequest(request, resolution);
   }
 
   async applyAction(input: ApplyActionInput): Promise<ApplyActionResult> {
-    if (
-      input.action.state === "applied" || input.action.state === "failed"
-    ) {
-      const error = {
-        code: OPENFX_NODE_ERROR_CODES.approvalAlreadyApplied,
-        message: "Approval has already been consumed by an application attempt.",
-      };
-      return {
-        action: input.action,
-        applied: false,
-        error,
-        record: this.#appliedActionRecord(
-          input.action.id,
-          "replayed",
-          undefined,
-          error,
-        ),
-      };
-    }
-
-    if (input.action.state !== "approved") {
-      const error = {
-        code: "action_not_approved",
-        message: "Only approved actions can be applied.",
-      };
-      return {
-        action: input.action,
-        applied: false,
-        error,
-        record: this.#appliedActionRecord(
-          input.action.id,
-          "rejected",
-          undefined,
-          error,
-        ),
-      };
-    }
-
     const currentFingerprint = this.#fingerprintAction(input.action);
     if (
       (input.parameterFingerprint !== undefined &&
@@ -196,7 +156,7 @@ export class SafetyActionGate {
       };
     }
 
-    const applicationClaim = this.#consumptionStore.claimApplication({
+    const applicationClaim = await this.#consumptionStore.claimApplication({
       actionId: input.action.id,
       parameterFingerprint: currentFingerprint,
       now: this.#context.now(),
@@ -240,6 +200,23 @@ export class SafetyActionGate {
         applied: false,
         error,
         record: this.#appliedActionRecord(input.action.id, "expired", undefined, error),
+      };
+    }
+    if (applicationClaim.status === "not_approved") {
+      const error = {
+        code: OPENFX_NODE_ERROR_CODES.approvalNotApproved,
+        message: "Approval does not have an approved resolution.",
+      };
+      return {
+        action: input.action,
+        applied: false,
+        error,
+        record: this.#appliedActionRecord(
+          input.action.id,
+          "rejected",
+          undefined,
+          error,
+        ),
       };
     }
     if (applicationClaim.status === "unknown_approval") {
@@ -287,24 +264,29 @@ export class SafetyActionGate {
     }
   }
 
-  #resolveBoundaryRequest(
+  async #resolveBoundaryRequest(
     request: BoundaryRequest,
     resolution: "approved" | "rejected",
-  ): BoundaryRequest {
+  ): Promise<BoundaryRequest> {
     const now = this.#context.now();
     const expiresAt = request.expiresAt ??
       request.createdAt + (this.#context.approvalTtlMs ?? APPROVAL_TTL_MS);
     const preparedAction = this.prepareAction(request.action);
     if (this.#allowLegacyUnregisteredApprovals) {
-      this.#consumptionStore.registerIfAbsent({
+      await this.#consumptionStore.registerIfAbsent({
         requestId: request.id,
         actionId: preparedAction.id,
         parameterFingerprint: preparedAction.parameterFingerprint!,
         expiresAt,
       });
     }
-    const resolutionClaim = this.#consumptionStore.claimResolution(request.id);
-    if (request.state !== "pending" || resolutionClaim.status === "already_claimed") {
+    const resolutionClaim = await this.#consumptionStore.claimResolution({
+      requestId: request.id,
+      resolution,
+      parameterFingerprint: preparedAction.parameterFingerprint!,
+      now,
+    });
+    if (resolutionClaim.status === "already_claimed") {
       const error = {
         code: OPENFX_NODE_ERROR_CODES.approvalAlreadyResolved,
         message: "Approval request has already been resolved.",
@@ -324,7 +306,7 @@ export class SafetyActionGate {
         this.#resolutionRecord(request, "stale", now, error),
       );
     }
-    if (now >= resolutionClaim.approval.expiresAt) {
+    if (resolutionClaim.status === "expired") {
       const error = {
         code: OPENFX_NODE_ERROR_CODES.approvalExpired,
         message: "Approval request expired before resolution.",
@@ -334,11 +316,7 @@ export class SafetyActionGate {
         this.#resolutionRecord(request, "expired", now, error),
       );
     }
-
-    if (
-      preparedAction.parameterFingerprint !==
-        resolutionClaim.approval.parameterFingerprint
-    ) {
+    if (resolutionClaim.status === "fingerprint_mismatch") {
       const error = {
         code: OPENFX_NODE_ERROR_CODES.approvalFingerprintMismatch,
         message: "Approved parameters changed before resolution.",

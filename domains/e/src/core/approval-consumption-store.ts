@@ -1,13 +1,19 @@
-export interface ApprovalRegistration {
+export interface ApprovalRegistrationInput {
   readonly requestId: string;
   readonly actionId: string;
   readonly parameterFingerprint: string;
   readonly expiresAt: number;
 }
 
+export interface ApprovalRegistration extends ApprovalRegistrationInput {
+  readonly resolution: "pending" | "approved" | "rejected";
+}
+
 export type ApprovalResolutionClaim =
   | { status: "claimed"; approval: ApprovalRegistration }
   | { status: "already_claimed"; approval: ApprovalRegistration }
+  | { status: "fingerprint_mismatch"; approval: ApprovalRegistration }
+  | { status: "expired"; approval: ApprovalRegistration }
   | { status: "unknown_approval" };
 
 export type ApprovalApplicationClaim =
@@ -15,6 +21,7 @@ export type ApprovalApplicationClaim =
   | { status: "already_claimed"; approval: ApprovalRegistration }
   | { status: "fingerprint_mismatch"; approval: ApprovalRegistration }
   | { status: "expired"; approval: ApprovalRegistration }
+  | { status: "not_approved"; approval: ApprovalRegistration }
   | { status: "unknown_approval" };
 
 /**
@@ -23,15 +30,24 @@ export type ApprovalApplicationClaim =
  * Runtime adapters must make each method atomic and durable. In particular,
  * `registerIfAbsent` must never overwrite an existing approval and each claim
  * must have compare-and-set semantics across processes or isolates.
+ * `claimResolution` must persist its approved/rejected outcome in the same
+ * transaction; `claimApplication` may succeed only for an approved outcome.
  */
 export interface ApprovalConsumptionStore {
-  registerIfAbsent(approval: ApprovalRegistration): ApprovalRegistration;
-  claimResolution(requestId: string): ApprovalResolutionClaim;
+  registerIfAbsent(
+    approval: ApprovalRegistrationInput,
+  ): Promise<ApprovalRegistration>;
+  claimResolution(input: {
+    requestId: string;
+    resolution: "approved" | "rejected";
+    parameterFingerprint: string;
+    now: number;
+  }): Promise<ApprovalResolutionClaim>;
   claimApplication(input: {
     actionId: string;
     parameterFingerprint: string;
     now: number;
-  }): ApprovalApplicationClaim;
+  }): Promise<ApprovalApplicationClaim>;
 }
 
 /**
@@ -44,44 +60,64 @@ export class InMemoryApprovalConsumptionStore implements ApprovalConsumptionStor
   readonly #resolvedRequestIds = new Set<string>();
   readonly #appliedActionIds = new Set<string>();
 
-  registerIfAbsent(approval: ApprovalRegistration): ApprovalRegistration {
+  registerIfAbsent(
+    approval: ApprovalRegistrationInput,
+  ): Promise<ApprovalRegistration> {
     const existing = this.#byRequestId.get(approval.requestId) ??
       this.#byActionId.get(approval.actionId);
-    if (existing) return existing;
+    if (existing) return Promise.resolve(existing);
 
-    const registered = Object.freeze({ ...approval });
+    const registered = Object.freeze({ ...approval, resolution: "pending" as const });
     this.#byRequestId.set(registered.requestId, registered);
     this.#byActionId.set(registered.actionId, registered);
-    return registered;
+    return Promise.resolve(registered);
   }
 
-  claimResolution(requestId: string): ApprovalResolutionClaim {
-    const approval = this.#byRequestId.get(requestId);
-    if (!approval) return { status: "unknown_approval" };
-    if (this.#resolvedRequestIds.has(requestId)) {
-      return { status: "already_claimed", approval };
+  claimResolution(input: {
+    requestId: string;
+    resolution: "approved" | "rejected";
+    parameterFingerprint: string;
+    now: number;
+  }): Promise<ApprovalResolutionClaim> {
+    const approval = this.#byRequestId.get(input.requestId);
+    if (!approval) return Promise.resolve({ status: "unknown_approval" });
+    if (this.#resolvedRequestIds.has(input.requestId)) {
+      return Promise.resolve({ status: "already_claimed", approval });
     }
-    this.#resolvedRequestIds.add(requestId);
-    return { status: "claimed", approval };
+    if (approval.parameterFingerprint !== input.parameterFingerprint) {
+      return Promise.resolve({ status: "fingerprint_mismatch", approval });
+    }
+    if (input.now >= approval.expiresAt) {
+      return Promise.resolve({ status: "expired", approval });
+    }
+
+    const resolved = Object.freeze({ ...approval, resolution: input.resolution });
+    this.#resolvedRequestIds.add(input.requestId);
+    this.#byRequestId.set(resolved.requestId, resolved);
+    this.#byActionId.set(resolved.actionId, resolved);
+    return Promise.resolve({ status: "claimed", approval: resolved });
   }
 
   claimApplication(input: {
     actionId: string;
     parameterFingerprint: string;
     now: number;
-  }): ApprovalApplicationClaim {
+  }): Promise<ApprovalApplicationClaim> {
     const approval = this.#byActionId.get(input.actionId);
-    if (!approval) return { status: "unknown_approval" };
+    if (!approval) return Promise.resolve({ status: "unknown_approval" });
+    if (approval.resolution !== "approved") {
+      return Promise.resolve({ status: "not_approved", approval });
+    }
     if (this.#appliedActionIds.has(input.actionId)) {
-      return { status: "already_claimed", approval };
+      return Promise.resolve({ status: "already_claimed", approval });
     }
     if (approval.parameterFingerprint !== input.parameterFingerprint) {
-      return { status: "fingerprint_mismatch", approval };
+      return Promise.resolve({ status: "fingerprint_mismatch", approval });
     }
     if (input.now >= approval.expiresAt) {
-      return { status: "expired", approval };
+      return Promise.resolve({ status: "expired", approval });
     }
     this.#appliedActionIds.add(input.actionId);
-    return { status: "claimed", approval };
+    return Promise.resolve({ status: "claimed", approval });
   }
 }

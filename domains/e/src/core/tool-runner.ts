@@ -76,7 +76,7 @@ export class ToolRunner {
     const proposedAction = tool.proposeAction?.(validation.args) ?? null;
     if (proposedAction) {
       const preparedAction = this.#context.safetyGate.prepareAction(proposedAction);
-      const boundaryRequest = this.#context.safetyGate.createBoundaryRequest(
+      const boundaryRequest = await this.#context.safetyGate.createBoundaryRequest(
         "Tool requires approval before producing side effects.",
         preparedAction,
       );

@@ -1,4 +1,5 @@
 import { AgentStateKernel } from "../core/agent-state.ts";
+import type { ApprovalConsumptionStore } from "../core/approval-consumption-store.ts";
 import type { ArtifactKernel } from "../core/artifact.ts";
 import { EventEngine } from "../core/event-engine.ts";
 import { EvolutionKernel } from "../core/evolution.ts";
@@ -40,6 +41,7 @@ export interface EAgentRuntimeOptions {
   agentCard?: Omit<AgentCard, "agentId" | "updatedAt" | "queueDepth">;
   now?: () => number;
   createId?: () => string;
+  approvalConsumptionStore?: ApprovalConsumptionStore;
 }
 
 export interface EAgentRuntimeStep {
@@ -71,6 +73,7 @@ export class EAgentRuntime {
   readonly #agentCard?: Omit<AgentCard, "agentId" | "updatedAt" | "queueDepth">;
   readonly #now: () => number;
   readonly #createId: () => string;
+  readonly #approvalConsumptionStore?: ApprovalConsumptionStore;
 
   constructor(options: EAgentRuntimeOptions) {
     this.agentId = options.agentId;
@@ -80,6 +83,7 @@ export class EAgentRuntime {
     this.#workspaceResources = options.workspaceResources;
     this.#now = options.now ?? Date.now;
     this.#createId = options.createId ?? crypto.randomUUID;
+    this.#approvalConsumptionStore = options.approvalConsumptionStore;
     this.#eventEngine = options.eventEngine;
     this.#agentCard = options.agentCard;
     this.taskGraph = options.taskGraph;
@@ -164,6 +168,7 @@ export class EAgentRuntime {
       tools: this.#tools,
       now: this.#now,
       createId: this.#createId,
+      approvalConsumptionStore: this.#approvalConsumptionStore,
     });
 
     if (turn.state === "blocked") {
