@@ -163,23 +163,41 @@ const readJournalMode = (
 const isTransientSqliteInitializationError = (error: unknown): boolean => {
   const sqliteError = error as {
     code?: unknown;
+    errno?: unknown;
     errcode?: unknown;
+    resultCode?: unknown;
+    baseCode?: unknown;
+    extendedCode?: unknown;
+    extendedResultCode?: unknown;
     message?: unknown;
   };
-  const resultCode = typeof sqliteError.errcode === "number"
-    ? sqliteError.errcode & 0xff
-    : null;
+  const numericCodes = [
+    sqliteError.errno,
+    sqliteError.errcode,
+    sqliteError.resultCode,
+    sqliteError.baseCode,
+    sqliteError.extendedCode,
+    sqliteError.extendedResultCode,
+    sqliteError.code,
+  ];
   if (
-    sqliteError.code === "SQLITE_BUSY" ||
-    sqliteError.code === "SQLITE_LOCKED" ||
-    resultCode === 5 ||
-    resultCode === 6
+    numericCodes.some((code) => {
+      if (typeof code !== "number") return false;
+      const baseCode = code & 0xff;
+      return baseCode === 5 || baseCode === 6;
+    })
   ) {
     return true;
   }
-  const message = String(sqliteError.message ?? error);
-  return /SQLITE_(?:BUSY|LOCKED)|database(?: table)? is locked|database is busy/i
-    .test(message);
+  // Message text is authoritative only when the SQLite binding identifies the
+  // error. JSON SyntaxError content must never opt itself into initialization retry.
+  if (typeof sqliteError.code !== "string") return false;
+  if (/^SQLITE_(?:BUSY|LOCKED)(?:_[A-Z0-9_]+)?$/.test(sqliteError.code)) {
+    return true;
+  }
+  if (sqliteError.code !== "ERR_SQLITE_ERROR") return false;
+  return sqliteError.message === "database is locked" ||
+    sqliteError.message === "database table is locked";
 };
 
 const waitForInitializationRetry = async (attempt: number): Promise<void> => {

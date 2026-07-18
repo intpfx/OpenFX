@@ -109,6 +109,39 @@ Deno.test("non-transient SQLite initialization errors are not retried", async ()
   assertEquals(scheduledRetries, 0);
 });
 
+Deno.test("legacy JSON errors cannot impersonate a retryable SQLite lock", async () => {
+  const root = await Deno.makeTempDir({ prefix: "openfx-sqlite-provenance-" });
+  const databasePath = join(root, "journal.sqlite");
+  const legacyPath = join(root, "journal.jsonl");
+  await writeFile(
+    legacyPath,
+    [
+      JSON.stringify(auditEvent("audit-1", "before-corruption")),
+      "database is locked",
+      JSON.stringify(auditEvent("audit-2", "after-corruption")),
+    ].join("\n"),
+  );
+  const storage = createSqliteJournalStorage(databasePath, {
+    legacyJournalPath: legacyPath,
+  });
+  const originalSetTimeout = globalThis.setTimeout;
+  let scheduledRetries = 0;
+  globalThis.setTimeout = ((...args: Parameters<typeof setTimeout>) => {
+    scheduledRetries += 1;
+    return originalSetTimeout(...args);
+  }) as typeof setTimeout;
+  try {
+    await assertRejects(
+      () => storage.transact(() => ({ result: "unreachable" })),
+      SyntaxError,
+    );
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+  }
+
+  assertEquals(scheduledRetries, 0);
+});
+
 Deno.test("SQLite journal cleans obsolete locks and repairs private modes", async () => {
   const root = await Deno.makeTempDir({ prefix: "openfx-sqlite-mode-" });
   const directory = join(root, "OpenFX Node");
