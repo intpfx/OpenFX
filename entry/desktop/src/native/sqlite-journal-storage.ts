@@ -6,6 +6,9 @@ import type { JournalEvent, JournalStorage } from "../core/durable-journal.ts";
 
 const DIRECTORY_MODE = 0o700;
 const FILE_MODE = 0o600;
+const INITIALIZATION_ATTEMPTS = 12;
+const INITIALIZATION_BUSY_TIMEOUT_MS = 250;
+const TRANSACTION_BUSY_TIMEOUT_MS = 5_000;
 
 export interface SqliteJournalStorageOptions {
   legacyJournalPath?: string;
@@ -16,8 +19,17 @@ export const createSqliteJournalStorage = (
   options: SqliteJournalStorageOptions = {},
 ): JournalStorage => {
   let databasePromise: Promise<DatabaseSync> | null = null;
-  const database = () =>
-    databasePromise ??= initializeDatabase(path, options.legacyJournalPath);
+  const database = async (): Promise<DatabaseSync> => {
+    if (databasePromise) return databasePromise;
+    const pending = initializeDatabase(path, options.legacyJournalPath);
+    databasePromise = pending;
+    try {
+      return await pending;
+    } catch (error) {
+      if (databasePromise === pending) databasePromise = null;
+      throw error;
+    }
+  };
 
   return {
     async transact<Result>(
@@ -87,29 +99,94 @@ const initializeDatabase = async (
     ].map((lockPath) => unlink(lockPath).catch(ignoreMissing)),
   );
 
-  const db = new DatabaseSync(path);
-  await chmod(path, FILE_MODE);
-  db.exec("PRAGMA busy_timeout = 5000");
-  db.exec("PRAGMA journal_mode = WAL");
-  db.exec("PRAGMA synchronous = FULL");
-  db.exec("PRAGMA wal_autocheckpoint = 100");
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS journal_state (
-      id INTEGER PRIMARY KEY CHECK (id = 1),
-      version INTEGER NOT NULL,
-      legacy_imported INTEGER NOT NULL CHECK (legacy_imported IN (0, 1))
-    );
-    INSERT OR IGNORE INTO journal_state(id, version, legacy_imported)
-      VALUES (1, 0, 0);
-    CREATE TABLE IF NOT EXISTS journal_events (
-      sequence INTEGER PRIMARY KEY AUTOINCREMENT,
-      payload TEXT NOT NULL
-    );
-  `);
-  await secureDatabaseFiles(path);
-  await migrateLegacyJournal(db, legacyJournalPath);
-  await secureDatabaseFiles(path);
-  return db;
+  for (let attempt = 1; attempt <= INITIALIZATION_ATTEMPTS; attempt += 1) {
+    let db: DatabaseSync | null = null;
+    try {
+      db = new DatabaseSync(path);
+      await chmod(path, FILE_MODE);
+      db.exec(`PRAGMA busy_timeout = ${INITIALIZATION_BUSY_TIMEOUT_MS}`);
+      if (readJournalMode(db) !== "wal") {
+        const enabledMode = readJournalMode(db, "PRAGMA journal_mode = WAL");
+        if (enabledMode !== "wal") {
+          throw new Error(`journal_mode_wal_unavailable:${enabledMode}`);
+        }
+      }
+      db.exec("PRAGMA synchronous = FULL");
+      db.exec("PRAGMA wal_autocheckpoint = 100");
+      db.exec(`
+        BEGIN IMMEDIATE;
+        CREATE TABLE IF NOT EXISTS journal_state (
+          id INTEGER PRIMARY KEY CHECK (id = 1),
+          version INTEGER NOT NULL,
+          legacy_imported INTEGER NOT NULL CHECK (legacy_imported IN (0, 1))
+        );
+        INSERT OR IGNORE INTO journal_state(id, version, legacy_imported)
+          VALUES (1, 0, 0);
+        CREATE TABLE IF NOT EXISTS journal_events (
+          sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+          payload TEXT NOT NULL
+        );
+        COMMIT;
+      `);
+      await secureDatabaseFiles(path);
+      await migrateLegacyJournal(db, legacyJournalPath);
+      db.exec(`PRAGMA busy_timeout = ${TRANSACTION_BUSY_TIMEOUT_MS}`);
+      await secureDatabaseFiles(path);
+      return db;
+    } catch (error) {
+      if (db) {
+        db.close();
+        await secureDatabaseFiles(path);
+      }
+      if (
+        !isTransientSqliteInitializationError(error) ||
+        attempt === INITIALIZATION_ATTEMPTS
+      ) {
+        throw error;
+      }
+      await waitForInitializationRetry(attempt);
+    }
+  }
+  throw new Error("sqlite_initialization_attempts_exhausted");
+};
+
+const readJournalMode = (
+  db: DatabaseSync,
+  statement = "PRAGMA journal_mode",
+): string => {
+  const row = db.prepare(statement).get() as
+    | { journal_mode?: unknown }
+    | undefined;
+  return String(row?.journal_mode ?? "").toLowerCase();
+};
+
+const isTransientSqliteInitializationError = (error: unknown): boolean => {
+  const sqliteError = error as {
+    code?: unknown;
+    errcode?: unknown;
+    message?: unknown;
+  };
+  const resultCode = typeof sqliteError.errcode === "number"
+    ? sqliteError.errcode & 0xff
+    : null;
+  if (
+    sqliteError.code === "SQLITE_BUSY" ||
+    sqliteError.code === "SQLITE_LOCKED" ||
+    resultCode === 5 ||
+    resultCode === 6
+  ) {
+    return true;
+  }
+  const message = String(sqliteError.message ?? error);
+  return /SQLITE_(?:BUSY|LOCKED)|database(?: table)? is locked|database is busy/i
+    .test(message);
+};
+
+const waitForInitializationRetry = async (attempt: number): Promise<void> => {
+  const ceiling = Math.min(125, 8 * (2 ** (attempt - 1)));
+  const floor = Math.ceil(ceiling / 2);
+  const delay = floor + Math.floor(Math.random() * (ceiling - floor + 1));
+  await new Promise<void>((resolve) => setTimeout(resolve, delay));
 };
 
 const migrateLegacyJournal = async (

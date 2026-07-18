@@ -1,6 +1,7 @@
 import { assertEquals, assertRejects } from "@std/assert";
-import { chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import type { JournalEvent } from "../src/core/durable-journal.ts";
 import { createDesktopJournal } from "../src/core/durable-journal.ts";
@@ -15,6 +16,97 @@ const auditEvent = (id: string, action: string): JournalEvent => ({
     outcome: "succeeded",
     createdAt: Number(id.replace(/\D/g, "")) || 1,
   },
+});
+
+const workerPath = fileURLToPath(
+  new URL("./fixtures/sqlite-journal-worker.ts", import.meta.url),
+);
+
+const runClaimWorkers = async (
+  databasePath: string,
+  nonce: string,
+  count: number,
+): Promise<boolean[]> => {
+  const results = await Promise.all(
+    Array.from({ length: count }, () =>
+      new Deno.Command("deno", {
+        args: [
+          "run",
+          "--quiet",
+          "--allow-read",
+          "--allow-write",
+          workerPath,
+          databasePath,
+          nonce,
+        ],
+        stdout: "piped",
+        stderr: "piped",
+      }).output()),
+  );
+  const failures = results
+    .filter((result) => !result.success)
+    .map((result) => new TextDecoder().decode(result.stderr).trim());
+  assertEquals(failures, []);
+  return results.map((result) =>
+    JSON.parse(new TextDecoder().decode(result.stdout).trim()) as boolean
+  );
+};
+
+Deno.test("separate processes survive concurrent SQLite cold starts", async () => {
+  const root = await Deno.makeTempDir({ prefix: "openfx-sqlite-process-" });
+  for (let iteration = 0; iteration < 8; iteration += 1) {
+    const claims = await runClaimWorkers(
+      join(root, `pair-${iteration}.sqlite`),
+      `pair-${iteration}`,
+      2,
+    );
+    assertEquals(claims.filter(Boolean).length, 1);
+  }
+
+  const claims = await runClaimWorkers(
+    join(root, "twelve.sqlite"),
+    "twelve",
+    12,
+  );
+  assertEquals(claims.filter(Boolean).length, 1);
+});
+
+Deno.test("a storage instance recovers after its first initialization rejects", async () => {
+  const root = await Deno.makeTempDir({ prefix: "openfx-sqlite-recover-" });
+  const databasePath = join(root, "journal.sqlite");
+  await mkdir(databasePath);
+  const storage = createSqliteJournalStorage(databasePath);
+
+  await assertRejects(() => storage.transact(() => ({ result: "unreachable" })), Error);
+  await rm(databasePath, { recursive: true });
+
+  assertEquals(
+    await storage.transact(() => ({ result: "recovered" })),
+    "recovered",
+  );
+});
+
+Deno.test("non-transient SQLite initialization errors are not retried", async () => {
+  const root = await Deno.makeTempDir({ prefix: "openfx-sqlite-invalid-" });
+  const databasePath = join(root, "journal.sqlite");
+  await writeFile(databasePath, "not a sqlite database");
+  const storage = createSqliteJournalStorage(databasePath);
+  const originalSetTimeout = globalThis.setTimeout;
+  let scheduledRetries = 0;
+  globalThis.setTimeout = ((...args: Parameters<typeof setTimeout>) => {
+    scheduledRetries += 1;
+    return originalSetTimeout(...args);
+  }) as typeof setTimeout;
+  try {
+    await assertRejects(
+      () => storage.transact(() => ({ result: "unreachable" })),
+      Error,
+    );
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+  }
+
+  assertEquals(scheduledRetries, 0);
 });
 
 Deno.test("SQLite journal cleans obsolete locks and repairs private modes", async () => {

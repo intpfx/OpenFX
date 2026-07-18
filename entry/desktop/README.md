@@ -21,8 +21,9 @@ OpenFX Node 是常驻 macOS 菜单栏的原生 Perry 应用。它接管原 Freem
   journal；不完整执行在重启时终止为 `ambiguous`，不会重放原生副作用。
 - journal 写入 `~/Library/Application Support/OpenFX Node/journal.sqlite`，使用
   `BEGIN IMMEDIATE`、WAL 与 `synchronous=FULL`；首次启动会事务迁移旧
-  JSONL，并清理已废弃的 `.lock` 文件。目录权限固定为 `0700`，数据库/WAL 文件固定为
-  `0600`。Keychain 密钥通过 标准输入写入，不出现在进程参数中。
+  JSONL，并清理已废弃的 `.lock` 文件。并发冷启动遇到 SQLite busy/locked 时会有界
+  抖动重试，其他初始化错误立即返回。目录权限固定为 `0700`，数据库/WAL 文件固定为
+  `0600`。Keychain 密钥通过标准输入写入，不出现在进程参数中。
 
 ## 验证
 
