@@ -17,11 +17,12 @@ OpenFX Node 是常驻 macOS 菜单栏的原生 Perry 应用。它接管原 Freem
 - OpenFX 控制面上报只走 `node:https.request`，包括实时 Agent delta 与审批事件；OMLX
   固定使用 `node:http.request` 流式访问 `127.0.0.1:8000/v1/chat/completions`。
 - Agent 工具是封闭的 v1 清单。三个有副作用的工具必须经过 `domains/e` 的
-  `SafetyActionGate`。审批、执行意图/结果、审计和 Relay nonce 使用同一个崩溃安全
-  journal， 不完整执行在重启时终止为 `ambiguous`，不会重放原生副作用。
-- journal 追加写入
-  `~/Library/Application Support/OpenFX Node/journal.jsonl`；目录权限固定为
-  `0700`，文件权限固定为 `0600`。Keychain 密钥通过标准输入写入，不出现在进程参数中。
+  `SafetyActionGate`。审批、执行意图/结果、审计和 Relay nonce 使用同一个 SQLite 事务
+  journal；不完整执行在重启时终止为 `ambiguous`，不会重放原生副作用。
+- journal 写入 `~/Library/Application Support/OpenFX Node/journal.sqlite`，使用
+  `BEGIN IMMEDIATE`、WAL 与 `synchronous=FULL`；首次启动会事务迁移旧
+  JSONL，并清理已废弃的 `.lock` 文件。目录权限固定为 `0700`，数据库/WAL 文件固定为
+  `0600`。Keychain 密钥通过 标准输入写入，不出现在进程参数中。
 
 ## 验证
 

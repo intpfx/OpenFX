@@ -638,12 +638,17 @@ export const createConsoleControlPlane = (
       if (!await consumeNonce(store, replyEnvelope.nonce, now())) {
         return nodeError(OPENFX_NODE_ERROR_CODES.replayDetected, 409);
       }
-      await appendAudit({
-        category: "relay",
-        action: route.path,
-        outcome: "succeeded",
-        nodeId: node.value.id,
-      });
+      try {
+        await appendAudit({
+          category: "relay",
+          action: route.path,
+          outcome: "succeeded",
+          nodeId: node.value.id,
+        });
+      } catch {
+        // The authenticated node result is authoritative; audit is best-effort
+        // after the external effect or Agent turn has already completed.
+      }
       return Response.json(reply);
     } catch (error) {
       if (error instanceof OpenFxNodeProtocolError) {

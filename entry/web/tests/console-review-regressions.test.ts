@@ -389,6 +389,79 @@ Deno.test("successful Relay effects do not synthesize events or fail on event st
   expect(await base.list({ prefix: ["openfx-console", "events"] })).toEqual(before);
 });
 
+Deno.test("a post-result audit failure cannot replace a successful Relay effect", async () => {
+  const base = createMemoryConsoleStore();
+  let rejectAuditWrites = false;
+  let failedAuditWrites = 0;
+  const store: ConsoleStore = {
+    ...base,
+    set(key, value, options) {
+      if (rejectAuditWrites && key[1] === "audit") {
+        failedAuditWrites += 1;
+        return Promise.reject(new Error("audit storage unavailable"));
+      }
+      return base.set(key, value, options);
+    },
+  };
+  const cryptoAdapter = createWebCryptoAdapter();
+  let nodeSecret = "";
+  const effectResult = {
+    ok: true,
+    applied: true,
+    result: { opened: "Safari", effectId: "effect-1" },
+  };
+  const { plane } = harness({
+    store,
+    fetch: async (_input, init) => {
+      const request = await openRelayEnvelope(
+        cryptoAdapter,
+        decodeBase64Url(nodeSecret),
+        JSON.parse(String(init?.body)),
+        { now: () => START, replayProtector: { consume() {} } },
+      );
+      expect(request).toMatchObject({
+        method: "POST",
+        path: "/v1/approvals/resolve",
+      });
+      return Response.json(
+        await sealRelayEnvelope(
+          cryptoAdapter,
+          decodeBase64Url(nodeSecret),
+          effectResult,
+          { now: () => START },
+        ),
+      );
+    },
+  });
+  const cookie = await login(plane);
+  const paired = await pair(plane, cookie);
+  nodeSecret = paired.nodeSecret;
+  await nodeHeartbeatHandler(
+    jsonRequest("http://localhost/api/node/heartbeat", {
+      nodeId: paired.node.id,
+      protocolVersion: 1,
+      publicIpv6: "2001:4860:4860::8844",
+      port: 24531,
+      availability: "online",
+    }, { authorization: `Bearer ${paired.nodeSecret}` }),
+    plane,
+  );
+  rejectAuditWrites = true;
+
+  const response = await plane.console.handle(
+    jsonRequest("http://localhost/api/console/approvals/resolve", {
+      id: "approval-1",
+      decision: "approved",
+      parameterFingerprint: "fingerprint-1",
+    }, { cookie }),
+    "approvals.resolve",
+  );
+
+  expect(response.status).toBe(200);
+  await expect(response.json()).resolves.toEqual(effectResult);
+  expect(failedAuditWrites).toBe(1);
+});
+
 Deno.test("pairing atomically consumes the code with matching node and credential", async () => {
   const { plane, store } = harness();
   const cookie = await login(plane);

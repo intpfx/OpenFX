@@ -36,7 +36,7 @@ import { createDesktopLifecycleController } from "./core/lifecycle-controller.ts
 import { createDesktopRouteDispatcher } from "./core/route-dispatcher.ts";
 import type { DesktopPreferences } from "./core/types.ts";
 import { createControlPlaneClient } from "./native/control-plane-client.ts";
-import { createFileJournalStorage } from "./native/file-journal-storage.ts";
+import { createSqliteJournalStorage } from "./native/sqlite-journal-storage.ts";
 import { requestJson, requestTextStream } from "./native/http-json.ts";
 import { createKeychain } from "./native/keychain.ts";
 import { createMacSystemAdapter } from "./native/mac-system.ts";
@@ -67,13 +67,16 @@ const pairingService = createPairingService({
 });
 const reporter = createRelayReporter(controlPlane);
 const eventReporter = createNodeEventReporter(controlPlane);
-const journal = createDesktopJournal(createFileJournalStorage(join(
+const journalDirectory = join(
   homedir(),
   "Library",
   "Application Support",
   "OpenFX Node",
-  "journal.jsonl",
-)));
+);
+const journal = createDesktopJournal(createSqliteJournalStorage(
+  join(journalDirectory, "journal.sqlite"),
+  { legacyJournalPath: join(journalDirectory, "journal.jsonl") },
+));
 const audit: AuditLog = {
   append: (event) => journal.appendAudit(event),
   list: (limit) => journal.listAudit(limit),
