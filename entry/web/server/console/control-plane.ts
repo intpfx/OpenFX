@@ -330,11 +330,25 @@ export const createConsoleControlPlane = (
       createdAt,
       expiresAt: createdAt + PAIRING_TTL_MS,
     } satisfies PairingRecord;
-    await (await storePromise).set(
-      [...ROOT, "pairings", codeDigest],
-      record,
-      { expireIn: PAIRING_TTL_MS + PAIRING_EXPIRY_GRACE_MS },
-    );
+    const pairingKey = [...ROOT, "pairings", codeDigest] as const;
+    const liveKey = [...ROOT, "pairings-live", codeDigest] as const;
+    if (
+      !await (await storePromise).atomic({
+        checks: [],
+        sets: [
+          {
+            key: pairingKey,
+            value: record,
+            options: { expireIn: PAIRING_TTL_MS + PAIRING_EXPIRY_GRACE_MS },
+          },
+          {
+            key: liveKey,
+            value: { expiresAt: record.expiresAt },
+            options: { expireIn: PAIRING_TTL_MS },
+          },
+        ],
+      })
+    ) throw new ConsoleStoreUnavailableError();
     await appendAudit({
       category: "pairing",
       action: "pairing.created",
@@ -360,13 +374,17 @@ export const createConsoleControlPlane = (
       return nodeError(OPENFX_NODE_ERROR_CODES.relayUnavailable, 503);
     }
     const store = await storePromise;
-    const key = [...ROOT, "pairings", await digest(code)] as const;
+    const codeDigest = await digest(code);
+    const key = [...ROOT, "pairings", codeDigest] as const;
+    const liveKey = [...ROOT, "pairings-live", codeDigest] as const;
     let pairing = await store.get<PairingRecord>(key);
     if (!pairing) return nodeError(OPENFX_NODE_ERROR_CODES.pairingInvalid, 404);
     if (pairing.value.usedAt !== undefined) {
       return nodeError(OPENFX_NODE_ERROR_CODES.pairingUsed, 409);
     }
-    if (pairing.value.expiresAt <= now()) {
+    const initialExpiresAt = pairing.value.expiresAt;
+    let live = await store.get<{ expiresAt: number }>(liveKey);
+    if (!live || pairing.value.expiresAt <= now()) {
       return nodeError(OPENFX_NODE_ERROR_CODES.pairingExpired, 410);
     }
     const nodeSecret = randomBytes(32);
@@ -406,6 +424,7 @@ export const createConsoleControlPlane = (
       !await store.atomic({
         checks: [
           { key, versionstamp: pairing.versionstamp },
+          { key: liveKey, versionstamp: live.versionstamp },
           { key: activeKey, versionstamp: active?.versionstamp ?? null },
           {
             key: credentialRecordKey,
@@ -430,15 +449,20 @@ export const createConsoleControlPlane = (
           { key: activeKey, value: node },
           { key: credentialRecordKey, value: credential },
         ],
-        deletes: [statusKey],
+        deletes: [statusKey, liveKey],
       })
     ) {
       pairing = await store.get<PairingRecord>(key);
+      live = await store.get<{ expiresAt: number }>(liveKey);
+      const usedAfterConflict = pairing?.value.usedAt !== undefined;
+      const expiredAfterConflict = initialExpiresAt <= now() || !live;
       return nodeError(
-        pairing?.value.usedAt !== undefined
+        usedAfterConflict
           ? OPENFX_NODE_ERROR_CODES.pairingUsed
+          : expiredAfterConflict
+          ? OPENFX_NODE_ERROR_CODES.pairingExpired
           : OPENFX_NODE_ERROR_CODES.pairingInvalid,
-        409,
+        !usedAfterConflict && expiredAfterConflict ? 410 : 409,
       );
     }
     await appendAudit({
@@ -953,6 +977,7 @@ export const createConsoleControlPlane = (
       return nodeError(OPENFX_NODE_ERROR_CODES.nodeOffline, 503);
     }
     if (!upstream.ok) {
+      await upstream.body?.cancel().catch(() => undefined);
       await appendRelayOutcome(
         "failed",
         OPENFX_NODE_ERROR_CODES.relayUnavailable,

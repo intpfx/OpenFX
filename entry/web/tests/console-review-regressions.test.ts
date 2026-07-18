@@ -671,6 +671,66 @@ Deno.test("Relay cancels an oversized streamed node response before JSON or auth
   expect(pulls).toBeLessThan(20);
 });
 
+Deno.test("Relay cancels a non-2xx response body before recording its outcome", async () => {
+  const base = createMemoryConsoleStore();
+  let cancelled = false;
+  let outcomeSawCancellation = false;
+  const store: ConsoleStore = {
+    ...base,
+    set(key, value, options) {
+      if (
+        key[1] === "audit" &&
+        (value as { action?: string }).action === "relay.outcome"
+      ) {
+        outcomeSawCancellation = cancelled;
+      }
+      return base.set(key, value, options);
+    },
+  };
+  const { plane } = harness({
+    store,
+    fetch: () =>
+      Promise.resolve(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new Uint8Array(16 * 1024));
+            },
+            cancel() {
+              cancelled = true;
+            },
+          }),
+          { status: 503 },
+        ),
+      ),
+  });
+  const cookie = await login(plane);
+  const paired = await pair(plane, cookie);
+  await nodeHeartbeatHandler(
+    await signedJsonRequest(
+      "http://localhost/api/node/heartbeat",
+      {
+        nodeId: paired.node.id,
+        protocolVersion: 1,
+        publicIpv6: "2001:4860:4860::8844",
+        port: 24531,
+        availability: "online",
+      },
+      paired.nodeSecret,
+    ),
+    plane,
+  );
+
+  const response = await plane.console.handle(
+    new Request("http://localhost/api/console/overview", { headers: { cookie } }),
+    "overview",
+  );
+
+  expect(response.status).toBe(502);
+  expect(cancelled).toBe(true);
+  expect(outcomeSawCancellation).toBe(true);
+});
+
 Deno.test("pairing atomically consumes the code with matching node and credential", async () => {
   const { plane, store } = harness();
   const cookie = await login(plane);
@@ -698,6 +758,7 @@ Deno.test("pairing atomically consumes the code with matching node and credentia
 Deno.test("pairing records have a physical TTL with a short logical-expiry grace", async () => {
   const base = createMemoryConsoleStore();
   const pairingExpiries: Array<number | undefined> = [];
+  const liveMarkerExpiries: Array<number | undefined> = [];
   const store: ConsoleStore = {
     ...base,
     set(key, value, options) {
@@ -708,6 +769,9 @@ Deno.test("pairing records have a physical TTL with a short logical-expiry grace
       for (const item of operation.sets) {
         if (item.key[1] === "pairings") {
           pairingExpiries.push(item.options?.expireIn);
+        }
+        if (item.key[1] === "pairings-live") {
+          liveMarkerExpiries.push(item.options?.expireIn);
         }
       }
       return base.atomic(operation);
@@ -725,14 +789,63 @@ Deno.test("pairing records have a physical TTL with a short logical-expiry grace
 
   expect(response.status).toBe(201);
   expect(pairingExpiries).toEqual([11 * 60_000, 11 * 60_000]);
+  expect(liveMarkerExpiries).toEqual([10 * 60_000]);
+  expect(
+    await base.list({ prefix: ["openfx-console", "pairings-live"] }),
+  ).toHaveLength(0);
+});
+
+Deno.test("pairing cannot commit after its live marker expires mid-request", async () => {
+  let now = START;
+  const base = createMemoryConsoleStore({ now: () => now });
+  const reachedCommitReads = Promise.withResolvers<void>();
+  const resumeCommitReads = Promise.withResolvers<void>();
+  let paused = false;
+  const store: ConsoleStore = {
+    ...base,
+    get<T>(key: readonly (string | number | boolean)[]) {
+      if (!paused && key[1] === "node" && key[2] === "active") {
+        paused = true;
+        reachedCommitReads.resolve();
+        return resumeCommitReads.promise.then(() => base.get<T>(key));
+      }
+      return base.get<T>(key);
+    },
+  };
+  const { plane } = harness({ store, now: () => now });
+  const cookie = await login(plane);
+  const code = await createPairingCode(plane, cookie);
+
+  const pending = pairNodeHandler(
+    jsonRequest("http://localhost/api/node/pair", pairBody(code)),
+    plane,
+  );
+  await reachedCommitReads.promise;
+  now += 10 * 60_000 + 1;
+  resumeCommitReads.resolve();
+  const response = await pending;
+
+  expect(response.status).toBe(410);
+  await expect(response.json()).resolves.toMatchObject({
+    error: "node_pairing_expired",
+  });
+  expect(await base.get(["openfx-console", "node", "active"])).toBeNull();
+  expect(await base.get(["openfx-console", "node", "credential"])).toBeNull();
+  expect(
+    await base.list({ prefix: ["openfx-console", "pairings"] }),
+  ).toHaveLength(1);
 });
 
 Deno.test("failed pairing transaction leaves code, node, and credential unchanged", async () => {
   const base = createMemoryConsoleStore();
   const failing: ConsoleStore = {
     ...base,
-    atomic(_operation: ConsoleAtomicOperation) {
-      return Promise.resolve(false);
+    atomic(operation: ConsoleAtomicOperation) {
+      return operation.sets.some(
+          (item) => item.key[1] === "node" && item.key[2] === "active",
+        )
+        ? Promise.resolve(false)
+        : base.atomic(operation);
     },
   };
   const { plane } = harness({ store: failing });
