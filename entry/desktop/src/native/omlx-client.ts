@@ -154,15 +154,17 @@ const streamChat = async (
         throw new Error("omlx_content_too_large");
       }
       content += text;
-      callbacks = callbacks.then(async () => {
-        if (callbackError) return;
-        try {
-          await onDelta(text);
-        } catch {
-          callbackError = new Error("omlx_delta_callback_failed");
-          throw callbackError;
-        }
-      });
+      callbacks = observeRejection(
+        callbacks.then(async () => {
+          if (callbackError) return;
+          try {
+            await onDelta(text);
+          } catch {
+            callbackError = new Error("omlx_delta_callback_failed");
+            throw callbackError;
+          }
+        }),
+      );
     }
     const toolCalls = Array.isArray(delta.tool_calls) ? delta.tool_calls : [];
     for (const raw of toolCalls) {
@@ -233,8 +235,8 @@ const streamChat = async (
       return callbacks;
     });
   } catch (error) {
-    if (callbackError) throw callbackError;
     if (streamError) throw streamError;
+    if (callbackError) throw callbackError;
     throw error;
   }
   if (streamError) throw streamError;
@@ -313,3 +315,11 @@ const objectValue = (value: unknown): Record<string, unknown> =>
     : {};
 
 const stringValue = (value: unknown): string => typeof value === "string" ? value : "";
+
+const observeRejection = (promise: Promise<void>): Promise<void> => {
+  promise.then(
+    () => {},
+    () => {},
+  );
+  return promise;
+};

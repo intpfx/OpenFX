@@ -461,6 +461,40 @@ Deno.test("OMLX bounds blank and comment line parsing work", async () => {
   );
 });
 
+Deno.test("OMLX observes rejecting deltas when a later line in the same chunk fails", async () => {
+  const cases = [
+    {
+      suffix: "data: {not-json}\n",
+      error: "omlx_sse_invalid_json",
+    },
+    {
+      suffix: `data: ${"x".repeat(64 * 1024)}\n`,
+      error: "omlx_sse_line_too_large",
+    },
+  ];
+
+  for (const testCase of cases) {
+    const client = createOmlxClient(
+      () => Promise.reject(new Error("unexpected JSON request")),
+      (_request, onChunk) => {
+        onChunk(
+          'data: {"choices":[{"delta":{"content":"hello"}}]}\n' +
+            testCase.suffix,
+        );
+        return Promise.resolve({ status: 200 });
+      },
+    );
+
+    await assertRejects(
+      () =>
+        client.chat("hello", () => Promise.reject(new Error("delta sink unavailable"))),
+      Error,
+      testCase.error,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+});
+
 const settleWithin = async (
   promise: Promise<string>,
   timeoutMs: number,
