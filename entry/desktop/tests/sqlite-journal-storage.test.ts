@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects } from "@std/assert";
+import { assertEquals, assertRejects, assertThrows } from "@std/assert";
 import { chmod, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -360,6 +360,76 @@ Deno.test("SQLite migrates legacy replay events once and never scans them during
     ),
     true,
   );
+});
+
+Deno.test("SQLite migration fences out mixed-version legacy replay writers", async () => {
+  const root = await Deno.makeTempDir({ prefix: "openfx-sqlite-replay-fence-" });
+  const databasePath = join(root, "journal.sqlite");
+  const journal = createDesktopJournal(createSqliteJournalStorage(databasePath));
+  assertEquals(
+    await journal.claimReplayNonce("new-authority", Date.now() + 30_000, Date.now()),
+    true,
+  );
+
+  const legacyPayload = JSON.stringify({
+    type: "replay.claimed",
+    nonce: "mixed-version",
+    expiresAt: Date.now() + 30_000,
+  });
+  const legacyWriter = new DatabaseSync(databasePath);
+  try {
+    assertThrows(
+      () =>
+        legacyWriter.prepare("INSERT INTO journal_events(payload) VALUES (?)").run(
+          legacyPayload,
+        ),
+      Error,
+      "legacy_replay_claims_disabled",
+    );
+  } finally {
+    legacyWriter.close();
+  }
+
+  await journal.appendAudit({
+    category: "node",
+    action: "audit.after-replay-fence",
+    outcome: "succeeded",
+  });
+  const reconstructed = createDesktopJournal(
+    createSqliteJournalStorage(databasePath),
+  );
+  assertEquals(
+    await reconstructed.claimReplayNonce(
+      "new-authority",
+      Date.now() + 30_000,
+      Date.now(),
+    ),
+    false,
+  );
+  assertEquals((await reconstructed.listAudit()).map((event) => event.action), [
+    "audit.after-replay-fence",
+  ]);
+
+  const verification = new DatabaseSync(databasePath);
+  try {
+    assertThrows(
+      () =>
+        verification.prepare("INSERT INTO journal_events(payload) VALUES (?)").run(
+          legacyPayload,
+        ),
+      Error,
+      "legacy_replay_claims_disabled",
+    );
+    assertEquals(
+      (verification.prepare(
+        "SELECT COUNT(*) AS count FROM journal_events " +
+          "WHERE payload = ?",
+      ).get(legacyPayload) as { count: number }).count,
+      0,
+    );
+  } finally {
+    verification.close();
+  }
 });
 
 Deno.test("independent SQLite connections cannot both claim one approval", async () => {

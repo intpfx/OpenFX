@@ -189,11 +189,6 @@ const initializeDatabase = async (
 };
 
 const migrateLegacyReplayClaims = (db: DatabaseSync): void => {
-  const imported = db.prepare(
-    "SELECT legacy_imported FROM replay_state WHERE id = 1",
-  ).get() as { legacy_imported: number };
-  if (imported.legacy_imported === 1) return;
-
   db.exec("BEGIN IMMEDIATE");
   try {
     const current = db.prepare(
@@ -221,6 +216,18 @@ const migrateLegacyReplayClaims = (db: DatabaseSync): void => {
       ).run();
       if (updated.changes !== 1) throw new Error("replay_migration_conflict");
     }
+    db.exec(`
+      CREATE TRIGGER IF NOT EXISTS reject_legacy_replay_claims
+      BEFORE INSERT ON journal_events
+      WHEN CASE
+        WHEN json_valid(NEW.payload)
+          THEN json_extract(NEW.payload, '$.type') = 'replay.claimed'
+        ELSE 0
+      END
+      BEGIN
+        SELECT RAISE(ABORT, 'legacy_replay_claims_disabled');
+      END;
+    `);
     db.exec("COMMIT");
   } catch (error) {
     try {

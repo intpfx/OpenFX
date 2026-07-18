@@ -54,7 +54,9 @@ nonce 消费与权威业务写入放在同一个 Deno KV 原子事务中。时�
 云端 Relay 不接收目标 URL。它只能访问当前活动节点记录中的公网 IPv6 和固定端口
 `24531`，并且只允许共享协议中列出的 v1 路由。云端到节点的 Relay 使用 HKDF、
 AES-256-GCM、HMAC-SHA256、时间戳和双层 nonce；节点以 SQLite 主键 TTL 表持久化防重放
-状态，claim 不写入或扫描追加式审计 journal，旧 `replay.claimed` 事件只迁移一次。
+状态，claim 不写入或扫描追加式审计 journal，旧 `replay.claimed` 事件只迁移一次。迁移
+事务会安装持久 trigger，拒绝仍在运行的旧版本继续写入 legacy claim，避免混合版本下出现
+两个 nonce 权威来源；其他 journal 和 audit 事件不受影响。
 节点的加密回包必须回显已签名请求的 nonce、HTTP 方法和固定路径，控制面认证信封后逐项
 校验关联信息，再只向浏览器返回结果。Relay HTTP 响应按流读取并硬限制为 64 KiB，超限时
 立即取消读取，不进入 JSON 或密码学验证。控制面在发出网络请求前先持久化 `relay.intent`

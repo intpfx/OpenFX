@@ -30,7 +30,9 @@ OpenFX Node 是常驻 macOS 菜单栏的原生 Perry 节点候选实现。它用
   `BEGIN IMMEDIATE`、WAL 与 `synchronous=FULL`；首次启动会事务迁移旧 JSONL，也会把旧
   `replay.claimed` 事件一次性迁移到有界 nonce 表。nonce claim 通过 `BEGIN IMMEDIATE`
   和主键在多进程间只成功一次，并在每次 claim 时按 TTL 清理过期项，
-  不删除追加式审计。初始化会清理已废弃的 `.lock` 文件；并发冷启动遇到 SQLite busy/locked
+  不删除追加式审计。迁移事务同时安装持久写入栅栏；仍在运行的旧版本若尝试追加
+  `replay.claimed` 会失败关闭，不能与新 nonce 表形成两个权威来源。初始化会清理已废弃的
+  `.lock` 文件；并发冷启动遇到 SQLite busy/locked
   时会有界抖动重试，其他初始化错误立即返回。目录权限固定为 `0700`；数据库/WAL 文件固定
   为 `0600`。Keychain 密钥通过标准输入写入，不出现在进程参数中。
 
