@@ -94,39 +94,19 @@ interface PairingRecord {
   createdAt: number;
   expiresAt: number;
   usedAt?: number;
-  consumption?: PairingConsumption;
-  /** Legacy incomplete-state fields retained only for recovery. */
-  usedByNodeId?: string;
-  compensation?: PairingCompensation;
+  state?: "incomplete" | "completed";
+  pending?: PairingPendingReference;
 }
 
-interface PairingConsumption {
-  state: "incomplete" | "completed";
+interface PairingPendingReference {
   nodeId: string;
-  recovery: PairingCompensation;
+  requestFingerprint: string;
 }
 
-interface PairingCompensation {
-  previousActive: NodeRecord | null;
-  previousCredential: StoredCredential | null;
-  previousStatus: NodeStatus | null;
+interface PendingNodeStatus {
+  nodeId: string;
+  value: NodeStatus | null;
 }
-
-const readPairingConsumption = (
-  record: PairingRecord,
-): PairingConsumption | undefined => {
-  if (record.consumption) return record.consumption;
-  if (!record.usedByNodeId) return undefined;
-  return {
-    state: "incomplete",
-    nodeId: record.usedByNodeId,
-    recovery: record.compensation ?? {
-      previousActive: null,
-      previousCredential: null,
-      previousStatus: null,
-    },
-  };
-};
 
 interface StoredCredential {
   nodeId: string;
@@ -410,156 +390,186 @@ export const createConsoleControlPlane = (
     if (!credentialKey) {
       return nodeError(OPENFX_NODE_ERROR_CODES.relayUnavailable, 503);
     }
+    const endpoint = {
+      name: String(parsed.name).trim(),
+      protocolVersion: Number(parsed.protocolVersion),
+      publicIpv6: String(parsed.publicIpv6).trim(),
+      port: Number(parsed.port),
+    };
+    const requestFingerprint = await digest(canonicalJson(endpoint));
     const store = await storePromise;
     const codeDigest = await digest(code);
-    const key = [...ROOT, "pairings", codeDigest] as const;
+    const pairingKey = [...ROOT, "pairings", codeDigest] as const;
     const liveKey = [...ROOT, "pairings-live", codeDigest] as const;
-    let pairing = await store.get<PairingRecord>(key);
+    const pendingNodeKey = [
+      ...ROOT,
+      "pairing-pending",
+      codeDigest,
+      "node",
+    ] as const;
+    const pendingCredentialKey = [
+      ...ROOT,
+      "pairing-pending",
+      codeDigest,
+      "credential",
+    ] as const;
+    const pendingStatusKey = [
+      ...ROOT,
+      "pairing-pending",
+      codeDigest,
+      "status",
+    ] as const;
+    let pairing = await store.get<PairingRecord>(pairingKey);
     if (!pairing) return nodeError(OPENFX_NODE_ERROR_CODES.pairingInvalid, 404);
-    if (pairing.value.usedAt !== undefined) {
-      const consumption = readPairingConsumption(pairing.value);
-      if (!consumption || consumption.state === "completed") {
+    let node: NodeRecord;
+    let credential: StoredCredential;
+    let nodeSecret: Uint8Array;
+    let live = await store.get<{ expiresAt: number }>(liveKey);
+
+    if (pairing.value.state === "incomplete") {
+      if (
+        !pairing.value.pending ||
+        pairing.value.pending.requestFingerprint !== requestFingerprint
+      ) {
         return nodeError(OPENFX_NODE_ERROR_CODES.pairingUsed, 409);
       }
-      const recovered = await restorePairingConsumption({
-        store,
-        pairingKey: key,
-        liveKey,
-        nodeId: consumption.nodeId,
-        expectedState: "incomplete",
-        originalPairing: {
-          createdAt: pairing.value.createdAt,
-          expiresAt: pairing.value.expiresAt,
-        },
-        recovery: consumption.recovery,
-      });
-      if (recovered === "completed") {
-        return nodeError(OPENFX_NODE_ERROR_CODES.pairingUsed, 409);
-      }
-      pairing = await store.get<PairingRecord>(key);
-      if (!pairing) {
-        return nodeError(OPENFX_NODE_ERROR_CODES.pairingInvalid, 404);
-      }
-      if (pairing.value.usedAt !== undefined) {
-        return nodeError(OPENFX_NODE_ERROR_CODES.pairingUsed, 409);
-      }
-      if (pairing.value.expiresAt <= now()) {
+      if (!live || pairing.value.expiresAt <= now()) {
         return nodeError(OPENFX_NODE_ERROR_CODES.pairingExpired, 410);
       }
-    }
-    const initialExpiresAt = pairing.value.expiresAt;
-    let live = await store.get<{ expiresAt: number }>(liveKey);
-    if (!live || pairing.value.expiresAt <= now()) {
-      return nodeError(OPENFX_NODE_ERROR_CODES.pairingExpired, 410);
-    }
-    const nodeSecret = randomBytes(32);
-    const nodeId = encodeBase64Url(randomBytes(16));
-    const iv = randomBytes(12);
-    const credential: StoredCredential = {
-      nodeId,
-      digest: await digest(nodeSecret),
-      iv: encodeBase64Url(iv),
-      ciphertext: encodeBase64Url(
-        await cryptoAdapter.aes256GcmEncrypt(
+      const [pendingNode, pendingCredential, pendingStatus] = await Promise.all([
+        store.get<NodeRecord>(pendingNodeKey),
+        store.get<StoredCredential>(pendingCredentialKey),
+        store.get<PendingNodeStatus>(pendingStatusKey),
+      ]);
+      if (
+        !pendingNode || !pendingCredential || !pendingStatus ||
+        pendingNode.value.id !== pairing.value.pending.nodeId ||
+        pendingCredential.value.nodeId !== pairing.value.pending.nodeId ||
+        pendingStatus.value.nodeId !== pairing.value.pending.nodeId
+      ) throw new ConsoleStoreUnavailableError();
+      node = pendingNode.value;
+      credential = pendingCredential.value;
+      try {
+        nodeSecret = await cryptoAdapter.aes256GcmDecrypt(
           credentialKey,
-          iv,
-          nodeSecret,
+          decodeBase64Url(credential.iv),
+          decodeBase64Url(credential.ciphertext),
           CREDENTIAL_AAD,
+        );
+      } catch {
+        throw new ConsoleStoreUnavailableError();
+      }
+      if (await digest(nodeSecret) !== credential.digest) {
+        throw new ConsoleStoreUnavailableError();
+      }
+    } else {
+      if (
+        pairing.value.usedAt !== undefined ||
+        pairing.value.state === "completed"
+      ) return nodeError(OPENFX_NODE_ERROR_CODES.pairingUsed, 409);
+      if (!live || pairing.value.expiresAt <= now()) {
+        return nodeError(OPENFX_NODE_ERROR_CODES.pairingExpired, 410);
+      }
+      nodeSecret = randomBytes(32);
+      const nodeId = encodeBase64Url(randomBytes(16));
+      const iv = randomBytes(12);
+      credential = {
+        nodeId,
+        digest: await digest(nodeSecret),
+        iv: encodeBase64Url(iv),
+        ciphertext: encodeBase64Url(
+          await cryptoAdapter.aes256GcmEncrypt(
+            credentialKey,
+            iv,
+            nodeSecret,
+            CREDENTIAL_AAD,
+          ),
         ),
-      ),
-    };
-    const node: NodeRecord = {
-      id: nodeId,
-      name: String(parsed.name).trim(),
-      protocolVersion: PROTOCOL_VERSION,
-      publicIpv6: String(parsed.publicIpv6).trim(),
-      port: NODE_PORT,
-      status: "unknown",
-      pairedAt: now(),
-      lastSeenAt: 0,
-    };
-    const activeKey = [...ROOT, "node", "active"] as const;
-    const credentialRecordKey = [...ROOT, "node", "credential"] as const;
-    const statusKey = [...ROOT, "node", "status"] as const;
-    const active = await store.get<NodeRecord>(activeKey);
-    const previousCredential = await store.get<StoredCredential>(credentialRecordKey);
-    const previousStatus = await store.get<NodeStatus>(statusKey);
-    const originalPairing = pairing.value;
-    const consumed = {
-      ...originalPairing,
-      usedAt: now(),
-      consumption: {
-        state: "incomplete",
-        nodeId,
-        recovery: {
-          previousActive: active?.value ?? null,
-          previousCredential: previousCredential?.value ?? null,
-          previousStatus: previousStatus?.value ?? null,
-        },
-      },
-    } satisfies PairingRecord;
-    if (
-      !await store.atomic({
-        checks: [
-          { key, versionstamp: pairing.versionstamp },
-          { key: liveKey, versionstamp: live.versionstamp },
-          { key: activeKey, versionstamp: active?.versionstamp ?? null },
-          {
-            key: credentialRecordKey,
-            versionstamp: previousCredential?.versionstamp ?? null,
-          },
-          {
-            key: statusKey,
-            versionstamp: previousStatus?.versionstamp ?? null,
-          },
-        ],
-        sets: [
-          {
-            key,
-            value: consumed,
-          },
-          { key: activeKey, value: node },
-          { key: credentialRecordKey, value: credential },
-        ],
-        deletes: [statusKey, liveKey],
-      })
-    ) {
-      pairing = await store.get<PairingRecord>(key);
-      live = await store.get<{ expiresAt: number }>(liveKey);
-      const usedAfterConflict = pairing?.value.usedAt !== undefined;
-      const expiredAfterConflict = initialExpiresAt <= now() || !live;
-      return nodeError(
-        usedAfterConflict
-          ? OPENFX_NODE_ERROR_CODES.pairingUsed
-          : expiredAfterConflict
-          ? OPENFX_NODE_ERROR_CODES.pairingExpired
-          : OPENFX_NODE_ERROR_CODES.pairingInvalid,
-        !usedAfterConflict && expiredAfterConflict ? 410 : 409,
+      };
+      node = {
+        id: nodeId,
+        name: endpoint.name,
+        protocolVersion: PROTOCOL_VERSION,
+        publicIpv6: endpoint.publicIpv6,
+        port: NODE_PORT,
+        status: "unknown",
+        pairedAt: now(),
+        lastSeenAt: 0,
+      };
+      const pendingExpireIn = Math.max(
+        1,
+        pairing.value.expiresAt + PAIRING_EXPIRY_GRACE_MS - now(),
       );
+      const incomplete = {
+        ...pairing.value,
+        usedAt: now(),
+        state: "incomplete",
+        pending: { nodeId, requestFingerprint },
+      } satisfies PairingRecord;
+      if (
+        !await store.atomic({
+          checks: [
+            { key: pairingKey, versionstamp: pairing.versionstamp },
+            { key: liveKey, versionstamp: live.versionstamp },
+            { key: pendingNodeKey, versionstamp: null },
+            { key: pendingCredentialKey, versionstamp: null },
+            { key: pendingStatusKey, versionstamp: null },
+          ],
+          sets: [
+            {
+              key: pairingKey,
+              value: incomplete,
+              options: { expireIn: pendingExpireIn },
+            },
+            {
+              key: pendingNodeKey,
+              value: node,
+              options: { expireIn: pendingExpireIn },
+            },
+            {
+              key: pendingCredentialKey,
+              value: credential,
+              options: { expireIn: pendingExpireIn },
+            },
+            {
+              key: pendingStatusKey,
+              value: { nodeId, value: null } satisfies PendingNodeStatus,
+              options: { expireIn: pendingExpireIn },
+            },
+          ],
+        })
+      ) {
+        pairing = await store.get<PairingRecord>(pairingKey);
+        live = await store.get<{ expiresAt: number }>(liveKey);
+        if (
+          pairing?.value.state === "incomplete" ||
+          pairing?.value.state === "completed" ||
+          pairing?.value.usedAt !== undefined
+        ) return nodeError(OPENFX_NODE_ERROR_CODES.pairingUsed, 409);
+        const expired = !pairing || !live || pairing.value.expiresAt <= now();
+        return nodeError(
+          expired
+            ? OPENFX_NODE_ERROR_CODES.pairingExpired
+            : OPENFX_NODE_ERROR_CODES.pairingUsed,
+          expired ? 410 : 409,
+        );
+      }
     }
-    if (initialExpiresAt <= now()) {
-      await restorePairingConsumption({
-        store,
-        pairingKey: key,
-        liveKey,
-        nodeId,
-        expectedState: "incomplete",
-        originalPairing,
-        recovery: consumed.consumption.recovery,
-      });
-      return nodeError(OPENFX_NODE_ERROR_CODES.pairingExpired, 410);
+
+    const finalized = await finalizePendingPairing({
+      store,
+      pairingKey,
+      liveKey,
+      pendingNodeKey,
+      pendingCredentialKey,
+      pendingStatusKey,
+      nodeId: node.id,
+      requestFingerprint,
+    });
+    if (finalized === "completed") {
+      return nodeError(OPENFX_NODE_ERROR_CODES.pairingUsed, 409);
     }
-    await finalizePairingConsumption(store, key, nodeId, initialExpiresAt);
-    if (initialExpiresAt <= now()) {
-      await restorePairingConsumption({
-        store,
-        pairingKey: key,
-        liveKey,
-        nodeId,
-        expectedState: "completed",
-        originalPairing,
-        recovery: consumed.consumption.recovery,
-      });
+    if (finalized === "expired") {
       return nodeError(OPENFX_NODE_ERROR_CODES.pairingExpired, 410);
     }
     return Response.json(
@@ -568,144 +578,101 @@ export const createConsoleControlPlane = (
     );
   };
 
-  const finalizePairingConsumption = async (
-    store: ConsoleStore,
-    pairingKey: ConsoleKey,
-    nodeId: string,
-    expiresAt: number,
-  ): Promise<void> => {
-    for (let attempt = 0; attempt < 16; attempt += 1) {
-      const pairing = await store.get<PairingRecord>(pairingKey);
-      if (!pairing) throw new ConsoleStoreUnavailableError();
-      const consumption = readPairingConsumption(pairing.value);
-      if (
-        consumption?.state === "completed" && consumption.nodeId === nodeId
-      ) return;
-      if (
-        consumption?.state !== "incomplete" || consumption.nodeId !== nodeId
-      ) {
-        throw new ConsoleStoreUnavailableError();
-      }
-      const finalized = {
-        createdAt: pairing.value.createdAt,
-        expiresAt: pairing.value.expiresAt,
-        usedAt: pairing.value.usedAt,
-        consumption: {
-          ...consumption,
-          state: "completed",
-        },
-      } satisfies PairingRecord;
-      if (
-        await store.compareAndSet(
-          pairingKey,
-          pairing.versionstamp,
-          finalized,
-          {
-            expireIn: Math.max(
-              1,
-              expiresAt + PAIRING_EXPIRY_GRACE_MS - now(),
-            ),
-          },
-        )
-      ) return;
-    }
-    throw new ConsoleStoreUnavailableError();
-  };
-
-  const restorePairingConsumption = async (input: {
+  const finalizePendingPairing = async (input: {
     store: ConsoleStore;
     pairingKey: ConsoleKey;
     liveKey: ConsoleKey;
+    pendingNodeKey: ConsoleKey;
+    pendingCredentialKey: ConsoleKey;
+    pendingStatusKey: ConsoleKey;
     nodeId: string;
-    expectedState: PairingConsumption["state"];
-    originalPairing: PairingRecord;
-    recovery: PairingCompensation;
-  }): Promise<"restored" | "completed"> => {
+    requestFingerprint: string;
+  }): Promise<"promoted" | "completed" | "expired"> => {
     const activeKey = [...ROOT, "node", "active"] as const;
     const credentialKey = [...ROOT, "node", "credential"] as const;
     const statusKey = [...ROOT, "node", "status"] as const;
     for (let attempt = 0; attempt < 16; attempt += 1) {
-      const [pairing, live, active, credential, status] = await Promise.all([
+      const [
+        pairing,
+        live,
+        pendingNode,
+        pendingCredential,
+        pendingStatus,
+        active,
+        credential,
+        status,
+      ] = await Promise.all([
         input.store.get<PairingRecord>(input.pairingKey),
         input.store.get<{ expiresAt: number }>(input.liveKey),
+        input.store.get<NodeRecord>(input.pendingNodeKey),
+        input.store.get<StoredCredential>(input.pendingCredentialKey),
+        input.store.get<PendingNodeStatus>(input.pendingStatusKey),
         input.store.get<NodeRecord>(activeKey),
         input.store.get<StoredCredential>(credentialKey),
         input.store.get<NodeStatus>(statusKey),
       ]);
-      const consumption = pairing && readPairingConsumption(pairing.value);
-      const recoveryNow = now();
-      const remainsLive = input.originalPairing.expiresAt > recoveryNow;
+      if (pairing?.value.state === "completed") return "completed";
       if (
-        input.expectedState === "incomplete" &&
-        consumption?.state === "completed"
-      ) return "completed";
-      const pairingOwned = consumption?.nodeId === input.nodeId &&
-        consumption.state === input.expectedState;
-      const activeOwned = active?.value.id === input.nodeId;
-      const credentialOwned = credential?.value.nodeId === input.nodeId;
-      const alreadyRestored = pairing?.value.usedAt === undefined;
+        !pairing || pairing.value.state !== "incomplete" ||
+        pairing.value.pending?.nodeId !== input.nodeId ||
+        pairing.value.pending.requestFingerprint !== input.requestFingerprint
+      ) {
+        throw new ConsoleStoreUnavailableError();
+      }
+      if (!live || pairing.value.expiresAt <= now()) return "expired";
       if (
-        !pairingOwned && !activeOwned && !credentialOwned && alreadyRestored
-      ) return "restored";
-
-      const sets = [] as Array<{
+        !pendingNode || !pendingCredential || !pendingStatus ||
+        pendingNode.value.id !== input.nodeId ||
+        pendingCredential.value.nodeId !== input.nodeId ||
+        pendingStatus.value.nodeId !== input.nodeId
+      ) {
+        throw new ConsoleStoreUnavailableError();
+      }
+      const finalizationNow = now();
+      if (pairing.value.expiresAt <= finalizationNow) return "expired";
+      const completed = {
+        ...pairing.value,
+        state: "completed",
+      } satisfies PairingRecord;
+      const sets: Array<{
         key: ConsoleKey;
         value: unknown;
         options?: { expireIn?: number };
-      }>;
-      const deletes: ConsoleKey[] = [];
-      if (pairingOwned) {
-        sets.push({
+      }> = [
+        {
           key: input.pairingKey,
-          value: input.originalPairing,
+          value: completed,
           options: {
             expireIn: Math.max(
               1,
-              input.originalPairing.expiresAt + PAIRING_EXPIRY_GRACE_MS -
-                recoveryNow,
+              pairing.value.expiresAt + PAIRING_EXPIRY_GRACE_MS -
+                finalizationNow,
             ),
           },
-        });
-        if (remainsLive) {
-          sets.push({
-            key: input.liveKey,
-            value: { expiresAt: input.originalPairing.expiresAt },
-            options: {
-              expireIn: Math.max(
-                1,
-                input.originalPairing.expiresAt - recoveryNow,
-              ),
-            },
-          });
-        }
+        },
+        { key: activeKey, value: pendingNode.value },
+        { key: credentialKey, value: pendingCredential.value },
+      ];
+      if (pendingStatus.value.value) {
+        sets.push({ key: statusKey, value: pendingStatus.value.value });
       }
-
-      if (activeOwned && credentialOwned) {
-        if (input.recovery.previousActive) {
-          sets.push({ key: activeKey, value: input.recovery.previousActive });
-        } else deletes.push(activeKey);
-        if (input.recovery.previousCredential) {
-          sets.push({
-            key: credentialKey,
-            value: input.recovery.previousCredential,
-          });
-        } else deletes.push(credentialKey);
-        if (input.recovery.previousStatus) {
-          sets.push({ key: statusKey, value: input.recovery.previousStatus });
-        } else deletes.push(statusKey);
-      } else {
-        if (activeOwned) deletes.push(activeKey);
-        if (credentialOwned) deletes.push(credentialKey);
-      }
-
       if (
         await input.store.atomic({
           checks: [
+            { key: input.pairingKey, versionstamp: pairing.versionstamp },
+            { key: input.liveKey, versionstamp: live.versionstamp },
             {
-              key: input.pairingKey,
-              versionstamp: pairing?.versionstamp ?? null,
+              key: input.pendingNodeKey,
+              versionstamp: pendingNode.versionstamp,
             },
-            { key: input.liveKey, versionstamp: live?.versionstamp ?? null },
+            {
+              key: input.pendingCredentialKey,
+              versionstamp: pendingCredential.versionstamp,
+            },
+            {
+              key: input.pendingStatusKey,
+              versionstamp: pendingStatus.versionstamp,
+            },
             { key: activeKey, versionstamp: active?.versionstamp ?? null },
             {
               key: credentialKey,
@@ -714,9 +681,15 @@ export const createConsoleControlPlane = (
             { key: statusKey, versionstamp: status?.versionstamp ?? null },
           ],
           sets,
-          deletes: remainsLive ? deletes : [...deletes, input.liveKey],
+          deletes: [
+            input.liveKey,
+            input.pendingNodeKey,
+            input.pendingCredentialKey,
+            input.pendingStatusKey,
+            ...(pendingStatus.value.value ? [] : [statusKey]),
+          ],
         })
-      ) return "restored";
+      ) return "promoted";
     }
     throw new ConsoleStoreUnavailableError();
   };
