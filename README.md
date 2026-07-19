@@ -38,8 +38,10 @@ IPv6、Relay、Agent 和审计能力已经完成切换，旧 Bun/Elysia Core 与
 deno task web:dev                          # 启动 Web 应用
 deno task web:build                        # 生产构建
 deno task perry:runtime --source /path/to/Perry  # 构建补丁版 Perry 原生库
-PERRY_LIB_DIR=/path/to/release perry compile entry/desktop/src/main.ts \
-  -o dist/openfx-desktop --no-auto-optimize    # 桌面端编译
+export PERRY_LIB_DIR=/path/to/Perry/target/openfx-v0.5.1220/release
+deno task desktop:app                     # 构建并 ad-hoc 签名 arm64 .app
+open "dist/OpenFX Node.app"                # 从正式应用包启动节点
+deno task desktop:app-smoke               # 验证签名、health、截图和退出
 deno task check                            # 校验（fmt + lint + test + guard）
 ```
 

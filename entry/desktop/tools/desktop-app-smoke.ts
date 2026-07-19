@@ -3,10 +3,15 @@ import { dirname, fromFileUrl, join, resolve } from "jsr:@std/path@^1.1.4";
 import { collectBoundedChild } from "./integration-cleanup.ts";
 
 const REPOSITORY_ROOT = fromFileUrl(new URL("../../../", import.meta.url));
-const MAIN_PATH = join(REPOSITORY_ROOT, "entry/desktop/src/main.ts");
-const TRAY_ICON_SOURCE = join(
-  REPOSITORY_ROOT,
-  "entry/web/public/favicon-32x32.png",
+const APP_BUNDLE_RELATIVE_PATH = "dist/OpenFX Node.app";
+const APP_EXECUTABLE_RELATIVE_PATH = "Contents/MacOS/OpenFX Node";
+const APP_BUNDLE = join(REPOSITORY_ROOT, APP_BUNDLE_RELATIVE_PATH);
+const APP_EXECUTABLE = join(APP_BUNDLE, APP_EXECUTABLE_RELATIVE_PATH);
+const APP_INFO_PLIST = join(APP_BUNDLE, "Contents/Info.plist");
+const APP_ICON = join(APP_BUNDLE, "Contents/Resources/OpenFXNode.icns");
+const TRAY_ICON = join(
+  APP_BUNDLE,
+  "Contents/Resources/openfx-tray-template.png",
 );
 const HEALTH_URL = "http://[::1]:24531/v1/health";
 const PERRY_UI_ARCHIVE = "libperry_ui_macos.a";
@@ -29,11 +34,14 @@ const screenshotArtifact = screenshotArtifactValue
 
 await assertFile(perryExecutable);
 await assertFile(join(perryLibDirectory, PERRY_UI_ARCHIVE));
-await assertNonEmptyFile(TRAY_ICON_SOURCE);
+await assertNonEmptyFile(APP_EXECUTABLE);
+await assertNonEmptyFile(APP_INFO_PLIST);
+await assertNonEmptyFile(APP_ICON);
+await assertNonEmptyFile(TRAY_ICON);
+await verifyAppBundle();
 await assertPortAvailable();
 
 const temporaryDirectory = await Deno.makeTempDir({ prefix: "openfx-app-smoke-" });
-const executable = join(temporaryDirectory, "openfx-desktop");
 const screenshot = join(temporaryDirectory, "openfx-desktop.png");
 const uiOnlySource = join(temporaryDirectory, "openfx-ui-only-link.ts");
 const uiOnlyExecutable = join(temporaryDirectory, "openfx-ui-only-link");
@@ -51,18 +59,20 @@ App({
 `,
   );
   await runPerryCompile(uiOnlySource, uiOnlyExecutable, perryLibDirectory);
-  await runPerryCompile(MAIN_PATH, executable, perryLibDirectory);
   const startedAt = Date.now();
-  const child = new Deno.Command("/usr/bin/env", {
-    args: [executable],
+  const child = new Deno.Command("/usr/bin/open", {
+    args: [
+      "-W",
+      "-n",
+      "--env",
+      "PERRY_UI_TEST_MODE=1",
+      "--env",
+      "PERRY_UI_TEST_EXIT_AFTER_MS=12000",
+      "--env",
+      `PERRY_UI_SCREENSHOT_PATH=${screenshot}`,
+      APP_BUNDLE,
+    ],
     cwd: REPOSITORY_ROOT,
-    env: {
-      ...Deno.env.toObject(),
-      PERRY_LIB_DIR: perryLibDirectory,
-      PERRY_UI_TEST_MODE: "1",
-      PERRY_UI_TEST_EXIT_AFTER_MS: "12000",
-      PERRY_UI_SCREENSHOT_PATH: screenshot,
-    },
     stdin: "null",
     stdout: "piped",
     stderr: "piped",
@@ -113,12 +123,72 @@ App({
     await Deno.copyFile(screenshot, screenshotArtifact);
   }
   console.log(
-    `[openfx:desktop-app-smoke] PASS health=${HEALTH_URL} screenshot=${
+    `[openfx:desktop-app-smoke] PASS app=${APP_BUNDLE} health=${HEALTH_URL} screenshot=${
       screenshotArtifact ?? screenshot
     }`,
   );
 } finally {
   await Deno.remove(temporaryDirectory, { recursive: true }).catch(() => {});
+}
+
+async function verifyAppBundle(): Promise<void> {
+  const fileDescription = await commandOutput("/usr/bin/file", [APP_EXECUTABLE]);
+  assert(
+    fileDescription.includes("Mach-O 64-bit executable arm64"),
+    `Unexpected app executable: ${fileDescription.trim()}`,
+  );
+  const architectures = (await commandOutput("/usr/bin/lipo", [
+    "-archs",
+    APP_EXECUTABLE,
+  ])).trim();
+  assert(
+    architectures === "arm64",
+    `Expected arm64-only app, received: ${architectures}`,
+  );
+  const buildVersion = await commandOutput("/usr/bin/vtool", [
+    "-show-build",
+    APP_EXECUTABLE,
+  ]);
+  assert(
+    /^\s*minos 13\.0\s*$/m.test(buildVersion),
+    `Expected macOS 13.0 deployment target.\n${buildVersion.trim()}`,
+  );
+  await assertCommand("/usr/bin/plutil", ["-lint", APP_INFO_PLIST]);
+  await assertCommand("/usr/bin/codesign", [
+    "--verify",
+    "--deep",
+    "--strict",
+    APP_BUNDLE,
+  ]);
+}
+
+async function assertCommand(command: string, args: string[]): Promise<void> {
+  const result = await new Deno.Command(command, {
+    args,
+    stdin: "null",
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  if (!result.success) {
+    throw new Error(
+      `${command} exited with status ${result.code}.\n` +
+        new TextDecoder().decode(result.stdout) +
+        new TextDecoder().decode(result.stderr),
+    );
+  }
+}
+
+async function commandOutput(command: string, args: string[]): Promise<string> {
+  const result = await new Deno.Command(command, {
+    args,
+    stdin: "null",
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  if (!result.success) {
+    throw new Error(new TextDecoder().decode(result.stderr).trim());
+  }
+  return new TextDecoder().decode(result.stdout);
 }
 
 async function runPerryCompile(

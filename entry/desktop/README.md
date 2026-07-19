@@ -51,14 +51,37 @@ deno task perry:runtime --source /tmp/perry-openfx
 export PERRY_LIB_DIR=/tmp/perry-openfx/target/openfx-v0.5.1220/release
 ```
 
+## 构建 macOS 应用
+
+桌面端人工验收和日常运行统一使用 `dist/OpenFX Node.app`，不再直接运行临时裸二进制。
+构建器只接受上述补丁运行时目录中的固定 Perry CLI 和静态库，并在签名前完成以下工作：
+
+- 生成 arm64-only Mach-O，并把部署目标锁定为 macOS 13.0；
+- 生成 Bundle ID 为 `com.openfx.node` 的 `Info.plist`；
+- 从 OpenFX 512 px 产品图标生成 `OpenFXNode.icns`；
+- 打包透明 FX Tray 模板图标；
+- 使用本机 ad-hoc 身份签名并校验完整应用包。
+
+```bash
+deno task desktop:app
+open "dist/OpenFX Node.app"
+```
+
+本地包没有 Developer ID 和公证票据，仅用于本机开发与验收；正式分发签名不在当前构建任务
+范围内。
+
 ## 验证
 
 ```bash
 deno task --config entry/desktop/deno.json test
 perry check entry/desktop/src/main.ts --deep-deps
-perry compile entry/desktop/src/main.ts -o dist/openfx-desktop --no-auto-optimize
+deno task desktop:app
+deno task desktop:app-smoke
 deno run --unstable-kv -A entry/desktop/tools/console-integration-smoke.ts
 ```
 
-最后一条是真实本机组合门，覆盖受信任 HTTPS 配对、Keychain、真实公网 IPv6 health、
-签名上报、固定 Relay、SSE 续接、OMLX 离线降级和审批执行/拒绝/过期/重放闭环。
+`desktop:app-smoke` 从 `.app` 经 Launch Services 启动真实主应用，验证 arm64、macOS 13
+部署目标、`Info.plist`、ad-hoc
+签名、`[::1]:24531/v1/health`、原生截图和清洁退出。最后一条 是真实本机组合门，覆盖受信任
+HTTPS 配对、Keychain、真实公网 IPv6 health、 签名上报、固定 Relay、SSE 续接、OMLX
+离线降级和审批执行/拒绝/过期/重放闭环。

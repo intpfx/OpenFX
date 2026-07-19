@@ -28,7 +28,7 @@ Deno.test("desktop entry keeps native tray and runtime boundaries in both launch
   assert(source.includes("trayCreate(TRAY_ICON_PATH)"));
   assert(
     source.includes(
-      'TRAY_ICON_PATH = "entry/web/public/favicon-32x32.png"',
+      'TRAY_ICON_PATH = "openfx-tray-template.png"',
     ),
   );
   assert(source.includes('"perryShowMainWindow:"'));
@@ -404,24 +404,27 @@ Deno.test("HTTPS integration compiles with the matching pinned Perry CLI", async
   assertEquals(smoke.includes("/opt/homebrew/bin/perry"), false);
 });
 
-Deno.test("real desktop app smoke compiles main, checks IPv6 health, and captures UI", async () => {
+Deno.test("real desktop app smoke launches the bundle, checks IPv6 health, and captures UI", async () => {
   const smoke = await Deno.readTextFile(APP_SMOKE_URL);
 
-  assert(smoke.includes("entry/desktop/src/main.ts"));
+  assert(smoke.includes('APP_BUNDLE_RELATIVE_PATH = "dist/OpenFX Node.app"'));
+  assert(smoke.includes('APP_EXECUTABLE_RELATIVE_PATH = "Contents/MacOS/OpenFX Node"'));
+  assert(smoke.includes('new Deno.Command("/usr/bin/open"'));
+  assertEquals(smoke.includes("runPerryCompile(MAIN_PATH"), false);
   assert(smoke.includes("--no-auto-optimize"));
   assert(smoke.includes("libperry_ui_macos.a"));
   assert(smoke.includes("http://[::1]:24531/v1/health"));
   assert(smoke.includes("PERRY_UI_TEST_MODE"));
   assert(smoke.includes("PERRY_UI_SCREENSHOT_PATH"));
-  assert(smoke.includes('PERRY_UI_TEST_EXIT_AFTER_MS: "12000"'));
+  assert(smoke.includes('"PERRY_UI_TEST_EXIT_AFTER_MS=12000"'));
   assert(smoke.includes("APP_EXIT_DEADLINE_MS = 13_000"));
   assert(smoke.includes("collectBoundedChild"));
   assert(smoke.includes("Perry UI app clean-exit timed out"));
   assert(smoke.includes("openfx-ui-only-link"));
   assert(smoke.includes("OpenFX UI-only link gate"));
   assert(smoke.includes("assertPng"));
-  assert(smoke.includes("entry/web/public/favicon-32x32.png"));
-  assert(smoke.includes("assertNonEmptyFile(TRAY_ICON_SOURCE)"));
+  assert(smoke.includes("Contents/Resources/openfx-tray-template.png"));
+  assert(smoke.includes("assertNonEmptyFile(TRAY_ICON)"));
   assertEquals(smoke.includes("TRAY_ICON_NAME"), false);
   assertEquals(
     smoke.includes("Deno.copyFile(\n    TRAY_ICON_SOURCE"),

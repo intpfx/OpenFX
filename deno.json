@@ -15,6 +15,7 @@
     "web:build": "deno task --config entry/web/deno.json build",
     "web:preview": "deno task --config entry/web/deno.json preview",
     "perry:runtime": "deno run -A entry/desktop/tools/build-perry-runtime.ts",
+    "desktop:app": "deno run -A entry/desktop/tools/build-macos-app.ts",
     "desktop:app-smoke": "deno run -A entry/desktop/tools/desktop-app-smoke.ts"
   },
   "fmt": {

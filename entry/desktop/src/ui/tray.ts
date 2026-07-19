@@ -8,7 +8,7 @@ import {
   type Widget,
 } from "perry/ui";
 
-export const TRAY_ICON_PATH = "entry/web/public/favicon-32x32.png";
+export const TRAY_ICON_PATH = "openfx-tray-template.png";
 
 export interface NodeTrayActions {
   sample(): void;
