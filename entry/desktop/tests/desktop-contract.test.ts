@@ -410,6 +410,17 @@ Deno.test("real desktop app smoke launches the bundle, checks IPv6 health, and c
   assert(smoke.includes('APP_BUNDLE_RELATIVE_PATH = "dist/OpenFX Node.app"'));
   assert(smoke.includes('APP_EXECUTABLE_RELATIVE_PATH = "Contents/MacOS/OpenFX Node"'));
   assert(smoke.includes('new Deno.Command("/usr/bin/open"'));
+  assert(smoke.includes("--openfx-smoke-token"));
+  assert(smoke.includes("OPENFX_APP_SMOKE_TOKEN"));
+  assert(smoke.includes("OPENFX_APP_SMOKE_LAUNCH_PATH"));
+  assert(smoke.includes("OPENFX_APP_SMOKE_CLEAN_EXIT_PATH"));
+  assert(smoke.includes("waitForVerifiedAppInstance"));
+  assert(smoke.includes("terminateVerifiedAppInstance"));
+  assert(smoke.includes("assertCleanExitMarker"));
+  assert(smoke.includes("/usr/sbin/lsof"));
+  assert(smoke.includes("Deno.kill(instance.pid"));
+  assertEquals(smoke.includes("killall"), false);
+  assertEquals(smoke.includes("pkill"), false);
   assertEquals(smoke.includes("runPerryCompile(MAIN_PATH"), false);
   assert(smoke.includes("--no-auto-optimize"));
   assert(smoke.includes("libperry_ui_macos.a"));
@@ -424,6 +435,7 @@ Deno.test("real desktop app smoke launches the bundle, checks IPv6 health, and c
   assert(smoke.includes("OpenFX UI-only link gate"));
   assert(smoke.includes("assertPng"));
   assert(smoke.includes("Contents/Resources/openfx-tray-template.png"));
+  assert(smoke.includes("assertTransparentTrayIcon"));
   assert(smoke.includes("assertNonEmptyFile(TRAY_ICON)"));
   assertEquals(smoke.includes("TRAY_ICON_NAME"), false);
   assertEquals(
@@ -432,6 +444,20 @@ Deno.test("real desktop app smoke launches the bundle, checks IPv6 health, and c
   );
   assert(smoke.includes("PERRY_UI_SCREENSHOT_ARTIFACT"));
   assert(smoke.includes("screenshotArtifact"));
+  assert(smoke.includes('"CFBundleIdentifier", "com.openfx.node"'));
+  assert(smoke.includes('"CFBundleExecutable", "OpenFX Node"'));
+  assert(smoke.includes('"LSMinimumSystemVersion", "13.0"'));
+  assert(smoke.includes('"CFBundleIconFile", "OpenFXNode"'));
+});
+
+Deno.test("desktop main writes token-bound launch and clean-exit markers in test mode", async () => {
+  const main = await Deno.readTextFile(MAIN_URL);
+
+  assert(main.includes('from "node:fs"'));
+  assert(main.includes("deriveDesktopAppSmokeRun("));
+  assert(main.includes('writeDesktopAppSmokeMarker("launched")'));
+  assert(main.includes('writeDesktopAppSmokeMarker("clean-exit")'));
+  assert(main.includes("serializeDesktopAppSmokeMarker("));
 });
 
 function createReducedMotionPaintHarness(): {

@@ -59,7 +59,7 @@ export PERRY_LIB_DIR=/tmp/perry-openfx/target/openfx-v0.5.1220/release
 - 生成 arm64-only Mach-O，并把部署目标锁定为 macOS 13.0；
 - 生成 Bundle ID 为 `com.openfx.node` 的 `Info.plist`；
 - 从 OpenFX 512 px 产品图标生成 `OpenFXNode.icns`；
-- 打包透明 FX Tray 模板图标；
+- 从可审查的 SVG 源生成四角透明、单色 FX Tray 模板图标；
 - 使用本机 ad-hoc 身份签名并校验完整应用包。
 
 ```bash
@@ -81,7 +81,9 @@ deno run --unstable-kv -A entry/desktop/tools/console-integration-smoke.ts
 ```
 
 `desktop:app-smoke` 从 `.app` 经 Launch Services 启动真实主应用，验证 arm64、macOS 13
-部署目标、`Info.plist`、ad-hoc
-签名、`[::1]:24531/v1/health`、原生截图和清洁退出。最后一条 是真实本机组合门，覆盖受信任
-HTTPS 配对、Keychain、真实公网 IPv6 health、 签名上报、固定 Relay、SSE 续接、OMLX
-离线降级和审批执行/拒绝/过期/重放闭环。
+部署目标、`Info.plist`、ad-hoc 签名、bundle 内 Tray 像素透明度、
+`[::1]:24531/v1/health`、原生截图和清洁退出。每次 smoke 都使用唯一 token；真实应用写出
+PID/可执行路径和退出哨兵，测试再用 `ps` 与 `lsof` 核验它确实是当前 bundle 实例。超时清理
+只会终止这个已核验 PID。最后一条是真实本机组合门，覆盖受信任 HTTPS 配对、Keychain、
+真实公网 IPv6 health、签名上报、固定 Relay、SSE 续接、OMLX 离线降级和审批
+执行/拒绝/过期/重放闭环。

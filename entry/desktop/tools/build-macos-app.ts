@@ -1,4 +1,5 @@
 import { fromFileUrl, join, resolve } from "jsr:@std/path@^1.1.4";
+import { inspectPngTransparency } from "./png-transparency.ts";
 
 const APP_NAME = "OpenFX Node";
 const BUNDLE_IDENTIFIER = "com.openfx.node";
@@ -25,6 +26,7 @@ export interface MacAppPlan {
   resourcesDirectory: string;
   trayIconDestination: string;
   trayIconSource: string;
+  trayIconVectorSource: string;
 }
 
 export function requirePerryLibDirectory(
@@ -63,6 +65,10 @@ export function createMacAppPlan(
     trayIconSource: join(
       root,
       "entry/desktop/assets/openfx-tray-template.png",
+    ),
+    trayIconVectorSource: join(
+      root,
+      "entry/desktop/assets/openfx-tray-template.svg",
     ),
   };
 }
@@ -139,7 +145,8 @@ async function buildMacApp(): Promise<void> {
     await Deno.mkdir(stagedResources, { recursive: true });
     await compilePerry(plan, stagedExecutable);
     await Deno.chmod(stagedExecutable, 0o755);
-    await Deno.copyFile(plan.trayIconSource, stagedTrayIcon);
+    await createTrayTemplatePng(plan.trayIconVectorSource, stagedTrayIcon);
+    await verifyTrayTemplatePng(stagedTrayIcon);
     await createIcns(plan.iconSource, stagedIcon);
     await Deno.writeTextFile(stagedInfoPlist, createInfoPlist());
     await run("/usr/bin/plutil", ["-lint", stagedInfoPlist]);
@@ -169,7 +176,44 @@ async function validateInputs(plan: MacAppPlan): Promise<void> {
   await assertNonEmptyFile(plan.entryPoint);
   await assertNonEmptyFile(plan.iconSource);
   await assertNonEmptyFile(plan.trayIconSource);
+  await assertNonEmptyFile(plan.trayIconVectorSource);
   await Deno.mkdir(join(REPOSITORY_ROOT, "dist"), { recursive: true });
+}
+
+async function createTrayTemplatePng(
+  vectorSource: string,
+  destination: string,
+): Promise<void> {
+  await run("/usr/bin/sips", [
+    "-s",
+    "format",
+    "png",
+    vectorSource,
+    "--out",
+    destination,
+  ]);
+}
+
+async function verifyTrayTemplatePng(path: string): Promise<void> {
+  const image = await inspectPngTransparency(await Deno.readFile(path));
+  if (image.width !== 32 || image.height !== 32) {
+    throw new Error(
+      `Tray icon must be 32 x 32, received ${image.width} x ${image.height}.`,
+    );
+  }
+  if (!image.cornerAlpha.every((alpha) => alpha === 0)) {
+    throw new Error(
+      `Tray icon corners are not transparent: ${image.cornerAlpha.join(", ")}`,
+    );
+  }
+  if (
+    image.transparentPixels < image.totalPixels * 0.6 ||
+    image.transparentPixels > image.totalPixels * 0.95 ||
+    image.visiblePixels < 48 ||
+    image.opaquePixels === 0
+  ) {
+    throw new Error("Tray icon does not contain a transparent monochrome FX glyph.");
+  }
 }
 
 async function compilePerry(
@@ -262,7 +306,25 @@ async function verifyMacApp(
     );
   }
   await run("/usr/bin/plutil", ["-lint", infoPlist]);
+  await verifyPlistValue(infoPlist, "CFBundleIdentifier", BUNDLE_IDENTIFIER);
+  await verifyPlistValue(infoPlist, "CFBundleExecutable", APP_NAME);
+  await verifyPlistValue(infoPlist, "LSMinimumSystemVersion", MINIMUM_MACOS_VERSION);
+  await verifyPlistValue(infoPlist, "CFBundleIconFile", "OpenFXNode");
   await run("/usr/bin/codesign", ["--verify", "--deep", "--strict", appBundle]);
+}
+
+async function verifyPlistValue(
+  infoPlist: string,
+  key: string,
+  expected: string,
+): Promise<void> {
+  const actual = (await output("/usr/bin/plutil", [
+    "-extract",
+    key,
+    "raw",
+    infoPlist,
+  ])).trim();
+  if (actual !== expected) throw new Error(`Unexpected ${key}: ${actual}`);
 }
 
 interface CommandOptions {

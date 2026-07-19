@@ -11,10 +11,16 @@ import {
 import { exit } from "node:process";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { writeFileSync } from "node:fs";
 
 import { decodeBase64Url } from "../../../domains/_shared/openfx-node/encoding.ts";
 import { SafetyActionGate } from "../../../domains/e/src/core/safety-action-gate.ts";
 import { createAgentToolRuntime } from "./core/agent-runtime.ts";
+import {
+  deriveDesktopAppSmokeRun,
+  type DesktopAppSmokeStatus,
+  serializeDesktopAppSmokeMarker,
+} from "./core/app-smoke-contract.ts";
 import type { AuditLog } from "./core/audit-log.ts";
 import { sanitizeDesktopPreferences } from "./core/desktop-state.ts";
 import { createDesktopJournal } from "./core/durable-journal.ts";
@@ -59,6 +65,18 @@ import {
 } from "./ui/core-canvas.ts";
 import type { CoreNodeState } from "./ui/core-frame.ts";
 import { createNodeTray } from "./ui/tray.ts";
+
+const desktopAppSmokeRun = deriveDesktopAppSmokeRun({
+  testMode: process.env.PERRY_UI_TEST_MODE === "1",
+  token: process.env.OPENFX_APP_SMOKE_TOKEN ?? "",
+  argv: process.argv,
+  launchMarkerPath: process.env.OPENFX_APP_SMOKE_LAUNCH_PATH ?? "",
+  cleanExitMarkerPath: process.env.OPENFX_APP_SMOKE_CLEAN_EXIT_PATH ?? "",
+  pid: process.pid,
+  executable: process.execPath,
+});
+let desktopAppSmokeCleanExitWritten = false;
+writeDesktopAppSmokeMarker("launched");
 
 const cryptoAdapter = createNodeCryptoAdapter();
 const keychain = createKeychain();
@@ -342,6 +360,7 @@ onMainWindowVisibilityChanged((visible) => {
 });
 
 onTerminate(() => {
+  writeDesktopAppSmokeMarker("clean-exit");
   coreRenderer?.stop();
   void lifecycle.terminate();
 });
@@ -453,4 +472,21 @@ function createId(prefix: string): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function writeDesktopAppSmokeMarker(status: DesktopAppSmokeStatus): void {
+  if (!desktopAppSmokeRun) return;
+  if (status === "clean-exit" && desktopAppSmokeCleanExitWritten) return;
+  const path = status === "launched"
+    ? desktopAppSmokeRun.launchMarkerPath
+    : desktopAppSmokeRun.cleanExitMarkerPath;
+  try {
+    writeFileSync(
+      path,
+      serializeDesktopAppSmokeMarker(desktopAppSmokeRun, status),
+    );
+    if (status === "clean-exit") desktopAppSmokeCleanExitWritten = true;
+  } catch (error) {
+    console.error(`OpenFX app smoke marker failed: ${errorMessage(error)}`);
+  }
 }
