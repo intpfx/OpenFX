@@ -8,15 +8,19 @@ import type { DesktopPreferenceStore } from "./pairing-service.ts";
 
 export const DESKTOP_PREFERENCES_KEY = "openfx.node.preferences.v1";
 
+export const readDesktopPreferencesSync = () => {
+  const raw = preferencesGet(DESKTOP_PREFERENCES_KEY);
+  if (!raw) return DEFAULT_DESKTOP_PREFERENCES;
+  try {
+    return sanitizeDesktopPreferences(JSON.parse(raw));
+  } catch {
+    return DEFAULT_DESKTOP_PREFERENCES;
+  }
+};
+
 export const createDesktopPreferenceStore = (): DesktopPreferenceStore => ({
   load() {
-    const raw = preferencesGet(DESKTOP_PREFERENCES_KEY);
-    if (!raw) return Promise.resolve(DEFAULT_DESKTOP_PREFERENCES);
-    try {
-      return Promise.resolve(sanitizeDesktopPreferences(JSON.parse(raw)));
-    } catch {
-      return Promise.resolve(DEFAULT_DESKTOP_PREFERENCES);
-    }
+    return Promise.resolve(readDesktopPreferencesSync());
   },
   save(preferences) {
     preferencesSet(

@@ -77,6 +77,8 @@ Deno.test("ordinary preferences discard secrets and normalize pairing state", ()
       nodeName: "Studio Mac",
       relayEnabled: true,
       pairedAt: null,
+      launchMode: "regular",
+      reduceMotion: false,
     },
   );
 });

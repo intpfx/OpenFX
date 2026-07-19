@@ -14,6 +14,8 @@ export const DEFAULT_DESKTOP_PREFERENCES: DesktopPreferences = Object.freeze({
   nodeName: "OpenFX Mac",
   relayEnabled: true,
   pairedAt: null,
+  launchMode: "regular",
+  reduceMotion: false,
 });
 
 export const sanitizeDesktopPreferences = (
@@ -40,6 +42,8 @@ export const sanitizeDesktopPreferences = (
         Number.isSafeInteger(candidate.pairedAt) && candidate.pairedAt >= 0
       ? candidate.pairedAt
       : null,
+    launchMode: candidate.launchMode === "menuBarOnly" ? "menuBarOnly" : "regular",
+    reduceMotion: candidate.reduceMotion === true,
   };
 };
 

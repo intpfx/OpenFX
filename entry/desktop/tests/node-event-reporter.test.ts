@@ -23,6 +23,8 @@ Deno.test("runtime events are delivered in order through POST /api/node/events",
       nodeName: "Studio Mac",
       relayEnabled: true,
       pairedAt: 1,
+      launchMode: "regular",
+      reduceMotion: false,
     },
     nodeSecret: "secret",
   });
@@ -91,6 +93,8 @@ Deno.test("Agent runtime approvals and produced chat deltas use the control-plan
       nodeName: "Studio Mac",
       relayEnabled: true,
       pairedAt: 1,
+      launchMode: "regular",
+      reduceMotion: false,
     },
     nodeSecret: "secret",
   });

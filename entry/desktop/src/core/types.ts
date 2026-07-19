@@ -1,11 +1,15 @@
 import type { TelemetrySample } from "../../../../domains/_shared/openfx-node/types.ts";
 
+export type DesktopLaunchMode = "regular" | "menuBarOnly";
+
 export interface DesktopPreferences {
   serverUrl: string;
   nodeId: string;
   nodeName: string;
   relayEnabled: boolean;
   pairedAt: number | null;
+  launchMode: DesktopLaunchMode;
+  reduceMotion: boolean;
 }
 
 export interface ProcessInfo {
