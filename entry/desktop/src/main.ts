@@ -332,7 +332,7 @@ createNodeTray({
 });
 
 onActivate(() => {
-  refreshPresentation();
+  controlPanel?.update(currentPresentation());
 });
 
 onMainWindowVisibilityChanged((visible) => {

@@ -1,5 +1,11 @@
 import { assert, assertEquals } from "@std/assert";
 
+import {
+  type CoreCanvasMetrics,
+  type CoreCanvasRenderer,
+  createCoreCanvasRenderer,
+} from "../src/ui/core-canvas.ts";
+
 const MAIN_URL = new URL("../src/main.ts", import.meta.url);
 const SRC_URL = new URL("../src/", import.meta.url);
 const BUILD_RUNTIME_URL = new URL("../tools/build-perry-runtime.ts", import.meta.url);
@@ -136,6 +142,65 @@ Deno.test("native main-window visibility owns renderer lifecycle", async () => {
   );
 });
 
+Deno.test("native visible then activation paints reduced motion exactly once", async () => {
+  const main = await Deno.readTextFile(MAIN_URL);
+  const activateHook = main.slice(
+    main.indexOf("onActivate(() => {"),
+    main.indexOf("onMainWindowVisibilityChanged((visible) => {"),
+  );
+  const activationRefreshesRenderer = activateHook.includes(
+    "refreshPresentation();",
+  );
+  const replayActivation = (
+    renderer: CoreCanvasRenderer,
+    metrics: CoreCanvasMetrics,
+  ): void => {
+    if (activationRefreshesRenderer) renderer.update(metrics);
+  };
+
+  const reopened = createReducedMotionPaintHarness();
+  reopened.renderer.start();
+  reopened.renderer.setWindowVisible(false);
+  const hiddenMetrics = {
+    state: "degraded" as const,
+    cpuUsagePercent: 70,
+    memoryUsagePercent: 80,
+    reduceMotion: true,
+  };
+  reopened.renderer.update(hiddenMetrics);
+  const hiddenPaints = reopened.paintCount();
+  reopened.renderer.setWindowVisible(true);
+  replayActivation(reopened.renderer, hiddenMetrics);
+  assertEquals(
+    reopened.paintCount() - hiddenPaints,
+    1,
+    "hidden metrics -> visible -> activation must paint one static frame",
+  );
+
+  const startup = createReducedMotionPaintHarness();
+  const startupMetrics = {
+    state: "online" as const,
+    cpuUsagePercent: 25,
+    memoryUsagePercent: 35,
+    reduceMotion: true,
+  };
+  startup.renderer.start();
+  startup.renderer.setWindowVisible(true);
+  replayActivation(startup.renderer, startupMetrics);
+  assertEquals(
+    startup.paintCount(),
+    1,
+    "initial static start -> visible -> activation must not double-paint",
+  );
+
+  assert(
+    activateHook.includes("controlPanel?.update(currentPresentation());") &&
+      !activateHook.includes("refreshPresentation();") &&
+      !activateHook.includes("coreRenderer"),
+    "activation must update only the control panel",
+  );
+});
+
 Deno.test("pinned Perry runtime build includes the patched macOS UI archive", async () => {
   const build = await Deno.readTextFile(BUILD_RUNTIME_URL);
   const patch = await Deno.readTextFile(PERRY_PATCH_URL);
@@ -261,9 +326,9 @@ Deno.test("desktop entry assembles the immersive regular-or-menu-bar native app"
   assert(main.includes('vibrancy: "underWindowBackground"'));
   assert(
     main.includes(
-      "onActivate(() => {\n  refreshPresentation();\n});",
+      "onActivate(() => {\n  controlPanel?.update(currentPresentation());\n});",
     ),
-    "activation may refresh data, but native visibility owns renderer restart",
+    "activation may refresh the control panel, but native visibility owns renderer restart",
   );
   assert(source.includes("textSetString("));
   assertEquals(source.includes("WebView("), false);
@@ -365,6 +430,44 @@ Deno.test("real desktop app smoke compiles main, checks IPv6 health, and capture
   assert(smoke.includes("PERRY_UI_SCREENSHOT_ARTIFACT"));
   assert(smoke.includes("screenshotArtifact"));
 });
+
+function createReducedMotionPaintHarness(): {
+  renderer: CoreCanvasRenderer;
+  paintCount: () => number;
+} {
+  let paints = 0;
+  const canvas = {
+    setFillColor() {},
+    setStrokeColor() {},
+    setLineWidth() {},
+    fillRect() {},
+    clearRect() {
+      paints += 1;
+    },
+    beginPath() {},
+    moveTo() {},
+    lineTo() {},
+    closePath() {},
+    fill() {},
+    stroke() {},
+  } as unknown as import("perry/ui").Canvas;
+
+  return {
+    renderer: createCoreCanvasRenderer({
+      width: 560,
+      height: 576,
+      initialMetrics: {
+        state: "online",
+        cpuUsagePercent: 25,
+        memoryUsagePercent: 35,
+        reduceMotion: true,
+      },
+      now: () => 1_000,
+      canvas,
+    }),
+    paintCount: () => paints,
+  };
+}
 
 async function readTypeScriptTree(directory: URL): Promise<string> {
   const sources: string[] = [];
