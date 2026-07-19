@@ -9,6 +9,13 @@ import { readStartupMessages } from "./integration-startup.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const webRoot = join(root, "entry/web");
+const perryLibDirectory = Deno.env.get("PERRY_LIB_DIR")?.trim();
+if (!perryLibDirectory) {
+  throw new Error(
+    "console-integration-smoke requires PERRY_LIB_DIR from deno task perry:runtime.",
+  );
+}
+const perryExecutable = join(perryLibDirectory, "perry");
 const adminKey = "openfx-integration-admin-key";
 const credentialKey = "0123456789abcdef0123456789abcdef";
 const tlsPort = 34_431;
@@ -48,7 +55,7 @@ try {
   const rootCertificatePath = join(caRoot, "rootCA.pem");
   const rootCertificate = await Deno.readTextFile(rootCertificatePath);
 
-  await command("/opt/homebrew/bin/perry", [
+  await command(perryExecutable, [
     "compile",
     "entry/desktop/tools/perry-node-smoke.ts",
     "-o",

@@ -21,6 +21,7 @@ import { createDesktopLifecycleController } from "./core/lifecycle-controller.ts
 import { derivePairingReadiness } from "./core/pairing-readiness.ts";
 import { createDesktopRouteDispatcher } from "./core/route-dispatcher.ts";
 import type { DesktopLaunchMode, DesktopPreferences } from "./core/types.ts";
+import { describeDesktopError } from "./core/ui-model.ts";
 import { createControlPlaneClient } from "./native/control-plane-client.ts";
 import { createSqliteJournalStorage } from "./native/sqlite-journal-storage.ts";
 import { requestJson, requestTextStream } from "./native/http-json.ts";
@@ -195,26 +196,24 @@ const pairWithControlPlane = async (input: PairingFormInput): Promise<void> => {
   serviceStatus.set("正在配对…");
   pairingStatus.set("正在检查本机网络与配对信息…");
   refreshPresentation();
-  let network = systemMonitor.network();
-  if (!network) {
-    await systemMonitor.sampleNow();
-    network = systemMonitor.network();
-  }
-  const readiness = derivePairingReadiness({
-    serverUrl: input.serverUrl,
-    pairingCode: input.pairingCode,
-    nodeName: input.nodeName,
-    network,
-    submitting: false,
-  });
-  if (!readiness.canSubmit || !network?.publicIpv6) {
-    pairingInProgress = false;
-    serviceStatus.set("配对信息尚未就绪。");
-    pairingStatus.set(readiness.statusMessage);
-    refreshPresentation();
-    return;
-  }
   try {
+    let network = systemMonitor.network();
+    if (!network) {
+      await systemMonitor.sampleNow();
+      network = systemMonitor.network();
+    }
+    const readiness = derivePairingReadiness({
+      serverUrl: input.serverUrl,
+      pairingCode: input.pairingCode,
+      nodeName: input.nodeName,
+      network,
+      submitting: false,
+    });
+    if (!readiness.canSubmit || !network?.publicIpv6) {
+      serviceStatus.set("配对信息尚未就绪。");
+      pairingStatus.set(readiness.statusMessage);
+      return;
+    }
     pairing = await pairingService.pair({
       serverUrl: input.serverUrl,
       code: input.pairingCode,
@@ -232,8 +231,9 @@ const pairWithControlPlane = async (input: PairingFormInput): Promise<void> => {
     );
     controlPanel?.showDashboard();
   } catch (error) {
-    serviceStatus.set(`配对失败：${errorMessage(error)}`);
-    pairingStatus.set(`配对失败：${errorMessage(error)}`);
+    const userMessage = describeDesktopError(error);
+    serviceStatus.set(`配对失败：${userMessage}`);
+    pairingStatus.set(`配对失败：${userMessage}`);
   } finally {
     pairingInProgress = false;
     refreshPresentation();
@@ -318,11 +318,6 @@ controlPanel = createControlPanel(currentPresentation(), {
 });
 
 createNodeTray({
-  showWindow() {
-    lifecycle.mainWindowShown();
-    coreRenderer?.setWindowVisible(true);
-    refreshPresentation();
-  },
   sample() {
     void systemMonitor.sampleNow();
   },
@@ -337,7 +332,9 @@ createNodeTray({
 
 onActivate(() => {
   lifecycle.mainWindowShown();
+  coreRenderer?.stop();
   coreRenderer?.setWindowVisible(true);
+  coreRenderer?.start();
   refreshPresentation();
 });
 

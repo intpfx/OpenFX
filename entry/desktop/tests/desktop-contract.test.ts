@@ -4,6 +4,10 @@ const MAIN_URL = new URL("../src/main.ts", import.meta.url);
 const SRC_URL = new URL("../src/", import.meta.url);
 const BUILD_RUNTIME_URL = new URL("../tools/build-perry-runtime.ts", import.meta.url);
 const APP_SMOKE_URL = new URL("../tools/desktop-app-smoke.ts", import.meta.url);
+const INTEGRATION_SMOKE_URL = new URL(
+  "../tools/console-integration-smoke.ts",
+  import.meta.url,
+);
 const PERRY_PATCH_URL = new URL(
   "../perry/perry-v0.5.1220-openfx.patch",
   import.meta.url,
@@ -16,7 +20,11 @@ Deno.test("desktop entry keeps native tray and runtime boundaries in both launch
   assert(main.includes("appSetActivationPolicy("));
   assert(main.includes("createNodeTray("));
   assert(source.includes("trayCreate(TRAY_ICON_PATH)"));
-  assert(source.includes('TRAY_ICON_PATH = "OpenFXTrayTemplate.png"'));
+  assert(
+    source.includes(
+      'TRAY_ICON_PATH = "entry/web/public/favicon-32x32.png"',
+    ),
+  );
   assert(source.includes('"perryShowMainWindow:"'));
   assertEquals(/\bWindow\(/.test(main), false);
   assert(source.includes('from "node:http"'));
@@ -154,6 +162,16 @@ Deno.test("pinned Perry App config wires vibrancy, minimum size, and close-to-hi
     "closing the main window must only hide it so Dock and tray can reopen it",
   );
   assert(
+    patch.includes('pub extern "C" fn js_cancel_all_frames()') &&
+      patch.includes("windowWillClose:") &&
+      patch.includes("js_cancel_all_frames();"),
+    "closing the native main window must clear pending frame callbacks",
+  );
+  assert(
+    patch.match(/invoke_activate_callback\(\);/g)?.length === 2,
+    "Dock reopen and the Show Main Window selector must both resume the existing activation lifecycle",
+  );
+  assert(
     build.includes('"-p",\n    "perry"') && build.includes('"dev-cli"'),
     "the pinned build must include the compiler whose App lowerer was patched",
   );
@@ -182,6 +200,12 @@ Deno.test("desktop entry assembles the immersive regular-or-menu-bar native app"
   assert(main.includes("minWidth: 880"));
   assert(main.includes("minHeight: 580"));
   assert(main.includes('vibrancy: "underWindowBackground"'));
+  assert(
+    main.includes(
+      "onActivate(() => {\n  lifecycle.mainWindowShown();\n  coreRenderer?.stop();\n  coreRenderer?.setWindowVisible(true);\n  coreRenderer?.start();",
+    ),
+    "native reopen must reset the stale frame token before scheduling a fresh frame",
+  );
   assert(source.includes("textSetString("));
   assertEquals(source.includes("WebView("), false);
   for (
@@ -205,6 +229,55 @@ Deno.test("desktop entry assembles the immersive regular-or-menu-bar native app"
     ]
   ) assert(source.includes(label), `missing desktop label: ${label}`);
   assertEquals(source.includes('trayCreate("")'), false);
+  assert(
+    source.includes(
+      'menuAddStandardAction(\n    menu,\n    "节点状态",\n    "perryShowMainWindow:",',
+    ),
+    "node status must use the native show-window selector",
+  );
+});
+
+Deno.test("desktop pairing contains sampling and pairing in one user-safe finally boundary", async () => {
+  const main = await Deno.readTextFile(MAIN_URL);
+  const start = main.indexOf("const pairWithControlPlane = async");
+  const end = main.indexOf("const bootstrap = async", start);
+  const pairing = main.slice(start, end);
+  const tryIndex = pairing.indexOf("try {");
+  const sampleIndex = pairing.indexOf("await systemMonitor.sampleNow();");
+
+  assert(start >= 0 && end > start, "pairing entry function must exist");
+  assert(
+    tryIndex >= 0 && sampleIndex > tryIndex,
+    "sampling and readiness must be protected by the same pairing try/finally",
+  );
+  assertEquals(
+    pairing.match(/pairingInProgress = false;/g)?.length,
+    1,
+    "pairing progress must clear in exactly one finally path",
+  );
+  assert(
+    pairing.includes("finally {\n    pairingInProgress = false;"),
+    "every sampling/readiness/pairing exit must clear progress",
+  );
+  assert(
+    pairing.includes("const userMessage = describeDesktopError(error);") &&
+      pairing.includes("serviceStatus.set(`配对失败：${userMessage}`)") &&
+      pairing.includes("pairingStatus.set(`配对失败：${userMessage}`)"),
+    "both pairing labels must use the Task 2 user-safe error mapping",
+  );
+  assertEquals(
+    pairing.includes("errorMessage(error)"),
+    false,
+    "raw internal pairing errors must never reach native labels",
+  );
+});
+
+Deno.test("HTTPS integration compiles with the matching pinned Perry CLI", async () => {
+  const smoke = await Deno.readTextFile(INTEGRATION_SMOKE_URL);
+
+  assert(smoke.includes('Deno.env.get("PERRY_LIB_DIR")'));
+  assert(smoke.includes('join(perryLibDirectory, "perry")'));
+  assertEquals(smoke.includes("/opt/homebrew/bin/perry"), false);
 });
 
 Deno.test("real desktop app smoke compiles main, checks IPv6 health, and captures UI", async () => {
@@ -224,8 +297,12 @@ Deno.test("real desktop app smoke compiles main, checks IPv6 health, and capture
   assert(smoke.includes("OpenFX UI-only link gate"));
   assert(smoke.includes("assertPng"));
   assert(smoke.includes("entry/web/public/favicon-32x32.png"));
-  assert(smoke.includes("Deno.copyFile"));
-  assert(smoke.includes('"OpenFXTrayTemplate.png"'));
+  assert(smoke.includes("assertNonEmptyFile(TRAY_ICON_SOURCE)"));
+  assertEquals(smoke.includes("TRAY_ICON_NAME"), false);
+  assertEquals(
+    smoke.includes("Deno.copyFile(\n    TRAY_ICON_SOURCE"),
+    false,
+  );
   assert(smoke.includes("PERRY_UI_SCREENSHOT_ARTIFACT"));
   assert(smoke.includes("screenshotArtifact"));
 });

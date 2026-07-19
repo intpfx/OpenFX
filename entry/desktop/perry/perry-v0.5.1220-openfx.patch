@@ -334,8 +334,8 @@ index 2f52976c..f6dc0472 100644
  }
 +/// Resolve packaged tray assets before falling back to the caller's path.
 +/// A macOS app executable lives in `Contents/MacOS`; its resources are in the
-+/// sibling `Contents/Resources` directory. Standalone Perry binaries resolve
-+/// assets next to the executable so launch cwd never changes icon behaviour.
++/// sibling `Contents/Resources` directory. Standalone binaries try an adjacent
++/// asset before returning the raw caller path for repository-run resources.
 +fn resolve_resource_path(path: &str) -> PathBuf {
 +    let requested = Path::new(path);
 +    if requested.is_absolute() {
@@ -555,3 +555,52 @@ index 955f0d33..669ac35a 100644
      icon?: string;
      body: Widget;
      /**
+diff --git a/crates/perry-runtime/src/frame.rs b/crates/perry-runtime/src/frame.rs
+index 605b0d8..5f3bc55 100644
+--- a/crates/perry-runtime/src/frame.rs
++++ b/crates/perry-runtime/src/frame.rs
+@@ -87,0 +88,7 @@
++/// Cancel every pending one-shot frame callback. Native window hosts use this
++/// when the main window closes so a stale callback cannot survive invisibly.
++#[no_mangle]
++pub extern "C" fn js_cancel_all_frames() {
++    FRAME_CALLBACKS.lock().unwrap().clear();
++}
++
+@@ -196,0 +204,11 @@
++
++    #[test]
++    fn cancel_all_frames_removes_every_pending_callback() {
++        let _guard = TEST_LOCK.lock().unwrap();
++        clear_state();
++        js_on_frame_callback(0x5000);
++        js_on_frame_callback(0x6000);
++        assert_eq!(js_frame_has_pending(), 1);
++        js_cancel_all_frames();
++        assert_eq!(js_frame_has_pending(), 0);
++    }
+diff --git a/crates/perry-ui-macos/src/app.rs b/crates/perry-ui-macos/src/app.rs
+index c0f98e7..0a116d7 100644
+--- a/crates/perry-ui-macos/src/app.rs
++++ b/crates/perry-ui-macos/src/app.rs
+@@ -541,0 +542,5 @@
++        APPS.with(|apps| {
++            for entry in apps.borrow().iter() {
++                let _: () = msg_send![&*entry.window, setDelegate: &*delegate];
++            }
++        });
+@@ -1229,0 +1235,1 @@
++    fn js_cancel_all_frames();
+@@ -1371,0 +1378,1 @@
++                invoke_activate_callback();
+@@ -1384,0 +1392,10 @@
++            invoke_activate_callback();
++        }
++
++        /// Closing the main window must stop its pending one-shot frame work.
++        /// Background timers, HTTP, Relay, and Agent services remain active.
++        #[unsafe(method(windowWillClose:))]
++        fn window_will_close(&self, _notification: &AnyObject) {
++            unsafe {
++                js_cancel_all_frames();
++            }

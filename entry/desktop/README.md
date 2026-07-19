@@ -6,9 +6,10 @@ OpenFX Node 是常驻 macOS 菜单栏的原生 Perry 节点。它承载本机监
 
 ## 运行边界
 
-- Perry 使用 `appSetActivationPolicy("accessory")`、单个主窗口和 Tray；关闭主窗口只隐藏
-  界面，Tray 会通过 Perry 原生 selector 重新显示同一个窗口，节点服务与 5
-  秒采样继续运行。
+- Perry 默认使用 `regular` Dock 模式、单个主窗口和 Tray；用户选择的 `menuBarOnly`
+  只在下次启动时切换为 `accessory`。关闭主窗口会清除待处理绘制帧，Tray 或 Dock 通过
+  Perry 原生 selector 重新显示同一窗口并恢复 24 FPS Canvas；节点服务与 5
+  秒采样始终继续运行。
 - 节点 API 监听 `[::]:24531`。公开 `/v1/health` 只返回健康状态和协议版本，
   其余固定路由统一经过 v1 签名、AES-GCM 信封、时间窗和 nonce 防重放校验。
 - 配对使用 OpenFX 服务端 URL 与 8 位配对码。普通偏好只保存非敏感节点信息，`nodeSecret`

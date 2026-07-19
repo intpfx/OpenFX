@@ -8,7 +8,6 @@ const TRAY_ICON_SOURCE = join(
   REPOSITORY_ROOT,
   "entry/web/public/favicon-32x32.png",
 );
-const TRAY_ICON_NAME = "OpenFXTrayTemplate.png";
 const HEALTH_URL = "http://[::1]:24531/v1/health";
 const PERRY_UI_ARCHIVE = "libperry_ui_macos.a";
 const HEALTH_TIMEOUT_MS = 10_000;
@@ -30,6 +29,7 @@ const screenshotArtifact = screenshotArtifactValue
 
 await assertFile(perryExecutable);
 await assertFile(join(perryLibDirectory, PERRY_UI_ARCHIVE));
+await assertNonEmptyFile(TRAY_ICON_SOURCE);
 await assertPortAvailable();
 
 const temporaryDirectory = await Deno.makeTempDir({ prefix: "openfx-app-smoke-" });
@@ -39,10 +39,6 @@ const uiOnlySource = join(temporaryDirectory, "openfx-ui-only-link.ts");
 const uiOnlyExecutable = join(temporaryDirectory, "openfx-ui-only-link");
 
 try {
-  await Deno.copyFile(
-    TRAY_ICON_SOURCE,
-    join(temporaryDirectory, TRAY_ICON_NAME),
-  );
   await Deno.writeTextFile(
     uiOnlySource,
     `import { App, Text } from "perry/ui";
@@ -187,6 +183,14 @@ async function waitForHealth(): Promise<Record<string, unknown>> {
 async function assertFile(path: string): Promise<void> {
   const stat = await Deno.stat(path).catch(() => null);
   assert(stat?.isFile, `Required pinned Perry archive is missing: ${path}`);
+}
+
+async function assertNonEmptyFile(path: string): Promise<void> {
+  const stat = await Deno.stat(path).catch(() => null);
+  assert(
+    stat?.isFile && stat.size > 0,
+    `Required tracked tray resource is missing or empty: ${path}`,
+  );
 }
 
 async function assertPng(path: string): Promise<void> {

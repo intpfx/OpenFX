@@ -1,6 +1,7 @@
 import { cancelFrame, Canvas, type Canvas as PerryCanvas, onFrame } from "perry/ui";
 
 import {
+  CORE_FRAME_INTERVAL_MS,
   type CoreFrame,
   type CoreNodeState,
   createCoreFrame,
@@ -58,7 +59,7 @@ export const createCoreCanvasRenderer = (
   const now = options.now ?? Date.now;
   let metrics = { ...options.initialMetrics };
   let pendingFrame: number | null = null;
-  let lastFrameAtMs = -1;
+  let nextFrameAtMs = CORE_FRAME_INTERVAL_MS;
   let staticFrameDrawn = false;
   let windowVisible = true;
   let stopped = false;
@@ -74,7 +75,6 @@ export const createCoreCanvasRenderer = (
       reduceMotion: metrics.reduceMotion,
     });
     paintCoreFrame(canvas, frameModel);
-    lastFrameAtMs = timestampMs;
     staticFrameDrawn = metrics.reduceMotion;
   };
 
@@ -93,12 +93,18 @@ export const createCoreCanvasRenderer = (
     if (
       shouldRenderCoreFrame({
         nowMs: timestampMs,
-        lastFrameAtMs,
+        lastFrameAtMs: nextFrameAtMs - CORE_FRAME_INTERVAL_MS,
         reduceMotion: metrics.reduceMotion,
         staticFrameDrawn,
         windowVisible,
       })
-    ) draw(timestampMs);
+    ) {
+      draw(timestampMs);
+      const elapsedIntervals = Math.floor(
+        Math.max(0, timestampMs - nextFrameAtMs) / CORE_FRAME_INTERVAL_MS,
+      ) + 1;
+      nextFrameAtMs += elapsedIntervals * CORE_FRAME_INTERVAL_MS;
+    }
     schedule();
   };
 
@@ -116,7 +122,7 @@ export const createCoreCanvasRenderer = (
       if (metrics.reduceMotion) draw(now());
       else {
         draw(0);
-        lastFrameAtMs = -1;
+        nextFrameAtMs = CORE_FRAME_INTERVAL_MS;
         schedule();
       }
     },
@@ -172,14 +178,19 @@ export const paintCoreFrame = (
   canvas.setFillColor(0.015, 0.035, 0.065, 0.92);
   canvas.fillRect(0, 0, frame.width, frame.height);
 
-  canvas.setStrokeColor(accent.r, accent.g, accent.b, 0.13);
   canvas.setLineWidth(1);
-  canvas.beginPath();
   for (const connection of frame.connections) {
+    canvas.setStrokeColor(
+      accent.r,
+      accent.g,
+      accent.b,
+      connection.alpha,
+    );
+    canvas.beginPath();
     canvas.moveTo(connection.fromX, connection.fromY);
     canvas.lineTo(connection.toX, connection.toY);
+    canvas.stroke();
   }
-  canvas.stroke();
 
   for (const ring of frame.rings) {
     canvas.setStrokeColor(accent.r, accent.g, accent.b, ring.alpha);

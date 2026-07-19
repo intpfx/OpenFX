@@ -9,11 +9,11 @@ export const CORE_FRAME_INTERVAL_MS = 1_000 / 24;
 
 export const CORE_STATE_COLORS: Readonly<Record<CoreNodeState, string>> = Object.freeze(
   {
-    startup: "#38BDF8",
-    unpaired: "#FBBF24",
-    online: "#2DD4BF",
-    degraded: "#FB923C",
-    fault: "#F87171",
+    startup: coreStateColor("startup"),
+    unpaired: coreStateColor("unpaired"),
+    online: coreStateColor("online"),
+    degraded: coreStateColor("degraded"),
+    fault: coreStateColor("fault"),
   },
 );
 
@@ -159,7 +159,7 @@ const clampPercent = (value: number): number =>
 const positive = (value: number): number =>
   Math.max(1, Number.isFinite(value) ? value : 1);
 
-const coreStateColor = (state: CoreNodeState): string => {
+function coreStateColor(state: CoreNodeState): string {
   switch (state) {
     case "startup":
       return "#38BDF8";
@@ -172,4 +172,4 @@ const coreStateColor = (state: CoreNodeState): string => {
     case "fault":
       return "#F87171";
   }
-};
+}

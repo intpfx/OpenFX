@@ -89,6 +89,19 @@ Deno.test("core frame exposes the locked color for every node state", () => {
   }
 });
 
+Deno.test("core state palette has one implementation source", async () => {
+  const source = await Deno.readTextFile(
+    new URL("../src/ui/core-frame.ts", import.meta.url),
+  );
+  for (const color of Object.values(CORE_STATE_COLORS)) {
+    assertEquals(
+      source.split(color).length - 1,
+      1,
+      `${color} must be declared only once`,
+    );
+  }
+});
+
 Deno.test("CPU usage increases core pulse amplitude", () => {
   const common = {
     width: 560,
@@ -209,13 +222,41 @@ Deno.test("core painter clears and renders the pure frame without native arc", (
   assertEquals(calls.includes("fill-rect"), true);
   assertEquals(
     calls.filter((call) => call === "stroke").length,
-    frame.rings.length + 1,
+    frame.rings.length + frame.connections.length,
   );
   assertEquals(
     calls.filter((call) => call === "fill").length,
     frame.orbitNodes.length + 1,
   );
   assertGreater(calls.filter((call) => call === "line").length, 48);
+});
+
+Deno.test("core painter applies each connection alpha", () => {
+  const strokeAlphas: number[] = [];
+  const canvas = {
+    ...createRecordingCanvas(),
+    setStrokeColor(_r: number, _g: number, _b: number, alpha: number) {
+      strokeAlphas.push(alpha);
+    },
+  };
+  const frame = createCoreFrame({
+    width: 560,
+    height: 576,
+    timestampMs: 500,
+    state: "online",
+    cpuUsagePercent: 50,
+    memoryUsagePercent: 50,
+    reduceMotion: false,
+  });
+
+  paintCoreFrame(canvas as unknown as import("perry/ui").Canvas, frame);
+
+  for (const connection of frame.connections) {
+    assert(
+      strokeAlphas.includes(connection.alpha),
+      `missing connection alpha ${connection.alpha}`,
+    );
+  }
 });
 
 Deno.test("renderer keeps exactly one pending Perry frame across repeated updates", () => {
@@ -264,7 +305,48 @@ Deno.test("renderer keeps exactly one pending Perry frame across repeated update
 
   callbacks[0]!(0, 0);
   assertEquals(requestCount, 2);
-  assertEquals(paintCount, 2);
+  assertEquals(paintCount, 1);
+});
+
+Deno.test("renderer carries frame remainder to average 24 FPS on a 60 Hz clock", () => {
+  let paintCount = 0;
+  const queue: Array<(timestampMs: number, deltaMs: number) => void> = [];
+  let nextId = 0;
+  const renderer = createCoreCanvasRenderer({
+    width: 560,
+    height: 576,
+    initialMetrics: {
+      state: "online",
+      cpuUsagePercent: 50,
+      memoryUsagePercent: 50,
+      reduceMotion: false,
+    },
+    canvas: {
+      ...createRecordingCanvas(),
+      clearRect() {
+        paintCount += 1;
+      },
+    } as unknown as import("perry/ui").Canvas,
+    frameDriver: {
+      request(callback) {
+        queue.push(callback);
+        nextId += 1;
+        return nextId;
+      },
+      cancel() {
+        queue.shift();
+      },
+    },
+  });
+
+  renderer.start();
+  for (let index = 0; index < 120; index += 1) {
+    assertEquals(queue.length, 1, "renderer must retain one pending callback");
+    queue.shift()!(index * (1_000 / 60), 1_000 / 60);
+  }
+
+  assertEquals(paintCount, 48);
+  assertEquals(queue.length, 1);
 });
 
 const createRecordingCanvas = (): CoreCanvasTarget => ({

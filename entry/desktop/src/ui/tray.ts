@@ -8,10 +8,9 @@ import {
   type Widget,
 } from "perry/ui";
 
-export const TRAY_ICON_PATH = "OpenFXTrayTemplate.png";
+export const TRAY_ICON_PATH = "entry/web/public/favicon-32x32.png";
 
 export interface NodeTrayActions {
-  showWindow(): void;
   sample(): void;
   openConsole(): void;
   quit(): void;
@@ -27,7 +26,12 @@ export const createNodeTray = (actions: NodeTrayActions): Widget => {
     "perryShowMainWindow:",
     "",
   );
-  menuAddItem(menu, "节点状态", actions.showWindow);
+  menuAddStandardAction(
+    menu,
+    "节点状态",
+    "perryShowMainWindow:",
+    "",
+  );
   menuAddItem(menu, "立即采样", actions.sample);
   menuAddItem(menu, "打开 OpenFX 控制台", actions.openConsole);
   menuAddItem(menu, "退出", actions.quit);
