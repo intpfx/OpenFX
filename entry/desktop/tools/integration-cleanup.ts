@@ -21,6 +21,30 @@ export interface BoundedCommandOptions {
   terminationGraceMs: number;
 }
 
+export interface BoundedChildOutput {
+  success: boolean;
+  code: number;
+  signal: string | null;
+  stdout: Uint8Array;
+  stderr: Uint8Array;
+}
+
+export interface CollectableChildProcess {
+  output(): Promise<BoundedChildOutput>;
+  kill(signal: "SIGTERM" | "SIGKILL"): void;
+}
+
+export interface CollectBoundedChildOptions {
+  deadlineAt: number;
+  terminationGraceMs: number;
+  terminateImmediately?: boolean;
+}
+
+export interface CollectedBoundedChild {
+  output: BoundedChildOutput;
+  cleanExitTimedOut: boolean;
+}
+
 export const runBoundedCommand = async (
   spawn: () => BoundedChildProcess,
   options: BoundedCommandOptions,
@@ -40,6 +64,35 @@ export const runBoundedCommand = async (
   terminate(child, "SIGKILL");
   await settleWithin(child.status, options.terminationGraceMs);
   return false;
+};
+
+export const collectBoundedChild = async (
+  child: CollectableChildProcess,
+  options: CollectBoundedChildOptions,
+): Promise<CollectedBoundedChild> => {
+  const outputPromise = child.output();
+  let cleanExitTimedOut = false;
+
+  if (!options.terminateImmediately) {
+    const remainingMs = Math.max(1, options.deadlineAt - Date.now());
+    const completed = await settleWithin(outputPromise, remainingMs);
+    if (completed) return { output: completed, cleanExitTimedOut };
+    cleanExitTimedOut = true;
+  }
+
+  terminate(child, "SIGTERM");
+  const terminated = await settleWithin(
+    outputPromise,
+    options.terminationGraceMs,
+  );
+  if (terminated) return { output: terminated, cleanExitTimedOut };
+
+  terminate(child, "SIGKILL");
+  const killed = await settleWithin(outputPromise, options.terminationGraceMs);
+  if (!killed) {
+    throw new Error("child_process_reap_timeout_after_sigkill");
+  }
+  return { output: killed, cleanExitTimedOut };
 };
 
 export const cleanupIntegrationIdentity = async (
@@ -89,7 +142,7 @@ const settleWithin = <T>(promise: Promise<T>, timeoutMs: number): Promise<T | nu
   });
 
 const terminate = (
-  child: BoundedChildProcess,
+  child: Pick<BoundedChildProcess, "kill">,
   signal: "SIGTERM" | "SIGKILL",
 ): void => {
   try {

@@ -1,10 +1,14 @@
 import { fromFileUrl, join } from "jsr:@std/path@^1.1.4";
 
+import { collectBoundedChild } from "./integration-cleanup.ts";
+
 const REPOSITORY_ROOT = fromFileUrl(new URL("../../../", import.meta.url));
 const MAIN_PATH = join(REPOSITORY_ROOT, "entry/desktop/src/main.ts");
 const HEALTH_URL = "http://[::1]:24531/v1/health";
 const PERRY_UI_ARCHIVE = "libperry_ui_macos.a";
 const HEALTH_TIMEOUT_MS = 10_000;
+const APP_EXIT_DEADLINE_MS = 13_000;
+const TERMINATION_GRACE_MS = 1_000;
 
 const perryLibDirectory = Deno.env.get("PERRY_LIB_DIR")?.trim();
 if (!perryLibDirectory) {
@@ -19,9 +23,24 @@ await assertPortAvailable();
 const temporaryDirectory = await Deno.makeTempDir({ prefix: "openfx-app-smoke-" });
 const executable = join(temporaryDirectory, "openfx-desktop");
 const screenshot = join(temporaryDirectory, "openfx-desktop.png");
+const uiOnlySource = join(temporaryDirectory, "openfx-ui-only-link.ts");
+const uiOnlyExecutable = join(temporaryDirectory, "openfx-ui-only-link");
 
 try {
-  await runPerryCompile(executable, perryLibDirectory);
+  await Deno.writeTextFile(
+    uiOnlySource,
+    `import { App, Text } from "perry/ui";
+App({
+  title: "OpenFX UI-only link gate",
+  width: 320,
+  height: 180,
+  body: Text("OpenFX UI-only link gate"),
+});
+`,
+  );
+  await runPerryCompile(uiOnlySource, uiOnlyExecutable, perryLibDirectory);
+  await runPerryCompile(MAIN_PATH, executable, perryLibDirectory);
+  const startedAt = Date.now();
   const child = new Deno.Command("/usr/bin/env", {
     args: [executable],
     cwd: REPOSITORY_ROOT,
@@ -43,18 +62,23 @@ try {
     health = await waitForHealth();
   } catch (error) {
     failure = error;
-    try {
-      child.kill("SIGTERM");
-    } catch {
-      // The Perry test-mode timer may have exited between the timeout and cleanup.
-    }
   }
 
-  const [status, stdout, stderr] = await Promise.all([
-    child.status,
-    readText(child.stdout),
-    readText(child.stderr),
-  ]);
+  const collected = await collectBoundedChild(child, {
+    deadlineAt: startedAt + APP_EXIT_DEADLINE_MS,
+    terminationGraceMs: TERMINATION_GRACE_MS,
+    terminateImmediately: failure !== null,
+  });
+  const status = collected.output;
+  const stdout = new TextDecoder().decode(collected.output.stdout);
+  const stderr = new TextDecoder().decode(collected.output.stderr);
+  if (collected.cleanExitTimedOut) {
+    throw new Error(
+      `Perry UI app clean-exit timed out after ${APP_EXIT_DEADLINE_MS} ms; ` +
+        `sent SIGTERM and escalated to SIGKILL when required.\n` +
+        `stdout:\n${stdout}\nstderr:\n${stderr}`,
+    );
+  }
   if (failure) {
     throw new Error(
       `${failure instanceof Error ? failure.message : String(failure)}\n` +
@@ -80,11 +104,12 @@ try {
 }
 
 async function runPerryCompile(
+  input: string,
   output: string,
   libraryDirectory: string,
 ): Promise<void> {
   const result = await new Deno.Command("perry", {
-    args: ["compile", MAIN_PATH, "-o", output, "--no-auto-optimize"],
+    args: ["compile", input, "-o", output, "--no-auto-optimize"],
     cwd: REPOSITORY_ROOT,
     env: { ...Deno.env.toObject(), PERRY_LIB_DIR: libraryDirectory },
     stdin: "null",
@@ -150,10 +175,6 @@ async function assertPng(path: string): Promise<void> {
     signature.every((value, index) => bytes[index] === value),
     `Perry UI screenshot is not a PNG: ${path}`,
   );
-}
-
-async function readText(stream: ReadableStream<Uint8Array>): Promise<string> {
-  return await new Response(stream).text();
 }
 
 function assert(condition: unknown, message: string): asserts condition {

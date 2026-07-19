@@ -70,6 +70,9 @@ Deno.test("desktop entry schedules services from the native App event loop", asy
 Deno.test("pinned Perry runtime build includes the patched macOS UI archive", async () => {
   const build = await Deno.readTextFile(BUILD_RUNTIME_URL);
   const patch = await Deno.readTextFile(PERRY_PATCH_URL);
+  const macosAppPatch = patch.split(
+    "diff --git a/crates/perry-ui-macos/src/app.rs",
+  )[1]?.split("diff --git", 1)[0] ?? "";
 
   assert(build.includes('"perry-ui-macos"'));
   assert(build.includes('"libperry_ui_macos.a"'));
@@ -85,19 +88,39 @@ Deno.test("pinned Perry runtime build includes the patched macOS UI archive", as
     "the stdlib pump must continue while the UI event loop is alive",
   );
   assert(
-    patch.includes("js_stdlib_ensure_pump_registered") &&
-      patch.includes("js_stdlib_ensure_pump_registered();") &&
-      patch.includes("ensure_pump_only_registered") &&
-      patch.includes(
-        "crate::common::async_bridge::ensure_pump_only_registered();",
-      ),
-    "stdlib dispatch initialization must idempotently register its UI pump",
-  );
-  assert(
-    patch.includes("perry_ffi_run_pending(0);") &&
-      patch.indexOf("perry_ffi_run_pending(0);") <
+    patch.includes("js_drive_registered_pending(0);") &&
+      patch.indexOf("js_drive_registered_pending(0);") <
         patch.indexOf("js_run_stdlib_pump();"),
     "the native UI timer must drive Perry's current-thread async reactor before draining HTTP",
+  );
+  assert(
+    patch.includes("Some(stdlib_drive_pending),") &&
+      patch.includes("WAIT_DRIVER_DRIVE.load(Ordering::Acquire)") &&
+      patch.includes("drive_pending(budget_ms);"),
+    "the UI runtime hook must use the full pending-work driver, not the notification-sensitive sleep path",
+  );
+  assertEquals(
+    macosAppPatch.includes("perry_ffi_run_pending"),
+    false,
+    "the macOS UI archive must not hard-link perry-stdlib FFI",
+  );
+  assertEquals(
+    macosAppPatch.includes("js_stdlib_ensure_pump_registered"),
+    false,
+    "the macOS UI archive must remain linkable without perry-stdlib",
+  );
+  assert(
+    patch.includes("pub(crate) fn ensure_pump_core_registered()") &&
+      patch.includes(
+        "crate::common::async_bridge::ensure_pump_core_registered();",
+      ) &&
+      patch.includes("INIT.call_once(|| unsafe { js_stdlib_init_dispatch_inner() });"),
+    "the generated needs_stdlib initializer must register the reactor without a UI-to-stdlib link",
+  );
+  assertEquals(
+    patch.includes("perry_ffi::run_pending(0);"),
+    false,
+    "reactor registration must not depend on a late HTTP-module entry point",
   );
   assert(
     patch.includes("capture_main_view_png") &&
@@ -118,6 +141,11 @@ Deno.test("real desktop app smoke compiles main, checks IPv6 health, and capture
   assert(smoke.includes("PERRY_UI_TEST_MODE"));
   assert(smoke.includes("PERRY_UI_SCREENSHOT_PATH"));
   assert(smoke.includes('PERRY_UI_TEST_EXIT_AFTER_MS: "12000"'));
+  assert(smoke.includes("APP_EXIT_DEADLINE_MS = 13_000"));
+  assert(smoke.includes("collectBoundedChild"));
+  assert(smoke.includes("Perry UI app clean-exit timed out"));
+  assert(smoke.includes("openfx-ui-only-link"));
+  assert(smoke.includes("OpenFX UI-only link gate"));
   assert(smoke.includes("assertPng"));
 });
 

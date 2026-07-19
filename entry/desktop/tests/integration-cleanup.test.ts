@@ -1,4 +1,6 @@
-import { assertEquals } from "@std/assert";
+import { assert, assertEquals } from "@std/assert";
+
+import * as cleanupTools from "../tools/integration-cleanup.ts";
 
 import {
   cleanupIntegrationIdentity,
@@ -79,4 +81,50 @@ Deno.test("bounded cleanup command escalates and returns after its deadline", as
 
   assertEquals(success, false);
   assertEquals(signals, ["SIGTERM", "SIGKILL"]);
+});
+
+Deno.test("desktop child collection bounds clean exit, escalates, and reaps output", async () => {
+  const collectBoundedChild = Reflect.get(cleanupTools, "collectBoundedChild") as
+    | ((child: unknown, options: unknown) => Promise<{
+      output: { stdout: Uint8Array; stderr: Uint8Array };
+      cleanExitTimedOut: boolean;
+    }>)
+    | undefined;
+  assert(collectBoundedChild, "collectBoundedChild must be exported");
+
+  let resolveOutput!: (output: {
+    success: boolean;
+    code: number;
+    signal: string;
+    stdout: Uint8Array;
+    stderr: Uint8Array;
+  }) => void;
+  const signals: string[] = [];
+  const output = new Promise<Parameters<typeof resolveOutput>[0]>((resolve) => {
+    resolveOutput = resolve;
+  });
+
+  const result = await collectBoundedChild({
+    output: () => output,
+    kill(signal: string) {
+      signals.push(signal);
+      if (signal === "SIGKILL") {
+        resolveOutput({
+          success: false,
+          code: 137,
+          signal,
+          stdout: new TextEncoder().encode("bounded stdout"),
+          stderr: new TextEncoder().encode("bounded stderr"),
+        });
+      }
+    },
+  }, {
+    deadlineAt: Date.now() + 5,
+    terminationGraceMs: 5,
+  });
+
+  assertEquals(signals, ["SIGTERM", "SIGKILL"]);
+  assertEquals(result.cleanExitTimedOut, true);
+  assertEquals(new TextDecoder().decode(result.output.stdout), "bounded stdout");
+  assertEquals(new TextDecoder().decode(result.output.stderr), "bounded stderr");
 });

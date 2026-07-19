@@ -187,24 +187,69 @@ index d816401..bb15c7d 100644
      HTTP_GC_REGISTERED.call_once(|| {
 +        client_dispatch_ext::ensure_dispatch_extensions_registered();
          gc_register_mutable_root_scanner_named("perry-ext-http", scan_http_roots);
+diff --git a/crates/perry-runtime/src/event_pump.rs b/crates/perry-runtime/src/event_pump.rs
+index d3985581..d28a419a 100644
+--- a/crates/perry-runtime/src/event_pump.rs
++++ b/crates/perry-runtime/src/event_pump.rs
+@@ -112,6 +112,7 @@ fn invoke_host_wake_callback() {
+ // ============================================================================
+ static WAIT_DRIVER_SLEEP: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
+ static WAIT_DRIVER_WAKE: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
++static WAIT_DRIVER_DRIVE: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
+ /// `fast` — a brief, non-parking-when-idle native drive invoked when JS work is
+ /// pending (so we're about to return to run microtasks, NOT park). On the
+ /// single-thread runtime model, in-flight native tasks (a fetch's reqwest send,
+@@ -132,13 +133,16 @@ pub extern "C" fn js_register_wait_driver(
+     sleep: Option<extern "C" fn(u64)>,
+     fast: Option<extern "C" fn()>,
+     wake: Option<extern "C" fn()>,
++    drive: Option<extern "C" fn(u64)>,
+ ) {
+-    // Store wake + fast first so any notifier that observes a fresh sleep slot
+-    // also sees usable companions.
++    // Store companions first so any caller that observes a fresh sleep slot
++    // also sees usable callbacks.
+     let wake_ptr = wake.map(|f| f as *mut ()).unwrap_or(std::ptr::null_mut());
+     WAIT_DRIVER_WAKE.store(wake_ptr, Ordering::Release);
+     let fast_ptr = fast.map(|f| f as *mut ()).unwrap_or(std::ptr::null_mut());
+     WAIT_DRIVER_FAST.store(fast_ptr, Ordering::Release);
++    let drive_ptr = drive.map(|f| f as *mut ()).unwrap_or(std::ptr::null_mut());
++    WAIT_DRIVER_DRIVE.store(drive_ptr, Ordering::Release);
+     let sleep_ptr = sleep.map(|f| f as *mut ()).unwrap_or(std::ptr::null_mut());
+     WAIT_DRIVER_SLEEP.store(sleep_ptr, Ordering::Release);
+ }
+@@ -161,0 +166,16 @@ fn wait_driver_sleep(budget_ms: u64) -> bool {
++/// Drive one bounded pending-work slice when a stdlib driver is registered.
++/// Unlike the event-loop sleep callback, this path does not end early on an
++/// already-set notification flag. Native UI hosts use it to advance the
++/// current-thread reactor from their resident event loop; UI-only programs
++/// keep linking against perry-runtime alone and receive a cheap no-op.
++#[no_mangle]
++pub extern "C" fn js_drive_registered_pending(budget_ms: u64) -> i32 {
++    let p = WAIT_DRIVER_DRIVE.load(Ordering::Acquire);
++    if p.is_null() {
++        return 0;
++    }
++    let f: extern "C" fn(u64) = unsafe { std::mem::transmute(p) };
++    f(budget_ms);
++    1
++}
++
 diff --git a/crates/perry-ui-macos/src/app.rs b/crates/perry-ui-macos/src/app.rs
-index 72255abc..effd8424 100644
+index 72255abc..bc9d0263 100644
 --- a/crates/perry-ui-macos/src/app.rs
 +++ b/crates/perry-ui-macos/src/app.rs
-@@ -1287,2 +1287,11 @@ define_class!(
-                     js_interval_timer_tick();
+@@ -1287,0 +1288,9 @@ define_class!(
 +                    // Native services keep running after the main window is hidden.
 +                    // Always drain stdlib work and microtasks; only visual frame
 +                    // callbacks are allowed to pause with a hidden window.
 +                    extern "C" {
-+                        fn perry_ffi_run_pending(budget_ms: u64);
++                        fn js_drive_registered_pending(budget_ms: u64) -> i32;
 +                    }
-+                    perry_ffi_run_pending(0);
++                    js_drive_registered_pending(0);
 +                    js_run_stdlib_pump();
 +                    js_promise_run_microtasks();
-                     // Issue #1865: perry/ui `onFrame` one-shot display-link
-@@ -1290,7 +1295,5 @@ define_class!(
-                     // CADisplayLink-quality vsync alignment is a follow-up.
+@@ -1291,5 +1300,3 @@ define_class!(
 -                    js_frame_pump_default();
 -                    js_promise_run_microtasks();
 -                    // Process deferred promise resolutions from perry-stdlib tokio workers.
@@ -213,8 +258,7 @@ index 72255abc..effd8424 100644
 +                    if main_window_is_visible() {
 +                        js_frame_pump_default();
 +                    }
-                     #[cfg(feature = "geisterhand")]
-@@ -1307,1 +1310,9 @@ define_class!(
+@@ -1306,0 +1314,8 @@ define_class!(
 +fn main_window_is_visible() -> bool {
 +    APPS.with(|apps| {
 +        apps.borrow()
@@ -223,16 +267,6 @@ index 72255abc..effd8424 100644
 +    })
 +}
 +
- impl PerryPumpTarget {
-@@ -1308,2 +1319,8 @@ impl PerryPumpTarget {
-     fn new() -> Retained<Self> {
-+        extern "C" {
-+            fn js_stdlib_ensure_pump_registered();
-+        }
-+        unsafe {
-+            js_stdlib_ensure_pump_registered();
-+        }
-         let this = Self::alloc().set_ivars(PerryPumpTargetIvars);
 diff --git a/crates/perry-ui-macos/src/screenshot.rs b/crates/perry-ui-macos/src/screenshot.rs
 index 25bf6807..7118245f 100644
 --- a/crates/perry-ui-macos/src/screenshot.rs
@@ -342,32 +376,40 @@ index 2f52976c..f6dc0472 100644
 +                let ns_path = NSString::from_str(&resolved_path.to_string_lossy());
                  let image: Option<Retained<NSImage>> = msg_send![
 diff --git a/crates/perry-stdlib/src/common/async_bridge.rs b/crates/perry-stdlib/src/common/async_bridge.rs
-index 6a0b2e8..0000000 100644
+index 6a0b2e83..cc61f419 100644
 --- a/crates/perry-stdlib/src/common/async_bridge.rs
 +++ b/crates/perry-stdlib/src/common/async_bridge.rs
-@@ -442,3 +442,19 @@ pub fn ensure_pump_registered() {
-+    ensure_pump_only_registered();
-+    extern "C" {
-+        fn js_stdlib_init_dispatch();
-+    }
-+    unsafe {
-+        js_stdlib_init_dispatch();
-+    }
+@@ -328,0 +329,4 @@ pub fn drive_pending(budget_ms: u64) {
++extern "C" fn stdlib_drive_pending(budget_ms: u64) {
++    drive_pending(budget_ms);
 +}
 +
-+/// Explicit C-ABI entry point for hosts that own the resident event loop.
-+#[no_mangle]
-+pub extern "C" fn js_stdlib_ensure_pump_registered() {
-+    ensure_pump_registered();
-+}
-+
-+pub(crate) fn ensure_pump_only_registered() {
+@@ -438,14 +442,13 @@ where
+ /// `spawn_for_promise` — must register the pump explicitly the first time
+ /// they're touched. Otherwise the runtime exits immediately when `main`
+ /// returns and the close/line callbacks never fire.
+-pub fn ensure_pump_registered() {
++pub(crate) fn ensure_pump_core_registered() {
      use std::sync::Once;
      static REGISTER: Once = Once::new();
      REGISTER.call_once(|| {
-@@ -448,1 +464,0 @@ pub fn ensure_pump_registered() {
+         extern "C" {
+             fn js_register_stdlib_pump(f: extern "C" fn() -> i32);
+             fn js_register_stdlib_has_active(f: extern "C" fn() -> i32);
 -            fn js_stdlib_init_dispatch();
-@@ -466,8 +481,0 @@ pub fn ensure_pump_registered() {
+         }
+         ensure_gc_scanner_registered();
+         // Unified single-thread async model: install the wait-driver so the main
+@@ -458,19 +462,12 @@ pub fn ensure_pump_registered() {
+             Some(stdlib_wait_driver),
+             Some(stdlib_fast_drive),
+             Some(stdlib_wait_wake),
++            Some(stdlib_drive_pending),
+         );
+         Lazy::force(&RUNTIME);
+         unsafe {
+             js_register_stdlib_pump(js_stdlib_process_pending);
+             js_register_stdlib_has_active(js_stdlib_has_active_handles);
 -            // Wire up the runtime-level HANDLE_METHOD_DISPATCH so that
 -            // generic `jsObject.method(args)` calls on stdlib handle types
 -            // (net.Socket, Fastify, ioredis) fall back to the right FFI
@@ -376,13 +418,41 @@ index 6a0b2e8..0000000 100644
 -            // Until this was hooked in, HANDLE_METHOD_DISPATCH stayed None
 -            // and those calls silently returned undefined.
 -            js_stdlib_init_dispatch();
+         }
+     });
+ }
+@@ -477,0 +474,13 @@ pub fn ensure_pump_registered() {
++pub fn ensure_pump_registered() {
++    ensure_pump_core_registered();
++    // Keep lazy native entry points safe outside compiler-generated mains.
++    // The exported initializer calls the core helper above before installing
++    // dispatch, so this is cycle-free and idempotent in either direction.
++    unsafe {
++        extern "C" {
++            fn js_stdlib_init_dispatch();
++        }
++        js_stdlib_init_dispatch();
++    }
++}
++
+ /// Process all pending promise resolutions
+ ///
+ /// This should be called from the main event loop to process async completions.
 diff --git a/crates/perry-stdlib/src/common/dispatch/init.rs b/crates/perry-stdlib/src/common/dispatch/init.rs
-index 613024e..0000000 100644
+index 613024ea..b4fc422e 100644
 --- a/crates/perry-stdlib/src/common/dispatch/init.rs
 +++ b/crates/perry-stdlib/src/common/dispatch/init.rs
-@@ -367,1 +367,5 @@ pub unsafe extern "C" fn js_stdlib_init_dispatch() {
-+    // Generated UI entrypoints call dispatch initialization eagerly. Register
-+    // the stdlib pump at the same boundary so resident App event loops can
-+    // drain HTTP/server work before any lazy promise helper is touched.
-+    crate::common::async_bridge::ensure_pump_only_registered();
+@@ -364,6 +364,13 @@ unsafe extern "C" fn js_node_http_native_dispatch(
+ /// Must be called before any user code runs.
+ #[no_mangle]
+ pub unsafe extern "C" fn js_stdlib_init_dispatch() {
++    crate::common::async_bridge::ensure_pump_core_registered();
++    use std::sync::Once;
++    static INIT: Once = Once::new();
++    INIT.call_once(|| unsafe { js_stdlib_init_dispatch_inner() });
++}
++
++unsafe fn js_stdlib_init_dispatch_inner() {
      extern "C" {
+         fn js_register_handle_method_dispatch(
+             f: unsafe extern "C" fn(i64, *const u8, usize, *const f64, usize) -> f64,
