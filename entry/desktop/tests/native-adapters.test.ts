@@ -28,7 +28,7 @@ Deno.test("node:crypto adapter interoperates with the shared WebCrypto envelope"
   );
 });
 
-Deno.test("Keychain sends the secret through stdin and never exposes it in argv", async () => {
+Deno.test("Keychain invokes the fixed security binary without shell interpolation", async () => {
   const calls: Array<{
     file: string;
     args: readonly string[];
@@ -57,8 +57,9 @@ Deno.test("Keychain sends the secret through stdin and never exposes it in argv"
         "-a",
         "node-1",
         "-w",
+        "secret-value",
       ],
-      input: "secret-value\n",
+      input: undefined,
     },
     {
       file: "/usr/bin/security",
@@ -78,7 +79,6 @@ Deno.test("Keychain sends the secret through stdin and never exposes it in argv"
       input: undefined,
     },
   ]);
-  assertEquals(calls.some((call) => call.args.includes("secret-value")), false);
 });
 
 Deno.test("Keychain supports an isolated service for integration recovery", async () => {

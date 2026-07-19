@@ -156,16 +156,18 @@ const agentTools = createAgentToolRuntime({
     },
   },
   events: {
-    approvalRequested: (request) =>
-      eventReporter.emit({
+    approvalRequested(request) {
+      return eventReporter.emit({
         type: "approval.requested",
         data: { id: request.id, summary: request.reason },
-      }),
-    approvalResolved: (request, decision) =>
-      eventReporter.emit({
+      });
+    },
+    approvalResolved(request, decision) {
+      return eventReporter.emit({
         type: "approval.resolved",
         data: { id: request.id, decision },
-      }),
+      });
+    },
   },
 });
 
@@ -177,7 +179,9 @@ const dispatchRoute = createDesktopRouteDispatcher({
   relay: () => Promise.resolve(reporter.status()),
   chat: (message, onDelta, toolRounds, options) =>
     omlx.chat(message, onDelta, toolRounds, options),
-  agentDelta: (data) => eventReporter.emit({ type: "agent.delta", data }),
+  agentDelta(data) {
+    return eventReporter.emit({ type: "agent.delta", data });
+  },
   invokeTool: (toolId, input, options) => agentTools.invoke(toolId, input, options),
   listApprovals: () => agentTools.listApprovals(),
   resolveApproval: (input) => agentTools.resolve(input),

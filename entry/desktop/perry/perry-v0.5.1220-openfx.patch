@@ -1,0 +1,189 @@
+diff --git a/crates/perry-ext-http/Cargo.toml b/crates/perry-ext-http/Cargo.toml
+index 84ebb7a..b0f6f88 100644
+--- a/crates/perry-ext-http/Cargo.toml
++++ b/crates/perry-ext-http/Cargo.toml
+@@ -23,7 +23,7 @@ perry-ext-http-server = { path = "../perry-ext-http-server" }
+ # directly. Cargo feature unification keeps the stdlib feature on when
+ # both stdlib and this crate link the same perry-runtime — no duplicate
+ # symbols, no behaviour change for the default `full` build.
+-perry-runtime = { workspace = true, features = ["external-ws-symbols"] }
++perry-runtime = { workspace = true, features = ["default", "external-ws-symbols", "stdlib"] }
+ reqwest = { version = "0.12", features = ["json", "rustls-tls", "http2"], default-features = false }
+ tokio = { workspace = true }
+ # Zero-copy body chunks: reqwest::Response::chunk() yields a refcounted
+diff --git a/crates/perry-ext-http-server/src/server.rs b/crates/perry-ext-http-server/src/server.rs
+index 3882f54..d83f02b 100644
+--- a/crates/perry-ext-http-server/src/server.rs
++++ b/crates/perry-ext-http-server/src/server.rs
+@@ -857,7 +857,15 @@ pub unsafe extern "C" fn js_node_http_server_listen(server_handle: i64, args_arr
+         // The worker binds the primary-resolved port (shared listen(0)); a
+         // non-cluster server binds the requested port directly.
+         let bind_port = resolved.map(|p| p as i32).unwrap_or(port as i32);
+-        let bind_str = format!("{}:{}", host, bind_port);
++        let bind_host = host
++            .strip_prefix('[')
++            .and_then(|value| value.strip_suffix(']'))
++            .unwrap_or(&host);
++        let bind_str = if bind_host.contains(':') {
++            format!("[{}]:{}", bind_host, bind_port)
++        } else {
++            format!("{}:{}", bind_host, bind_port)
++        };
+         let addr: SocketAddr = match bind_str.parse() {
+             Ok(a) => a,
+             Err(_) => SocketAddr::from(([0, 0, 0, 0], bind_port as u16)),
+diff --git a/crates/perry-ext-http/src/client_dispatch_ext.rs b/crates/perry-ext-http/src/client_dispatch_ext.rs
+new file mode 100644
+index 0000000..5326336
+--- /dev/null
++++ b/crates/perry-ext-http/src/client_dispatch_ext.rs
+@@ -0,0 +1,134 @@
++//! Runtime handle-dispatch extension for external HTTP client requests.
++//!
++//! `ClientRequestHandle` values live in perry-ffi's external handle registry,
++//! while the primary stdlib dispatcher also probes several independent
++//! small-integer registries. Once another subsystem allocates the same numeric
++//! id, a generic `req.end()` can be claimed before the HTTP-client arm is
++//! reached. Registering an authoritative extension keeps external client
++//! handles on their owning dispatch surface.
++
++use std::sync::Once;
++
++extern "C" {
++    fn js_register_handle_method_dispatch_extension(
++        f: unsafe extern "C" fn(i64, *const u8, usize, *const f64, usize, *mut f64) -> i32,
++    );
++    fn js_register_handle_property_dispatch_extension(
++        f: unsafe extern "C" fn(i64, *const u8, usize, *mut f64) -> i32,
++    );
++}
++
++pub(crate) fn ensure_dispatch_extensions_registered() {
++    static REGISTER: Once = Once::new();
++    REGISTER.call_once(|| unsafe {
++        js_register_handle_method_dispatch_extension(client_request_method_dispatch_ext);
++        js_register_handle_property_dispatch_extension(client_request_property_dispatch_ext);
++    });
++}
++
++#[inline]
++unsafe fn name_str<'a>(ptr: *const u8, len: usize) -> &'a str {
++    if ptr.is_null() || len == 0 {
++        ""
++    } else {
++        std::str::from_utf8(std::slice::from_raw_parts(ptr, len)).unwrap_or("")
++    }
++}
++
++fn is_client_request_method(name: &str) -> bool {
++    matches!(
++        name,
++        "end"
++            | "write"
++            | "setHeader"
++            | "setTimeout"
++            | "listenerCount"
++            | "getHeader"
++            | "hasHeader"
++            | "removeHeader"
++            | "getHeaderNames"
++            | "getHeaders"
++            | "getRawHeaderNames"
++            | "abort"
++            | "destroy"
++            | "flushHeaders"
++            | "cork"
++            | "uncork"
++            | "setNoDelay"
++            | "setSocketKeepAlive"
++            | "on"
++            | "once"
++            | "addListener"
++            | "prependListener"
++            | "removeListener"
++            | "off"
++            | "removeAllListeners"
++    )
++}
++
++fn is_client_request_property(name: &str) -> bool {
++    is_client_request_method(name)
++        || matches!(
++            name,
++            "method"
++                | "protocol"
++                | "host"
++                | "path"
++                | "aborted"
++                | "destroyed"
++                | "finished"
++                | "reusedSocket"
++                | "maxHeadersCount"
++                | "writableEnded"
++                | "writableFinished"
++                | "socket"
++                | "connection"
++                | "constructor"
++        )
++}
++
++unsafe extern "C" fn client_request_method_dispatch_ext(
++    handle: i64,
++    method_ptr: *const u8,
++    method_len: usize,
++    args_ptr: *const f64,
++    args_len: usize,
++    out: *mut f64,
++) -> i32 {
++    let name = name_str(method_ptr, method_len);
++    if !is_client_request_method(name)
++        || crate::client_request_surface::js_ext_http_client_request_is_handle(handle) == 0
++    {
++        return 0;
++    }
++    let value = crate::client_request_surface::js_ext_http_client_request_dispatch_method(
++        handle, method_ptr, method_len, args_ptr, args_len,
++    );
++    if !out.is_null() {
++        *out = value;
++    }
++    1
++}
++
++unsafe extern "C" fn client_request_property_dispatch_ext(
++    handle: i64,
++    property_ptr: *const u8,
++    property_len: usize,
++    out: *mut f64,
++) -> i32 {
++    let name = name_str(property_ptr, property_len);
++    if !is_client_request_property(name)
++        || crate::client_request_surface::js_ext_http_client_request_is_handle(handle) == 0
++    {
++        return 0;
++    }
++    let value = crate::client_request_surface::js_ext_http_client_request_dispatch_property(
++        handle,
++        property_ptr,
++        property_len,
++    );
++    if !out.is_null() {
++        *out = value;
++    }
++    1
++}
+diff --git a/crates/perry-ext-http/src/lib.rs b/crates/perry-ext-http/src/lib.rs
+index d816401..bb15c7d 100644
+--- a/crates/perry-ext-http/src/lib.rs
++++ b/crates/perry-ext-http/src/lib.rs
+@@ -56,3 +56,4 @@
+ mod client_request_surface;
++mod client_dispatch_ext;
+-
++
+ // Client-side TLS options (rejectUnauthorized / ca / checkServerIdentity)
+@@ -250,3 +251,4 @@
+ pub(crate) fn ensure_gc_scanner_registered() {
+     HTTP_GC_REGISTERED.call_once(|| {
++        client_dispatch_ext::ensure_dispatch_extensions_registered();
+         gc_register_mutable_root_scanner_named("perry-ext-http", scan_http_roots);

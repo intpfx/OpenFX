@@ -1,12 +1,15 @@
 import { type IncomingMessage, request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { Buffer } from "node:buffer";
+import { readFileSync } from "node:fs";
 
 import type { HttpJsonRequest, HttpJsonResponse } from "./omlx-client.ts";
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 const MAX_STREAM_RESPONSE_BYTES = 1024 * 1024;
 const MAX_STREAM_DURATION_MS = 30_000;
+let extraCaCertificate: string | null | undefined;
+const activeRequests = new Set<ReturnType<typeof httpsRequest>>();
 
 export const requestJson = (
   request: HttpJsonRequest,
@@ -15,62 +18,87 @@ export const requestJson = (
     request.protocol === "http:" &&
     request.hostname !== "127.0.0.1" && request.hostname !== "::1"
   ) return Promise.reject(new Error("plaintext_http_must_be_loopback"));
-  return new Promise((resolve, reject) => {
-    const payload = request.body === undefined ? "" : JSON.stringify(request.body);
-    const headers = {
-      ...(payload
-        ? {
-          "content-type": "application/json",
-          "content-length": String(Buffer.byteLength(payload)),
-        }
-        : {}),
-      ...request.headers,
-    };
-    const options = {
-      protocol: request.protocol,
-      hostname: request.hostname,
-      port: request.port,
-      path: request.path,
-      method: request.method,
-      headers,
-    };
-    const receive = (response: IncomingMessage) => {
-      const chunks: Uint8Array[] = [];
-      let length = 0;
-      response.on("data", (chunk: Uint8Array) => {
-        length += chunk.length;
-        if (length > MAX_RESPONSE_BYTES) {
-          outgoing.destroy(new Error("http_response_too_large"));
-          return;
-        }
-        chunks.push(chunk);
-      });
-      response.on("end", () => {
-        try {
-          const text = Buffer.concat(chunks).toString("utf8");
-          resolve({
-            status: response.statusCode ?? 0,
-            body: text ? JSON.parse(text) : null,
-          });
-        } catch (error) {
-          reject(error);
-        }
-      });
-    };
-    // Perry only attempts native lowering for a direct built-in call. Keeping the
-    // function in a conditional variable returned undefined in the compiled probe.
-    // Runtime client I/O is still guarded by the real integration smoke.
-    const outgoing = request.protocol === "https:"
-      ? httpsRequest(options, receive)
-      : httpRequest(options, receive);
-    outgoing.setTimeout(
-      8_000,
-      () => outgoing.destroy(new Error("http_timeout")),
-    );
-    outgoing.on("error", reject);
-    if (payload) outgoing.write(payload);
-    outgoing.end();
+  const { promise, resolve, reject } = Promise.withResolvers<HttpJsonResponse>();
+  const payload = request.body === undefined ? "" : JSON.stringify(request.body);
+  const headers = {
+    ...(payload
+      ? {
+        "content-type": "application/json",
+        "content-length": String(Buffer.byteLength(payload)),
+      }
+      : {}),
+    ...request.headers,
+  };
+  const ca = request.protocol === "https:" ? loadExtraCaCertificate() : undefined;
+  const requestOptions = {
+    protocol: request.protocol,
+    hostname: request.hostname,
+    port: request.port,
+    path: request.path,
+    method: request.method,
+    headers,
+    ...(ca ? { ca } : {}),
+  };
+  const receive = (response: IncomingMessage) => {
+    const chunks: Uint8Array[] = [];
+    let length = 0;
+    response.on("data", (chunk: Uint8Array) => {
+      length += chunk.length;
+      if (length > MAX_RESPONSE_BYTES) {
+        outgoing.destroy(new Error("http_response_too_large"));
+        return;
+      }
+      chunks.push(chunk);
+    });
+    response.on("end", () => {
+      activeRequests.delete(outgoing);
+      try {
+        const text = Buffer.concat(chunks).toString("utf8");
+        resolve({
+          status: response.statusCode ?? 0,
+          body: text ? JSON.parse(text) : null,
+        });
+      } catch (error) {
+        reject(error);
+      }
+    });
+  };
+  // Perry only attempts native lowering for a direct built-in call. Keeping the
+  // function in a conditional variable returned undefined in the compiled probe.
+  // Runtime client I/O is still guarded by the real integration smoke.
+  const outgoing = request.protocol === "https:"
+    ? httpsRequest(requestOptions, receive)
+    : httpRequest(requestOptions, receive);
+  activeRequests.add(outgoing);
+  outgoing.setTimeout(
+    8_000,
+    () => outgoing.destroy(new Error("http_timeout")),
+  );
+  outgoing.on("error", (error) => {
+    activeRequests.delete(outgoing);
+    reject(error);
   });
+  if (payload) outgoing.end(payload);
+  else outgoing.end();
+  return promise;
+};
+
+const loadExtraCaCertificate = (): string | undefined => {
+  if (extraCaCertificate !== undefined) {
+    return extraCaCertificate ?? undefined;
+  }
+  const path = process.env.NODE_EXTRA_CA_CERTS;
+  if (!path) {
+    extraCaCertificate = null;
+    return undefined;
+  }
+  try {
+    extraCaCertificate = readFileSync(path, "utf8");
+    return extraCaCertificate;
+  } catch {
+    extraCaCertificate = null;
+    return undefined;
+  }
 };
 
 export const requestTextStream = (

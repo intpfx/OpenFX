@@ -1,13 +1,8 @@
 # OpenFX Node（Perry 桌面端）
 
-OpenFX Node 是常驻 macOS 菜单栏的原生 Perry 节点候选实现。它用于接管原 Freemac Core
-的本机监控、IPv6 节点、Relay 上报和受审批 Agent 工具能力，不依赖 Bun、Elysia、Electron
-或 Tauri。
-
-当前不能完成生产接管：Perry 0.5.1220 编译产物的 `node:http.request`、
-`node:https.request` 和保持证书校验的 `node:tls.connect` 均不发起网络 I/O。静态检查和
-编译可以通过，但真实 HTTPS 配对门失败，因此 `domains/freemac` 必须继续保留。详见
-[`../../docs/openfx-console-architecture.md`](../../docs/openfx-console-architecture.md)。
+OpenFX Node 是常驻 macOS 菜单栏的原生 Perry 节点。它承载本机监控、IPv6 节点、Relay
+上报和受审批 Agent 工具能力，不依赖 Bun、Elysia、Electron 或 Tauri。原 Freemac Core
+和独立 Dashboard 已在真实组合门通过后删除。
 
 ## 运行边界
 
@@ -37,17 +32,32 @@ OpenFX Node 是常驻 macOS 菜单栏的原生 Perry 节点候选实现。它用
   `replay.claimed` 会失败关闭，不能与新 nonce 表形成两个权威来源。初始化会清理已废弃的
   `.lock` 文件；并发冷启动遇到 SQLite busy/locked
   时会有界抖动重试，其他初始化错误立即返回。目录权限固定为 `0700`；数据库/WAL 文件固定
-  为 `0600`。Keychain 密钥通过标准输入写入，不出现在进程参数中。
+  为 `0600`。Keychain 只通过固定的 `/usr/bin/security`、参数数组和 `shell: false`
+  访问，不经过 Shell 插值。
+
+## Perry 原生库
+
+稳定版 Perry 0.5.1220 需要仓库内的最小补丁，以修复外部 HTTP 静态库的 stdlib 符号边界、
+IPv6 listen 地址格式，以及入站 HTTP 回调之后 `ClientRequest.end()` 被其他小整数 handle
+注册表抢先分派的问题。补丁固定在
+[`perry/perry-v0.5.1220-openfx.patch`](perry/perry-v0.5.1220-openfx.patch)，构建脚本会校验
+官方 tag 的精确提交并拒绝把补丁套到未知源码上。
+
+```bash
+git clone --depth 1 --branch v0.5.1220 https://github.com/PerryTS/Perry.git /tmp/perry-openfx
+rustup toolchain install 1.96.1
+deno task perry:runtime --source /tmp/perry-openfx
+export PERRY_LIB_DIR=/tmp/perry-openfx/target/openfx-v0.5.1220/release
+```
 
 ## 验证
 
 ```bash
 deno task --config entry/desktop/deno.json test
 perry check entry/desktop/src/main.ts --deep-deps
-perry compile entry/desktop/src/main.ts -o dist/openfx-desktop
+perry compile entry/desktop/src/main.ts -o dist/openfx-desktop --no-auto-optimize
 deno run --unstable-kv -A entry/desktop/tools/console-integration-smoke.ts
 ```
 
-最后一条是真实本机组合门，目前会在编译后 Perry 节点的 HTTPS 配对阶段失败。只有该命令
-完整覆盖 Keychain、IPv6 Relay、签名上报、OMLX 降级和审批闭环后，才能删除旧 Freemac
-运行时。
+最后一条是真实本机组合门，覆盖受信任 HTTPS 配对、Keychain、真实公网 IPv6 health、
+签名上报、固定 Relay、SSE 续接、OMLX 离线降级和审批执行/拒绝/过期/重放闭环。

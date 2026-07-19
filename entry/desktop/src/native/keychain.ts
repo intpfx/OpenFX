@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawnSync } from "node:child_process";
 
 export const KEYCHAIN_SERVICE = "OpenFX Node";
 
@@ -14,25 +14,21 @@ export interface NodeKeychain {
   remove(account: string): Promise<void>;
 }
 
-const systemExecFileText: ExecFileText = (file, args, input) =>
-  new Promise((resolve, reject) => {
-    const child = spawn(file, [...args], {
-      shell: false,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => stdout += chunk);
-    child.stderr.on("data", (chunk: string) => stderr += chunk);
-    child.on("error", reject);
-    child.on("close", (code) => {
-      if (code === 0) resolve(stdout);
-      else reject(new Error(`security_exit_${code}: ${stderr.trim()}`));
-    });
-    child.stdin.end(input ?? "");
+const systemExecFileText: ExecFileText = (file, args, input) => {
+  const result = spawnSync(file, [...args], {
+    shell: false,
+    stdio: ["pipe", "pipe", "pipe"],
+    input: input ?? "",
+    encoding: "utf8",
   });
+  if (result.error) return Promise.reject(result.error);
+  if (result.status !== 0) {
+    return Promise.reject(
+      new Error(`security_exit_${result.status}: ${result.stderr.trim()}`),
+    );
+  }
+  return Promise.resolve(result.stdout);
+};
 
 export const createKeychain = (
   execute: ExecFileText = systemExecFileText,
@@ -47,7 +43,8 @@ export const createKeychain = (
       "-a",
       account,
       "-w",
-    ], `${secret}\n`);
+      secret,
+    ]);
   },
   async read(account) {
     try {

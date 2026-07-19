@@ -1,6 +1,6 @@
 export interface NodeCryptoAdapter {
   randomBytes(length: number): Uint8Array;
-  sha256(data: Uint8Array): Promise<Uint8Array>;
+  digestSha256(data: Uint8Array): Promise<Uint8Array>;
   hkdfSha256(
     keyMaterial: Uint8Array,
     salt: Uint8Array,
@@ -29,7 +29,7 @@ export function createWebCryptoAdapter(
     randomBytes(length) {
       return webCrypto.getRandomValues(new Uint8Array(length));
     },
-    async sha256(data) {
+    async digestSha256(data) {
       return bytes(await webCrypto.subtle.digest("SHA-256", bytes(data)));
     },
     async hkdfSha256(keyMaterial, salt, info, length) {

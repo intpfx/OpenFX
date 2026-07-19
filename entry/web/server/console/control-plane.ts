@@ -185,6 +185,20 @@ export const consoleRelayTimeoutMs = (
     ? AGENT_RELAY_TIMEOUT_MS
     : DEFAULT_RELAY_TIMEOUT_MS;
 
+let directRelayHttpClient: Deno.HttpClient | null = null;
+
+const directRelayFetch: typeof fetch = (input, init) => {
+  if (typeof Deno === "undefined" || typeof Deno.createHttpClient !== "function") {
+    return globalThis.fetch(input, init);
+  }
+  directRelayHttpClient ??= Deno.createHttpClient({});
+  const denoFetch = globalThis.fetch as unknown as (
+    resource: Parameters<typeof fetch>[0],
+    requestInit?: RequestInit & { client: Deno.HttpClient },
+  ) => ReturnType<typeof fetch>;
+  return denoFetch(input, { ...init, client: directRelayHttpClient });
+};
+
 export const createConsoleControlPlane = (
   options: ConsoleControlPlaneOptions = {},
 ): ConsoleControlPlane => {
@@ -197,7 +211,7 @@ export const createConsoleControlPlane = (
   const now = options.now ?? Date.now;
   const cryptoAdapter = createWebCryptoAdapter();
   const randomBytes = options.randomBytes ?? cryptoAdapter.randomBytes;
-  const relayFetch = options.fetch ?? globalThis.fetch;
+  const relayFetch = options.fetch ?? directRelayFetch;
   const ssePollMs = options.ssePollMs ?? 1_000;
 
   const env = (name: string): string => {
@@ -219,7 +233,9 @@ export const createConsoleControlPlane = (
 
   const digest = async (value: string | Uint8Array): Promise<string> =>
     encodeBase64Url(
-      await cryptoAdapter.sha256(typeof value === "string" ? utf8(value) : value),
+      await cryptoAdapter.digestSha256(
+        typeof value === "string" ? utf8(value) : value,
+      ),
     );
 
   const appendAudit = async (
@@ -272,8 +288,8 @@ export const createConsoleControlPlane = (
       });
     }
     const matches = constantTimeEqual(
-      await cryptoAdapter.sha256(utf8(provided)),
-      await cryptoAdapter.sha256(utf8(adminKey)),
+      await cryptoAdapter.digestSha256(utf8(provided)),
+      await cryptoAdapter.digestSha256(utf8(adminKey)),
     );
     if (!matches) {
       const failures = await recordLoginFailure(store, rateKey, now());
@@ -1229,7 +1245,14 @@ export const createConsoleControlPlane = (
         `http://[${node.value.publicIpv6}]:${NODE_PORT}/v1/relay`,
         {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          // Keep Host independent from the literal IPv6 target. Deno/Perry's
+          // local IPv6 HTTP path can accept TCP but stall while parsing a
+          // bracketed global-address Host header. This value is fixed here and
+          // never derived from console input.
+          headers: {
+            "content-type": "application/json",
+            "host": "openfx-node",
+          },
           body: JSON.stringify(envelope),
           signal: AbortSignal.timeout(consoleRelayTimeoutMs(operation)),
           redirect: "manual",
@@ -1284,8 +1307,12 @@ export const createConsoleControlPlane = (
         );
         return nodeError(OPENFX_NODE_ERROR_CODES.envelopeInvalid, 502);
       }
-      await appendRelayOutcome("succeeded");
-      return Response.json(reply.result);
+      const resultStatus = relayResultHttpStatus(operation, reply.result);
+      await appendRelayOutcome(
+        resultStatus >= 400 ? "failed" : "succeeded",
+        resultStatus >= 400 ? relayResultErrorCode(reply.result) : undefined,
+      );
+      return Response.json(reply.result, { status: resultStatus });
     } catch (error) {
       if (error instanceof OpenFxNodeProtocolError) {
         await appendRelayOutcome("failed", error.code);
@@ -1297,6 +1324,37 @@ export const createConsoleControlPlane = (
       );
       return nodeError(OPENFX_NODE_ERROR_CODES.envelopeInvalid, 502);
     }
+  };
+
+  const relayResultErrorCode = (
+    result: unknown,
+  ):
+    | (typeof OPENFX_NODE_ERROR_CODES)[keyof typeof OPENFX_NODE_ERROR_CODES]
+    | undefined => {
+    if (!result || typeof result !== "object") return undefined;
+    const error = (result as { error?: unknown }).error;
+    return typeof error === "string" &&
+        Object.values(OPENFX_NODE_ERROR_CODES).includes(
+          error as (typeof OPENFX_NODE_ERROR_CODES)[
+            keyof typeof OPENFX_NODE_ERROR_CODES
+          ],
+        )
+      ? error as (typeof OPENFX_NODE_ERROR_CODES)[keyof typeof OPENFX_NODE_ERROR_CODES]
+      : undefined;
+  };
+
+  const relayResultHttpStatus = (
+    operation: ConsoleRelayOperation,
+    result: unknown,
+  ): number => {
+    if (operation !== "approvals.resolve") return 200;
+    const error = relayResultErrorCode(result);
+    return error === OPENFX_NODE_ERROR_CODES.approvalExpired ||
+        error === OPENFX_NODE_ERROR_CODES.approvalFingerprintMismatch ||
+        error === OPENFX_NODE_ERROR_CODES.approvalAlreadyResolved ||
+        error === OPENFX_NODE_ERROR_CODES.approvalAlreadyApplied
+      ? 409
+      : 200;
   };
 
   const isCorrelatedRelayReply = (

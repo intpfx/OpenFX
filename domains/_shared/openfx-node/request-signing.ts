@@ -117,7 +117,9 @@ export async function signRequest(
     method: request.method.toUpperCase(),
     path: request.path,
     body: request.body,
-    bodyDigest: encodeBase64Url(await crypto.sha256(utf8(canonicalJson(request.body)))),
+    bodyDigest: encodeBase64Url(
+      await crypto.digestSha256(utf8(canonicalJson(request.body))),
+    ),
     timestamp,
     nonce,
   } as const;
@@ -161,7 +163,9 @@ export async function verifySignedRequest(
     timestamp: request.timestamp,
     nonce: request.nonce,
   };
-  const actualBodyDigest = await crypto.sha256(utf8(canonicalJson(request.body)));
+  const actualBodyDigest = await crypto.digestSha256(
+    utf8(canonicalJson(request.body)),
+  );
   const expectedSignature = await crypto.hmacSha256(
     secret,
     utf8(canonicalJson(unsigned)),

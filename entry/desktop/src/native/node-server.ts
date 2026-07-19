@@ -107,10 +107,11 @@ export const startNodeServer = (
         request,
         options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
       ) as SealedRelayEnvelope;
+      const reply = await protocol.handle(envelope, abortController.signal);
       json(
         response,
         200,
-        await protocol.handle(envelope, abortController.signal),
+        reply,
       );
     } finally {
       request.removeListener("aborted", abortDispatch);

@@ -108,8 +108,8 @@ secret。服务端 在同一个 Deno KV 原子事务中消费 nonce
 并提交权威写入。审计接口默认按最新优先返回 100 条，可用 `limit`（最大 500）和独占的
 `before` 游标向前翻页。
 
-Perry 0.5.1220 的真实原生 HTTPS 客户端门尚未通过，所以控制面暂不取代 `domains/freemac`
-的生产运行路径。详见
+该控制面已经与补丁版 Perry 0.5.1220 节点完成真实 HTTPS、IPv6 Relay、SSE 和审批闭环
+验证，并取代旧 Freemac 运行路径。详见
 [`../../docs/openfx-console-architecture.md`](../../docs/openfx-console-architecture.md)。
 
 Deno Deploy 构建使用项目自有的流式入口：请求体在进入 Nitro 应用前硬限制为 64 KiB，

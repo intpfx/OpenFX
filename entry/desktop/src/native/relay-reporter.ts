@@ -39,14 +39,15 @@ export const createRelayReporter = (
         nodeSecret: pairing.nodeSecret,
       };
       try {
-        await Promise.all([
-          client.heartbeat({
-            ...auth,
-            publicIpv6: currentIpv6,
-            availability: "online",
-          }),
-          client.telemetry({ ...auth, sample: state.overview }),
-        ]);
+        // Perry's native promise scheduler can lose the second native I/O
+        // branch when two signed HTTPS requests start in the same Promise.all.
+        // The minute cadence does not need concurrency, so preserve ordering.
+        await client.heartbeat({
+          ...auth,
+          publicIpv6: currentIpv6,
+          availability: "online",
+        });
+        await client.telemetry({ ...auth, sample: state.overview });
         lastReportedAt = Date.now();
         errorMessage = null;
       } catch (error) {

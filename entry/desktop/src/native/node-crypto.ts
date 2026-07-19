@@ -1,8 +1,8 @@
 import {
   createCipheriv,
   createDecipheriv,
-  createHash,
   createHmac,
+  hash,
   hkdfSync,
   randomBytes,
 } from "node:crypto";
@@ -14,9 +14,7 @@ export const createNodeCryptoAdapter = (): NodeCryptoAdapter => ({
   randomBytes(length) {
     return bytes(randomBytes(length));
   },
-  sha256(data) {
-    return Promise.resolve(bytes(createHash("sha256").update(data).digest()));
-  },
+  digestSha256: digestSha256Bytes,
   hkdfSha256(keyMaterial, salt, info, length) {
     return Promise.resolve(
       bytes(hkdfSync("sha256", keyMaterial, salt, info, length)),
@@ -52,7 +50,31 @@ export const createNodeCryptoAdapter = (): NodeCryptoAdapter => ({
   },
 });
 
-const bytes = (value: ArrayBuffer | ArrayBufferView): Uint8Array =>
-  value instanceof ArrayBuffer
-    ? new Uint8Array(value)
-    : new Uint8Array(value.buffer, value.byteOffset, value.byteLength).slice();
+export const digestSha256Bytes = (data: Uint8Array): Promise<Uint8Array> => {
+  const digest = hash("sha256", data, "hex");
+  return Promise.resolve(decodeHex(digest));
+};
+
+const bytes = (value: ArrayBuffer | ArrayBufferView): Uint8Array => {
+  if (value instanceof ArrayBuffer) return new Uint8Array(value).slice();
+  // Perry's native Buffer bridge does not expose a trustworthy `.buffer`
+  // backing store. Copy the visible bytes so hashes and authentication tags
+  // cannot accidentally include unrelated or zero-filled storage.
+  const source = value as Uint8Array;
+  const copy = new Uint8Array(source.byteLength);
+  for (let index = 0; index < source.byteLength; index++) {
+    copy[index] = source[index] ?? 0;
+  }
+  return copy;
+};
+
+const decodeHex = (value: string): Uint8Array => {
+  if (value.length % 2 !== 0) throw new TypeError("invalid_hex_digest");
+  const result: number[] = [];
+  for (let index = 0; index < value.length; index += 2) {
+    const byte = Number.parseInt(value.slice(index, index + 2), 16);
+    if (!Number.isInteger(byte)) throw new TypeError("invalid_hex_digest");
+    result.push(byte);
+  }
+  return Uint8Array.from(result);
+};

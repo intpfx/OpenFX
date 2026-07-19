@@ -29,6 +29,7 @@ import { nodeTelemetryHandler } from "../server/routes/api/node/telemetry.post.t
 import { nodeEventsHandler } from "../server/routes/api/node/events.post.ts";
 import {
   createWebCryptoAdapter,
+  OPENFX_NODE_ERROR_CODES,
   openRelayEnvelope,
   sealRelayEnvelope,
   signedRequestHeaders,
@@ -495,6 +496,77 @@ Deno.test("successful Relay effects do not synthesize events or fail on event st
   });
   expect(syntheticWriteAttempts).toBe(0);
   expect(await base.list({ prefix: ["openfx-console", "events"] })).toEqual(before);
+});
+
+Deno.test("approval replay Relay returns an HTTP conflict", async () => {
+  const cryptoAdapter = createWebCryptoAdapter();
+  let nodeSecret = "";
+  const { plane } = harness({
+    fetch: async (_input, init) => {
+      const request = await openRelayEnvelope<{
+        nonce: string;
+        method: string;
+        path: string;
+      }>(
+        cryptoAdapter,
+        decodeBase64Url(nodeSecret),
+        JSON.parse(String(init?.body)),
+        { now: () => START, replayProtector: { consume() {} } },
+      );
+      return Response.json(
+        await sealRelayEnvelope(
+          cryptoAdapter,
+          decodeBase64Url(nodeSecret),
+          {
+            request: {
+              nonce: request.nonce,
+              method: request.method,
+              path: request.path,
+            },
+            result: {
+              ok: false,
+              applied: false,
+              error: OPENFX_NODE_ERROR_CODES.approvalAlreadyResolved,
+            },
+          },
+          { now: () => START },
+        ),
+      );
+    },
+  });
+  const cookie = await login(plane);
+  const paired = await pair(plane, cookie);
+  nodeSecret = paired.nodeSecret;
+  await nodeHeartbeatHandler(
+    await signedJsonRequest(
+      "http://localhost/api/node/heartbeat",
+      {
+        nodeId: paired.node.id,
+        protocolVersion: 1,
+        publicIpv6: "2001:4860:4860::8844",
+        port: 24531,
+        availability: "online",
+      },
+      paired.nodeSecret,
+    ),
+    plane,
+  );
+
+  const response = await plane.console.handle(
+    jsonRequest("http://localhost/api/console/approvals/resolve", {
+      id: "approval-1",
+      decision: "approved",
+      parameterFingerprint: "fingerprint-1",
+    }, { cookie }),
+    "approvals.resolve",
+  );
+
+  expect(response.status).toBe(409);
+  await expect(response.json()).resolves.toMatchObject({
+    ok: false,
+    applied: false,
+    error: OPENFX_NODE_ERROR_CODES.approvalAlreadyResolved,
+  });
 });
 
 Deno.test("Relay persists intent before dispatch and does not dispatch when intent storage fails", async () => {

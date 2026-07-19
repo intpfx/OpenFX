@@ -13,7 +13,6 @@ domains/          独立领域模块
   e/              Agent 执行框架
   esn/            Edge Storage Node
   finlyzer/       本地优先账单分析器
-  freemac/        暂时保留的旧 Mac 仪表盘 & IPv6 relay（见迁移门禁）
   gasmap/         燃气工程单线图工具
   hlc/            圣灯社区 PWA/CMS
   how-much/       商品比价应用
@@ -22,13 +21,13 @@ domains/          独立领域模块
   proxy/          HTTP 中继
   wanone/         编程生涯第一个项目
 entry/            入口应用
-  desktop/        Perry 原生 OpenFX Node 候选实现（监控、Relay、Agent）
-  web/            VitePlus + React + Nitro Web 应用
+  desktop/        Perry 原生 OpenFX Node（监控、Relay、Agent）
+  web/            VitePlus + React + Nitro Web 应用与 OpenFX 控制台
 ```
 
-OpenFX 控制台的新 Web 控制面、共享协议和 Perry 节点候选实现位于 `entry/`。当前安装版
-Perry 0.5.1220 的原生 HTTP/HTTPS/TLS 客户端不会发起网络 I/O，因此真实配对门尚未通过，
-`domains/freemac` 仍是保留运行路径，不能删除。状态、边界和恢复步骤见
+OpenFX 控制台的 Web 控制面、共享协议和 Perry Mac 节点位于 `entry/`。原 Freemac 的遥测、
+IPv6、Relay、Agent 和审计能力已经完成切换，旧 Bun/Elysia Core 与独立 Dashboard 已删除。
+运行边界、Perry 补丁构建和恢复步骤见
 [`docs/openfx-console-architecture.md`](docs/openfx-console-architecture.md)。
 
 ## 快速开始
@@ -38,7 +37,9 @@ Perry 0.5.1220 的原生 HTTP/HTTPS/TLS 客户端不会发起网络 I/O，因此
 ```bash
 deno task web:dev                          # 启动 Web 应用
 deno task web:build                        # 生产构建
-perry compile entry/desktop/src/main.ts -o dist/openfx-desktop  # 桌面端编译
+deno task perry:runtime --source /path/to/Perry  # 构建补丁版 Perry 原生库
+PERRY_LIB_DIR=/path/to/release perry compile entry/desktop/src/main.ts \
+  -o dist/openfx-desktop --no-auto-optimize    # 桌面端编译
 deno task check                            # 校验（fmt + lint + test + guard）
 ```
 

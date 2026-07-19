@@ -26,7 +26,39 @@ export const createNodeEventReporter = (
 ): NodeEventReporter => {
   let pairing: RestoredPairing | null = null;
   let lastError: string | null = null;
-  let queue = Promise.resolve();
+  let draining = false;
+  const queue: Array<{
+    pairing: RestoredPairing;
+    event: NodeControlEvent;
+    resolve: () => void;
+  }> = [];
+
+  const drain = async (): Promise<void> => {
+    if (draining) return;
+    draining = true;
+    try {
+      while (queue.length > 0) {
+        const pending = queue.shift();
+        if (!pending) continue;
+        try {
+          await client.events({
+            serverUrl: pending.pairing.preferences.serverUrl,
+            nodeId: pending.pairing.preferences.nodeId,
+            nodeSecret: pending.pairing.nodeSecret,
+            events: [pending.event],
+          });
+          lastError = null;
+        } catch (error) {
+          lastError = error instanceof Error ? error.message : String(error);
+        } finally {
+          pending.resolve();
+        }
+      }
+    } finally {
+      draining = false;
+    }
+  };
+
   return {
     setPairing(next) {
       pairing = next;
@@ -35,20 +67,10 @@ export const createNodeEventReporter = (
     emit(event) {
       const current = pairing;
       if (!current) return Promise.resolve();
-      queue = queue.then(async () => {
-        try {
-          await client.events({
-            serverUrl: current.preferences.serverUrl,
-            nodeId: current.preferences.nodeId,
-            nodeSecret: current.nodeSecret,
-            events: [event],
-          });
-          lastError = null;
-        } catch (error) {
-          lastError = error instanceof Error ? error.message : String(error);
-        }
-      });
-      return queue;
+      const { promise, resolve } = Promise.withResolvers<void>();
+      queue.push({ pairing: current, event, resolve });
+      void drain();
+      return promise;
     },
     errorMessage: () => lastError,
   };

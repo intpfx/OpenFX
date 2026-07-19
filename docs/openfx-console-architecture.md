@@ -2,12 +2,8 @@
 
 OpenFX 控制台的目标架构由三个边界清晰的部分组成：Nitro/Deno Deploy 控制面、Perry 原生
 Mac 节点，以及运行时无关的 `domains/e` Agent/审批内核。Web 控制面、共享协议和 Perry
-节点候选实现已落地，但旧 Freemac Bun/Elysia Core 与独立 Dashboard 尚未删除。
-
-当前迁移状态是 **BLOCKED**：Perry 0.5.1220 能静态检查并编译 `node:http`、`node:https` 和
-`node:tls`，但原生可执行文件对 loopback 与公网端点都不发起客户端网络 I/O，也不触发
-响应或错误回调。真实 HTTPS 配对、Relay 和审批闭环因此没有通过。按删除门禁，生产切换和
-Freemac 清理必须等待 Perry 修复后重新验证。
+节点已经完成切换。旧 Freemac Bun/Elysia Core 与独立 Dashboard 已在真实组合 smoke
+通过后删除，不保留双运行时兼容层。
 
 ## 运行边界
 
@@ -98,7 +94,7 @@ OMLX 工具调用最多进行 3 轮、12 次。每轮工具结果经字节上限
 - Perry 本地审批、执行和审计写入 SQLite journal，目录权限 `0700`，数据库/WAL 权限
   `0600`。
 
-旧 Freemac Core 的审计位置是
+已删除的 Freemac Core 的旧审计位置是
 `${FREEMAC_DATA_DIR:-<旧 Core 工作目录>/.data}/state/audit.ndjson`，每行是
 `{id,category,action,status,payload,createdAt}`。仓库迁移时没有发现实际审计文件；如果旧机器
 上存在该文件，应原地只读留档。它不会导入 OpenFX 遥测库，也不会套用 7 天 TTL。
@@ -144,28 +140,30 @@ deno task check
 VITE_OPENFX_BUILD_TIME=2026-06-30T00:00:00Z \
   VITE_OPENFX_BUILD_HASH=local00 \
   deno task --config entry/web/deno.json build
-perry check entry/desktop/src/main.ts --deep-deps
-perry compile entry/desktop/src/main.ts -o dist/openfx-desktop
+deno task perry:runtime --source /path/to/Perry-v0.5.1220
+PERRY_LIB_DIR=/path/to/release perry check entry/desktop/src/main.ts --deep-deps
+PERRY_LIB_DIR=/path/to/release perry compile entry/desktop/src/main.ts \
+  -o dist/openfx-desktop --no-auto-optimize
 deno run --unstable-kv -A entry/desktop/tools/console-integration-smoke.ts
 ```
 
 最后一条命令使用本机受信任的 `mkcert` 根证书创建只监听 loopback 的 TLS 控制面，编译并
 运行真实 Perry 节点，再通过机器实际分配的公网 IPv6 访问固定 Relay。测试使用独立 Keychain
-service，结束时删除凭据，不修改生产 HTTPS 或公网 IPv6 校验器。它当前预期在 Perry 原生
-HTTPS 配对处失败；在该命令完整通过前，不能把 Freemac 从运行路径删除。
+service，结束时删除凭据，不修改生产 HTTPS 或公网 IPv6 校验器。该组合门已经覆盖并通过
+HTTPS 配对、签名心跳与遥测、OMLX 离线降级、SSE 续接，以及审批执行、拒绝、过期和重放。
 
-### Perry 客户端门禁证据
+### Perry 0.5.1220 原生运行时补丁
 
-最小探针对同一个受本机 `mkcert` 信任的 loopback URL 设置 8 秒超时。curl、Deno 和 Node
-均得到 `200`；Perry 编译产物的以下组合均超时，且服务端没有收到请求：
+补丁文件是
+[`../entry/desktop/perry/perry-v0.5.1220-openfx.patch`](../entry/desktop/perry/perry-v0.5.1220-openfx.patch)，
+构建入口是 `deno task perry:runtime`。它固定官方 `v0.5.1220` 提交和 Rust
+1.96.1，处理三个原生边界：
 
-- `node:http.request` → `127.0.0.1` loopback；
-- `node:https.request` → `localhost` / `127.0.0.1`，分别使用系统信任和显式根 CA；
-- `node:https.request` → `example.com:443` 的公开可信端点；
-- `node:tls.connect` → loopback，显式根 CA 且保持 `rejectUnauthorized: true`。
+- 外部 HTTP 静态库启用完整 runtime 并排除会遮蔽真实 stdlib 的 no-op stubs；
+- `node:http` server 对 `::` 和其他 IPv6 listen host 使用带方括号的 socket 地址；
+- 外部 `ClientRequest` 注册自己的方法/属性分派扩展，避免共享小整数 handle ID 在 SQLite
+  等其他注册表中碰撞后吞掉 `end()`。
 
-每次运行还会输出 `js_stdlib_init_dispatch` 为 no-op、stdlib dispatch 未链接到
-runtime-only build 的警告。Perry API manifest 把 `https.request` 与 `tls.connect` 标为非
-stub，但没有提供足以证明客户端请求可发送的完整 `ClientRequest`/socket 方法清单。静态
-check/compile 通过不等价于客户端运行时可用。禁止用 `rejectUnauthorized: false`、shell
-curl 或明文 HTTP 绕过该门禁。
+运行 smoke 时必须设置脚本输出的 `PERRY_LIB_DIR`，并保持
+`--no-auto-optimize`，确保链接的是已验证库。验证仍保持证书校验，不使用
+`rejectUnauthorized: false`、Shell curl 或明文公网 HTTP 绕过门禁。

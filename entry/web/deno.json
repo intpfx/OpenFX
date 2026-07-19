@@ -2,7 +2,7 @@
   "tasks": {
     "dev": "cd ../.. && deno run --config deno.json --lock deno.lock --frozen -A npm:concurrently@9.2.1 -k -n web,server -c blue,green \"deno run --config deno.json --lock deno.lock --frozen -A npm:vite-plus@0.1.21/vp dev --config entry/web/vite.config.ts\" \"cd entry/web && deno run --config deno.json --lock ../../deno.lock --frozen -A npm:nitropack@2.13.4 dev\"",
     "build": "deno run --config deno.json --lock ../../deno.lock --frozen -A tools/build-with-metadata.ts",
-    "preview": "deno task build && deno run -A .output/server/index.ts",
+    "preview": "deno task build && deno run --unstable-kv -A .output/server/index.ts",
     "test": "deno test --allow-env tests"
   },
   "imports": {

@@ -23,6 +23,7 @@ let keychainService = "";
 let cleanupClient: Deno.HttpClient | null = null;
 let cleanupOrigin = "";
 let cleanupCookie = "";
+let nodeStderr = "";
 
 try {
   await assertPortAvailable(nitroPort);
@@ -52,6 +53,8 @@ try {
     "entry/desktop/tools/perry-node-smoke.ts",
     "-o",
     join(temporaryDirectory, "openfx-perry-node-smoke"),
+    "--no-cache",
+    "--no-auto-optimize",
   ], { PERRY_NO_UPDATE_CHECK: "1" });
 
   nitro = new Deno.Command(Deno.execPath(), {
@@ -117,6 +120,7 @@ try {
     stdout: "piped",
     stderr: "piped",
   }).spawn();
+  void captureNodeStderr(node.stderr);
   const ready = await readStartupMessages(node.stdout, {
     timeoutMs: 45_000,
     onMessage(message) {
@@ -127,8 +131,9 @@ try {
     },
   });
   if (!ready) {
-    const stderr = await new Response(node.stderr).text();
-    throw new Error(`Perry node did not report readiness: ${stderr.slice(-4_000)}`);
+    throw new Error(
+      `Perry node did not report readiness: ${nodeStderr.slice(-4_000)}`,
+    );
   }
   assert(ready.ok === true, "compiled Perry node did not become ready");
   const readyNodeId = stringValue(ready.nodeId);
@@ -150,6 +155,21 @@ try {
     "compiled approval expiry self-test failed",
   );
   await verifyKeychain(keychainService, nodeId);
+  const directNodeClient = Deno.createHttpClient({});
+  try {
+    const nodeHealth = await fetch(
+      `http://[${publicIpv6}]:24531/v1/health`,
+      {
+        client: directNodeClient,
+        headers: { host: "openfx-node" },
+        signal: AbortSignal.timeout(5_000),
+      },
+    );
+    assert(nodeHealth.status === 200, "public IPv6 node health failed");
+    await nodeHealth.body?.cancel();
+  } finally {
+    directNodeClient.close();
+  }
 
   const telemetry = await requestJson(client, `${origin}/api/console/telemetry`, {
     cookie,
@@ -171,7 +191,12 @@ try {
   const overview = await requestJson(client, `${origin}/api/console/overview`, {
     cookie,
   });
-  assert(overview.response.status === 200, "fixed overview Relay failed");
+  assert(
+    overview.response.status === 200,
+    `fixed overview Relay failed (${overview.response.status}): ${
+      JSON.stringify(overview.body)
+    }`,
+  );
   const processes = await requestJson(client, `${origin}/api/console/processes`, {
     cookie,
   });
@@ -205,6 +230,23 @@ try {
     cookie,
     false,
   );
+  let eventCursor = initialSse.at(-1)?.id ?? 0;
+  const requestedSse = await readSse(
+    client,
+    `${origin}/api/console/events`,
+    cookie,
+    (events) =>
+      events.some((event) =>
+        event.type === "approval.requested" &&
+        event.data.includes(String(executable.id))
+      ),
+    eventCursor,
+  );
+  assert(
+    requestedSse.every((event) => event.id > eventCursor),
+    "SSE reconnect replayed an already-consumed event",
+  );
+  eventCursor = requestedSse.at(-1)?.id ?? eventCursor;
   const executed = await resolveApproval(
     client,
     origin,
@@ -212,7 +254,24 @@ try {
     executable,
     "approved",
   );
-  assert(executed.body.applied === true, "approved Relay effect was not applied");
+  assert(
+    executed.body.applied === true,
+    `approved Relay effect was not applied (${executed.response.status}): ${
+      JSON.stringify(executed.body)
+    }`,
+  );
+  const approvedSse = await readSse(
+    client,
+    `${origin}/api/console/events`,
+    cookie,
+    (events) =>
+      events.some((event) =>
+        event.type === "approval.resolved" &&
+        event.data.includes(String(executable.id))
+      ),
+    eventCursor,
+  );
+  eventCursor = approvedSse.at(-1)?.id ?? eventCursor;
   const replayed = await resolveApproval(
     client,
     origin,
@@ -221,10 +280,25 @@ try {
     "approved",
   );
   assert(
-    replayed.body.error === "approval_already_applied",
-    "approval replay was not rejected",
+    replayed.response.status === 409 &&
+      replayed.body.error === "approval_already_resolved",
+    `approval replay was not rejected (${replayed.response.status}): ${
+      JSON.stringify(replayed.body)
+    }`,
   );
   const rejectable = await requestApproval(client, origin, cookie, true);
+  const rejectRequestedSse = await readSse(
+    client,
+    `${origin}/api/console/events`,
+    cookie,
+    (events) =>
+      events.some((event) =>
+        event.type === "approval.requested" &&
+        event.data.includes(String(rejectable.id))
+      ),
+    eventCursor,
+  );
+  eventCursor = rejectRequestedSse.at(-1)?.id ?? eventCursor;
   const rejected = await resolveApproval(
     client,
     origin,
@@ -236,16 +310,19 @@ try {
     rejected.body.ok === true && rejected.body.applied === false,
     "approval rejection failed",
   );
-
-  const reconnectedSse = await readSse(
+  const rejectedSse = await readSse(
     client,
     `${origin}/api/console/events`,
     cookie,
-    (events) => events.some((event) => event.type === "approval.requested"),
-    initialSse.at(-1)?.id ?? 0,
+    (events) =>
+      events.some((event) =>
+        event.type === "approval.resolved" &&
+        event.data.includes(String(rejectable.id))
+      ),
+    eventCursor,
   );
   assert(
-    reconnectedSse.every((event) => event.id > (initialSse.at(-1)?.id ?? 0)),
+    rejectedSse.every((event) => event.id > eventCursor),
     "SSE reconnect replayed an already-consumed event",
   );
 
@@ -346,6 +423,21 @@ interface SseEvent {
   id: number;
   type: string;
   data: string;
+}
+
+async function captureNodeStderr(
+  stream: ReadableStream<Uint8Array>,
+): Promise<void> {
+  const decoder = new TextDecoder();
+  try {
+    for await (const chunk of stream) {
+      const text = decoder.decode(chunk, { stream: true });
+      nodeStderr = `${nodeStderr}${text}`.slice(-16_000);
+      Deno.stderr.writeSync(new TextEncoder().encode(text));
+    }
+  } catch {
+    // Process cleanup can close the pipe while the reader is active.
+  }
 }
 
 async function proxyToNitro(request: Request): Promise<Response> {

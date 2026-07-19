@@ -48,8 +48,12 @@ export const readStartupMessages = async (
       pendingRead = reader.read();
     }
   } finally {
-    if (timedOut) await reader.cancel().catch(() => undefined);
-    reader.releaseLock();
+    // Cancelling a live ChildProcess stdout pipe can wait for the child to
+    // close, defeating this function's own deadline. The integration owner
+    // terminates that child in its outer cleanup, so leave the pending reader
+    // attached on timeout instead of blocking forever here.
+    if (timedOut) void reader.cancel().catch(() => undefined);
+    else reader.releaseLock();
   }
 };
 

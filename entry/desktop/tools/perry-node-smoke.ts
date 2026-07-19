@@ -74,6 +74,10 @@ const shutdown = (): void => {
 };
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
+// Keep Perry's native event loop alive while nested async service layers are
+// waiting for node:http/node:https callbacks. The desktop UI/tray supplies
+// this resident lifecycle in production; the headless smoke must do so itself.
+keepAlive = setInterval(() => undefined, 1_000);
 
 let resident = false;
 try {
@@ -100,6 +104,7 @@ async function runSmoke(): Promise<void> {
   const restoredPairing = restored;
 
   const journal = createDesktopJournal(createSqliteJournalStorage(journalPath));
+  await journal.recoverIncompleteExecutions();
   console.error("[openfx-smoke] Keychain recovery and SQLite journal completed");
   const audit: AuditLog = {
     append: (event) => journal.appendAudit(event),
@@ -154,16 +159,18 @@ async function runSmoke(): Promise<void> {
       },
     },
     events: {
-      approvalRequested: (request) =>
-        eventReporter.emit({
+      approvalRequested(request) {
+        return eventReporter.emit({
           type: "approval.requested",
           data: { id: request.id, summary: request.reason },
-        }),
-      approvalResolved: (request, decision) =>
-        eventReporter.emit({
+        });
+      },
+      approvalResolved(request, decision) {
+        return eventReporter.emit({
           type: "approval.resolved",
           data: { id: request.id, decision },
-        }),
+        });
+      },
     },
   });
   const omlx = createOmlxClient(requestJson, requestTextStream);
@@ -173,7 +180,9 @@ async function runSmoke(): Promise<void> {
     network: () => Promise.resolve(observedState.network),
     relay: () => Promise.resolve(relayStatus()),
     chat: (message, onDelta) => omlx.chat(message, onDelta),
-    agentDelta: (data) => eventReporter.emit({ type: "agent.delta", data }),
+    agentDelta(data) {
+      return eventReporter.emit({ type: "agent.delta", data });
+    },
     invokeTool: (toolId, input) => runtime.invoke(toolId, input),
     listApprovals: () => runtime.listApprovals(),
     resolveApproval: (input) => runtime.resolve(input),
@@ -210,8 +219,6 @@ async function runSmoke(): Promise<void> {
     omlx: omlxStatus,
     expiredApproval: OPENFX_NODE_ERROR_CODES.approvalExpired,
   }));
-
-  keepAlive = setInterval(() => undefined, 1_000);
 
   function relayStatus(): RelayStatus {
     const status = reporter.status();

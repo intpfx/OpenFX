@@ -1,4 +1,4 @@
-import { chmod, mkdir, readFile, unlink } from "node:fs/promises";
+import { chmodSync, mkdirSync, readFileSync, unlinkSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
@@ -18,13 +18,18 @@ export const createSqliteJournalStorage = (
   path: string,
   options: SqliteJournalStorageOptions = {},
 ): JournalStorage => {
+  let databaseInstance: DatabaseSync | null = null;
   let databasePromise: Promise<DatabaseSync> | null = null;
-  const database = async (): Promise<DatabaseSync> => {
-    if (databasePromise) return databasePromise;
+  const ensureDatabase = async (): Promise<void> => {
+    if (databaseInstance) return;
+    if (databasePromise) {
+      databaseInstance = await databasePromise;
+      return;
+    }
     const pending = initializeDatabase(path, options.legacyJournalPath);
     databasePromise = pending;
     try {
-      return await pending;
+      databaseInstance = await pending;
     } catch (error) {
       if (databasePromise === pending) databasePromise = null;
       throw error;
@@ -37,7 +42,9 @@ export const createSqliteJournalStorage = (
         events: readonly JournalEvent[],
       ) => { result: Result; append?: JournalEvent[] },
     ): Promise<Result> {
-      const db = await database();
+      if (!databaseInstance) await ensureDatabase();
+      const db = databaseInstance;
+      if (!db) throw new Error("sqlite_database_unavailable");
       let transactionOpen = false;
       try {
         db.exec("BEGIN IMMEDIATE");
@@ -66,7 +73,7 @@ export const createSqliteJournalStorage = (
         }
         db.exec("COMMIT");
         transactionOpen = false;
-        await secureDatabaseFiles(path);
+        secureDatabaseFiles(path);
         return mutation.result;
       } catch (error) {
         if (transactionOpen) {
@@ -76,12 +83,14 @@ export const createSqliteJournalStorage = (
             // SQLite already rolled the transaction back.
           }
         }
-        await secureDatabaseFiles(path);
+        secureDatabaseFiles(path);
         throw error;
       }
     },
     async claimReplayNonce(nonce, expiresAt, now) {
-      const db = await database();
+      if (!databaseInstance) await ensureDatabase();
+      const db = databaseInstance;
+      if (!db) throw new Error("sqlite_database_unavailable");
       let transactionOpen = false;
       try {
         db.exec("BEGIN IMMEDIATE");
@@ -92,7 +101,7 @@ export const createSqliteJournalStorage = (
         ).run(nonce, expiresAt).changes === 1;
         db.exec("COMMIT");
         transactionOpen = false;
-        await secureDatabaseFiles(path);
+        secureDatabaseFiles(path);
         return claimed;
       } catch (error) {
         if (transactionOpen) {
@@ -102,7 +111,7 @@ export const createSqliteJournalStorage = (
             // SQLite already rolled the transaction back.
           }
         }
-        await secureDatabaseFiles(path);
+        secureDatabaseFiles(path);
         throw error;
       }
     },
@@ -114,22 +123,26 @@ const initializeDatabase = async (
   legacyJournalPath?: string,
 ): Promise<DatabaseSync> => {
   const directory = dirname(path);
-  await mkdir(directory, { recursive: true, mode: DIRECTORY_MODE });
-  await chmod(directory, DIRECTORY_MODE);
-  await Promise.all(
-    [
-      ...new Set([
-        `${path}.lock`,
-        ...(legacyJournalPath ? [`${legacyJournalPath}.lock`] : []),
-      ]),
-    ].map((lockPath) => unlink(lockPath).catch(ignoreMissing)),
-  );
+  mkdirSync(directory, { recursive: true, mode: DIRECTORY_MODE });
+  chmodSync(directory, DIRECTORY_MODE);
+  for (
+    const lockPath of new Set([
+      `${path}.lock`,
+      ...(legacyJournalPath ? [`${legacyJournalPath}.lock`] : []),
+    ])
+  ) {
+    try {
+      unlinkSync(lockPath);
+    } catch (error) {
+      ignoreMissing(error);
+    }
+  }
 
   for (let attempt = 1; attempt <= INITIALIZATION_ATTEMPTS; attempt += 1) {
     let db: DatabaseSync | null = null;
     try {
       db = new DatabaseSync(path);
-      await chmod(path, FILE_MODE);
+      chmodSync(path, FILE_MODE);
       db.exec(`PRAGMA busy_timeout = ${INITIALIZATION_BUSY_TIMEOUT_MS}`);
       if (readJournalMode(db) !== "wal") {
         const enabledMode = readJournalMode(db, "PRAGMA journal_mode = WAL");
@@ -165,16 +178,16 @@ const initializeDatabase = async (
           ON replay_nonces(expires_at);
         COMMIT;
       `);
-      await secureDatabaseFiles(path);
-      await migrateLegacyJournal(db, legacyJournalPath);
+      secureDatabaseFiles(path);
+      migrateLegacyJournal(db, legacyJournalPath);
       migrateLegacyReplayClaims(db);
       db.exec(`PRAGMA busy_timeout = ${TRANSACTION_BUSY_TIMEOUT_MS}`);
-      await secureDatabaseFiles(path);
+      secureDatabaseFiles(path);
       return db;
     } catch (error) {
       if (db) {
         db.close();
-        await secureDatabaseFiles(path);
+        secureDatabaseFiles(path);
       }
       if (
         !isTransientSqliteInitializationError(error) ||
@@ -296,15 +309,15 @@ const waitForInitializationRetry = async (attempt: number): Promise<void> => {
   await new Promise<void>((resolve) => setTimeout(resolve, delay));
 };
 
-const migrateLegacyJournal = async (
+const migrateLegacyJournal = (
   db: DatabaseSync,
   legacyJournalPath?: string,
-): Promise<void> => {
+): void => {
   const imported = db.prepare(
     "SELECT legacy_imported FROM journal_state WHERE id = 1",
   ).get() as { legacy_imported: number };
   if (imported.legacy_imported === 1) return;
-  const events = legacyJournalPath ? await readLegacyEvents(legacyJournalPath) : [];
+  const events = legacyJournalPath ? readLegacyEvents(legacyJournalPath) : [];
 
   db.exec("BEGIN IMMEDIATE");
   try {
@@ -333,10 +346,10 @@ const migrateLegacyJournal = async (
   }
 };
 
-const readLegacyEvents = async (path: string): Promise<JournalEvent[]> => {
+const readLegacyEvents = (path: string): JournalEvent[] => {
   let text = "";
   try {
-    text = await readFile(path, "utf8");
+    text = readFileSync(path, "utf8");
   } catch (error) {
     if ((error as { code?: string }).code === "ENOENT") return [];
     throw error;
@@ -357,13 +370,15 @@ const readLegacyEvents = async (path: string): Promise<JournalEvent[]> => {
   return events;
 };
 
-const secureDatabaseFiles = async (path: string): Promise<void> => {
-  await chmod(dirname(path), DIRECTORY_MODE);
-  await Promise.all(
-    [path, `${path}-wal`, `${path}-shm`].map((file) =>
-      chmod(file, FILE_MODE).catch(ignoreMissing)
-    ),
-  );
+const secureDatabaseFiles = (path: string): void => {
+  chmodSync(dirname(path), DIRECTORY_MODE);
+  for (const file of [path, `${path}-wal`, `${path}-shm`]) {
+    try {
+      chmodSync(file, FILE_MODE);
+    } catch (error) {
+      ignoreMissing(error);
+    }
+  }
 };
 
 const ignoreMissing = (error: unknown): void => {

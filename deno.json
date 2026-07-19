@@ -13,7 +13,8 @@
     "check": "deno fmt --check . && deno lint . && deno task guard:deno-only && deno test --allow-env domains/e/tests domains/downip/tests domains/proxy/tests entry/web/tests domains/_shared/tests && deno test --allow-read --allow-write --allow-net --allow-run=deno entry/desktop/tests",
     "web:dev": "deno task --config entry/web/deno.json dev",
     "web:build": "deno task --config entry/web/deno.json build",
-    "web:preview": "deno task --config entry/web/deno.json preview"
+    "web:preview": "deno task --config entry/web/deno.json preview",
+    "perry:runtime": "deno run -A entry/desktop/tools/build-perry-runtime.ts"
   },
   "fmt": {
     "lineWidth": 88,
@@ -42,7 +43,6 @@
       "domains/costing-assistant/",
       "domains/finlyzer/",
       "domains/hlc/",
-      "domains/freemac/",
       "domains/BewlyScript/",
       "domains/LivpExplorer/"
     ]
@@ -54,7 +54,6 @@
     "domains/finlyzer/",
     "entry/web/public/bewlyscript/",
     "domains/hlc/",
-    "domains/freemac/",
     "domains/BewlyScript/",
     "domains/LivpExplorer/",
     ".sisyphus"
