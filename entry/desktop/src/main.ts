@@ -1,6 +1,7 @@
 import {
   App,
   appSetActivationPolicy,
+  appSetTimer,
   Button,
   Divider,
   HStack,
@@ -318,16 +319,19 @@ onTerminate(() => {
   void lifecycle.terminate();
 });
 
-void lifecycle.start();
-
 appSetActivationPolicy("accessory");
+let servicesStarted = false;
+appSetTimer(1, () => {
+  if (servicesStarted) return;
+  servicesStarted = true;
+  void lifecycle.start();
+});
 App({
   title: "OpenFX Node",
   width: 680,
   height: 520,
   body: buildControlPanel(),
 });
-lifecycle.mainWindowShown();
 
 function createId(prefix: string): string {
   const bytes = cryptoAdapter.randomBytes(12);

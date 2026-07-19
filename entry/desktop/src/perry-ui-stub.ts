@@ -110,6 +110,10 @@ export const trayOnClick = (_tray: Widget, _callback: () => void): void => {};
 export const appSetActivationPolicy = (
   _policy: "regular" | "accessory" | "background",
 ): void => {};
+export const appSetTimer = (
+  _intervalMs: number,
+  _callback: () => void,
+): void => {};
 export const menuCreate = (): Widget => ({});
 export const menuAddItem = (
   _menu: Widget,

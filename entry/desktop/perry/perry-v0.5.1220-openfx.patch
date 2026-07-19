@@ -177,8 +177,8 @@ index d816401..bb15c7d 100644
 --- a/crates/perry-ext-http/src/lib.rs
 +++ b/crates/perry-ext-http/src/lib.rs
 @@ -56,3 +56,4 @@
- mod client_request_surface;
 +mod client_dispatch_ext;
+ mod client_request_surface;
 -
 +
  // Client-side TLS options (rejectUnauthorized / ca / checkServerIdentity)
@@ -187,3 +187,202 @@ index d816401..bb15c7d 100644
      HTTP_GC_REGISTERED.call_once(|| {
 +        client_dispatch_ext::ensure_dispatch_extensions_registered();
          gc_register_mutable_root_scanner_named("perry-ext-http", scan_http_roots);
+diff --git a/crates/perry-ui-macos/src/app.rs b/crates/perry-ui-macos/src/app.rs
+index 72255abc..effd8424 100644
+--- a/crates/perry-ui-macos/src/app.rs
++++ b/crates/perry-ui-macos/src/app.rs
+@@ -1287,2 +1287,11 @@ define_class!(
+                     js_interval_timer_tick();
++                    // Native services keep running after the main window is hidden.
++                    // Always drain stdlib work and microtasks; only visual frame
++                    // callbacks are allowed to pause with a hidden window.
++                    extern "C" {
++                        fn perry_ffi_run_pending(budget_ms: u64);
++                    }
++                    perry_ffi_run_pending(0);
++                    js_run_stdlib_pump();
++                    js_promise_run_microtasks();
+                     // Issue #1865: perry/ui `onFrame` one-shot display-link
+@@ -1290,7 +1295,5 @@ define_class!(
+                     // CADisplayLink-quality vsync alignment is a follow-up.
+-                    js_frame_pump_default();
+-                    js_promise_run_microtasks();
+-                    // Process deferred promise resolutions from perry-stdlib tokio workers.
+-                    // No-op if perry-stdlib is not linked (function pointer not registered).
+-                    js_run_stdlib_pump();
++                    if main_window_is_visible() {
++                        js_frame_pump_default();
++                    }
+                     #[cfg(feature = "geisterhand")]
+@@ -1307,1 +1310,9 @@ define_class!(
++fn main_window_is_visible() -> bool {
++    APPS.with(|apps| {
++        apps.borrow()
++            .first()
++            .is_some_and(|entry| unsafe { msg_send![&*entry.window, isVisible] })
++    })
++}
++
+ impl PerryPumpTarget {
+@@ -1308,2 +1319,8 @@ impl PerryPumpTarget {
+     fn new() -> Retained<Self> {
++        extern "C" {
++            fn js_stdlib_ensure_pump_registered();
++        }
++        unsafe {
++            js_stdlib_ensure_pump_registered();
++        }
+         let this = Self::alloc().set_ivars(PerryPumpTargetIvars);
+diff --git a/crates/perry-ui-macos/src/screenshot.rs b/crates/perry-ui-macos/src/screenshot.rs
+index 25bf6807..7118245f 100644
+--- a/crates/perry-ui-macos/src/screenshot.rs
++++ b/crates/perry-ui-macos/src/screenshot.rs
+@@ -5,0 +6,1 @@
++use objc2_core_foundation::CGRect;
+@@ -87,1 +88,1 @@
+-            return std::ptr::null_mut();
++            return capture_main_view_png(out_len);
+@@ -135,0 +137,45 @@
++
++/// Capture the app-owned content view without Screen Recording permission.
++/// `CGWindowListCreateImage` returns null on privacy-restricted macOS hosts,
++/// while AppKit can still render a process-owned view into a bitmap safely.
++unsafe fn capture_main_view_png(out_len: *mut usize) -> *mut u8 {
++    let content_view: *mut AnyObject = crate::app::APPS.with(|apps| {
++        apps.borrow()
++            .first()
++            .map(|app| msg_send![&*app.window, contentView])
++            .unwrap_or(std::ptr::null_mut())
++    });
++    if content_view.is_null() {
++        return std::ptr::null_mut();
++    }
++
++    let bounds: CGRect = msg_send![content_view, bounds];
++    let bitmap: *mut AnyObject =
++        msg_send![content_view, bitmapImageRepForCachingDisplayInRect: bounds];
++    if bitmap.is_null() {
++        return std::ptr::null_mut();
++    }
++    let _: () = msg_send![content_view, cacheDisplayInRect: bounds, toBitmapImageRep: bitmap];
++
++    let empty_dict_cls = AnyClass::get(c"NSDictionary").unwrap();
++    let empty_dict: Retained<AnyObject> = msg_send![empty_dict_cls, dictionary];
++    let png_data: *const AnyObject =
++        msg_send![bitmap, representationUsingType: 4_usize, properties: &*empty_dict];
++    if png_data.is_null() {
++        return std::ptr::null_mut();
++    }
++
++    let length: usize = msg_send![png_data, length];
++    let bytes: *const u8 = msg_send![png_data, bytes];
++    if length == 0 || bytes.is_null() {
++        return std::ptr::null_mut();
++    }
++
++    let buf = libc::malloc(length) as *mut u8;
++    if buf.is_null() {
++        return std::ptr::null_mut();
++    }
++    std::ptr::copy_nonoverlapping(bytes, buf, length);
++    *out_len = length;
++    buf
++}
+diff --git a/crates/perry-ui-macos/src/tray.rs b/crates/perry-ui-macos/src/tray.rs
+index 2f52976c..f6dc0472 100644
+--- a/crates/perry-ui-macos/src/tray.rs
++++ b/crates/perry-ui-macos/src/tray.rs
+@@ -16,2 +16,3 @@ use std::cell::RefCell;
+ use std::cell::RefCell;
+ use std::collections::HashMap;
++use std::path::{Path, PathBuf};
+@@ -86,1 +87,32 @@ fn get_tray(handle: i64) -> Option<Retained<NSStatusItem>> {
+ }
++/// Resolve packaged tray assets before falling back to the caller's path.
++/// A macOS app executable lives in `Contents/MacOS`; its resources are in the
++/// sibling `Contents/Resources` directory. Standalone Perry binaries resolve
++/// assets next to the executable so launch cwd never changes icon behaviour.
++fn resolve_resource_path(path: &str) -> PathBuf {
++    let requested = Path::new(path);
++    if requested.is_absolute() {
++        return requested.to_path_buf();
++    }
++
++    if let Ok(executable) = std::env::current_exe() {
++        if let Some(executable_directory) = executable.parent() {
++            if let Some(contents_directory) = executable_directory
++                .parent()
++                .filter(|directory| directory.file_name().is_some_and(|name| name == "Contents"))
++            {
++                let bundled = contents_directory.join("Resources").join(requested);
++                if bundled.is_file() {
++                    return bundled;
++                }
++            }
++
++            let adjacent = executable_directory.join(requested);
++            if adjacent.is_file() {
++                return adjacent;
++            }
++        }
++    }
++
++    requested.to_path_buf()
++}
+@@ -98,3 +131,4 @@ pub fn create(icon_path_ptr: *const u8) -> i64 {
+             if !path.is_empty() {
+-                let ns_path = NSString::from_str(path);
++                let resolved_path = resolve_resource_path(path);
++                let ns_path = NSString::from_str(&resolved_path.to_string_lossy());
+                 let image: Option<Retained<NSImage>> = msg_send![
+@@ -134,3 +168,4 @@ pub fn set_icon(handle: i64, icon_path_ptr: *const u8) {
+             if let Some(button) = item.button(mtm) {
+-                let ns_path = NSString::from_str(path);
++                let resolved_path = resolve_resource_path(path);
++                let ns_path = NSString::from_str(&resolved_path.to_string_lossy());
+                 let image: Option<Retained<NSImage>> = msg_send![
+diff --git a/crates/perry-stdlib/src/common/async_bridge.rs b/crates/perry-stdlib/src/common/async_bridge.rs
+index 6a0b2e8..0000000 100644
+--- a/crates/perry-stdlib/src/common/async_bridge.rs
++++ b/crates/perry-stdlib/src/common/async_bridge.rs
+@@ -442,3 +442,19 @@ pub fn ensure_pump_registered() {
++    ensure_pump_only_registered();
++    extern "C" {
++        fn js_stdlib_init_dispatch();
++    }
++    unsafe {
++        js_stdlib_init_dispatch();
++    }
++}
++
++/// Explicit C-ABI entry point for hosts that own the resident event loop.
++#[no_mangle]
++pub extern "C" fn js_stdlib_ensure_pump_registered() {
++    ensure_pump_registered();
++}
++
++pub(crate) fn ensure_pump_only_registered() {
+     use std::sync::Once;
+     static REGISTER: Once = Once::new();
+     REGISTER.call_once(|| {
+@@ -448,1 +464,0 @@ pub fn ensure_pump_registered() {
+-            fn js_stdlib_init_dispatch();
+@@ -466,8 +481,0 @@ pub fn ensure_pump_registered() {
+-            // Wire up the runtime-level HANDLE_METHOD_DISPATCH so that
+-            // generic `jsObject.method(args)` calls on stdlib handle types
+-            // (net.Socket, Fastify, ioredis) fall back to the right FFI
+-            // even when codegen lost static type info — e.g. accessing the
+-            // socket through a struct field (`state.sock.write(...)`).
+-            // Until this was hooked in, HANDLE_METHOD_DISPATCH stayed None
+-            // and those calls silently returned undefined.
+-            js_stdlib_init_dispatch();
+diff --git a/crates/perry-stdlib/src/common/dispatch/init.rs b/crates/perry-stdlib/src/common/dispatch/init.rs
+index 613024e..0000000 100644
+--- a/crates/perry-stdlib/src/common/dispatch/init.rs
++++ b/crates/perry-stdlib/src/common/dispatch/init.rs
+@@ -367,1 +367,5 @@ pub unsafe extern "C" fn js_stdlib_init_dispatch() {
++    // Generated UI entrypoints call dispatch initialization eagerly. Register
++    // the stdlib pump at the same boundary so resident App event loops can
++    // drain HTTP/server work before any lazy promise helper is touched.
++    crate::common::async_bridge::ensure_pump_only_registered();
+     extern "C" {

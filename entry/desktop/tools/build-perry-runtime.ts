@@ -42,12 +42,27 @@ if (commit !== PERRY_COMMIT) {
 }
 
 if (
-  await succeeds("git", ["-C", source, "apply", "--reverse", "--check", PATCH_PATH])
+  await succeeds("git", [
+    "-C",
+    source,
+    "apply",
+    "--unidiff-zero",
+    "--reverse",
+    "--check",
+    PATCH_PATH,
+  ])
 ) {
   console.log(`[openfx:perry] patch already applied to ${source}`);
 } else {
-  await run("git", ["-C", source, "apply", "--check", PATCH_PATH]);
-  await run("git", ["-C", source, "apply", PATCH_PATH]);
+  await run("git", [
+    "-C",
+    source,
+    "apply",
+    "--unidiff-zero",
+    "--check",
+    PATCH_PATH,
+  ]);
+  await run("git", ["-C", source, "apply", "--unidiff-zero", PATCH_PATH]);
   console.log(`[openfx:perry] applied ${PATCH_PATH}`);
 }
 
@@ -66,6 +81,8 @@ await run(
     "perry-stdlib-static",
     "-p",
     "perry-ext-http",
+    "-p",
+    "perry-ui-macos",
     "--no-default-features",
     "--features",
     BUILD_FEATURES,
@@ -76,6 +93,18 @@ await run(
 );
 
 const libraryDirectory = join(targetDir, "release");
+for (
+  const archive of [
+    "libperry_runtime.a",
+    "libperry_stdlib.a",
+    "libperry_ext_http.a",
+    "libperry_ui_macos.a",
+  ]
+) {
+  if (!(await exists(join(libraryDirectory, archive)))) {
+    throw new Error(`Pinned Perry archive was not built: ${archive}`);
+  }
+}
 console.log(`[openfx:perry] runtime ready: ${libraryDirectory}`);
 console.log(`export PERRY_LIB_DIR=${shellQuote(libraryDirectory)}`);
 
