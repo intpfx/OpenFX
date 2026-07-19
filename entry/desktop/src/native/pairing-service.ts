@@ -7,10 +7,8 @@ import type {
 import type { NodeKeychain } from "./keychain.ts";
 
 export interface DesktopPreferenceStore {
-  load(): Promise<DesktopPreferences | null>;
-  update(
-    patch: Partial<DesktopPreferences>,
-  ): Promise<DesktopPreferences>;
+  current(): DesktopPreferences;
+  update(patch: Partial<DesktopPreferences>): DesktopPreferences;
 }
 
 export interface PairingServiceDependencies {
@@ -30,6 +28,27 @@ export interface PairingService {
   restore(): Promise<RestoredPairing | null>;
 }
 
+export interface PairingStateSinks {
+  setPreferences(preferences: DesktopPreferences): void;
+  setRelayPairing(pairing: RestoredPairing | null): void;
+  setEventPairing(pairing: RestoredPairing | null): void;
+}
+
+export const synchronizePairingState = (
+  preferences: DesktopPreferenceStore,
+  candidate: RestoredPairing | null,
+  sinks: PairingStateSinks,
+): RestoredPairing | null => {
+  const current = preferences.current();
+  const pairing = candidate && candidate.preferences.nodeId === current.nodeId
+    ? { preferences: current, nodeSecret: candidate.nodeSecret }
+    : null;
+  sinks.setPreferences(current);
+  sinks.setRelayPairing(pairing);
+  sinks.setEventPairing(pairing);
+  return pairing;
+};
+
 export const createPairingService = (
   dependencies: PairingServiceDependencies,
 ): PairingService => ({
@@ -37,11 +56,10 @@ export const createPairingService = (
     const result: PairNodeResult = await dependencies.client.pair(input);
     await dependencies.keychain.write(result.node.id, result.nodeSecret);
     try {
-      const preferences = await dependencies.preferences.update({
+      const preferences = dependencies.preferences.update({
         serverUrl: input.serverUrl,
         nodeId: result.node.id,
         nodeName: result.node.name || input.name,
-        relayEnabled: true,
         pairedAt: (dependencies.now ?? Date.now)(),
       });
       return { preferences, nodeSecret: result.nodeSecret };
@@ -55,9 +73,11 @@ export const createPairingService = (
     }
   },
   async restore() {
-    const preferences = await dependencies.preferences.load();
-    if (!preferences?.nodeId) return null;
-    const nodeSecret = await dependencies.keychain.read(preferences.nodeId);
-    return nodeSecret ? { preferences, nodeSecret } : null;
+    const requested = dependencies.preferences.current();
+    if (!requested.nodeId) return null;
+    const nodeSecret = await dependencies.keychain.read(requested.nodeId);
+    const current = dependencies.preferences.current();
+    if (!nodeSecret || current.nodeId !== requested.nodeId) return null;
+    return { preferences: current, nodeSecret };
   },
 });

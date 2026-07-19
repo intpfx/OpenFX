@@ -377,7 +377,7 @@ Deno.test("desktop controls clear consumed codes and expose only Chinese operati
     new URL("../src/ui/control-panel.ts", import.meta.url),
   );
   const preferenceSection = main.slice(
-    main.indexOf("async function persistLaunchMode"),
+    main.indexOf("function persistLaunchMode"),
     main.indexOf("function createId"),
   );
   const pairSection = main.slice(
@@ -389,15 +389,36 @@ Deno.test("desktop controls clear consumed codes and expose only Chinese operati
   assert(controlPanel.includes('textfieldSetString(codeField, "");'));
   assert(pairSection.includes("controlPanel?.clearPairingCode();"));
   assert(
-    preferenceSection.includes("): Promise<boolean>") &&
+    preferenceSection.includes("): boolean") &&
       preferenceSection.includes("return true;") &&
       preferenceSection.includes("return false;"),
     "preference persistence must report whether the save actually succeeded",
   );
   assert(
-    preferenceSection.includes("const saved = await persistPreferenceChoice") &&
+    preferenceSection.includes("const saved = persistPreferenceChoice") &&
       preferenceSection.includes("if (!saved) return;"),
     "launch-mode success copy must only appear after a successful save",
+  );
+  assert(
+    preferenceSection.includes("preferenceStore.update(patch);") &&
+      preferenceSection.includes("applyAuthoritativePairing(pairing)") &&
+      !preferenceSection.includes("await preferenceStore.update"),
+    "preference writes must synchronously apply the authoritative persisted snapshot",
+  );
+  assert(
+    pairSection.includes("applyAuthoritativePairing(candidate)") &&
+      !pairSection.includes("preferences.set(pairing.preferences)"),
+    "pair completion must never apply the async service snapshot directly",
+  );
+  const bootstrapSection = main.slice(
+    main.indexOf("const bootstrap = async"),
+    main.indexOf("const lifecycle =", main.indexOf("const bootstrap = async")),
+  );
+  assert(
+    bootstrapSection.includes(
+      "applyAuthoritativePairing(restored ?? pairing)",
+    ),
+    "a stale restore rejection must not clear a newer pairing completed during Keychain I/O",
   );
   assert(
     preferenceSection.includes("describeDesktopError(error)") &&

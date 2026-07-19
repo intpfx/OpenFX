@@ -56,13 +56,13 @@ let savedPreferences: DesktopPreferences | null = null;
 const pairingService = createPairingService({
   client: controlPlane,
   preferences: {
-    load: () => Promise.resolve(savedPreferences),
+    current: () => sanitizeDesktopPreferences(savedPreferences ?? {}),
     update(patch) {
       savedPreferences = sanitizeDesktopPreferences({
         ...(savedPreferences ?? {}),
         ...patch,
       });
-      return Promise.resolve(savedPreferences);
+      return savedPreferences;
     },
   },
   keychain,

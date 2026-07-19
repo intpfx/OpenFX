@@ -35,34 +35,30 @@ export const readDesktopPreferencesSync = (
 export const createDesktopPreferenceStore = (
   persistence: DesktopPreferencePersistence = systemPreferencePersistence,
 ): DesktopPreferenceStore => ({
-  load() {
-    return Promise.resolve(readDesktopPreferencesSync(persistence));
+  current() {
+    return readDesktopPreferencesSync(persistence);
   },
   update(patch) {
+    const previousRaw = persistence.get();
+    const preferences = sanitizeDesktopPreferences({
+      ...decodeDesktopPreferences(previousRaw),
+      ...patch,
+    });
+    const serialized = JSON.stringify(
+      sanitizeDesktopPreferences(
+        preferences as unknown as Record<string, unknown>,
+      ),
+    );
     try {
-      const previousRaw = persistence.get();
-      const preferences = sanitizeDesktopPreferences({
-        ...decodeDesktopPreferences(previousRaw),
-        ...patch,
-      });
-      const serialized = JSON.stringify(
-        sanitizeDesktopPreferences(
-          preferences as unknown as Record<string, unknown>,
-        ),
-      );
-      try {
-        persistence.set(serialized);
-      } catch (error) {
-        try {
-          persistence.set(previousRaw ?? "");
-        } catch {
-          return Promise.reject(new Error("preferences_rollback_failed"));
-        }
-        return Promise.reject(error);
-      }
-      return Promise.resolve(preferences);
+      persistence.set(serialized);
     } catch (error) {
-      return Promise.reject(error);
+      try {
+        persistence.set(previousRaw ?? "");
+      } catch {
+        throw new Error("preferences_rollback_failed");
+      }
+      throw error;
     }
+    return preferences;
   },
 });

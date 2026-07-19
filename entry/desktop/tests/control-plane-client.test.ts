@@ -8,7 +8,13 @@ import {
 import { decodeBase64Url } from "../../../domains/_shared/openfx-node/encoding.ts";
 import { sanitizeDesktopPreferences } from "../src/core/desktop-state.ts";
 import { createControlPlaneClient } from "../src/native/control-plane-client.ts";
-import { createPairingService } from "../src/native/pairing-service.ts";
+import { createNodeEventReporter } from "../src/native/node-event-reporter.ts";
+import {
+  createPairingService,
+  synchronizePairingState,
+} from "../src/native/pairing-service.ts";
+import { createDesktopPreferenceStore } from "../src/native/preferences.ts";
+import { createRelayReporter } from "../src/native/relay-reporter.ts";
 import type { DesktopPreferences } from "../src/core/types.ts";
 import type { HttpJsonRequest } from "../src/native/omlx-client.ts";
 
@@ -118,10 +124,10 @@ Deno.test("pairing stores nodeSecret only in Keychain and recovers it after rest
         }),
     },
     preferences: {
-      load: () => Promise.resolve(preferences),
+      current: () => mergePreferences(preferences, {}),
       update(patch) {
         preferences = mergePreferences(preferences, patch);
-        return Promise.resolve(preferences);
+        return preferences;
       },
     },
     keychain: {
@@ -188,10 +194,10 @@ Deno.test("pairing preserves menu-bar launch and static-core preferences", async
         }),
     },
     preferences: {
-      load: () => Promise.resolve(preferences),
+      current: () => mergePreferences(preferences, {}),
       update(patch) {
         preferences = mergePreferences(preferences, patch);
-        return Promise.resolve(preferences);
+        return preferences;
       },
     },
     keychain: {
@@ -211,8 +217,10 @@ Deno.test("pairing preserves menu-bar launch and static-core preferences", async
 
   assertEquals(paired.preferences.launchMode, "menuBarOnly");
   assertEquals(paired.preferences.reduceMotion, true);
+  assertEquals(paired.preferences.relayEnabled, false);
   assertEquals(preferences?.launchMode, "menuBarOnly");
   assertEquals(preferences?.reduceMotion, true);
+  assertEquals(preferences?.relayEnabled, false);
 });
 
 Deno.test("pairing atomically updates preferences without awaiting store load", async () => {
@@ -228,13 +236,13 @@ Deno.test("pairing atomically updates preferences without awaiting store load", 
       },
     },
     preferences: {
-      load() {
-        calls.push("unexpected-async-load");
-        return new Promise<DesktopPreferences | null>(() => {});
+      current() {
+        calls.push("unexpected-current-read");
+        return mergePreferences(null, {});
       },
       update(patch) {
         calls.push("atomic-update");
-        return Promise.resolve(mergePreferences(null, patch));
+        return mergePreferences(null, patch);
       },
     },
     keychain: {
@@ -251,7 +259,7 @@ Deno.test("pairing atomically updates preferences without awaiting store load", 
     publicIpv6: "240e::1",
   });
 
-  assertEquals(calls.includes("unexpected-async-load"), false);
+  assertEquals(calls.includes("unexpected-current-read"), false);
   assertEquals(calls, ["https-pair", "atomic-update"]);
 });
 
@@ -270,10 +278,10 @@ Deno.test("pair completion preserves menu-bar and static-core changes made while
     reduceMotion: false,
   };
   const store = {
-    load: () => Promise.resolve(preferences),
+    current: () => mergePreferences(preferences, {}),
     update(patch: Partial<DesktopPreferences>) {
       preferences = mergePreferences(preferences, patch);
-      return Promise.resolve(preferences);
+      return preferences;
     },
   };
   const service = createPairingService({
@@ -292,9 +300,10 @@ Deno.test("pair completion preserves menu-bar and static-core changes made while
     name: "Studio Mac",
     publicIpv6: "240e::1",
   });
-  await store.update({
+  store.update({
     launchMode: "menuBarOnly",
     reduceMotion: true,
+    relayEnabled: false,
   });
   pairResult.resolve({
     node: { id: "node-new", name: "Studio Mac" },
@@ -304,8 +313,10 @@ Deno.test("pair completion preserves menu-bar and static-core changes made while
   const paired = await pairing;
   assertEquals(paired.preferences.launchMode, "menuBarOnly");
   assertEquals(paired.preferences.reduceMotion, true);
+  assertEquals(paired.preferences.relayEnabled, false);
   assertEquals(preferences?.launchMode, "menuBarOnly");
   assertEquals(preferences?.reduceMotion, true);
+  assertEquals(preferences?.relayEnabled, false);
 });
 
 Deno.test("pair completion preserves regular animated changes made while Keychain is pending", async () => {
@@ -320,10 +331,10 @@ Deno.test("pair completion preserves regular animated changes made while Keychai
     reduceMotion: true,
   };
   const store = {
-    load: () => Promise.resolve(preferences),
+    current: () => mergePreferences(preferences, {}),
     update(patch: Partial<DesktopPreferences>) {
       preferences = mergePreferences(preferences, patch);
-      return Promise.resolve(preferences);
+      return preferences;
     },
   };
   const service = createPairingService({
@@ -349,17 +360,194 @@ Deno.test("pair completion preserves regular animated changes made while Keychai
     publicIpv6: "240e::1",
   });
   await Promise.resolve();
-  await store.update({
+  store.update({
     launchMode: "regular",
     reduceMotion: false,
+    relayEnabled: false,
   });
   keychainWrite.resolve();
 
   const paired = await pairing;
   assertEquals(paired.preferences.launchMode, "regular");
   assertEquals(paired.preferences.reduceMotion, false);
+  assertEquals(paired.preferences.relayEnabled, false);
   assertEquals(preferences?.launchMode, "regular");
   assertEquals(preferences?.reduceMotion, false);
+  assertEquals(preferences?.relayEnabled, false);
+});
+
+Deno.test("restore re-reads preferences after pending Keychain lookup", async () => {
+  const keychainRead = deferred<string | null>();
+  let preferences: DesktopPreferences | null = {
+    serverUrl: "https://openfx.example",
+    nodeId: "node-restore",
+    nodeName: "Studio Mac",
+    relayEnabled: true,
+    pairedAt: 1,
+    launchMode: "regular",
+    reduceMotion: false,
+  };
+  const store = {
+    current: () => mergePreferences(preferences, {}),
+    update(patch: Partial<DesktopPreferences>) {
+      preferences = mergePreferences(preferences, patch);
+      return preferences;
+    },
+  };
+  const service = createPairingService({
+    client: {
+      pair: () => Promise.reject(new Error("unexpected_pair")),
+    },
+    preferences: store,
+    keychain: {
+      write: () => Promise.resolve(),
+      read: () => keychainRead.promise,
+      remove: () => Promise.resolve(),
+    },
+  });
+
+  const restoring = service.restore();
+  await Promise.resolve();
+  store.update({
+    relayEnabled: false,
+    launchMode: "menuBarOnly",
+    reduceMotion: true,
+  });
+  keychainRead.resolve("encoded-secret-restore");
+
+  const restored = await restoring;
+  assertEquals(restored?.preferences.relayEnabled, false);
+  assertEquals(restored?.preferences.launchMode, "menuBarOnly");
+  assertEquals(restored?.preferences.reduceMotion, true);
+});
+
+Deno.test("restore rejects a Keychain secret when nodeId changes during lookup", async () => {
+  const keychainRead = deferred<string | null>();
+  let preferences: DesktopPreferences | null = {
+    serverUrl: "https://openfx.example",
+    nodeId: "node-old",
+    nodeName: "Old Mac",
+    relayEnabled: true,
+    pairedAt: 1,
+    launchMode: "regular",
+    reduceMotion: false,
+  };
+  const store = {
+    current: () => mergePreferences(preferences, {}),
+    update(patch: Partial<DesktopPreferences>) {
+      preferences = mergePreferences(preferences, patch);
+      return preferences;
+    },
+  };
+  const service = createPairingService({
+    client: {
+      pair: () => Promise.reject(new Error("unexpected_pair")),
+    },
+    preferences: store,
+    keychain: {
+      write: () => Promise.resolve(),
+      read: () => keychainRead.promise,
+      remove: () => Promise.resolve(),
+    },
+  });
+
+  const restoring = service.restore();
+  await Promise.resolve();
+  store.update({ nodeId: "node-new", nodeName: "New Mac" });
+  keychainRead.resolve("encoded-secret-old");
+
+  assertEquals(await restoring, null);
+});
+
+Deno.test("pair caller synchronizes persisted preferences, State, Relay, and events after a queued setting change", async () => {
+  let persisted = JSON.stringify({
+    serverUrl: "https://old.openfx.example",
+    nodeId: "old-node",
+    nodeName: "Old Mac",
+    relayEnabled: true,
+    pairedAt: 1,
+    launchMode: "regular",
+    reduceMotion: false,
+  });
+  let queuedSettingChange = false;
+  const store = createDesktopPreferenceStore({
+    get: () => persisted,
+    set(value) {
+      persisted = value;
+      const committed = JSON.parse(value) as DesktopPreferences;
+      if (committed.nodeId === "node-new" && !queuedSettingChange) {
+        queuedSettingChange = true;
+        queueMicrotask(() => {
+          store.update({
+            relayEnabled: false,
+            launchMode: "menuBarOnly",
+            reduceMotion: true,
+          });
+        });
+      }
+    },
+  });
+  const service = createPairingService({
+    client: {
+      pair: () =>
+        Promise.resolve({
+          node: { id: "node-new", name: "Studio Mac" },
+          nodeSecret: "encoded-secret-new",
+        }),
+    },
+    preferences: store,
+    keychain: {
+      write: () => Promise.resolve(),
+      read: () => Promise.resolve(null),
+      remove: () => Promise.resolve(),
+    },
+  });
+  const relay = createRelayReporter({
+    heartbeat: () => Promise.resolve(),
+    telemetry: () => Promise.resolve(),
+  });
+  const eventRequests: Array<{ nodeId: string; nodeSecret: string }> = [];
+  const events = createNodeEventReporter({
+    events(input) {
+      eventRequests.push({
+        nodeId: input.nodeId,
+        nodeSecret: input.nodeSecret,
+      });
+      return Promise.resolve();
+    },
+  });
+  let state = sanitizeDesktopPreferences({});
+
+  const candidate = await service.pair({
+    serverUrl: "https://openfx.example",
+    code: "01234567",
+    name: "Studio Mac",
+    publicIpv6: "240e::1",
+  });
+  const pairing = synchronizePairingState(store, candidate, {
+    setPreferences: (next) => {
+      state = next;
+    },
+    setRelayPairing: (next) => relay.setPairing(next),
+    setEventPairing: (next) => events.setPairing(next),
+  });
+
+  const authoritative = JSON.parse(persisted) as DesktopPreferences;
+  assertEquals(authoritative.launchMode, "menuBarOnly");
+  assertEquals(authoritative.reduceMotion, true);
+  assertEquals(authoritative.relayEnabled, false);
+  assertEquals(state, authoritative);
+  assertEquals(pairing?.preferences, authoritative);
+  assertEquals(relay.status().enabled, false);
+  assertEquals(relay.status().serverUrl, "https://openfx.example");
+  await events.emit({
+    type: "approval.resolved",
+    data: { id: "approval-1", decision: "approved" },
+  });
+  assertEquals(eventRequests, [{
+    nodeId: "node-new",
+    nodeSecret: "encoded-secret-new",
+  }]);
 });
 
 Deno.test("preference commit failure keeps the latest UI choices and reports the commit error", async () => {
@@ -382,9 +570,9 @@ Deno.test("preference commit failure keeps the latest UI choices and reports the
         }),
     },
     preferences: {
-      load: () => Promise.resolve(preferences),
+      current: () => preferences,
       update() {
-        return Promise.reject(new Error("preferences_write_failed"));
+        throw new Error("preferences_write_failed");
       },
     },
     keychain: {

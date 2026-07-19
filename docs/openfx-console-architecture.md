@@ -51,9 +51,11 @@ Mac 节点，以及运行时无关的 `domains/e` Agent/审批内核。Web 控�
    `nodeId`、节点名、服务端 URL、Relay 开关、配对时间、下次启动模式 `launchMode` 与
    静态核心开关
    `reduceMotion`。Relay、界面设置和配对提交统一通过同步原子补丁合并最新值； 即使用户在
-   HTTPS 或 Keychain 等待期间切换设置，配对提交也只覆盖节点字段，绝不把 secret
-   写入偏好。持久化失败会先恢复提交前的原始序列化快照，调用方只在成功后更新进程内状态；
-   恢复失败则返回独立错误，避免把磁盘状态误报为已保存。
+   HTTPS 或 Keychain 等待期间切换设置，配对提交也只覆盖节点字段，不重置 Relay，绝不把
+   secret 写入偏好。每个异步配对或恢复边界结束后，State、Relay reporter 和 Event
+   reporter 从同步权威偏好一次性重建；若 Keychain 查询前后的 `nodeId` 不一致，则拒绝旧
+   secret，且不会清除查询期间已完成的新配对。持久化失败会先恢复提交前的原始序列化快照，
+   调用方只在成功后更新进程内状态； 恢复失败则返回独立错误，避免把磁盘状态误报为已保存。
 5. 服务端只保存校验摘要和由 `OPENFX_NODE_CREDENTIAL_KEY` 加密的凭据副本。浏览器 API
    不返回 secret、摘要、密文或解密结果。
 

@@ -44,6 +44,7 @@ import {
 import {
   createPairingService,
   type RestoredPairing,
+  synchronizePairingState,
 } from "./native/pairing-service.ts";
 import { createRelayReporter } from "./native/relay-reporter.ts";
 import {
@@ -161,17 +162,13 @@ const agentTools = createAgentToolRuntime({
     inspectProcess: (pid) => macSystem.inspectProcess(pid),
     kill: (pid, expected) => macSystem.kill(pid, expected),
     openApplication: (application) => macSystem.openApplication(application),
-    async updateRelay(enabled) {
-      const next = await preferenceStore.update({
+    updateRelay(enabled) {
+      preferenceStore.update({
         relayEnabled: enabled,
       });
-      preferences.set(next);
-      if (pairing) {
-        pairing = { ...pairing, preferences: next };
-        reporter.setPairing(pairing);
-      }
+      pairing = applyAuthoritativePairing(pairing);
       refreshPresentation();
-      return reporter.status();
+      return Promise.resolve(reporter.status());
     },
   },
   events: {
@@ -230,15 +227,14 @@ const pairWithControlPlane = async (input: PairingFormInput): Promise<void> => {
       pairingStatus.set(readiness.statusMessage);
       return;
     }
-    pairing = await pairingService.pair({
+    const candidate = await pairingService.pair({
       serverUrl: input.serverUrl,
       code: input.pairingCode,
       name: input.nodeName,
       publicIpv6: network.publicIpv6,
     });
-    preferences.set(pairing.preferences);
-    reporter.setPairing(pairing);
-    eventReporter.setPairing(pairing);
+    pairing = applyAuthoritativePairing(candidate);
+    if (!pairing) throw new Error("pairing_state_changed");
     serviceStatus.set(`已配对：${pairing.preferences.nodeName}`);
     pairingStatus.set("配对完成，节点凭据已保存到 macOS 钥匙串。");
     controlPanel?.setPairingDefaults(
@@ -263,11 +259,9 @@ const bootstrap = async (): Promise<void> => {
     if (recovered > 0) {
       serviceStatus.set(`已恢复 ${recovered} 个中断的执行记录。`);
     }
-    pairing = await pairingService.restore();
+    const restored = await pairingService.restore();
+    pairing = applyAuthoritativePairing(restored ?? pairing);
     if (pairing) {
-      preferences.set(pairing.preferences);
-      reporter.setPairing(pairing);
-      eventReporter.setPairing(pairing);
       serviceStatus.set(`已恢复配对：${pairing.preferences.nodeName}`);
       pairingStatus.set("已从 macOS 钥匙串恢复安全配对。");
       controlPanel?.setPairingDefaults(
@@ -276,11 +270,8 @@ const bootstrap = async (): Promise<void> => {
       );
       controlPanel?.showDashboard();
     } else {
-      const saved = await preferenceStore.load();
-      if (saved) {
-        preferences.set(saved);
-        controlPanel?.setPairingDefaults(saved.serverUrl, saved.nodeName);
-      }
+      const saved = preferenceStore.current();
+      controlPanel?.setPairingDefaults(saved.serverUrl, saved.nodeName);
       serviceStatus.set("未配对；本机监控与手动操作仍可用。");
       pairingStatus.set("请完成三步配对；节点 ID 仅以钥匙串凭据为准。");
       controlPanel?.showPairingGuide();
@@ -330,7 +321,6 @@ controlPanel = createControlPanel(currentPresentation(), {
     void persistLaunchMode(mode);
   },
   setReduceMotion(reduceMotion) {
-    coreRenderer?.setReduceMotion(reduceMotion);
     void persistPreferenceChoice({ reduceMotion });
   },
 });
@@ -419,13 +409,29 @@ function currentCoreState(): CoreNodeState {
   return "online";
 }
 
+function applyAuthoritativePairing(
+  candidate: RestoredPairing | null,
+): RestoredPairing | null {
+  return synchronizePairingState(preferenceStore, candidate, {
+    setPreferences(next) {
+      preferences.set(next);
+    },
+    setRelayPairing(next) {
+      reporter.setPairing(next);
+    },
+    setEventPairing(next) {
+      eventReporter.setPairing(next);
+    },
+  });
+}
+
 function refreshPresentation(): void {
   controlPanel?.update(currentPresentation());
   coreRenderer?.update(createCoreMetrics());
 }
 
-async function persistLaunchMode(mode: DesktopLaunchMode): Promise<void> {
-  const saved = await persistPreferenceChoice({ launchMode: mode });
+function persistLaunchMode(mode: DesktopLaunchMode): void {
+  const saved = persistPreferenceChoice({ launchMode: mode });
   if (!saved) return;
   serviceStatus.set(
     mode === "menuBarOnly"
@@ -435,17 +441,12 @@ async function persistLaunchMode(mode: DesktopLaunchMode): Promise<void> {
   refreshPresentation();
 }
 
-async function persistPreferenceChoice(
+function persistPreferenceChoice(
   patch: Partial<Pick<DesktopPreferences, "launchMode" | "reduceMotion">>,
-): Promise<boolean> {
+): boolean {
   try {
-    const next = await preferenceStore.update(patch);
-    preferences.set(next);
-    if (pairing) {
-      pairing = { ...pairing, preferences: next };
-      reporter.setPairing(pairing);
-      eventReporter.setPairing(pairing);
-    }
+    preferenceStore.update(patch);
+    pairing = applyAuthoritativePairing(pairing);
     refreshPresentation();
     return true;
   } catch (error) {

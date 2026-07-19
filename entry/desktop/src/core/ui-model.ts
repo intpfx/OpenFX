@@ -97,6 +97,9 @@ export const describeDesktopError = (error: unknown): string => {
   if (normalized === "preferences_rollback_failed") {
     return "本地偏好写入失败且无法确认回滚结果，请重启应用后检查设置。";
   }
+  if (normalized === "pairing_state_changed") {
+    return "本地配对状态已发生变化，请重新检查后配对。";
+  }
   if (
     normalized === "network_failure" ||
     normalized.includes("fetch failed") ||

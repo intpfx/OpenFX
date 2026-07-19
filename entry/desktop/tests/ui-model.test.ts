@@ -1,4 +1,4 @@
-import { assert, assertEquals, assertRejects } from "@std/assert";
+import { assert, assertEquals, assertThrows } from "@std/assert";
 import { preferencesGet, preferencesSet } from "perry/system";
 
 import {
@@ -93,7 +93,7 @@ Deno.test("startup preferences are available synchronously before native app ass
   }
 });
 
-Deno.test("desktop preference patches merge against the latest persisted value", async () => {
+Deno.test("desktop preference patches merge against the latest persisted value", () => {
   const previous = preferencesGet(DESKTOP_PREFERENCES_KEY);
   try {
     preferencesSet(
@@ -106,8 +106,8 @@ Deno.test("desktop preference patches merge against the latest persisted value",
     );
     const store = createDesktopPreferenceStore();
 
-    await store.update({ launchMode: "menuBarOnly", reduceMotion: true });
-    const paired = await store.update({
+    store.update({ launchMode: "menuBarOnly", reduceMotion: true });
+    const paired = store.update({
       serverUrl: "https://openfx.example",
       nodeId: "node-1",
       nodeName: "Studio Mac",
@@ -129,7 +129,7 @@ Deno.test("desktop preference patches merge against the latest persisted value",
   }
 });
 
-Deno.test("desktop preference update snapshots persistence exactly once before commit", async () => {
+Deno.test("desktop preference update snapshots persistence exactly once before commit", () => {
   let persisted = JSON.stringify(DEFAULT_DESKTOP_PREFERENCES);
   let reads = 0;
   const store = createDesktopPreferenceStore({
@@ -142,13 +142,13 @@ Deno.test("desktop preference update snapshots persistence exactly once before c
     },
   });
 
-  await store.update({ launchMode: "menuBarOnly" });
+  store.update({ launchMode: "menuBarOnly" });
 
   assertEquals(reads, 1);
   assertEquals(JSON.parse(persisted).launchMode, "menuBarOnly");
 });
 
-Deno.test("desktop preference commit restores the persisted snapshot after a write-side failure", async () => {
+Deno.test("desktop preference commit restores the persisted snapshot after a write-side failure", () => {
   const original = JSON.stringify({
     ...DEFAULT_DESKTOP_PREFERENCES,
     launchMode: "menuBarOnly",
@@ -165,7 +165,7 @@ Deno.test("desktop preference commit restores the persisted snapshot after a wri
     },
   });
 
-  await assertRejects(
+  assertThrows(
     () => store.update({ nodeId: "node-new", nodeName: "Studio Mac" }),
     Error,
     "preferences_write_failed",
@@ -173,10 +173,10 @@ Deno.test("desktop preference commit restores the persisted snapshot after a wri
 
   assertEquals(writes, 2);
   assertEquals(persisted, original);
-  assertEquals(await store.load(), JSON.parse(original));
+  assertEquals(store.current(), JSON.parse(original));
 });
 
-Deno.test("desktop preference commit reports an indeterminate state when rollback also fails", async () => {
+Deno.test("desktop preference commit reports an indeterminate state when rollback also fails", () => {
   const original = JSON.stringify(DEFAULT_DESKTOP_PREFERENCES);
   let persisted = original;
   let writes = 0;
@@ -189,7 +189,7 @@ Deno.test("desktop preference commit reports an indeterminate state when rollbac
     },
   });
 
-  await assertRejects(
+  assertThrows(
     () => store.update({ nodeId: "node-new" }),
     Error,
     "preferences_rollback_failed",
@@ -336,6 +336,10 @@ Deno.test("desktop errors map protocol, network, IPv6, and Keychain failures to 
   assertEquals(
     describeDesktopError(new Error("preferences_rollback_failed")),
     "本地偏好写入失败且无法确认回滚结果，请重启应用后检查设置。",
+  );
+  assertEquals(
+    describeDesktopError(new Error("pairing_state_changed")),
+    "本地配对状态已发生变化，请重新检查后配对。",
   );
 });
 
