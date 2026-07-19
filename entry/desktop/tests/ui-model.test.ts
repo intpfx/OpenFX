@@ -1,5 +1,5 @@
 import { assert, assertEquals } from "@std/assert";
-import { preferencesSet } from "perry/system";
+import { preferencesGet, preferencesSet } from "perry/system";
 
 import {
   DEFAULT_DESKTOP_PREFERENCES,
@@ -69,21 +69,26 @@ Deno.test("desktop preferences preserve supported launch and motion choices", ()
 });
 
 Deno.test("startup preferences are available synchronously before native app assembly", () => {
-  preferencesSet(
-    DESKTOP_PREFERENCES_KEY,
-    JSON.stringify({
+  const previous = preferencesGet(DESKTOP_PREFERENCES_KEY);
+  try {
+    preferencesSet(
+      DESKTOP_PREFERENCES_KEY,
+      JSON.stringify({
+        nodeName: "Menu Mac",
+        launchMode: "menuBarOnly",
+        reduceMotion: true,
+      }),
+    );
+
+    assertEquals(readDesktopPreferencesSync(), {
+      ...DEFAULT_DESKTOP_PREFERENCES,
       nodeName: "Menu Mac",
       launchMode: "menuBarOnly",
       reduceMotion: true,
-    }),
-  );
-
-  assertEquals(readDesktopPreferencesSync(), {
-    ...DEFAULT_DESKTOP_PREFERENCES,
-    nodeName: "Menu Mac",
-    launchMode: "menuBarOnly",
-    reduceMotion: true,
-  });
+    });
+  } finally {
+    preferencesSet(DESKTOP_PREFERENCES_KEY, previous ?? "");
+  }
 });
 
 Deno.test("pairing readiness accepts only a complete valid combination", () => {
@@ -208,6 +213,14 @@ Deno.test("desktop errors map protocol, network, IPv6, and Keychain failures to 
     "网络连接失败，请检查服务端地址与网络后重试。",
   );
   assertEquals(
+    describeDesktopError(new TypeError("fetch failed")),
+    "网络连接失败，请检查服务端地址与网络后重试。",
+  );
+  assertEquals(
+    describeDesktopError(new TypeError("Invalid base64url value")),
+    "操作失败，请稍后重试。",
+  );
+  assertEquals(
     describeDesktopError(
       new Error("security_exit_1: User interaction is not allowed."),
     ),
@@ -230,6 +243,7 @@ Deno.test("UI snapshots use static core for reduced motion and contain no undefi
     monitorStatus: undefined,
     pairingError: undefined,
     pairingInProgress: false,
+    paired: true,
   });
 
   assertEquals(snapshot, {
@@ -258,6 +272,7 @@ Deno.test("unpaired UI snapshots provide deterministic fallback strings", () => 
     network: undefined,
     pairingInProgress: true,
     pairingError: new Error("node_pairing_used"),
+    paired: false,
   });
 
   assertEquals(snapshot.pairingState, "等待配对");
@@ -269,6 +284,22 @@ Deno.test("unpaired UI snapshots provide deterministic fallback strings", () => 
   assertEquals(snapshot.primaryAction, "正在配对…");
   assertEquals(snapshot.errorMessage, "配对码已使用，请在控制台重新生成。");
   assert(!containsUndefined(snapshot));
+});
+
+Deno.test("stale node id is unpaired when no Keychain pairing was restored", () => {
+  const snapshot = createDesktopUiSnapshot({
+    preferences: {
+      ...DEFAULT_DESKTOP_PREFERENCES,
+      nodeId: "stale-node-id",
+      serverUrl: "https://openfx.example",
+    },
+    paired: false,
+    pairingInProgress: false,
+  });
+
+  assertEquals(snapshot.pairingState, "等待配对");
+  assertEquals(snapshot.pairingDetail, "输入控制台 HTTPS 地址和 8 位配对码。");
+  assertEquals(snapshot.primaryAction, "配对");
 });
 
 const containsUndefined = (value: unknown): boolean => {

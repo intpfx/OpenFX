@@ -10,6 +10,7 @@ export interface DesktopUiSnapshotInput {
   monitorStatus?: string | null;
   pairingError?: unknown;
   pairingInProgress: boolean;
+  paired: boolean;
 }
 
 export interface DesktopUiSnapshot {
@@ -32,7 +33,7 @@ export interface DesktopUiSnapshot {
 export const createDesktopUiSnapshot = (
   input: DesktopUiSnapshotInput,
 ): DesktopUiSnapshot => {
-  const paired = input.preferences.nodeId.length > 0;
+  const paired = input.paired;
   const reduceMotion = input.preferences.reduceMotion;
   return {
     appTitle: "OpenFX Node",
@@ -94,7 +95,6 @@ export const describeDesktopError = (error: unknown): string => {
     return "节点与控制台协议不兼容，请更新 OpenFX Node。";
   }
   if (
-    error instanceof TypeError ||
     normalized === "network_failure" ||
     normalized.includes("fetch failed") ||
     normalized.includes("econnrefused") ||
@@ -102,8 +102,7 @@ export const describeDesktopError = (error: unknown): string => {
     normalized.includes("enotfound") ||
     normalized.includes("etimedout") ||
     normalized.includes("ehostunreach") ||
-    normalized.includes("socket hang up") ||
-    normalized.includes("network")
+    normalized.includes("socket hang up")
   ) {
     return "网络连接失败，请检查服务端地址与网络后重试。";
   }
