@@ -14,6 +14,7 @@ import {
   DESKTOP_PREFERENCES_KEY,
   readDesktopPreferencesSync,
 } from "../src/native/preferences.ts";
+import { createControlPanelPresentation } from "../src/ui/control-panel.ts";
 
 const READY_PAIRING: PairingReadinessInput = {
   serverUrl: "https://openfx.example",
@@ -300,6 +301,50 @@ Deno.test("stale node id is unpaired when no Keychain pairing was restored", () 
   assertEquals(snapshot.pairingState, "等待配对");
   assertEquals(snapshot.pairingDetail, "输入控制台 HTTPS 地址和 8 位配对码。");
   assertEquals(snapshot.primaryAction, "配对");
+});
+
+Deno.test("control panel presentation formats paired telemetry without undefined text", () => {
+  const presentation = createControlPanelPresentation({
+    preferences: {
+      ...DEFAULT_DESKTOP_PREFERENCES,
+      serverUrl: "https://openfx.example",
+      nodeId: "node-1",
+      nodeName: "Studio Mac",
+    },
+    paired: true,
+    serviceStatus: "节点服务已启动",
+    pairingStatus: "已恢复安全配对。",
+    overview: {
+      collectedAt: 1_000,
+      cpuUsagePercent: 37.5,
+      memoryUsedBytes: 8 * 1024 ** 3,
+      memoryTotalBytes: 16 * 1024 ** 3,
+      diskUsedBytes: 0,
+      diskTotalBytes: 0,
+      networkRxBytes: 0,
+      networkTxBytes: 0,
+      batteryPercent: null,
+      processCount: 321,
+      topProcesses: [],
+    },
+    publicIpv6: "240e:1234::9",
+    relay: {
+      enabled: true,
+      paired: true,
+      serverUrl: "https://openfx.example",
+      publicIpv6: "240e:1234::9",
+      lastReportedAt: 9_000,
+      errorMessage: null,
+    },
+    now: 10_000,
+  });
+
+  assertEquals(presentation.cpuStatus, "37.5%");
+  assertEquals(presentation.memoryStatus, "8.0 GB / 16.0 GB · 50.0%");
+  assertEquals(presentation.processStatus, "321 个");
+  assertEquals(presentation.relayStatus, "已启用");
+  assertEquals(presentation.lastReportStatus, "1 秒前");
+  assert(!containsUndefined(presentation));
 });
 
 const containsUndefined = (value: unknown): boolean => {

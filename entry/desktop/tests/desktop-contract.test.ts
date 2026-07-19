@@ -9,14 +9,16 @@ const PERRY_PATCH_URL = new URL(
   import.meta.url,
 );
 
-Deno.test("desktop entry is an accessory tray app with the required native boundaries", async () => {
+Deno.test("desktop entry keeps native tray and runtime boundaries in both launch modes", async () => {
   const source = await readTypeScriptTree(SRC_URL);
   const main = await Deno.readTextFile(MAIN_URL);
 
-  assert(main.includes('appSetActivationPolicy("accessory")'));
-  assert(main.includes("trayCreate("));
-  assert(main.includes('"perryShowMainWindow:"'));
-  assertEquals(main.includes("Window("), false);
+  assert(main.includes("appSetActivationPolicy("));
+  assert(main.includes("createNodeTray("));
+  assert(source.includes("trayCreate(TRAY_ICON_PATH)"));
+  assert(source.includes('TRAY_ICON_PATH = "OpenFXTrayTemplate.png"'));
+  assert(source.includes('"perryShowMainWindow:"'));
+  assertEquals(/\bWindow\(/.test(main), false);
   assert(source.includes('from "node:http"'));
   assert(source.includes('from "node:https"'));
   assert(source.includes('from "node:crypto"'));
@@ -131,6 +133,80 @@ Deno.test("pinned Perry runtime build includes the patched macOS UI archive", as
   assert(patch.includes("std::env::current_exe()"));
 });
 
+Deno.test("pinned Perry App config wires vibrancy, minimum size, and close-to-hide", async () => {
+  const build = await Deno.readTextFile(BUILD_RUNTIME_URL);
+  const smoke = await Deno.readTextFile(APP_SMOKE_URL);
+  const patch = await Deno.readTextFile(PERRY_PATCH_URL);
+
+  assert(
+    patch.includes('"vibrancy" =>') &&
+      patch.includes('"minWidth" =>') &&
+      patch.includes('"minHeight" =>'),
+    "the fixed Perry lowerer must recognize the native window properties used by OpenFX",
+  );
+  assert(
+    patch.includes('"perry_ui_app_set_vibrancy".to_string()') &&
+      patch.includes('"perry_ui_app_set_min_size".to_string()'),
+    "the recognized properties must call Perry's existing native AppKit FFI",
+  );
+  assert(
+    patch.includes("setReleasedWhenClosed: false"),
+    "closing the main window must only hide it so Dock and tray can reopen it",
+  );
+  assert(
+    build.includes('"-p",\n    "perry"') && build.includes('"dev-cli"'),
+    "the pinned build must include the compiler whose App lowerer was patched",
+  );
+  assert(
+    smoke.includes('join(perryLibDirectory, "perry")'),
+    "the real UI smoke must compile with the matching pinned compiler",
+  );
+});
+
+Deno.test("desktop entry assembles the immersive regular-or-menu-bar native app", async () => {
+  const source = await readTypeScriptTree(SRC_URL);
+  const main = await Deno.readTextFile(MAIN_URL);
+
+  assert(main.includes("readDesktopPreferencesSync()"));
+  assert(
+    main.includes('startupPreferences.launchMode === "menuBarOnly"') &&
+      main.includes('? "accessory"') && main.includes(': "regular"'),
+    "activation policy must be selected synchronously from persisted startup preferences",
+  );
+  assertEquals(main.includes('appSetActivationPolicy("accessory")'), false);
+  assert(main.includes("createCoreCanvasRenderer("));
+  assert(main.includes("createControlPanel("));
+  assert(main.includes("createNodeTray("));
+  assert(main.includes("width: 960"));
+  assert(main.includes("height: 640"));
+  assert(main.includes("minWidth: 880"));
+  assert(main.includes("minHeight: 580"));
+  assert(main.includes('vibrancy: "underWindowBackground"'));
+  assert(source.includes("textSetString("));
+  assertEquals(source.includes("WebView("), false);
+  for (
+    const label of [
+      "1 · 环境检查",
+      "2 · HTTPS 与配对码",
+      "3 · 钥匙串确认",
+      "CPU",
+      "内存",
+      "进程",
+      "公网 IPv6",
+      "Relay",
+      "Agent",
+      "上次上报",
+      "立即采样",
+      "重新配对",
+      "显示 OpenFX Node",
+      "节点状态",
+      "打开 OpenFX 控制台",
+      "退出",
+    ]
+  ) assert(source.includes(label), `missing desktop label: ${label}`);
+  assertEquals(source.includes('trayCreate("")'), false);
+});
+
 Deno.test("real desktop app smoke compiles main, checks IPv6 health, and captures UI", async () => {
   const smoke = await Deno.readTextFile(APP_SMOKE_URL);
 
@@ -147,6 +223,11 @@ Deno.test("real desktop app smoke compiles main, checks IPv6 health, and capture
   assert(smoke.includes("openfx-ui-only-link"));
   assert(smoke.includes("OpenFX UI-only link gate"));
   assert(smoke.includes("assertPng"));
+  assert(smoke.includes("entry/web/public/favicon-32x32.png"));
+  assert(smoke.includes("Deno.copyFile"));
+  assert(smoke.includes('"OpenFXTrayTemplate.png"'));
+  assert(smoke.includes("PERRY_UI_SCREENSHOT_ARTIFACT"));
+  assert(smoke.includes("screenshotArtifact"));
 });
 
 async function readTypeScriptTree(directory: URL): Promise<string> {

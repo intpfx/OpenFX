@@ -3,7 +3,21 @@ export interface PerryState<T> {
   set(nextValue: T): void;
 }
 
-type Widget = unknown;
+export type Widget = unknown;
+
+export interface Canvas {
+  setFillColor(r: number, g: number, b: number, a: number): void;
+  setStrokeColor(r: number, g: number, b: number, a: number): void;
+  setLineWidth(width: number): void;
+  fillRect(x: number, y: number, width: number, height: number): void;
+  clearRect(x: number, y: number, width: number, height: number): void;
+  beginPath(): void;
+  moveTo(x: number, y: number): void;
+  lineTo(x: number, y: number): void;
+  closePath(): void;
+  fill(): void;
+  stroke(): void;
+}
 
 export interface PerryWindow {
   setBody(body: Widget): void;
@@ -43,9 +57,25 @@ export const Toggle = (
   onChange,
 });
 
+export const toggleSetState = (_widget: Widget, _on: number): void => {};
+
 export const Divider = () => ({ type: "divider" });
 
 export const Spacer = () => ({ type: "spacer" });
+
+export const Canvas = (_width: number, _height: number): Canvas => ({
+  setFillColor() {},
+  setStrokeColor() {},
+  setLineWidth() {},
+  fillRect() {},
+  clearRect() {},
+  beginPath() {},
+  moveTo() {},
+  lineTo() {},
+  closePath() {},
+  fill() {},
+  stroke() {},
+});
 
 export const HStack = (spacing: number, children: unknown[]) => ({
   spacing,
@@ -70,6 +100,43 @@ export const widgetAddChild = (
 ): void => {
   section.children.push(child);
 };
+export const widgetSetWidth = (_widget: Widget, _width: number): void => {};
+export const widgetSetHeight = (_widget: Widget, _height: number): void => {};
+export const widgetSetHidden = (_widget: Widget, _hidden: number): void => {};
+export const widgetSetBackgroundColor = (
+  _widget: Widget,
+  _r: number,
+  _g: number,
+  _b: number,
+  _a: number,
+): void => {};
+export const widgetSetEdgeInsets = (
+  _widget: Widget,
+  _top: number,
+  _left: number,
+  _bottom: number,
+  _right: number,
+): void => {};
+export const stackSetAlignment = (_widget: Widget, _alignment: number): void => {};
+export const stackSetDetachesHidden = (_widget: Widget, _detach: number): void => {};
+export const textSetString = (_widget: Widget, _text: string): void => {};
+export const textSetColor = (
+  _widget: Widget,
+  _r: number,
+  _g: number,
+  _b: number,
+  _a: number,
+): void => {};
+export const textSetFontSize = (_widget: Widget, _size: number): void => {};
+export const textSetFontWeight = (
+  _widget: Widget,
+  _size: number,
+  _weight: number,
+): void => {};
+export const textSetWraps = (_widget: Widget, _maxWidth: number): void => {};
+export const textfieldSetString = (_widget: Widget, _text: string): void => {};
+export const buttonSetTitle = (_widget: Widget, _title: string): void => {};
+export const buttonSetBordered = (_widget: Widget, _bordered: number): void => {};
 
 export const clipboardWrite = (_text: string): void => {
   // Deno/LSP stub only.
@@ -86,6 +153,9 @@ export const App = (_config: {
   title: string;
   width: number;
   height: number;
+  minWidth?: number;
+  minHeight?: number;
+  vibrancy?: string;
   body: unknown;
 }): void => {
   // Deno/LSP stub only. Real builds are handled by Perry.
@@ -114,6 +184,8 @@ export const appSetTimer = (
   _intervalMs: number,
   _callback: () => void,
 ): void => {};
+export const onFrame = (_callback: (timestampMs: number, deltaMs: number) => void) => 1;
+export const cancelFrame = (_id: number): void => {};
 export const menuCreate = (): Widget => ({});
 export const menuAddItem = (
   _menu: Widget,
@@ -127,4 +199,5 @@ export const menuAddStandardAction = (
   _selector: string,
   _keyEquivalent: string,
 ): void => {};
+export const onActivate = (_callback: () => void): void => {};
 export const onTerminate = (_callback: () => void): void => {};

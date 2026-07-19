@@ -20,10 +20,16 @@ Deno.test("macOS adapter uses fixed executables and argument arrays for monitori
     startedAt: "Mon Jul 18 20:00:00 2026",
   });
   await adapter.openApplication("Safari");
+  await adapter.openConsole("https://console.example");
   await assertRejects(
     () => adapter.openApplication("../../Calculator"),
     Error,
     "application_not_allowed",
+  );
+  await assertRejects(
+    () => adapter.openConsole("http://console.example"),
+    Error,
+    "https_required",
   );
 
   assertEquals(calls, [
@@ -41,6 +47,7 @@ Deno.test("macOS adapter uses fixed executables and argument arrays for monitori
     },
     { file: "/bin/kill", args: ["-TERM", "42"] },
     { file: "/usr/bin/open", args: ["-a", "Safari"] },
+    { file: "/usr/bin/open", args: ["https://console.example/admin"] },
   ]);
 });
 

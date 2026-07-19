@@ -1,9 +1,14 @@
-import { fromFileUrl, join } from "jsr:@std/path@^1.1.4";
+import { dirname, fromFileUrl, join, resolve } from "jsr:@std/path@^1.1.4";
 
 import { collectBoundedChild } from "./integration-cleanup.ts";
 
 const REPOSITORY_ROOT = fromFileUrl(new URL("../../../", import.meta.url));
 const MAIN_PATH = join(REPOSITORY_ROOT, "entry/desktop/src/main.ts");
+const TRAY_ICON_SOURCE = join(
+  REPOSITORY_ROOT,
+  "entry/web/public/favicon-32x32.png",
+);
+const TRAY_ICON_NAME = "OpenFXTrayTemplate.png";
 const HEALTH_URL = "http://[::1]:24531/v1/health";
 const PERRY_UI_ARCHIVE = "libperry_ui_macos.a";
 const HEALTH_TIMEOUT_MS = 10_000;
@@ -16,7 +21,14 @@ if (!perryLibDirectory) {
     "desktop:app-smoke requires PERRY_LIB_DIR from deno task perry:runtime.",
   );
 }
+const perryExecutable = join(perryLibDirectory, "perry");
+const screenshotArtifactValue = Deno.env.get("PERRY_UI_SCREENSHOT_ARTIFACT")
+  ?.trim();
+const screenshotArtifact = screenshotArtifactValue
+  ? resolve(REPOSITORY_ROOT, screenshotArtifactValue)
+  : null;
 
+await assertFile(perryExecutable);
 await assertFile(join(perryLibDirectory, PERRY_UI_ARCHIVE));
 await assertPortAvailable();
 
@@ -27,6 +39,10 @@ const uiOnlySource = join(temporaryDirectory, "openfx-ui-only-link.ts");
 const uiOnlyExecutable = join(temporaryDirectory, "openfx-ui-only-link");
 
 try {
+  await Deno.copyFile(
+    TRAY_ICON_SOURCE,
+    join(temporaryDirectory, TRAY_ICON_NAME),
+  );
   await Deno.writeTextFile(
     uiOnlySource,
     `import { App, Text } from "perry/ui";
@@ -96,8 +112,14 @@ App({
     `Unexpected health payload: ${JSON.stringify(health)}`,
   );
   await assertPng(screenshot);
+  if (screenshotArtifact) {
+    await Deno.mkdir(dirname(screenshotArtifact), { recursive: true });
+    await Deno.copyFile(screenshot, screenshotArtifact);
+  }
   console.log(
-    `[openfx:desktop-app-smoke] PASS health=${HEALTH_URL} screenshot=${screenshot}`,
+    `[openfx:desktop-app-smoke] PASS health=${HEALTH_URL} screenshot=${
+      screenshotArtifact ?? screenshot
+    }`,
   );
 } finally {
   await Deno.remove(temporaryDirectory, { recursive: true }).catch(() => {});
@@ -108,7 +130,7 @@ async function runPerryCompile(
   output: string,
   libraryDirectory: string,
 ): Promise<void> {
-  const result = await new Deno.Command("perry", {
+  const result = await new Deno.Command(perryExecutable, {
     args: ["compile", input, "-o", output, "--no-auto-optimize"],
     cwd: REPOSITORY_ROOT,
     env: { ...Deno.env.toObject(), PERRY_LIB_DIR: libraryDirectory },

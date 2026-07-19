@@ -92,9 +92,29 @@ await run(
   source,
 );
 
+await run(
+  "rustup",
+  [
+    "run",
+    RUST_TOOLCHAIN,
+    "cargo",
+    "build",
+    "--release",
+    "-p",
+    "perry",
+    "--no-default-features",
+    "--features",
+    "dev-cli",
+    "--target-dir",
+    targetDir,
+  ],
+  source,
+);
+
 const libraryDirectory = join(targetDir, "release");
 for (
   const archive of [
+    "perry",
     "libperry_runtime.a",
     "libperry_stdlib.a",
     "libperry_ext_http.a",
@@ -107,6 +127,7 @@ for (
 }
 console.log(`[openfx:perry] runtime ready: ${libraryDirectory}`);
 console.log(`export PERRY_LIB_DIR=${shellQuote(libraryDirectory)}`);
+console.log(`export PATH=${shellQuote(libraryDirectory)}:"$PATH"`);
 
 interface BuildArgs {
   source?: string;

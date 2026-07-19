@@ -20,6 +20,7 @@ export interface MacSystemAdapter {
   openApplication(
     application: string,
   ): Promise<{ ok: boolean; application?: string; error?: string }>;
+  openConsole(serverUrl: string): Promise<{ ok: true; url: string }>;
 }
 
 const executeSystemFile: MacExecFile = (file, args) =>
@@ -112,6 +113,17 @@ export const createMacSystemAdapter = (
       }
       await execute("/usr/bin/open", ["-a", application]);
       return { ok: true, application };
+    },
+    async openConsole(serverUrl) {
+      let url: URL;
+      try {
+        url = new URL("/admin", serverUrl);
+      } catch {
+        throw new Error("https_required");
+      }
+      if (url.protocol !== "https:") throw new Error("https_required");
+      await execute("/usr/bin/open", [url.toString()]);
+      return { ok: true, url: url.toString() };
     },
   };
 };
