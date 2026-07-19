@@ -200,4 +200,7 @@ export const menuAddStandardAction = (
   _keyEquivalent: string,
 ): void => {};
 export const onActivate = (_callback: () => void): void => {};
+export const onMainWindowVisibilityChanged = (
+  _callback: (visible: boolean) => void,
+): void => {};
 export const onTerminate = (_callback: () => void): void => {};

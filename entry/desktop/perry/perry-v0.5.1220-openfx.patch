@@ -1,24 +1,74 @@
-diff --git a/crates/perry-ext-http/Cargo.toml b/crates/perry-ext-http/Cargo.toml
-index 84ebb7a..b0f6f88 100644
---- a/crates/perry-ext-http/Cargo.toml
-+++ b/crates/perry-ext-http/Cargo.toml
-@@ -23,7 +23,7 @@ perry-ext-http-server = { path = "../perry-ext-http-server" }
- # directly. Cargo feature unification keeps the stdlib feature on when
- # both stdlib and this crate link the same perry-runtime — no duplicate
- # symbols, no behaviour change for the default `full` build.
--perry-runtime = { workspace = true, features = ["external-ws-symbols"] }
-+perry-runtime = { workspace = true, features = ["default", "external-ws-symbols", "stdlib"] }
- reqwest = { version = "0.12", features = ["json", "rustls-tls", "http2"], default-features = false }
- tokio = { workspace = true }
- # Zero-copy body chunks: reqwest::Response::chunk() yields a refcounted
+diff --git a/crates/perry-api-manifest/src/entries/part_4.rs b/crates/perry-api-manifest/src/entries/part_4.rs
+index 4d38c85be22854d3f56b21eadeb382023f78116e..40b7243f9dd7343a6ab43b1df7a1f2cc8a07d858 100644
+--- a/crates/perry-api-manifest/src/entries/part_4.rs
++++ b/crates/perry-api-manifest/src/entries/part_4.rs
+@@ -426,0 +427 @@ pub(crate) const API_MANIFEST_PART_4: &[ApiEntry] = &[
++    method("perry/ui", "onMainWindowVisibilityChanged", false, None),
+diff --git a/crates/perry-codegen/src/lower_call/native/native_ui_appshell_branch.rs b/crates/perry-codegen/src/lower_call/native/native_ui_appshell_branch.rs
+index 20d38ae1418faab96e60a4db02e8195abc5bd4e4..d2ae31e04772758f726a911b66989f943d8ad219 100644
+--- a/crates/perry-codegen/src/lower_call/native/native_ui_appshell_branch.rs
++++ b/crates/perry-codegen/src/lower_call/native/native_ui_appshell_branch.rs
+@@ -241,0 +242,3 @@
++        let mut vibrancy_ptr: Option<String> = None;
++        let mut min_width_d: Option<String> = None;
++        let mut min_height_d: Option<String> = None;
+@@ -254,0 +258,6 @@
++                "minWidth" => {
++                    min_width_d = Some(lower_expr(ctx, val)?);
++                }
++                "minHeight" => {
++                    min_height_d = Some(lower_expr(ctx, val)?);
++                }
+@@ -264,0 +274,5 @@
++                "vibrancy" => {
++                    let v = lower_expr(ctx, val)?;
++                    let blk = ctx.block();
++                    vibrancy_ptr = Some(unbox_to_i64(blk, &v));
++                }
+@@ -292,0 +307,10 @@
++        ctx.pending_declares.push((
++            "perry_ui_app_set_vibrancy".to_string(),
++            crate::types::VOID,
++            vec![I64, I64],
++        ));
++        ctx.pending_declares.push((
++            "perry_ui_app_set_min_size".to_string(),
++            crate::types::VOID,
++            vec![I64, DOUBLE, DOUBLE],
++        ));
+@@ -317,0 +342,16 @@
++        if let Some(vibrancy) = vibrancy_ptr {
++            blk.call_void(
++                "perry_ui_app_set_vibrancy",
++                &[(I64, &app_handle), (I64, &vibrancy)],
++            );
++        }
++        if let (Some(min_width), Some(min_height)) = (min_width_d, min_height_d) {
++            blk.call_void(
++                "perry_ui_app_set_min_size",
++                &[
++                    (I64, &app_handle),
++                    (DOUBLE, &min_width),
++                    (DOUBLE, &min_height),
++                ],
++            );
++        }
+diff --git a/crates/perry-dispatch/src/ui_table/part_b.rs b/crates/perry-dispatch/src/ui_table/part_b.rs
+index 313a8f419579c5a33d111d02f94e67c8da903cc5..b569dc8a5d6395c8766eac8f040b66cbbb81bc44 100644
+--- a/crates/perry-dispatch/src/ui_table/part_b.rs
++++ b/crates/perry-dispatch/src/ui_table/part_b.rs
+@@ -744,0 +745,6 @@ pub(crate) const PERRY_UI_TABLE_PART_B: &[MethodRow] = &[
++    MethodRow {
++        method: "onMainWindowVisibilityChanged",
++        runtime: "perry_ui_app_on_main_window_visibility_changed",
++        args: &[ArgKind::Closure],
++        ret: ReturnKind::Void,
++    },
 diff --git a/crates/perry-ext-http-server/src/server.rs b/crates/perry-ext-http-server/src/server.rs
-index 3882f54..d83f02b 100644
+index 3882f5477cbae49f820835f2e1e595dc7713ccc1..d83f02b4def2e9fd962e154d580a195959dc039b 100644
 --- a/crates/perry-ext-http-server/src/server.rs
 +++ b/crates/perry-ext-http-server/src/server.rs
-@@ -857,7 +857,15 @@ pub unsafe extern "C" fn js_node_http_server_listen(server_handle: i64, args_arr
-         // The worker binds the primary-resolved port (shared listen(0)); a
-         // non-cluster server binds the requested port directly.
-         let bind_port = resolved.map(|p| p as i32).unwrap_or(port as i32);
+@@ -860 +860,9 @@ pub unsafe extern "C" fn js_node_http_server_listen(server_handle: i64, args_arr
 -        let bind_str = format!("{}:{}", host, bind_port);
 +        let bind_host = host
 +            .strip_prefix('[')
@@ -29,12 +79,16 @@ index 3882f54..d83f02b 100644
 +        } else {
 +            format!("{}:{}", bind_host, bind_port)
 +        };
-         let addr: SocketAddr = match bind_str.parse() {
-             Ok(a) => a,
-             Err(_) => SocketAddr::from(([0, 0, 0, 0], bind_port as u16)),
+diff --git a/crates/perry-ext-http/Cargo.toml b/crates/perry-ext-http/Cargo.toml
+index 84ebb7a4a37fabfa8ec70d3de30fc54761e0327a..b0f6f885ad8fadcc2f265d0252eba388a9df001c 100644
+--- a/crates/perry-ext-http/Cargo.toml
++++ b/crates/perry-ext-http/Cargo.toml
+@@ -26 +26 @@ perry-ext-http-server = { path = "../perry-ext-http-server" }
+-perry-runtime = { workspace = true, features = ["external-ws-symbols"] }
++perry-runtime = { workspace = true, features = ["default", "external-ws-symbols", "stdlib"] }
 diff --git a/crates/perry-ext-http/src/client_dispatch_ext.rs b/crates/perry-ext-http/src/client_dispatch_ext.rs
 new file mode 100644
-index 0000000..5326336
+index 0000000000000000000000000000000000000000..53263363c9918e76fd50fdce3d937ee25d456b3a
 --- /dev/null
 +++ b/crates/perry-ext-http/src/client_dispatch_ext.rs
 @@ -0,0 +1,134 @@
@@ -173,51 +227,29 @@ index 0000000..5326336
 +    1
 +}
 diff --git a/crates/perry-ext-http/src/lib.rs b/crates/perry-ext-http/src/lib.rs
-index d816401..bb15c7d 100644
+index d816401e4bf93df1b3440227e95105fbf30e80fc..af9a182e9fcd2165225d30c0a5bb47dd3d2dc121 100644
 --- a/crates/perry-ext-http/src/lib.rs
 +++ b/crates/perry-ext-http/src/lib.rs
-@@ -56,3 +56,4 @@
+@@ -55,0 +56 @@ use client_overload::{merge_url_and_options, method_for_overload, parse_client_a
 +mod client_dispatch_ext;
- mod client_request_surface;
--
-+
- // Client-side TLS options (rejectUnauthorized / ca / checkServerIdentity)
-@@ -250,3 +251,4 @@
- pub(crate) fn ensure_gc_scanner_registered() {
-     HTTP_GC_REGISTERED.call_once(|| {
+@@ -250,0 +252 @@ pub(crate) fn ensure_gc_scanner_registered() {
 +        client_dispatch_ext::ensure_dispatch_extensions_registered();
-         gc_register_mutable_root_scanner_named("perry-ext-http", scan_http_roots);
 diff --git a/crates/perry-runtime/src/event_pump.rs b/crates/perry-runtime/src/event_pump.rs
-index d3985581..d28a419a 100644
+index d39855815176ff7231c516649b6988113016e8a2..d28a419ac51a3537ce5e388ebb3b5318f68f48c3 100644
 --- a/crates/perry-runtime/src/event_pump.rs
 +++ b/crates/perry-runtime/src/event_pump.rs
-@@ -112,6 +112,7 @@ fn invoke_host_wake_callback() {
- // ============================================================================
- static WAIT_DRIVER_SLEEP: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
- static WAIT_DRIVER_WAKE: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
+@@ -114,0 +115 @@ static WAIT_DRIVER_WAKE: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
 +static WAIT_DRIVER_DRIVE: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
- /// `fast` — a brief, non-parking-when-idle native drive invoked when JS work is
- /// pending (so we're about to return to run microtasks, NOT park). On the
- /// single-thread runtime model, in-flight native tasks (a fetch's reqwest send,
-@@ -132,13 +133,16 @@ pub extern "C" fn js_register_wait_driver(
-     sleep: Option<extern "C" fn(u64)>,
-     fast: Option<extern "C" fn()>,
-     wake: Option<extern "C" fn()>,
+@@ -134,0 +136 @@ pub extern "C" fn js_register_wait_driver(
 +    drive: Option<extern "C" fn(u64)>,
- ) {
+@@ -136,2 +138,2 @@ pub extern "C" fn js_register_wait_driver(
 -    // Store wake + fast first so any notifier that observes a fresh sleep slot
 -    // also sees usable companions.
 +    // Store companions first so any caller that observes a fresh sleep slot
 +    // also sees usable callbacks.
-     let wake_ptr = wake.map(|f| f as *mut ()).unwrap_or(std::ptr::null_mut());
-     WAIT_DRIVER_WAKE.store(wake_ptr, Ordering::Release);
-     let fast_ptr = fast.map(|f| f as *mut ()).unwrap_or(std::ptr::null_mut());
-     WAIT_DRIVER_FAST.store(fast_ptr, Ordering::Release);
+@@ -141,0 +144,2 @@ pub extern "C" fn js_register_wait_driver(
 +    let drive_ptr = drive.map(|f| f as *mut ()).unwrap_or(std::ptr::null_mut());
 +    WAIT_DRIVER_DRIVE.store(drive_ptr, Ordering::Release);
-     let sleep_ptr = sleep.map(|f| f as *mut ()).unwrap_or(std::ptr::null_mut());
-     WAIT_DRIVER_SLEEP.store(sleep_ptr, Ordering::Release);
- }
 @@ -161,0 +166,16 @@ fn wait_driver_sleep(budget_ms: u64) -> bool {
 +/// Drive one bounded pending-work slice when a stdlib driver is registered.
 +/// Unlike the event-loop sleep callback, this path does not end early on an
@@ -235,11 +267,102 @@ index d3985581..d28a419a 100644
 +    1
 +}
 +
+diff --git a/crates/perry-runtime/src/frame.rs b/crates/perry-runtime/src/frame.rs
+index 605b0d89e57064a4d7909e3292f394bb3cede1ac..5f3bc55d3e7ed55804300c5a0820fefcb9185104 100644
+--- a/crates/perry-runtime/src/frame.rs
++++ b/crates/perry-runtime/src/frame.rs
+@@ -87,0 +88,7 @@ pub extern "C" fn js_cancel_frame(id: i64) {
++/// Cancel every pending one-shot frame callback. Native window hosts use this
++/// when the main window closes so a stale callback cannot survive invisibly.
++#[no_mangle]
++pub extern "C" fn js_cancel_all_frames() {
++    FRAME_CALLBACKS.lock().unwrap().clear();
++}
++
+@@ -196,0 +204,11 @@ mod tests {
++
++    #[test]
++    fn cancel_all_frames_removes_every_pending_callback() {
++        let _guard = TEST_LOCK.lock().unwrap();
++        clear_state();
++        js_on_frame_callback(0x5000);
++        js_on_frame_callback(0x6000);
++        assert_eq!(js_frame_has_pending(), 1);
++        js_cancel_all_frames();
++        assert_eq!(js_frame_has_pending(), 0);
++    }
+diff --git a/crates/perry-stdlib/src/common/async_bridge.rs b/crates/perry-stdlib/src/common/async_bridge.rs
+index 6a0b2e834244e1426b0546d82ff35c291f2f62de..cc61f4195a69acb742322d17035f89c59bae5709 100644
+--- a/crates/perry-stdlib/src/common/async_bridge.rs
++++ b/crates/perry-stdlib/src/common/async_bridge.rs
+@@ -328,0 +329,4 @@ pub fn drive_pending(budget_ms: u64) {
++extern "C" fn stdlib_drive_pending(budget_ms: u64) {
++    drive_pending(budget_ms);
++}
++
+@@ -441 +445 @@ where
+-pub fn ensure_pump_registered() {
++pub(crate) fn ensure_pump_core_registered() {
+@@ -448 +451,0 @@ pub fn ensure_pump_registered() {
+-            fn js_stdlib_init_dispatch();
+@@ -460,0 +464 @@ pub fn ensure_pump_registered() {
++            Some(stdlib_drive_pending),
+@@ -466,8 +469,0 @@ pub fn ensure_pump_registered() {
+-            // Wire up the runtime-level HANDLE_METHOD_DISPATCH so that
+-            // generic `jsObject.method(args)` calls on stdlib handle types
+-            // (net.Socket, Fastify, ioredis) fall back to the right FFI
+-            // even when codegen lost static type info — e.g. accessing the
+-            // socket through a struct field (`state.sock.write(...)`).
+-            // Until this was hooked in, HANDLE_METHOD_DISPATCH stayed None
+-            // and those calls silently returned undefined.
+-            js_stdlib_init_dispatch();
+@@ -477,0 +474,13 @@ pub fn ensure_pump_registered() {
++pub fn ensure_pump_registered() {
++    ensure_pump_core_registered();
++    // Keep lazy native entry points safe outside compiler-generated mains.
++    // The exported initializer calls the core helper above before installing
++    // dispatch, so this is cycle-free and idempotent in either direction.
++    unsafe {
++        extern "C" {
++            fn js_stdlib_init_dispatch();
++        }
++        js_stdlib_init_dispatch();
++    }
++}
++
+diff --git a/crates/perry-stdlib/src/common/dispatch/init.rs b/crates/perry-stdlib/src/common/dispatch/init.rs
+index 613024ea49fc2c256ed078fba12c9845d5d853ba..b4fc422e82a8b12898b22b536f3fee994d64a4a4 100644
+--- a/crates/perry-stdlib/src/common/dispatch/init.rs
++++ b/crates/perry-stdlib/src/common/dispatch/init.rs
+@@ -366,0 +367,7 @@ pub unsafe extern "C" fn js_stdlib_init_dispatch() {
++    crate::common::async_bridge::ensure_pump_core_registered();
++    use std::sync::Once;
++    static INIT: Once = Once::new();
++    INIT.call_once(|| unsafe { js_stdlib_init_dispatch_inner() });
++}
++
++unsafe fn js_stdlib_init_dispatch_inner() {
 diff --git a/crates/perry-ui-macos/src/app.rs b/crates/perry-ui-macos/src/app.rs
-index 72255abc..bc9d0263 100644
+index 72255abcb7230fbb633325f1535f55dec0819f31..667439c5192fb049850ec0660d18e15b90819de0 100644
 --- a/crates/perry-ui-macos/src/app.rs
 +++ b/crates/perry-ui-macos/src/app.rs
-@@ -1287,0 +1288,9 @@ define_class!(
+@@ -30,0 +31 @@ thread_local! {
++    static ON_MAIN_WINDOW_VISIBILITY_CHANGED_CALLBACK: RefCell<Option<f64>> = const { RefCell::new(None) };
+@@ -100,0 +102 @@ pub fn app_create(title_ptr: *const u8, width: f64, height: f64) -> i64 {
++        let _: () = msg_send![&*window, setReleasedWhenClosed: false];
+@@ -494,0 +497 @@ pub fn app_run(_app_handle: i64) {
++                invoke_main_window_visibility_changed_callback(false);
+@@ -498,0 +502 @@ pub fn app_run(_app_handle: i64) {
++            invoke_main_window_visibility_changed_callback(true);
+@@ -540,0 +545,5 @@ pub fn app_run(_app_handle: i64) {
++        APPS.with(|apps| {
++            for entry in apps.borrow().iter() {
++                let _: () = msg_send![&*entry.window, setDelegate: &*delegate];
++            }
++        });
+@@ -1228,0 +1238 @@ extern "C" {
++    fn js_cancel_all_frames();
+@@ -1287,0 +1298,9 @@ define_class!(
 +                    // Native services keep running after the main window is hidden.
 +                    // Always drain stdlib work and microtasks; only visual frame
 +                    // callbacks are allowed to pause with a hidden window.
@@ -249,7 +372,7 @@ index 72255abc..bc9d0263 100644
 +                    js_drive_registered_pending(0);
 +                    js_run_stdlib_pump();
 +                    js_promise_run_microtasks();
-@@ -1291,5 +1300,3 @@ define_class!(
+@@ -1291,5 +1310,3 @@ define_class!(
 -                    js_frame_pump_default();
 -                    js_promise_run_microtasks();
 -                    // Process deferred promise resolutions from perry-stdlib tokio workers.
@@ -258,7 +381,7 @@ index 72255abc..bc9d0263 100644
 +                    if main_window_is_visible() {
 +                        js_frame_pump_default();
 +                    }
-@@ -1306,0 +1314,8 @@ define_class!(
+@@ -1306,0 +1324,8 @@ define_class!(
 +fn main_window_is_visible() -> bool {
 +    APPS.with(|apps| {
 +        apps.borrow()
@@ -267,16 +390,72 @@ index 72255abc..bc9d0263 100644
 +    })
 +}
 +
+@@ -1355,0 +1381,2 @@ define_class!(
++                invoke_main_window_visibility_changed_callback(true);
++                invoke_activate_callback();
+@@ -1368,0 +1396,12 @@ define_class!(
++            invoke_main_window_visibility_changed_callback(true);
++            invoke_activate_callback();
++        }
++
++        /// Closing the main window must stop its pending one-shot frame work.
++        /// Background timers, HTTP, Relay, and Agent services remain active.
++        #[unsafe(method(windowWillClose:))]
++        fn window_will_close(&self, _notification: &AnyObject) {
++            invoke_main_window_visibility_changed_callback(false);
++            unsafe {
++                js_cancel_all_frames();
++            }
+@@ -1492,0 +1532,20 @@ fn invoke_activate_callback() {
++fn invoke_main_window_visibility_changed_callback(visible: bool) {
++    const TAG_TRUE: u64 = 0x7FFC_0000_0000_0004;
++    const TAG_FALSE: u64 = 0x7FFC_0000_0000_0003;
++
++    extern "C" {
++        fn js_closure_call1(closure: *const u8, arg: f64) -> f64;
++        fn js_nanbox_get_pointer(value: f64) -> i64;
++    }
++    let cb = ON_MAIN_WINDOW_VISIBILITY_CHANGED_CALLBACK.with(|c| *c.borrow());
++    if let Some(callback) = cb {
++        unsafe {
++            let ptr = js_nanbox_get_pointer(callback) as *const u8;
++            if !ptr.is_null() {
++                let value = if visible { TAG_TRUE } else { TAG_FALSE };
++                js_closure_call1(ptr, f64::from_bits(value));
++            }
++        }
++    }
++}
++
+@@ -1559,0 +1619,7 @@ pub fn register_on_activate(callback: f64) {
++/// Register a main-window visibility callback.
++pub fn register_on_main_window_visibility_changed(callback: f64) {
++    ON_MAIN_WINDOW_VISIBILITY_CHANGED_CALLBACK.with(|cb| {
++        *cb.borrow_mut() = Some(callback);
++    });
++}
++
+diff --git a/crates/perry-ui-macos/src/lib_ffi/dialogs_lifecycle.rs b/crates/perry-ui-macos/src/lib_ffi/dialogs_lifecycle.rs
+index 6ac1b1a5967ca9f9d034958de6589b7319a9f953..2a46d2ed796de38d2471bf41f287ff278ae0d2d3 100644
+--- a/crates/perry-ui-macos/src/lib_ffi/dialogs_lifecycle.rs
++++ b/crates/perry-ui-macos/src/lib_ffi/dialogs_lifecycle.rs
+@@ -102,0 +103,6 @@ pub extern "C" fn perry_ui_app_on_activate(callback: f64) {
++/// Register a main-window visibility callback.
++#[no_mangle]
++pub extern "C" fn perry_ui_app_on_main_window_visibility_changed(callback: f64) {
++    app::register_on_main_window_visibility_changed(callback);
++}
++
 diff --git a/crates/perry-ui-macos/src/screenshot.rs b/crates/perry-ui-macos/src/screenshot.rs
-index 25bf6807..7118245f 100644
+index 25bf6807aaefec0cd7df9313fe7151658bb11605..7118245fc5e7172850e9f8f31ce1bf92e24e6a33 100644
 --- a/crates/perry-ui-macos/src/screenshot.rs
 +++ b/crates/perry-ui-macos/src/screenshot.rs
-@@ -5,0 +6,1 @@
+@@ -5,0 +6 @@ use objc2::runtime::{AnyClass, AnyObject};
 +use objc2_core_foundation::CGRect;
-@@ -87,1 +88,1 @@
+@@ -87 +88 @@ pub extern "C" fn perry_ui_screenshot_capture(out_len: *mut usize) -> *mut u8 {
 -            return std::ptr::null_mut();
 +            return capture_main_view_png(out_len);
-@@ -135,0 +137,45 @@
+@@ -135,0 +137,45 @@ pub extern "C" fn perry_ui_screenshot_capture(out_len: *mut usize) -> *mut u8 {
 +
 +/// Capture the app-owned content view without Screen Recording permission.
 +/// `CGWindowListCreateImage` returns null on privacy-restricted macOS hosts,
@@ -323,15 +502,12 @@ index 25bf6807..7118245f 100644
 +    buf
 +}
 diff --git a/crates/perry-ui-macos/src/tray.rs b/crates/perry-ui-macos/src/tray.rs
-index 2f52976c..f6dc0472 100644
+index 2f52976c29d788480f4f9f913748637c1f22e741..b77185db91860793a522fbf8426f3aeb1fbc2ac5 100644
 --- a/crates/perry-ui-macos/src/tray.rs
 +++ b/crates/perry-ui-macos/src/tray.rs
-@@ -16,2 +16,3 @@ use std::cell::RefCell;
- use std::cell::RefCell;
- use std::collections::HashMap;
+@@ -17,0 +18 @@ use std::collections::HashMap;
 +use std::path::{Path, PathBuf};
-@@ -86,1 +87,32 @@ fn get_tray(handle: i64) -> Option<Retained<NSStatusItem>> {
- }
+@@ -86,0 +88,31 @@ fn get_tray(handle: i64) -> Option<Retained<NSStatusItem>> {
 +/// Resolve packaged tray assets before falling back to the caller's path.
 +/// A macOS app executable lives in `Contents/MacOS`; its resources are in the
 +/// sibling `Contents/Resources` directory. Standalone binaries try an adjacent
@@ -363,244 +539,30 @@ index 2f52976c..f6dc0472 100644
 +
 +    requested.to_path_buf()
 +}
-@@ -98,3 +131,4 @@ pub fn create(icon_path_ptr: *const u8) -> i64 {
-             if !path.is_empty() {
+@@ -99 +131,2 @@ pub fn create(icon_path_ptr: *const u8) -> i64 {
 -                let ns_path = NSString::from_str(path);
 +                let resolved_path = resolve_resource_path(path);
 +                let ns_path = NSString::from_str(&resolved_path.to_string_lossy());
-                 let image: Option<Retained<NSImage>> = msg_send![
-@@ -134,3 +168,4 @@ pub fn set_icon(handle: i64, icon_path_ptr: *const u8) {
-             if let Some(button) = item.button(mtm) {
+@@ -135 +168,2 @@ pub fn set_icon(handle: i64, icon_path_ptr: *const u8) {
 -                let ns_path = NSString::from_str(path);
 +                let resolved_path = resolve_resource_path(path);
 +                let ns_path = NSString::from_str(&resolved_path.to_string_lossy());
-                 let image: Option<Retained<NSImage>> = msg_send![
-diff --git a/crates/perry-stdlib/src/common/async_bridge.rs b/crates/perry-stdlib/src/common/async_bridge.rs
-index 6a0b2e83..cc61f419 100644
---- a/crates/perry-stdlib/src/common/async_bridge.rs
-+++ b/crates/perry-stdlib/src/common/async_bridge.rs
-@@ -328,0 +329,4 @@ pub fn drive_pending(budget_ms: u64) {
-+extern "C" fn stdlib_drive_pending(budget_ms: u64) {
-+    drive_pending(budget_ms);
-+}
-+
-@@ -438,14 +442,13 @@ where
- /// `spawn_for_promise` — must register the pump explicitly the first time
- /// they're touched. Otherwise the runtime exits immediately when `main`
- /// returns and the close/line callbacks never fire.
--pub fn ensure_pump_registered() {
-+pub(crate) fn ensure_pump_core_registered() {
-     use std::sync::Once;
-     static REGISTER: Once = Once::new();
-     REGISTER.call_once(|| {
-         extern "C" {
-             fn js_register_stdlib_pump(f: extern "C" fn() -> i32);
-             fn js_register_stdlib_has_active(f: extern "C" fn() -> i32);
--            fn js_stdlib_init_dispatch();
-         }
-         ensure_gc_scanner_registered();
-         // Unified single-thread async model: install the wait-driver so the main
-@@ -458,19 +462,12 @@ pub fn ensure_pump_registered() {
-             Some(stdlib_wait_driver),
-             Some(stdlib_fast_drive),
-             Some(stdlib_wait_wake),
-+            Some(stdlib_drive_pending),
-         );
-         Lazy::force(&RUNTIME);
-         unsafe {
-             js_register_stdlib_pump(js_stdlib_process_pending);
-             js_register_stdlib_has_active(js_stdlib_has_active_handles);
--            // Wire up the runtime-level HANDLE_METHOD_DISPATCH so that
--            // generic `jsObject.method(args)` calls on stdlib handle types
--            // (net.Socket, Fastify, ioredis) fall back to the right FFI
--            // even when codegen lost static type info — e.g. accessing the
--            // socket through a struct field (`state.sock.write(...)`).
--            // Until this was hooked in, HANDLE_METHOD_DISPATCH stayed None
--            // and those calls silently returned undefined.
--            js_stdlib_init_dispatch();
-         }
-     });
- }
-@@ -477,0 +474,13 @@ pub fn ensure_pump_registered() {
-+pub fn ensure_pump_registered() {
-+    ensure_pump_core_registered();
-+    // Keep lazy native entry points safe outside compiler-generated mains.
-+    // The exported initializer calls the core helper above before installing
-+    // dispatch, so this is cycle-free and idempotent in either direction.
-+    unsafe {
-+        extern "C" {
-+            fn js_stdlib_init_dispatch();
-+        }
-+        js_stdlib_init_dispatch();
-+    }
-+}
-+
- /// Process all pending promise resolutions
- ///
- /// This should be called from the main event loop to process async completions.
-diff --git a/crates/perry-stdlib/src/common/dispatch/init.rs b/crates/perry-stdlib/src/common/dispatch/init.rs
-index 613024ea..b4fc422e 100644
---- a/crates/perry-stdlib/src/common/dispatch/init.rs
-+++ b/crates/perry-stdlib/src/common/dispatch/init.rs
-@@ -364,6 +364,13 @@ unsafe extern "C" fn js_node_http_native_dispatch(
- /// Must be called before any user code runs.
- #[no_mangle]
- pub unsafe extern "C" fn js_stdlib_init_dispatch() {
-+    crate::common::async_bridge::ensure_pump_core_registered();
-+    use std::sync::Once;
-+    static INIT: Once = Once::new();
-+    INIT.call_once(|| unsafe { js_stdlib_init_dispatch_inner() });
-+}
-+
-+unsafe fn js_stdlib_init_dispatch_inner() {
-     extern "C" {
-         fn js_register_handle_method_dispatch(
-             f: unsafe extern "C" fn(i64, *const u8, usize, *const f64, usize) -> f64,
-diff --git a/crates/perry-codegen/src/lower_call/native/native_ui_appshell_branch.rs b/crates/perry-codegen/src/lower_call/native/native_ui_appshell_branch.rs
-index 20d38ae1..d2ae31e0 100644
---- a/crates/perry-codegen/src/lower_call/native/native_ui_appshell_branch.rs
-+++ b/crates/perry-codegen/src/lower_call/native/native_ui_appshell_branch.rs
-@@ -239,6 +239,9 @@
-         let mut body_handle: String = "0".to_string();
-         let mut icon_ptr: Option<String> = None;
-         let mut window_state_ptr: Option<String> = None;
-+        let mut vibrancy_ptr: Option<String> = None;
-+        let mut min_width_d: Option<String> = None;
-+        let mut min_height_d: Option<String> = None;
-         for (key, val) in &props {
-             match key.as_str() {
-                 "title" => {
-@@ -252,6 +255,12 @@
-                 "height" => {
-                     height_d = lower_expr(ctx, val)?;
-                 }
-+                "minWidth" => {
-+                    min_width_d = Some(lower_expr(ctx, val)?);
-+                }
-+                "minHeight" => {
-+                    min_height_d = Some(lower_expr(ctx, val)?);
-+                }
-                 "body" => {
-                     let v = lower_expr(ctx, val)?;
-                     let blk = ctx.block();
-@@ -262,6 +271,11 @@
-                     let blk = ctx.block();
-                     icon_ptr = Some(unbox_to_i64(blk, &v));
-                 }
-+                "vibrancy" => {
-+                    let v = lower_expr(ctx, val)?;
-+                    let blk = ctx.block();
-+                    vibrancy_ptr = Some(unbox_to_i64(blk, &v));
-+                }
-                 // Issue #1280 — `windowState: "normal" | "maximized" | "fullscreen"`.
-                 // Forwarded to perry_ui_app_set_window_state; each platform
-                 // backend applies the state at app_run time.
-@@ -290,6 +304,16 @@
-             crate::types::VOID,
-             vec![I64, I64],
-         ));
-+        ctx.pending_declares.push((
-+            "perry_ui_app_set_vibrancy".to_string(),
-+            crate::types::VOID,
-+            vec![I64, I64],
-+        ));
-+        ctx.pending_declares.push((
-+            "perry_ui_app_set_min_size".to_string(),
-+            crate::types::VOID,
-+            vec![I64, DOUBLE, DOUBLE],
-+        ));
-         ctx.pending_declares.push((
-             "perry_ui_app_set_body".to_string(),
-             crate::types::VOID,
-@@ -315,6 +339,22 @@
-                 &[(I64, &app_handle), (I64, &state_ptr)],
-             );
-         }
-+        if let Some(vibrancy) = vibrancy_ptr {
-+            blk.call_void(
-+                "perry_ui_app_set_vibrancy",
-+                &[(I64, &app_handle), (I64, &vibrancy)],
-+            );
-+        }
-+        if let (Some(min_width), Some(min_height)) = (min_width_d, min_height_d) {
-+            blk.call_void(
-+                "perry_ui_app_set_min_size",
-+                &[
-+                    (I64, &app_handle),
-+                    (DOUBLE, &min_width),
-+                    (DOUBLE, &min_height),
-+                ],
-+            );
-+        }
-         blk.call_void(
-             "perry_ui_app_set_body",
-             &[(I64, &app_handle), (I64, &body_handle)],
-diff --git a/crates/perry-ui-macos/src/app.rs b/crates/perry-ui-macos/src/app.rs
-index 6a0b2e83..515ce7db 100644
---- a/crates/perry-ui-macos/src/app.rs
-+++ b/crates/perry-ui-macos/src/app.rs
-@@ -100,0 +101 @@ pub fn app_create(title_ptr: *const u8, width: f64, height: f64) -> i64 {
-+        let _: () = msg_send![&*window, setReleasedWhenClosed: false];
 diff --git a/types/perry/ui/index.d.ts b/types/perry/ui/index.d.ts
-index 955f0d33..669ac35a 100644
+index 955f0d33bf6369d5758306ec827c1ebd79dccf47..d91d638e5fc7d163ca808511ac2e0d0f7f13184c 100644
 --- a/types/perry/ui/index.d.ts
 +++ b/types/perry/ui/index.d.ts
-@@ -219,6 +219,9 @@ export function App(config: {
-     title: string;
-     width: number;
-     height: number;
+@@ -221,0 +222,3 @@ export function App(config: {
 +    minWidth?: number;
 +    minHeight?: number;
 +    vibrancy?: string;
-     icon?: string;
-     body: Widget;
-     /**
-diff --git a/crates/perry-runtime/src/frame.rs b/crates/perry-runtime/src/frame.rs
-index 605b0d8..5f3bc55 100644
---- a/crates/perry-runtime/src/frame.rs
-+++ b/crates/perry-runtime/src/frame.rs
-@@ -87,0 +88,7 @@
-+/// Cancel every pending one-shot frame callback. Native window hosts use this
-+/// when the main window closes so a stale callback cannot survive invisibly.
-+#[no_mangle]
-+pub extern "C" fn js_cancel_all_frames() {
-+    FRAME_CALLBACKS.lock().unwrap().clear();
-+}
+@@ -1828,0 +1832,10 @@ export function onActivate(callback: () => void): void;
++/**
++ * Register a callback for native main-window visibility changes. The callback
++ * receives `true` after the initial show or a reopen and `false` before the
++ * main window closes. Background application services continue running while
++ * the window is hidden.
++ */
++export function onMainWindowVisibilityChanged(
++    callback: (visible: boolean) => void,
++): void;
 +
-@@ -196,0 +204,11 @@
-+
-+    #[test]
-+    fn cancel_all_frames_removes_every_pending_callback() {
-+        let _guard = TEST_LOCK.lock().unwrap();
-+        clear_state();
-+        js_on_frame_callback(0x5000);
-+        js_on_frame_callback(0x6000);
-+        assert_eq!(js_frame_has_pending(), 1);
-+        js_cancel_all_frames();
-+        assert_eq!(js_frame_has_pending(), 0);
-+    }
-diff --git a/crates/perry-ui-macos/src/app.rs b/crates/perry-ui-macos/src/app.rs
-index c0f98e7..0a116d7 100644
---- a/crates/perry-ui-macos/src/app.rs
-+++ b/crates/perry-ui-macos/src/app.rs
-@@ -541,0 +542,5 @@
-+        APPS.with(|apps| {
-+            for entry in apps.borrow().iter() {
-+                let _: () = msg_send![&*entry.window, setDelegate: &*delegate];
-+            }
-+        });
-@@ -1229,0 +1235,1 @@
-+    fn js_cancel_all_frames();
-@@ -1371,0 +1378,1 @@
-+                invoke_activate_callback();
-@@ -1384,0 +1392,10 @@
-+            invoke_activate_callback();
-+        }
-+
-+        /// Closing the main window must stop its pending one-shot frame work.
-+        /// Background timers, HTTP, Relay, and Agent services remain active.
-+        #[unsafe(method(windowWillClose:))]
-+        fn window_will_close(&self, _notification: &AnyObject) {
-+            unsafe {
-+                js_cancel_all_frames();
-+            }

@@ -308,6 +308,90 @@ Deno.test("renderer keeps exactly one pending Perry frame across repeated update
   assertEquals(paintCount, 1);
 });
 
+Deno.test("renderer stays idle while hidden and resumes exactly one render path", () => {
+  let staticPaintCount = 0;
+  const staticRenderer = createCoreCanvasRenderer({
+    width: 560,
+    height: 576,
+    initialMetrics: {
+      state: "online",
+      cpuUsagePercent: 25,
+      memoryUsagePercent: 35,
+      reduceMotion: true,
+    },
+    now: () => 1_000,
+    canvas: {
+      ...createRecordingCanvas(),
+      clearRect() {
+        staticPaintCount += 1;
+      },
+    } as unknown as import("perry/ui").Canvas,
+  });
+
+  staticRenderer.start();
+  assertEquals(staticPaintCount, 1);
+  staticRenderer.setWindowVisible(false);
+  staticRenderer.update({
+    state: "degraded",
+    cpuUsagePercent: 70,
+    memoryUsagePercent: 80,
+    reduceMotion: true,
+  });
+  assertEquals(staticPaintCount, 1, "hidden metrics must not paint synchronously");
+  staticRenderer.setWindowVisible(false);
+  staticRenderer.setWindowVisible(true);
+  staticRenderer.setWindowVisible(true);
+  assertEquals(staticPaintCount, 2, "reopen must paint one static frame");
+
+  let animatedPaintCount = 0;
+  let nextFrameId = 0;
+  const pendingFrames = new Set<number>();
+  const animatedRenderer = createCoreCanvasRenderer({
+    width: 560,
+    height: 576,
+    initialMetrics: {
+      state: "online",
+      cpuUsagePercent: 25,
+      memoryUsagePercent: 35,
+      reduceMotion: false,
+    },
+    canvas: {
+      ...createRecordingCanvas(),
+      clearRect() {
+        animatedPaintCount += 1;
+      },
+    } as unknown as import("perry/ui").Canvas,
+    frameDriver: {
+      request() {
+        nextFrameId += 1;
+        pendingFrames.add(nextFrameId);
+        return nextFrameId;
+      },
+      cancel(id) {
+        pendingFrames.delete(id);
+      },
+    },
+  });
+
+  animatedRenderer.start();
+  assertEquals(animatedPaintCount, 1);
+  assertEquals(pendingFrames.size, 1);
+  animatedRenderer.setWindowVisible(false);
+  assertEquals(pendingFrames.size, 0);
+  animatedRenderer.update({
+    state: "degraded",
+    cpuUsagePercent: 70,
+    memoryUsagePercent: 80,
+    reduceMotion: false,
+  });
+  assertEquals(animatedPaintCount, 1);
+  assertEquals(pendingFrames.size, 0);
+  animatedRenderer.setWindowVisible(true);
+  animatedRenderer.setWindowVisible(true);
+  assertEquals(animatedPaintCount, 1);
+  assertEquals(pendingFrames.size, 1, "reopen must schedule one animation loop");
+});
+
 Deno.test("renderer carries frame remainder to average 24 FPS on a 60 Hz clock", () => {
   let paintCount = 0;
   const queue: Array<(timestampMs: number, deltaMs: number) => void> = [];

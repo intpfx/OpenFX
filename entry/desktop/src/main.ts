@@ -4,6 +4,7 @@ import {
   appSetTimer,
   HStack,
   onActivate,
+  onMainWindowVisibilityChanged,
   onTerminate,
   State,
 } from "perry/ui";
@@ -331,11 +332,13 @@ createNodeTray({
 });
 
 onActivate(() => {
-  lifecycle.mainWindowShown();
-  coreRenderer?.stop();
-  coreRenderer?.setWindowVisible(true);
-  coreRenderer?.start();
   refreshPresentation();
+});
+
+onMainWindowVisibilityChanged((visible) => {
+  if (visible) lifecycle.mainWindowShown();
+  else lifecycle.mainWindowClosed();
+  coreRenderer?.setWindowVisible(visible);
 });
 
 onTerminate(() => {

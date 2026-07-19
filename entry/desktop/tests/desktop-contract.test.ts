@@ -77,6 +77,65 @@ Deno.test("desktop entry schedules services from the native App event loop", asy
   );
 });
 
+Deno.test("native main-window visibility owns renderer lifecycle", async () => {
+  const main = await Deno.readTextFile(MAIN_URL);
+  const stub = await Deno.readTextFile(
+    new URL("../src/perry-ui-stub.ts", import.meta.url),
+  );
+  const patch = await Deno.readTextFile(PERRY_PATCH_URL);
+  const visibilityHook = main.slice(
+    main.indexOf("onMainWindowVisibilityChanged((visible) => {"),
+    main.indexOf("onTerminate(() => {"),
+  );
+  const activateHook = main.slice(
+    main.indexOf("onActivate(() => {"),
+    main.indexOf("onMainWindowVisibilityChanged((visible) => {"),
+  );
+
+  assert(
+    main.indexOf("onMainWindowVisibilityChanged((visible) => {") <
+      main.indexOf("App({"),
+    "visibility callback must be registered before the blocking App call",
+  );
+  assert(
+    visibilityHook.includes("lifecycle.mainWindowShown();") &&
+      visibilityHook.includes("lifecycle.mainWindowClosed();") &&
+      visibilityHook.includes("coreRenderer?.setWindowVisible(visible);"),
+    "native visibility must update both service-preserving lifecycle state and rendering",
+  );
+  assertEquals(visibilityHook.includes("lifecycle.terminate()"), false);
+  assertEquals(activateHook.includes("coreRenderer?.stop()"), false);
+  assertEquals(activateHook.includes("coreRenderer?.start()"), false);
+  assertEquals(activateHook.includes("setWindowVisible"), false);
+  assert(stub.includes("onMainWindowVisibilityChanged"));
+
+  for (
+    const apiSurface of [
+      'method("perry/ui", "onMainWindowVisibilityChanged"',
+      'method: "onMainWindowVisibilityChanged"',
+      "perry_ui_app_on_main_window_visibility_changed",
+      "register_on_main_window_visibility_changed",
+      "export function onMainWindowVisibilityChanged",
+    ]
+  ) {
+    assert(patch.includes(apiSurface), `missing Perry visibility API: ${apiSurface}`);
+  }
+  assertEquals(
+    patch.match(/invoke_main_window_visibility_changed_callback\(true\);/g)?.length,
+    3,
+    "initial show, Dock reopen, and the show-window selector must emit visible",
+  );
+  assert(
+    patch.includes("invoke_main_window_visibility_changed_callback(false);") &&
+      patch.includes("js_cancel_all_frames();"),
+    "native close must propagate hidden state and cancel only frame callbacks",
+  );
+  assert(
+    patch.includes("TAG_TRUE") && patch.includes("TAG_FALSE"),
+    "native visibility callback must pass a real Perry boolean",
+  );
+});
+
 Deno.test("pinned Perry runtime build includes the patched macOS UI archive", async () => {
   const build = await Deno.readTextFile(BUILD_RUNTIME_URL);
   const patch = await Deno.readTextFile(PERRY_PATCH_URL);
@@ -168,7 +227,7 @@ Deno.test("pinned Perry App config wires vibrancy, minimum size, and close-to-hi
     "closing the native main window must clear pending frame callbacks",
   );
   assert(
-    patch.match(/invoke_activate_callback\(\);/g)?.length === 2,
+    patch.match(/^\+\s+invoke_activate_callback\(\);/gm)?.length === 2,
     "Dock reopen and the Show Main Window selector must both resume the existing activation lifecycle",
   );
   assert(
@@ -202,9 +261,9 @@ Deno.test("desktop entry assembles the immersive regular-or-menu-bar native app"
   assert(main.includes('vibrancy: "underWindowBackground"'));
   assert(
     main.includes(
-      "onActivate(() => {\n  lifecycle.mainWindowShown();\n  coreRenderer?.stop();\n  coreRenderer?.setWindowVisible(true);\n  coreRenderer?.start();",
+      "onActivate(() => {\n  refreshPresentation();\n});",
     ),
-    "native reopen must reset the stale frame token before scheduling a fresh frame",
+    "activation may refresh data, but native visibility owns renderer restart",
   );
   assert(source.includes("textSetString("));
   assertEquals(source.includes("WebView("), false);

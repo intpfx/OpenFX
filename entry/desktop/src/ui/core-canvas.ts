@@ -153,6 +153,7 @@ export const createCoreCanvasRenderer = (
       else schedule();
     },
     setWindowVisible(visible) {
+      if (windowVisible === visible) return;
       windowVisible = visible;
       if (!visible) {
         cancelPending();
