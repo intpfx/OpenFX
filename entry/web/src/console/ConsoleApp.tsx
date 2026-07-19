@@ -1139,7 +1139,7 @@ export function PairingGuidePanel(props: {
         )
         : null}
 
-      {!guide.connected
+      {guide.showInstructions
         ? (
           <>
             <ol className="console-pairing-steps" aria-label="Perry Mac 配对步骤">

@@ -93,7 +93,8 @@ header 不再授权 `/api/admin/*` 或 `/api/console/*`。
 
 “Mac 配对”卡片会复制当前 HTTPS origin、显示 8 位短码与实时倒计时，并说明公网 IPv6 检测和
 macOS Keychain 写入要求。HTTP 页面（包括本地预览）固定禁用配对码生成并提示 “请通过 HTTPS
-控制台打开”。节点上线继续由现有 `heartbeat` SSE 和概览状态驱动，卡片会
+控制台打开”，且不会把 HTTP origin 显示为 HTTPS 服务端地址。节点上线继续由现有
+`heartbeat` SSE 和概览状态驱动，卡片会
 自动切换为“节点已连接”，无需手动刷新，也不会把管理员或节点凭据写入浏览器存储。
 
 Relay 不接受目标 URL。服务端只连接当前配对节点上报的全局 IPv6，端口固定为

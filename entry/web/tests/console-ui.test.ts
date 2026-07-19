@@ -255,6 +255,7 @@ Deno.test("pairing guide exposes only the current HTTPS origin to Perry", () => 
     generateDisabled: false,
     transportMessage: null,
     serverCopyLabel: "复制 OpenFX HTTPS 服务端地址",
+    showInstructions: true,
     steps: [
       "检测公网 IPv6",
       "输入 HTTPS 地址与 8 位配对码",
@@ -276,11 +277,26 @@ Deno.test("pairing guide exposes only the current HTTPS origin to Perry", () => 
       pairing: null,
       now: 1_000,
     })).toMatchObject({
+      serverUrl: null,
       canGenerate: false,
       generateDisabled: true,
       transportMessage: "请通过 HTTPS 控制台打开",
     });
   }
+});
+
+Deno.test("pairing guide never labels an HTTP origin as an HTTPS server address", () => {
+  expect(derivePairingGuide({
+    currentUrl: "http://localhost:8000/admin",
+    availability: "unknown",
+    pairing: null,
+    now: 1_000,
+  })).toMatchObject({
+    serverUrl: null,
+    canGenerate: false,
+    generateDisabled: true,
+    transportMessage: "请通过 HTTPS 控制台打开",
+  });
 });
 
 Deno.test("pairing countdown is deterministic and clamps every expired value to zero", () => {
@@ -330,7 +346,7 @@ Deno.test("pairing countdown subscription clears its timer once and never leaks"
   expect(cleared).toEqual([17]);
 });
 
-Deno.test("pairing guide switches to connected without hiding a newly generated rotation code", () => {
+Deno.test("pairing guide rendering keeps online rotation code and instructions visible", () => {
   expect(derivePairingGuide({
     currentUrl: "https://console.openfx.example/admin",
     availability: "online",
@@ -341,6 +357,7 @@ Deno.test("pairing guide switches to connected without hiding a newly generated 
     stateLabel: "节点已连接",
     code: "ABC2EFGH",
     countdown: { label: "10:00", expired: false },
+    showInstructions: true,
   });
   expect(derivePairingGuide({
     currentUrl: "https://console.openfx.example/admin",
@@ -351,6 +368,17 @@ Deno.test("pairing guide switches to connected without hiding a newly generated 
     connected: false,
     stateLabel: "等待 Mac 节点",
     code: "ABC2EFGH",
+    showInstructions: true,
+  });
+  expect(derivePairingGuide({
+    currentUrl: "https://console.openfx.example/admin",
+    availability: "online",
+    pairing: null,
+    now: 1_000,
+  })).toMatchObject({
+    connected: true,
+    code: null,
+    showInstructions: false,
   });
 });
 

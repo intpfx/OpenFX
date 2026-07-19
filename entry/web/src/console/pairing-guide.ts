@@ -18,6 +18,7 @@ export type PairingGuide = {
   transportMessage: string | null;
   serverCopyLabel: "复制 OpenFX HTTPS 服务端地址";
   steps: readonly [string, string, string];
+  showInstructions: boolean;
   connected: boolean;
   stateLabel: "节点已连接" | "等待 Mac 节点" | "配对码已失效";
   code: string | null;
@@ -64,7 +65,7 @@ export function derivePairingGuide(input: {
     ? formatPairingCountdown(input.pairing.expiresAt, input.now)
     : null;
   return {
-    serverUrl: origin?.origin ?? null,
+    serverUrl: canGenerate ? origin.origin : null,
     canGenerate,
     generateDisabled: !canGenerate,
     transportMessage: canGenerate ? null : "请通过 HTTPS 控制台打开",
@@ -74,6 +75,7 @@ export function derivePairingGuide(input: {
       "输入 HTTPS 地址与 8 位配对码",
       "写入 macOS Keychain",
     ],
+    showInstructions: !connected || Boolean(input.pairing && !countdown?.expired),
     connected,
     stateLabel: connected
       ? "节点已连接"
