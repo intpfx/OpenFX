@@ -48,7 +48,8 @@ Mac 节点，以及运行时无关的 `domains/e` Agent/审批内核。Web 控�
 3. Perry 节点通过 HTTPS 提交配对码和经本机、外部观察共同确认的公网 IPv6。服务端只在
    初次配对或上述同请求传输重试中返回 32 字节 `nodeSecret`。
 4. 节点把 secret 写入 macOS Keychain 的 `OpenFX Node` service；普通偏好只保存
-   `nodeId`、节点名、服务端 URL、Relay 开关和配对时间。
+   `nodeId`、节点名、服务端 URL、Relay 开关、配对时间、下次启动模式 `launchMode` 与
+   静态核心开关 `reduceMotion`。重新配对会保留两个用户界面选择，绝不把 secret 写入偏好。
 5. 服务端只保存校验摘要和由 `OPENFX_NODE_CREDENTIAL_KEY` 加密的凭据副本。浏览器 API
    不返回 secret、摘要、密文或解密结果。
 
@@ -173,13 +174,26 @@ HTTPS 配对、签名心跳与遥测、OMLX 离线降级、SSE 续接，以及�
 
 补丁文件是
 [`../entry/desktop/perry/perry-v0.5.1220-openfx.patch`](../entry/desktop/perry/perry-v0.5.1220-openfx.patch)，
-构建入口是 `deno task perry:runtime`。它固定官方 `v0.5.1220` 提交和 Rust
-1.96.1，处理三个原生边界：
+构建入口是 `deno task perry:runtime`。它只接受处于精确提交
+`06137858dc8c6f80975238377138f2f948d6ef88` 且没有已跟踪或未跟踪改动的源码，再用 Rust
+1.96.1 构建。补丁或编译产物不能复用为下一次构建输入；必须重新取一个干净 clone。
+
+补丁处理以下原生边界：
 
 - 外部 HTTP 静态库启用完整 runtime 并排除会遮蔽真实 stdlib 的 no-op stubs；
 - `node:http` server 对 `::` 和其他 IPv6 listen host 使用带方括号的 socket 地址；
 - 外部 `ClientRequest` 注册自己的方法/属性分派扩展，避免共享小整数 handle ID 在 SQLite
-  等其他注册表中碰撞后吞掉 `end()`。
+  等其他注册表中碰撞后吞掉 `end()`；
+- AppKit 事件循环始终驱动 Perry async reactor、stdlib、HTTP/HTTPS 与微任务
+  pump，隐藏窗口 不会停止 health、采样或 Relay；原生 visibility 回调只暂停隐藏窗口的
+  Canvas frame， `menuBarOnly` 冷启动在窗口真正显示前不会绘制或排帧；
+- Tray 相对资源先从 `.app/Contents/Resources` 解析，再回退到可执行文件目录，确保应用包与
+  开发二进制使用同一资源名。
+
+成功构建会在 `PERRY_LIB_DIR` 写入 `openfx-perry-runtime-provenance.json`，记录 Perry
+版本与 提交、Rust toolchain、固定补丁 SHA-256，以及 Perry CLI 和四个必需静态库各自的
+SHA-256。 `desktop:app`、`desktop:app-smoke` 和组合 smoke 都会重新计算产物哈希并 fail
+closed：manifest 缺失、pin 字段变化或任一产物被改写时都不会继续编译或启动应用。
 
 运行 smoke 时必须设置脚本输出的 `PERRY_LIB_DIR`，并保持
 `--no-auto-optimize`，确保链接的是已验证库。验证仍保持证书校验，不使用

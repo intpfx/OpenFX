@@ -2,6 +2,7 @@ import { dirname, fromFileUrl, join, resolve } from "jsr:@std/path@^1.1.4";
 
 import { collectBoundedChild } from "./integration-cleanup.ts";
 import { inspectPngTransparency } from "./png-transparency.ts";
+import { validatePerryRuntimeDirectory } from "./perry-runtime-provenance.ts";
 
 const REPOSITORY_ROOT = fromFileUrl(new URL("../../../", import.meta.url));
 const APP_BUNDLE_RELATIVE_PATH = "dist/OpenFX Node.app";
@@ -35,6 +36,7 @@ const screenshotArtifact = screenshotArtifactValue
   ? resolve(REPOSITORY_ROOT, screenshotArtifactValue)
   : null;
 
+await validatePerryRuntimeDirectory(perryLibDirectory);
 await assertFile(perryExecutable);
 await assertFile(join(perryLibDirectory, PERRY_UI_ARCHIVE));
 await assertNonEmptyFile(APP_EXECUTABLE);

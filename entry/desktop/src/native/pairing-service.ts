@@ -15,6 +15,7 @@ export interface DesktopPreferenceStore {
 export interface PairingServiceDependencies {
   client: Pick<ControlPlaneClient, "pair">;
   preferences: DesktopPreferenceStore;
+  currentPreferences(): DesktopPreferences | null;
   keychain: NodeKeychain;
   now?: () => number;
 }
@@ -33,6 +34,7 @@ export const createPairingService = (
   dependencies: PairingServiceDependencies,
 ): PairingService => ({
   async pair(input) {
+    const existingPreferences = dependencies.currentPreferences();
     const result: PairNodeResult = await dependencies.client.pair(input);
     const preferences = sanitizeDesktopPreferences({
       serverUrl: input.serverUrl,
@@ -40,6 +42,8 @@ export const createPairingService = (
       nodeName: result.node.name || input.name,
       relayEnabled: true,
       pairedAt: (dependencies.now ?? Date.now)(),
+      launchMode: existingPreferences?.launchMode,
+      reduceMotion: existingPreferences?.reduceMotion,
     });
     await dependencies.keychain.write(result.node.id, result.nodeSecret);
     try {

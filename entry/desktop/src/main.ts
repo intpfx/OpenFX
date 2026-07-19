@@ -85,6 +85,7 @@ const controlPlane = createControlPlaneClient(requestJson, { crypto: cryptoAdapt
 const pairingService = createPairingService({
   client: controlPlane,
   preferences: preferenceStore,
+  currentPreferences: readDesktopPreferencesSync,
   keychain,
 });
 const reporter = createRelayReporter(controlPlane);
@@ -248,6 +249,7 @@ const pairWithControlPlane = async (input: PairingFormInput): Promise<void> => {
       pairing.preferences.serverUrl,
       pairing.preferences.nodeName,
     );
+    controlPanel?.clearPairingCode();
     controlPanel?.showDashboard();
   } catch (error) {
     const userMessage = describeDesktopError(error);
@@ -315,6 +317,7 @@ coreRenderer = createCoreCanvasRenderer({
   width: 560,
   height: 640,
   initialMetrics: createCoreMetrics(),
+  initialWindowVisible: startupPreferences.launchMode !== "menuBarOnly",
 });
 
 controlPanel = createControlPanel(currentPresentation(), {
@@ -426,7 +429,8 @@ function refreshPresentation(): void {
 }
 
 async function persistLaunchMode(mode: DesktopLaunchMode): Promise<void> {
-  await persistPreferenceChoice({ launchMode: mode });
+  const saved = await persistPreferenceChoice({ launchMode: mode });
+  if (!saved) return;
   serviceStatus.set(
     mode === "menuBarOnly"
       ? "已保存：下次启动仅显示菜单栏；本次 Dock 图标保持不变。"
@@ -437,7 +441,7 @@ async function persistLaunchMode(mode: DesktopLaunchMode): Promise<void> {
 
 async function persistPreferenceChoice(
   patch: Partial<Pick<DesktopPreferences, "launchMode" | "reduceMotion">>,
-): Promise<void> {
+): Promise<boolean> {
   try {
     const next = sanitizeDesktopPreferences({ ...preferences.value, ...patch });
     await preferenceStore.save(next);
@@ -448,9 +452,11 @@ async function persistPreferenceChoice(
       eventReporter.setPairing(pairing);
     }
     refreshPresentation();
+    return true;
   } catch (error) {
-    serviceStatus.set(`偏好保存失败：${errorMessage(error)}`);
+    serviceStatus.set(`偏好保存失败：${describeDesktopError(error)}`);
     refreshPresentation();
+    return false;
   }
 }
 
@@ -458,7 +464,7 @@ async function openControlPlaneConsole(): Promise<void> {
   try {
     await macSystem.openConsole(preferences.value.serverUrl);
   } catch (error) {
-    serviceStatus.set(`无法打开控制台：${errorMessage(error)}`);
+    serviceStatus.set(`无法打开控制台：${describeDesktopError(error)}`);
     refreshPresentation();
   }
 }

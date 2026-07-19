@@ -131,6 +131,7 @@ export interface ControlPanelController {
   showPairingGuide(): void;
   showDashboard(): void;
   setPairingDefaults(serverUrl: string, nodeName: string): void;
+  clearPairingCode(): void;
 }
 
 export const createControlPanel = (
@@ -277,6 +278,10 @@ export const createControlPanel = (
       nodeName = nextNodeName;
       textfieldSetString(serverField, serverUrl);
       textfieldSetString(nameField, nodeName);
+    },
+    clearPairingCode() {
+      pairingCode = "";
+      textfieldSetString(codeField, "");
     },
   };
 };

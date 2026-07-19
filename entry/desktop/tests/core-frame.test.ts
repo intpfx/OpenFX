@@ -392,6 +392,51 @@ Deno.test("renderer stays idle while hidden and resumes exactly one render path"
   assertEquals(pendingFrames.size, 1, "reopen must schedule one animation loop");
 });
 
+Deno.test("menu-bar-only renderer paints zero frames until native visibility", () => {
+  let paintCount = 0;
+  let requestCount = 0;
+  const renderer = createCoreCanvasRenderer({
+    width: 560,
+    height: 576,
+    initialWindowVisible: false,
+    initialMetrics: {
+      state: "online",
+      cpuUsagePercent: 25,
+      memoryUsagePercent: 35,
+      reduceMotion: false,
+    },
+    canvas: {
+      ...createRecordingCanvas(),
+      clearRect() {
+        paintCount += 1;
+      },
+    } as unknown as import("perry/ui").Canvas,
+    frameDriver: {
+      request() {
+        requestCount += 1;
+        return requestCount;
+      },
+      cancel() {},
+    },
+  });
+
+  renderer.start();
+  assertEquals(paintCount, 0);
+  assertEquals(requestCount, 0);
+  renderer.update({
+    state: "unpaired",
+    cpuUsagePercent: 40,
+    memoryUsagePercent: 50,
+    reduceMotion: false,
+  });
+  assertEquals(paintCount, 0);
+  assertEquals(requestCount, 0);
+
+  renderer.setWindowVisible(true);
+  assertEquals(paintCount, 0);
+  assertEquals(requestCount, 1);
+});
+
 Deno.test("renderer carries frame remainder to average 24 FPS on a 60 Hz clock", () => {
   let paintCount = 0;
   const queue: Array<(timestampMs: number, deltaMs: number) => void> = [];

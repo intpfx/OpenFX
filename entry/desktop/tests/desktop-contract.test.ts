@@ -203,13 +203,17 @@ Deno.test("native visible then activation paints reduced motion exactly once", a
 
 Deno.test("pinned Perry runtime build includes the patched macOS UI archive", async () => {
   const build = await Deno.readTextFile(BUILD_RUNTIME_URL);
+  const provenance = await Deno.readTextFile(
+    new URL("../tools/perry-runtime-provenance.ts", import.meta.url),
+  );
+  const buildContract = `${build}\n${provenance}`;
   const patch = await Deno.readTextFile(PERRY_PATCH_URL);
   const macosAppPatch = patch.split(
     "diff --git a/crates/perry-ui-macos/src/app.rs",
   )[1]?.split("diff --git", 1)[0] ?? "";
 
-  assert(build.includes('"perry-ui-macos"'));
-  assert(build.includes('"libperry_ui_macos.a"'));
+  assert(buildContract.includes('"perry-ui-macos"'));
+  assert(buildContract.includes('"libperry_ui_macos.a"'));
   assert(
     patch.includes("fn main_window_is_visible() -> bool") &&
       patch.includes("if main_window_is_visible()") &&
@@ -317,6 +321,12 @@ Deno.test("desktop entry assembles the immersive regular-or-menu-bar native app"
   );
   assertEquals(main.includes('appSetActivationPolicy("accessory")'), false);
   assert(main.includes("createCoreCanvasRenderer("));
+  assert(
+    main.includes(
+      'initialWindowVisible: startupPreferences.launchMode !== "menuBarOnly"',
+    ),
+    "menu-bar-only cold start must keep Canvas hidden before native visibility",
+  );
   assert(main.includes("createControlPanel("));
   assert(main.includes("createNodeTray("));
   assert(main.includes("width: 960"));
@@ -358,6 +368,41 @@ Deno.test("desktop entry assembles the immersive regular-or-menu-bar native app"
       'menuAddStandardAction(\n    menu,\n    "节点状态",\n    "perryShowMainWindow:",',
     ),
     "node status must use the native show-window selector",
+  );
+});
+
+Deno.test("desktop controls clear consumed codes and expose only Chinese operation errors", async () => {
+  const main = await Deno.readTextFile(MAIN_URL);
+  const controlPanel = await Deno.readTextFile(
+    new URL("../src/ui/control-panel.ts", import.meta.url),
+  );
+  const preferenceSection = main.slice(
+    main.indexOf("async function persistLaunchMode"),
+    main.indexOf("function createId"),
+  );
+  const pairSection = main.slice(
+    main.indexOf("const pairWithControlPlane = async"),
+    main.indexOf("const bootstrap = async"),
+  );
+
+  assert(controlPanel.includes("clearPairingCode(): void;"));
+  assert(controlPanel.includes('textfieldSetString(codeField, "");'));
+  assert(pairSection.includes("controlPanel?.clearPairingCode();"));
+  assert(
+    preferenceSection.includes("): Promise<boolean>") &&
+      preferenceSection.includes("return true;") &&
+      preferenceSection.includes("return false;"),
+    "preference persistence must report whether the save actually succeeded",
+  );
+  assert(
+    preferenceSection.includes("const saved = await persistPreferenceChoice") &&
+      preferenceSection.includes("if (!saved) return;"),
+    "launch-mode success copy must only appear after a successful save",
+  );
+  assert(
+    preferenceSection.includes("describeDesktopError(error)") &&
+      !preferenceSection.includes("无法打开控制台：${errorMessage(error)}"),
+    "preference and open-console errors must use the Chinese safe mapper",
   );
 });
 

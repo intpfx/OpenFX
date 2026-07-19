@@ -42,6 +42,7 @@ export interface CoreCanvasRendererOptions {
   width: number;
   height: number;
   initialMetrics: CoreCanvasMetrics;
+  initialWindowVisible?: boolean;
   now?: () => number;
   canvas?: PerryCanvas;
   frameDriver?: CoreFrameDriver;
@@ -61,7 +62,7 @@ export const createCoreCanvasRenderer = (
   let pendingFrame: number | null = null;
   let nextFrameAtMs = CORE_FRAME_INTERVAL_MS;
   let staticFrameDrawn = false;
-  let windowVisible = true;
+  let windowVisible = options.initialWindowVisible ?? true;
   let stopped = false;
 
   const draw = (timestampMs: number): void => {
@@ -119,6 +120,7 @@ export const createCoreCanvasRenderer = (
     canvas,
     start() {
       stopped = false;
+      if (!windowVisible) return;
       if (metrics.reduceMotion) draw(now());
       else {
         draw(0);

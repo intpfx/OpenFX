@@ -1,8 +1,14 @@
 import { dirname, fromFileUrl, join, resolve } from "jsr:@std/path@^1.1.4";
+import {
+  assertPinnedPerryPatch,
+  assertPinnedPerrySourceState,
+  PINNED_PERRY_RUST_TOOLCHAIN,
+  PINNED_PERRY_VERSION,
+  REQUIRED_PERRY_RUNTIME_ARTIFACTS,
+  validatePerryRuntimeDirectory,
+  writePerryRuntimeProvenance,
+} from "./perry-runtime-provenance.ts";
 
-const PERRY_VERSION = "v0.5.1220";
-const PERRY_COMMIT = "06137858dc8c6f80975238377138f2f948d6ef88";
-const RUST_TOOLCHAIN = "1.96.1";
 const PATCH_PATH = fromFileUrl(
   new URL("../perry/perry-v0.5.1220-openfx.patch", import.meta.url),
 );
@@ -23,7 +29,7 @@ const BUILD_FEATURES = [
 const args = parseArgs(Deno.args);
 if (!args.source) {
   throw new Error(
-    `Usage: deno task perry:runtime --source /path/to/Perry-${PERRY_VERSION} [--target-dir /path/to/target]`,
+    `Usage: deno task perry:runtime --source /path/to/Perry-${PINNED_PERRY_VERSION} [--target-dir /path/to/target]`,
   );
 }
 
@@ -35,43 +41,32 @@ const manifest = join(source, "Cargo.toml");
 if (!(await exists(manifest))) throw new Error(`Perry source not found: ${source}`);
 
 const commit = (await output("git", ["-C", source, "rev-parse", "HEAD"])).trim();
-if (commit !== PERRY_COMMIT) {
-  throw new Error(
-    `Expected Perry ${PERRY_VERSION} at ${PERRY_COMMIT}, received ${commit}.`,
-  );
-}
-
-if (
-  await succeeds("git", [
-    "-C",
-    source,
-    "apply",
-    "--unidiff-zero",
-    "--reverse",
-    "--check",
-    PATCH_PATH,
-  ])
-) {
-  console.log(`[openfx:perry] patch already applied to ${source}`);
-} else {
-  await run("git", [
-    "-C",
-    source,
-    "apply",
-    "--unidiff-zero",
-    "--check",
-    PATCH_PATH,
-  ]);
-  await run("git", ["-C", source, "apply", "--unidiff-zero", PATCH_PATH]);
-  console.log(`[openfx:perry] applied ${PATCH_PATH}`);
-}
+const status = await output("git", [
+  "-C",
+  source,
+  "status",
+  "--porcelain=v1",
+  "--untracked-files=all",
+]);
+assertPinnedPerrySourceState(commit, status);
+await assertPinnedPerryPatch(PATCH_PATH);
+await run("git", [
+  "-C",
+  source,
+  "apply",
+  "--unidiff-zero",
+  "--check",
+  PATCH_PATH,
+]);
+await run("git", ["-C", source, "apply", "--unidiff-zero", PATCH_PATH]);
+console.log(`[openfx:perry] applied ${PATCH_PATH}`);
 
 await Deno.mkdir(dirname(targetDir), { recursive: true });
 await run(
   "rustup",
   [
     "run",
-    RUST_TOOLCHAIN,
+    PINNED_PERRY_RUST_TOOLCHAIN,
     "cargo",
     "build",
     "--release",
@@ -96,7 +91,7 @@ await run(
   "rustup",
   [
     "run",
-    RUST_TOOLCHAIN,
+    PINNED_PERRY_RUST_TOOLCHAIN,
     "cargo",
     "build",
     "--release",
@@ -112,19 +107,13 @@ await run(
 );
 
 const libraryDirectory = join(targetDir, "release");
-for (
-  const archive of [
-    "perry",
-    "libperry_runtime.a",
-    "libperry_stdlib.a",
-    "libperry_ext_http.a",
-    "libperry_ui_macos.a",
-  ]
-) {
+for (const archive of REQUIRED_PERRY_RUNTIME_ARTIFACTS) {
   if (!(await exists(join(libraryDirectory, archive)))) {
     throw new Error(`Pinned Perry archive was not built: ${archive}`);
   }
 }
+await writePerryRuntimeProvenance(libraryDirectory);
+await validatePerryRuntimeDirectory(libraryDirectory);
 console.log(`[openfx:perry] runtime ready: ${libraryDirectory}`);
 console.log(`export PERRY_LIB_DIR=${shellQuote(libraryDirectory)}`);
 console.log(`export PATH=${shellQuote(libraryDirectory)}:"$PATH"`);
@@ -180,15 +169,6 @@ async function output(command: string, commandArgs: string[]): Promise<string> {
     throw new Error(new TextDecoder().decode(result.stderr).trim());
   }
   return new TextDecoder().decode(result.stdout);
-}
-
-async function succeeds(command: string, commandArgs: string[]): Promise<boolean> {
-  return (await new Deno.Command(command, {
-    args: commandArgs,
-    stdin: "null",
-    stdout: "null",
-    stderr: "null",
-  }).output()).success;
 }
 
 async function exists(path: string): Promise<boolean> {

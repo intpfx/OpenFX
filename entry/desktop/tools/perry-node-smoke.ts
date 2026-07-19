@@ -61,6 +61,7 @@ const pairingService = createPairingService({
       return Promise.resolve();
     },
   },
+  currentPreferences: () => savedPreferences,
   keychain,
 });
 

@@ -6,6 +6,7 @@ import {
   runBoundedCommand,
 } from "./integration-cleanup.ts";
 import { readStartupMessages } from "./integration-startup.ts";
+import { validatePerryRuntimeDirectory } from "./perry-runtime-provenance.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const webRoot = join(root, "entry/web");
@@ -15,6 +16,7 @@ if (!perryLibDirectory) {
     "console-integration-smoke requires PERRY_LIB_DIR from deno task perry:runtime.",
   );
 }
+await validatePerryRuntimeDirectory(perryLibDirectory);
 const perryExecutable = join(perryLibDirectory, "perry");
 const adminKey = "openfx-integration-admin-key";
 const credentialKey = "0123456789abcdef0123456789abcdef";

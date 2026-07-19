@@ -45,6 +45,10 @@ deno task desktop:app-smoke               # 验证签名、health、截图和退
 deno task check                            # 校验（fmt + lint + test + guard）
 ```
 
+`perry:runtime` 要求 Perry 源码位于固定提交且工作区完全干净；它会在输出目录生成带补丁和
+产物 SHA-256 的 provenance manifest。`desktop:app` 与两个原生 smoke 都会在使用运行库前
+重新校验该 manifest，旧的、缺失的或被改写的运行库不会进入应用包。
+
 部分 domain 使用独立工具链（如 `domains/BewlyScript/` 用 Bun 构建）。
 
 ## Agent 指南

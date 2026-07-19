@@ -1,17 +1,14 @@
 import { fromFileUrl, join, resolve } from "jsr:@std/path@^1.1.4";
 import { inspectPngTransparency } from "./png-transparency.ts";
+import {
+  REQUIRED_PERRY_RUNTIME_ARTIFACTS,
+  validatePerryRuntimeDirectory,
+} from "./perry-runtime-provenance.ts";
 
 const APP_NAME = "OpenFX Node";
 const BUNDLE_IDENTIFIER = "com.openfx.node";
 const MINIMUM_MACOS_VERSION = "13.0";
 const REPOSITORY_ROOT = fromFileUrl(new URL("../../../", import.meta.url));
-const REQUIRED_PERRY_ARTIFACTS = [
-  "perry",
-  "libperry_runtime.a",
-  "libperry_stdlib.a",
-  "libperry_ext_http.a",
-  "libperry_ui_macos.a",
-] as const;
 
 export interface MacAppPlan {
   appBundle: string;
@@ -170,7 +167,8 @@ async function buildMacApp(): Promise<void> {
 }
 
 async function validateInputs(plan: MacAppPlan): Promise<void> {
-  for (const artifact of REQUIRED_PERRY_ARTIFACTS) {
+  await validatePerryRuntimeDirectory(plan.perryLibDirectory);
+  for (const artifact of REQUIRED_PERRY_RUNTIME_ARTIFACTS) {
     await assertNonEmptyFile(join(plan.perryLibDirectory, artifact));
   }
   await assertNonEmptyFile(plan.entryPoint);

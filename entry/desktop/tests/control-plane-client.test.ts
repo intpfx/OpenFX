@@ -123,6 +123,7 @@ Deno.test("pairing stores nodeSecret only in Keychain and recovers it after rest
         return Promise.resolve();
       },
     },
+    currentPreferences: () => preferences,
     keychain: {
       write(account, secret) {
         secrets.set(account, secret);
@@ -166,6 +167,94 @@ Deno.test("pairing stores nodeSecret only in Keychain and recovers it after rest
     },
     nodeSecret: "encoded-secret",
   });
+});
+
+Deno.test("pairing preserves menu-bar launch and static-core preferences", async () => {
+  let preferences: DesktopPreferences | null = {
+    serverUrl: "https://old.openfx.example",
+    nodeId: "old-node",
+    nodeName: "Old Mac",
+    relayEnabled: false,
+    pairedAt: 1,
+    launchMode: "menuBarOnly",
+    reduceMotion: true,
+  };
+  const service = createPairingService({
+    client: {
+      pair: () =>
+        Promise.resolve({
+          node: { id: "node-2", name: "Studio Mac" },
+          nodeSecret: "encoded-secret-2",
+        }),
+    },
+    preferences: {
+      load: () => Promise.resolve(preferences),
+      save(value) {
+        preferences = value;
+        return Promise.resolve();
+      },
+    },
+    currentPreferences: () => preferences,
+    keychain: {
+      write: () => Promise.resolve(),
+      read: () => Promise.resolve(null),
+      remove: () => Promise.resolve(),
+    },
+    now: () => 456,
+  });
+
+  const paired = await service.pair({
+    serverUrl: "https://openfx.example",
+    code: "01234567",
+    name: "Studio Mac",
+    publicIpv6: "240e::1",
+  });
+
+  assertEquals(paired.preferences.launchMode, "menuBarOnly");
+  assertEquals(paired.preferences.reduceMotion, true);
+  assertEquals(preferences?.launchMode, "menuBarOnly");
+  assertEquals(preferences?.reduceMotion, true);
+});
+
+Deno.test("pairing uses a synchronous preference snapshot without awaiting store load", async () => {
+  const calls: string[] = [];
+  const service = createPairingService({
+    client: {
+      pair() {
+        calls.push("https-pair");
+        return Promise.resolve({
+          node: { id: "node-3", name: "Studio Mac" },
+          nodeSecret: "encoded-secret-3",
+        });
+      },
+    },
+    preferences: {
+      load() {
+        calls.push("unexpected-async-load");
+        return new Promise<DesktopPreferences | null>(() => {});
+      },
+      save: () => Promise.resolve(),
+    },
+    currentPreferences() {
+      calls.push("current-preferences");
+      return null;
+    },
+    keychain: {
+      write: () => Promise.resolve(),
+      read: () => Promise.resolve(null),
+      remove: () => Promise.resolve(),
+    },
+  });
+
+  await service.pair({
+    serverUrl: "https://openfx.example",
+    code: "01234567",
+    name: "Studio Mac",
+    publicIpv6: "240e::1",
+  });
+
+  assertEquals(calls.includes("unexpected-async-load"), false);
+  assertEquals(calls.slice(0, 2), ["current-preferences", "https-pair"]);
 });
 
 Deno.test("post-pair signed reports preserve the HTTPS-only control-plane boundary", async () => {

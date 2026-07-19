@@ -9,11 +9,13 @@ OpenFX Node 是常驻 macOS 菜单栏的原生 Perry 节点。它承载本机监
 - Perry 默认使用 `regular` Dock 模式、单个主窗口和 Tray；用户选择的 `menuBarOnly`
   只在下次启动时切换为 `accessory`。关闭主窗口会清除待处理绘制帧，Tray 或 Dock 通过
   Perry 原生 selector 重新显示同一窗口并恢复 24 FPS Canvas；节点服务与 5
-  秒采样始终继续运行。
+  秒采样始终继续运行。`menuBarOnly` 冷启动在原生窗口可见前保持零 Canvas 绘制；静态核心
+  也遵循同一 visibility 边界。
 - 节点 API 监听 `[::]:24531`。公开 `/v1/health` 只返回健康状态和协议版本，
   其余固定路由统一经过 v1 签名、AES-GCM 信封、时间窗和 nonce 防重放校验。
-- 配对使用 OpenFX 服务端 URL 与 8 位配对码。普通偏好只保存非敏感节点信息，`nodeSecret`
-  存入 macOS Keychain 的 `OpenFX Node` service。
+- 配对使用 OpenFX 服务端 URL 与 8 位配对码。普通偏好只保存非敏感节点信息以及
+  `launchMode`、`reduceMotion`；重新配对保留这两个界面选择。`nodeSecret` 存入 macOS
+  Keychain 的 `OpenFX Node` service，成功后已消费的配对码立即从原生文本框清除。
 - 公网 IPv6 只从两个固定 HTTPS
   观察端点确认，并且必须与本机候选地址匹配；不匹配和观察错误 会显式保留在网络状态中。
 - OpenFX 控制面上报只走 `node:https.request`，包括实时 Agent delta 与审批事件；OMLX
@@ -42,7 +44,7 @@ OpenFX Node 是常驻 macOS 菜单栏的原生 Perry 节点。它承载本机监
 IPv6 listen 地址格式，以及入站 HTTP 回调之后 `ClientRequest.end()` 被其他小整数 handle
 注册表抢先分派的问题。补丁固定在
 [`perry/perry-v0.5.1220-openfx.patch`](perry/perry-v0.5.1220-openfx.patch)，构建脚本会校验
-官方 tag 的精确提交并拒绝把补丁套到未知源码上。
+官方 tag 的精确提交，并在套补丁前拒绝错误提交、已修改文件和未跟踪文件。
 
 ```bash
 git clone --depth 1 --branch v0.5.1220 https://github.com/PerryTS/Perry.git /tmp/perry-openfx
@@ -51,10 +53,19 @@ deno task perry:runtime --source /tmp/perry-openfx
 export PERRY_LIB_DIR=/tmp/perry-openfx/target/openfx-v0.5.1220/release
 ```
 
+Perry UI 的 AppKit timer 持续驱动 async reactor、stdlib 与 HTTP/HTTPS
+pump；窗口隐藏只取消 Canvas frame callback，不停止节点。Tray 相对图标先解析
+`.app/Contents/Resources`，再回退到
+可执行文件目录。构建完成后，`PERRY_LIB_DIR/openfx-perry-runtime-provenance.json`
+记录精确 Perry 提交、Rust 1.96.1、补丁 SHA-256 和 Perry CLI/四个静态库的
+SHA-256。应用构建、应用 smoke 与组合 smoke 都会重新校验 manifest
+和实际文件；缺失或篡改会直接失败。由于源码在 构建中会应用补丁，下一次 `perry:runtime`
+必须使用新的干净 clone。
+
 ## 构建 macOS 应用
 
 桌面端人工验收和日常运行统一使用 `dist/OpenFX Node.app`，不再直接运行临时裸二进制。
-构建器只接受上述补丁运行时目录中的固定 Perry CLI 和静态库，并在签名前完成以下工作：
+构建器只接受 provenance 验证通过的固定 Perry CLI 和静态库，并在签名前完成以下工作：
 
 - 生成 arm64-only Mach-O，并把部署目标锁定为 macOS 13.0；
 - 生成 Bundle ID 为 `com.openfx.node` 的 `Info.plist`；
