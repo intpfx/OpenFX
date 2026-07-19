@@ -91,6 +91,11 @@ header 不再授权 `/api/admin/*` 或 `/api/console/*`。
 - `GET /api/console/telemetry`、`GET /api/console/audit` — 7 日分钟遥测和审计
 - `GET /api/console/events` — 支持 `Last-Event-ID` 的 SSE 事件流
 
+“Mac 配对”卡片会复制当前 HTTPS origin、显示 8 位短码与实时倒计时，并说明公网 IPv6 检测和
+macOS Keychain 写入要求。HTTP 页面（包括本地预览）固定禁用配对码生成并提示 “请通过 HTTPS
+控制台打开”。节点上线继续由现有 `heartbeat` SSE 和概览状态驱动，卡片会
+自动切换为“节点已连接”，无需手动刷新，也不会把管理员或节点凭据写入浏览器存储。
+
 Relay 不接受目标 URL。服务端只连接当前配对节点上报的全局 IPv6，端口固定为
 `24531`，并使用共享 OpenFX Node v1 协议签名、加密请求和解密响应。节点回包在加密载荷中
 绑定请求 nonce、HTTP 方法和固定路径；请求禁止跟随重定向，任何 3xx 都按 Relay 不可达

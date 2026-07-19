@@ -33,6 +33,12 @@ import {
   type NodeAvailability,
   relayUpdateMessage,
 } from "./model.ts";
+import {
+  copyPairingValue,
+  derivePairingGuide,
+  type PairingGuide,
+  subscribePairingCountdown,
+} from "./pairing-guide.ts";
 
 type SessionState = "checking" | "authenticated" | "anonymous";
 type Tone = "neutral" | "success" | "error";
@@ -646,6 +652,7 @@ export function ConsoleApp() {
             <div className="console-workbench-body">
               <Workbench
                 module={module}
+                availability={availability}
                 overview={overview}
                 relay={relay}
                 processes={processes}
@@ -688,6 +695,7 @@ export function ConsoleApp() {
 
 function Workbench(props: {
   module: ConsoleModuleId;
+  availability: NodeAvailability;
   overview: Overview | null;
   relay: Relay | null;
   processes: ProcessInfo[];
@@ -834,7 +842,11 @@ function Workbench(props: {
             启用远程接入
           </button>
         </div>
-        <Pairing pairing={props.pairing} onGenerate={props.onGeneratePairing} />
+        <Pairing
+          availability={props.availability}
+          pairing={props.pairing}
+          onGenerate={props.onGeneratePairing}
+        />
       </div>
     );
   }
@@ -956,20 +968,19 @@ function Workbench(props: {
           {props.lowPower ? "已开启" : "已关闭"}
         </button>
       </section>
-      <Pairing pairing={props.pairing} onGenerate={props.onGeneratePairing} />
+      <Pairing
+        availability={props.availability}
+        pairing={props.pairing}
+        onGenerate={props.onGeneratePairing}
+      />
       <section className="console-setting-row danger">
         <div>
           <strong>撤销与轮换</strong>
-          <p>生成新的配对码并在 Mac 上重新配对，会原子替换旧凭据。</p>
+          <p>使用上方 Mac 配对卡片重新配对，会原子替换旧凭据。</p>
         </div>
-        <div className="console-setting-actions">
-          <button type="button" onClick={() => void props.onGeneratePairing()}>
-            轮换凭据
-          </button>
-          <button type="button" onClick={() => void props.onRevokeNode()}>
-            撤销节点
-          </button>
-        </div>
+        <button type="button" onClick={() => void props.onRevokeNode()}>
+          撤销节点
+        </button>
       </section>
       <section className="console-setting-row">
         <div>
@@ -984,31 +995,186 @@ function Workbench(props: {
 
 function Pairing(
   props: {
+    availability: NodeAvailability;
     pairing: { code: string; expiresAt: number } | null;
     onGenerate: () => void;
   },
 ) {
+  const [currentUrl, setCurrentUrl] = useState<string | null>(null);
+  const [clock, setClock] = useState<{ expiresAt: number; now: number } | null>(null);
+  const [copyStatus, setCopyStatus] = useState("");
+
+  useEffect(() => {
+    setCurrentUrl(globalThis.location?.href ?? null);
+  }, []);
+
+  useEffect(() => {
+    if (!props.pairing) return;
+    return subscribePairingCountdown(
+      props.pairing.expiresAt,
+      (_countdown, now) => setClock({ expiresAt: props.pairing!.expiresAt, now }),
+    );
+  }, [props.availability, props.pairing?.expiresAt]);
+
+  const now = props.pairing && clock?.expiresAt === props.pairing.expiresAt
+    ? clock.now
+    : props.pairing
+    ? props.pairing.expiresAt - 600_000
+    : 0;
+  const guide = derivePairingGuide({
+    currentUrl,
+    availability: props.availability,
+    pairing: props.pairing,
+    now,
+  });
+  const copy = async (value: string, successMessage?: string) => {
+    const writeText = globalThis.navigator?.clipboard?.writeText
+      ? (text: string) => globalThis.navigator.clipboard.writeText(text)
+      : () => Promise.reject(new Error("clipboard unavailable"));
+    setCopyStatus(await copyPairingValue(value, writeText, successMessage));
+  };
+
+  return (
+    <PairingGuidePanel
+      copyStatus={copyStatus}
+      guide={guide}
+      onCopy={(value, successMessage) => void copy(value, successMessage)}
+      onGenerate={props.onGenerate}
+    />
+  );
+}
+
+export function PairingGuidePanel(props: {
+  guide: PairingGuide;
+  copyStatus: string;
+  onCopy: (value: string, successMessage?: string) => void;
+  onGenerate: () => void;
+}) {
+  const { guide } = props;
   return (
     <section className="console-pairing">
       <div className="console-section-heading">
         <div>
-          <span>10 分钟有效</span>
+          <span>{guide.connected ? "SECURE LINK" : "10 分钟有效"}</span>
           <h3>Mac 配对</h3>
         </div>
-        <button type="button" onClick={() => void props.onGenerate()}>
-          生成配对码
+        <button
+          className="primary"
+          disabled={guide.generateDisabled}
+          type="button"
+          onClick={() => void props.onGenerate()}
+        >
+          {guide.connected ? "重新配对" : "生成配对码"}
         </button>
       </div>
-      {props.pairing
+
+      <div className="console-pairing-address">
+        <span>OpenFX HTTPS 服务端地址</span>
+        <div>
+          <code>{guide.serverUrl ?? "等待安全地址"}</code>
+          <button
+            aria-label={guide.serverCopyLabel}
+            disabled={!guide.canGenerate || !guide.serverUrl}
+            type="button"
+            onClick={() =>
+              guide.serverUrl &&
+              props.onCopy(guide.serverUrl, "已复制服务端地址")}
+          >
+            复制
+          </button>
+        </div>
+      </div>
+
+      {guide.transportMessage
         ? (
-          <div>
-            <code>{props.pairing.code}</code>
-            <time>失效于 {formatTime(props.pairing.expiresAt)}</time>
+          <p className="console-pairing-warning" role="alert">
+            {guide.transportMessage}
+          </p>
+        )
+        : null}
+
+      {guide.connected
+        ? (
+          <div className="console-pairing-connected" role="status">
+            <i aria-hidden="true" />
+            <div>
+              <strong>{guide.stateLabel}</strong>
+              <p>实时状态已由节点事件同步，无需刷新页面。</p>
+            </div>
           </div>
         )
-        : <p>配对码只显示在当前会话，不会写入浏览器存储。</p>}
+        : null}
+      {guide.code && guide.countdown
+        ? (
+          <div className="console-pairing-code">
+            <div>
+              <span>一次性配对码</span>
+              <code>{guide.code}</code>
+            </div>
+            <div>
+              <time
+                aria-label={`配对码剩余 ${guide.countdown.label}`}
+                aria-live="off"
+                dateTime={`PT${guide.countdown.remainingSeconds}S`}
+                role="timer"
+              >
+                {guide.countdown.expired ? "已失效" : guide.countdown.label}
+              </time>
+              <button
+                aria-label="复制 8 位配对码"
+                disabled={guide.countdown.expired}
+                type="button"
+                onClick={() => props.onCopy(guide.code!, "已复制配对码")}
+              >
+                复制配对码
+              </button>
+            </div>
+          </div>
+        )
+        : !guide.connected
+        ? (
+          <p className="console-pairing-empty">
+            配对码只显示在当前会话，不会写入浏览器存储。
+          </p>
+        )
+        : null}
+
+      {!guide.connected
+        ? (
+          <>
+            <ol className="console-pairing-steps" aria-label="Perry Mac 配对步骤">
+              {guide.steps.map((step, index) => (
+                <li key={step}>
+                  <b>{index + 1}</b>
+                  <div>
+                    <strong>{step}</strong>
+                    <p>{pairingStepDescription(index)}</p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+            <p className="console-pairing-security">
+              Perry 必须检测到匹配的公网 IPv6；节点密钥只写入 macOS Keychain，
+              不会保存到浏览器或普通偏好。
+            </p>
+          </>
+        )
+        : null}
+      <span className="console-pairing-copy-status" role="status">
+        {props.copyStatus}
+      </span>
     </section>
   );
+}
+
+function pairingStepDescription(index: number): string {
+  if (index === 0) {
+    return "Perry 会核对本机候选地址与外部观察到的公网 IPv6。";
+  }
+  if (index === 1) {
+    return "在 OpenFX Node 中粘贴上方地址、短码，并确认节点名称。";
+  }
+  return "确认后由 Perry 安全写入节点凭据，重启可自动恢复。";
 }
 
 function Metric({ label, value }: { label: string; value: string }) {

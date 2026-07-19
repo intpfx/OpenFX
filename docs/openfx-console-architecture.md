@@ -8,8 +8,9 @@ Mac 节点，以及运行时无关的 `domains/e` Agent/审批内核。Web 控�
 ## 运行边界
 
 - `entry/web` 提供 `/admin`、管理员会话、配对、Deno KV 历史、SSE 和固定 Relay。
-- `entry/desktop` 是目标 Mac 节点。它以 Perry accessory 应用常驻菜单栏，监听
-  `[::]:24531`，关闭窗口不停止节点服务。
+- `entry/desktop` 是目标 Mac 节点。它默认以 Perry regular 应用显示 Dock、应用菜单、FX
+  Tray 和主窗口；用户主动选择的 `menuBarOnly` 模式只在下次启动切换为 accessory。
+  两种模式都监听 `[::]:24531`，关闭窗口不停止节点服务。
 - `domains/e` 只提供工具执行与 `SafetyActionGate`，不依赖 Perry、Nitro、Bun 或 Web UI。
 - OMLX 只允许 `127.0.0.1:8000/v1`；OMLX 不可用时 Agent 显示离线，监控、Relay
   和手动审批仍然工作。
@@ -50,6 +51,21 @@ Mac 节点，以及运行时无关的 `domains/e` Agent/审批内核。Web 控�
    `nodeId`、节点名、服务端 URL、Relay 开关和配对时间。
 5. 服务端只保存校验摘要和由 `OPENFX_NODE_CREDENTIAL_KEY` 加密的凭据副本。浏览器 API
    不返回 secret、摘要、密文或解密结果。
+
+### Web 配对引导
+
+管理员在“远程接入”或“设置”打开 Mac 配对卡片后，控制台只把当前页面的 HTTPS origin 作为
+Perry 服务端地址，不复制 `/admin` 路径、查询参数或片段。卡片提供地址复制、8 位短码
+复制和实时倒计时，并按“检测公网 IPv6 → 输入 HTTPS 地址与短码 → 写入 macOS Keychain”
+说明桌面端的三个步骤。复制被浏览器拒绝时会保留可选择文本，并给出中文失败提示。
+
+HTTP 页面（包括 localhost 和 `127.0.0.1` 预览）不会生成配对码，固定显示“请通过 HTTPS
+控制台打开”。这是产品门禁，不使用浏览器对 loopback secure-context 的例外，也不改变配对
+API 的服务器端认证或原子单次消费语义。
+
+配对完成后，Perry 原有的 `heartbeat` SSE 和控制台概览刷新会更新同一 `NodeAvailability`
+状态。配对卡片据此自动切换为“节点已连接”，不增加轮询协议、手动刷新
+按钮或浏览器凭据存储。
 
 配对完成后的心跳、遥测和节点事件不会发送 secret。每个请求签名覆盖协议版本、精确 HTTP
 方法、固定路径、规范化 body 摘要、时间戳和随机 nonce；服务端解密凭据后校验 HMAC，并把
@@ -142,8 +158,8 @@ VITE_OPENFX_BUILD_TIME=2026-06-30T00:00:00Z \
   deno task --config entry/web/deno.json build
 deno task perry:runtime --source /path/to/Perry-v0.5.1220
 PERRY_LIB_DIR=/path/to/release perry check entry/desktop/src/main.ts --deep-deps
-PERRY_LIB_DIR=/path/to/release perry compile entry/desktop/src/main.ts \
-  -o dist/openfx-desktop --no-auto-optimize
+deno task desktop:app
+deno task desktop:app-smoke
 deno run --unstable-kv -A entry/desktop/tools/console-integration-smoke.ts
 ```
 

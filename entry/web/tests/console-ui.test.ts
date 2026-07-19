@@ -14,6 +14,12 @@ import {
   relayUpdateMessage,
   selectCoreRenderer,
 } from "../src/console/model.ts";
+import {
+  copyPairingValue,
+  derivePairingGuide,
+  formatPairingCountdown,
+  subscribePairingCountdown,
+} from "../src/console/pairing-guide.ts";
 
 type FakeCanvas = HTMLCanvasElement & {
   dispatchContextLost: () => void;
@@ -235,4 +241,132 @@ Deno.test("relay effect reports approval instead of claiming immediate change", 
   expect(relayUpdateMessage({ approvalRequired: false }, false)).toBe(
     "远程接入已停用",
   );
+});
+
+Deno.test("pairing guide exposes only the current HTTPS origin to Perry", () => {
+  expect(derivePairingGuide({
+    currentUrl: "https://console.openfx.example/admin?tab=mac",
+    availability: "unknown",
+    pairing: null,
+    now: 1_000,
+  })).toMatchObject({
+    serverUrl: "https://console.openfx.example",
+    canGenerate: true,
+    generateDisabled: false,
+    transportMessage: null,
+    serverCopyLabel: "复制 OpenFX HTTPS 服务端地址",
+    steps: [
+      "检测公网 IPv6",
+      "输入 HTTPS 地址与 8 位配对码",
+      "写入 macOS Keychain",
+    ],
+  });
+
+  for (
+    const currentUrl of [
+      "http://console.openfx.example/admin",
+      "http://localhost:8000/admin",
+      "http://127.0.0.1:8000/admin",
+      null,
+    ]
+  ) {
+    expect(derivePairingGuide({
+      currentUrl,
+      availability: "unknown",
+      pairing: null,
+      now: 1_000,
+    })).toMatchObject({
+      canGenerate: false,
+      generateDisabled: true,
+      transportMessage: "请通过 HTTPS 控制台打开",
+    });
+  }
+});
+
+Deno.test("pairing countdown is deterministic and clamps every expired value to zero", () => {
+  expect(formatPairingCountdown(121_000, 1_000)).toEqual({
+    remainingSeconds: 120,
+    label: "02:00",
+    expired: false,
+  });
+  expect(formatPairingCountdown(61_001, 1_001)).toMatchObject({ label: "01:00" });
+  expect(formatPairingCountdown(1_000, 1_000)).toEqual({
+    remainingSeconds: 0,
+    label: "00:00",
+    expired: true,
+  });
+  expect(formatPairingCountdown(500, 1_000)).toMatchObject({
+    remainingSeconds: 0,
+    label: "00:00",
+    expired: true,
+  });
+});
+
+Deno.test("pairing countdown subscription clears its timer once and never leaks", () => {
+  const ticks: Array<() => void> = [];
+  const cleared: number[] = [];
+  let now = 1_000;
+  const snapshots: string[] = [];
+  const unsubscribe = subscribePairingCountdown(
+    2_500,
+    (countdown) => snapshots.push(countdown.label),
+    {
+      now: () => now,
+      setInterval: (callback) => {
+        ticks.push(callback);
+        return 17;
+      },
+      clearInterval: (handle) => cleared.push(handle),
+    },
+  );
+
+  expect(snapshots).toEqual(["00:02"]);
+  expect(ticks.length).toBe(1);
+  now = 2_500;
+  ticks[0]?.();
+  expect(snapshots).toEqual(["00:02", "00:00"]);
+  expect(cleared).toEqual([17]);
+  unsubscribe();
+  expect(cleared).toEqual([17]);
+});
+
+Deno.test("pairing guide switches to connected without hiding a newly generated rotation code", () => {
+  expect(derivePairingGuide({
+    currentUrl: "https://console.openfx.example/admin",
+    availability: "online",
+    pairing: { code: "ABC2EFGH", expiresAt: 601_000 },
+    now: 1_000,
+  })).toMatchObject({
+    connected: true,
+    stateLabel: "节点已连接",
+    code: "ABC2EFGH",
+    countdown: { label: "10:00", expired: false },
+  });
+  expect(derivePairingGuide({
+    currentUrl: "https://console.openfx.example/admin",
+    availability: "offline",
+    pairing: { code: "ABC2EFGH", expiresAt: 601_000 },
+    now: 1_000,
+  })).toMatchObject({
+    connected: false,
+    stateLabel: "等待 Mac 节点",
+    code: "ABC2EFGH",
+  });
+});
+
+Deno.test("pairing copy helper reports success and a Chinese recoverable failure", async () => {
+  const copied: string[] = [];
+  expect(
+    await copyPairingValue("https://console.openfx.example", (value) => {
+      copied.push(value);
+      return Promise.resolve();
+    }),
+  ).toBe("已复制服务端地址");
+  expect(copied).toEqual(["https://console.openfx.example"]);
+  expect(
+    await copyPairingValue(
+      "ABC2EFGH",
+      () => Promise.reject(new Error("clipboard denied")),
+    ),
+  ).toBe("复制失败，请手动选择文本");
 });
