@@ -1,4 +1,4 @@
-import { assert, assertEquals } from "@std/assert";
+import { assert, assertEquals, assertRejects } from "@std/assert";
 import { preferencesGet, preferencesSet } from "perry/system";
 
 import {
@@ -11,6 +11,7 @@ import {
 } from "../src/core/pairing-readiness.ts";
 import { createDesktopUiSnapshot, describeDesktopError } from "../src/core/ui-model.ts";
 import {
+  createDesktopPreferenceStore,
   DESKTOP_PREFERENCES_KEY,
   readDesktopPreferencesSync,
 } from "../src/native/preferences.ts";
@@ -90,6 +91,111 @@ Deno.test("startup preferences are available synchronously before native app ass
   } finally {
     preferencesSet(DESKTOP_PREFERENCES_KEY, previous ?? "");
   }
+});
+
+Deno.test("desktop preference patches merge against the latest persisted value", async () => {
+  const previous = preferencesGet(DESKTOP_PREFERENCES_KEY);
+  try {
+    preferencesSet(
+      DESKTOP_PREFERENCES_KEY,
+      JSON.stringify({
+        ...DEFAULT_DESKTOP_PREFERENCES,
+        launchMode: "regular",
+        reduceMotion: false,
+      }),
+    );
+    const store = createDesktopPreferenceStore();
+
+    await store.update({ launchMode: "menuBarOnly", reduceMotion: true });
+    const paired = await store.update({
+      serverUrl: "https://openfx.example",
+      nodeId: "node-1",
+      nodeName: "Studio Mac",
+      pairedAt: 123,
+    });
+
+    assertEquals(paired, {
+      ...DEFAULT_DESKTOP_PREFERENCES,
+      serverUrl: "https://openfx.example",
+      nodeId: "node-1",
+      nodeName: "Studio Mac",
+      pairedAt: 123,
+      launchMode: "menuBarOnly",
+      reduceMotion: true,
+    });
+    assertEquals(readDesktopPreferencesSync(), paired);
+  } finally {
+    preferencesSet(DESKTOP_PREFERENCES_KEY, previous ?? "");
+  }
+});
+
+Deno.test("desktop preference update snapshots persistence exactly once before commit", async () => {
+  let persisted = JSON.stringify(DEFAULT_DESKTOP_PREFERENCES);
+  let reads = 0;
+  const store = createDesktopPreferenceStore({
+    get() {
+      reads += 1;
+      return persisted;
+    },
+    set(value) {
+      persisted = value;
+    },
+  });
+
+  await store.update({ launchMode: "menuBarOnly" });
+
+  assertEquals(reads, 1);
+  assertEquals(JSON.parse(persisted).launchMode, "menuBarOnly");
+});
+
+Deno.test("desktop preference commit restores the persisted snapshot after a write-side failure", async () => {
+  const original = JSON.stringify({
+    ...DEFAULT_DESKTOP_PREFERENCES,
+    launchMode: "menuBarOnly",
+    reduceMotion: true,
+  });
+  let persisted = original;
+  let writes = 0;
+  const store = createDesktopPreferenceStore({
+    get: () => persisted,
+    set(value) {
+      persisted = value;
+      writes += 1;
+      if (writes === 1) throw new Error("preferences_write_failed");
+    },
+  });
+
+  await assertRejects(
+    () => store.update({ nodeId: "node-new", nodeName: "Studio Mac" }),
+    Error,
+    "preferences_write_failed",
+  );
+
+  assertEquals(writes, 2);
+  assertEquals(persisted, original);
+  assertEquals(await store.load(), JSON.parse(original));
+});
+
+Deno.test("desktop preference commit reports an indeterminate state when rollback also fails", async () => {
+  const original = JSON.stringify(DEFAULT_DESKTOP_PREFERENCES);
+  let persisted = original;
+  let writes = 0;
+  const store = createDesktopPreferenceStore({
+    get: () => persisted,
+    set(value) {
+      writes += 1;
+      if (writes === 1) persisted = value;
+      throw new Error(writes === 1 ? "write_failed" : "rollback_failed");
+    },
+  });
+
+  await assertRejects(
+    () => store.update({ nodeId: "node-new" }),
+    Error,
+    "preferences_rollback_failed",
+  );
+  assertEquals(writes, 2);
+  assert(persisted.includes("node-new"));
 });
 
 Deno.test("pairing readiness accepts only a complete valid combination", () => {
@@ -226,6 +332,10 @@ Deno.test("desktop errors map protocol, network, IPv6, and Keychain failures to 
       new Error("security_exit_1: User interaction is not allowed."),
     ),
     "无法安全保存节点凭据，请检查 macOS 钥匙串权限。",
+  );
+  assertEquals(
+    describeDesktopError(new Error("preferences_rollback_failed")),
+    "本地偏好写入失败且无法确认回滚结果，请重启应用后检查设置。",
   );
 });
 

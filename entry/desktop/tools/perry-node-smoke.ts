@@ -8,6 +8,7 @@ import {
 } from "../../../domains/_shared/openfx-node/constants.ts";
 import { decodeBase64Url } from "../../../domains/_shared/openfx-node/encoding.ts";
 import { SafetyActionGate } from "../../../domains/e/src/core/safety-action-gate.ts";
+import { sanitizeDesktopPreferences } from "../src/core/desktop-state.ts";
 import {
   createAgentToolRuntime,
   createMemoryApprovalRequestRepository,
@@ -56,12 +57,14 @@ const pairingService = createPairingService({
   client: controlPlane,
   preferences: {
     load: () => Promise.resolve(savedPreferences),
-    save(value) {
-      savedPreferences = value;
-      return Promise.resolve();
+    update(patch) {
+      savedPreferences = sanitizeDesktopPreferences({
+        ...(savedPreferences ?? {}),
+        ...patch,
+      });
+      return Promise.resolve(savedPreferences);
     },
   },
-  currentPreferences: () => savedPreferences,
   keychain,
 });
 

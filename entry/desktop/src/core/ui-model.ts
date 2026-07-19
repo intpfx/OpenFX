@@ -94,6 +94,9 @@ export const describeDesktopError = (error: unknown): string => {
   if (normalized === "node_protocol_mismatch") {
     return "节点与控制台协议不兼容，请更新 OpenFX Node。";
   }
+  if (normalized === "preferences_rollback_failed") {
+    return "本地偏好写入失败且无法确认回滚结果，请重启应用后检查设置。";
+  }
   if (
     normalized === "network_failure" ||
     normalized.includes("fetch failed") ||

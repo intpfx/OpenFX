@@ -1,4 +1,3 @@
-import { sanitizeDesktopPreferences } from "../core/desktop-state.ts";
 import type { DesktopPreferences } from "../core/types.ts";
 import type {
   ControlPlaneClient,
@@ -9,13 +8,14 @@ import type { NodeKeychain } from "./keychain.ts";
 
 export interface DesktopPreferenceStore {
   load(): Promise<DesktopPreferences | null>;
-  save(preferences: DesktopPreferences): Promise<void>;
+  update(
+    patch: Partial<DesktopPreferences>,
+  ): Promise<DesktopPreferences>;
 }
 
 export interface PairingServiceDependencies {
   client: Pick<ControlPlaneClient, "pair">;
   preferences: DesktopPreferenceStore;
-  currentPreferences(): DesktopPreferences | null;
   keychain: NodeKeychain;
   now?: () => number;
 }
@@ -34,25 +34,25 @@ export const createPairingService = (
   dependencies: PairingServiceDependencies,
 ): PairingService => ({
   async pair(input) {
-    const existingPreferences = dependencies.currentPreferences();
     const result: PairNodeResult = await dependencies.client.pair(input);
-    const preferences = sanitizeDesktopPreferences({
-      serverUrl: input.serverUrl,
-      nodeId: result.node.id,
-      nodeName: result.node.name || input.name,
-      relayEnabled: true,
-      pairedAt: (dependencies.now ?? Date.now)(),
-      launchMode: existingPreferences?.launchMode,
-      reduceMotion: existingPreferences?.reduceMotion,
-    });
     await dependencies.keychain.write(result.node.id, result.nodeSecret);
     try {
-      await dependencies.preferences.save(preferences);
+      const preferences = await dependencies.preferences.update({
+        serverUrl: input.serverUrl,
+        nodeId: result.node.id,
+        nodeName: result.node.name || input.name,
+        relayEnabled: true,
+        pairedAt: (dependencies.now ?? Date.now)(),
+      });
+      return { preferences, nodeSecret: result.nodeSecret };
     } catch (error) {
-      await dependencies.keychain.remove(result.node.id);
+      try {
+        await dependencies.keychain.remove(result.node.id);
+      } catch {
+        // Preserve the preference commit error; it is the actionable cause.
+      }
       throw error;
     }
-    return { preferences, nodeSecret: result.nodeSecret };
   },
   async restore() {
     const preferences = await dependencies.preferences.load();

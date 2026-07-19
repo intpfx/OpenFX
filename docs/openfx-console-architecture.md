@@ -49,7 +49,11 @@ Mac 节点，以及运行时无关的 `domains/e` Agent/审批内核。Web 控�
    初次配对或上述同请求传输重试中返回 32 字节 `nodeSecret`。
 4. 节点把 secret 写入 macOS Keychain 的 `OpenFX Node` service；普通偏好只保存
    `nodeId`、节点名、服务端 URL、Relay 开关、配对时间、下次启动模式 `launchMode` 与
-   静态核心开关 `reduceMotion`。重新配对会保留两个用户界面选择，绝不把 secret 写入偏好。
+   静态核心开关
+   `reduceMotion`。Relay、界面设置和配对提交统一通过同步原子补丁合并最新值； 即使用户在
+   HTTPS 或 Keychain 等待期间切换设置，配对提交也只覆盖节点字段，绝不把 secret
+   写入偏好。持久化失败会先恢复提交前的原始序列化快照，调用方只在成功后更新进程内状态；
+   恢复失败则返回独立错误，避免把磁盘状态误报为已保存。
 5. 服务端只保存校验摘要和由 `OPENFX_NODE_CREDENTIAL_KEY` 加密的凭据副本。浏览器 API
    不返回 secret、摘要、密文或解密结果。
 

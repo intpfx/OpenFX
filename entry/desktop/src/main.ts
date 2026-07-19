@@ -22,7 +22,6 @@ import {
   serializeDesktopAppSmokeMarker,
 } from "./core/app-smoke-contract.ts";
 import type { AuditLog } from "./core/audit-log.ts";
-import { sanitizeDesktopPreferences } from "./core/desktop-state.ts";
 import { createDesktopJournal } from "./core/durable-journal.ts";
 import { createDesktopLifecycleController } from "./core/lifecycle-controller.ts";
 import { derivePairingReadiness } from "./core/pairing-readiness.ts";
@@ -85,7 +84,6 @@ const controlPlane = createControlPlaneClient(requestJson, { crypto: cryptoAdapt
 const pairingService = createPairingService({
   client: controlPlane,
   preferences: preferenceStore,
-  currentPreferences: readDesktopPreferencesSync,
   keychain,
 });
 const reporter = createRelayReporter(controlPlane);
@@ -164,11 +162,9 @@ const agentTools = createAgentToolRuntime({
     kill: (pid, expected) => macSystem.kill(pid, expected),
     openApplication: (application) => macSystem.openApplication(application),
     async updateRelay(enabled) {
-      const next = sanitizeDesktopPreferences({
-        ...preferences.value,
+      const next = await preferenceStore.update({
         relayEnabled: enabled,
       });
-      await preferenceStore.save(next);
       preferences.set(next);
       if (pairing) {
         pairing = { ...pairing, preferences: next };
@@ -443,8 +439,7 @@ async function persistPreferenceChoice(
   patch: Partial<Pick<DesktopPreferences, "launchMode" | "reduceMotion">>,
 ): Promise<boolean> {
   try {
-    const next = sanitizeDesktopPreferences({ ...preferences.value, ...patch });
-    await preferenceStore.save(next);
+    const next = await preferenceStore.update(patch);
     preferences.set(next);
     if (pairing) {
       pairing = { ...pairing, preferences: next };

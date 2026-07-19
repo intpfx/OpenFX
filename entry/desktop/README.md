@@ -14,8 +14,11 @@ OpenFX Node 是常驻 macOS 菜单栏的原生 Perry 节点。它承载本机监
 - 节点 API 监听 `[::]:24531`。公开 `/v1/health` 只返回健康状态和协议版本，
   其余固定路由统一经过 v1 签名、AES-GCM 信封、时间窗和 nonce 防重放校验。
 - 配对使用 OpenFX 服务端 URL 与 8 位配对码。普通偏好只保存非敏感节点信息以及
-  `launchMode`、`reduceMotion`；重新配对保留这两个界面选择。`nodeSecret` 存入 macOS
-  Keychain 的 `OpenFX Node` service，成功后已消费的配对码立即从原生文本框清除。
+  `launchMode`、`reduceMotion`；所有偏好写入都以同步的局部补丁合并最新持久化值，因此
+  HTTPS 或 Keychain 尚未完成时更改这两个选项也不会被配对完成覆盖。`nodeSecret` 存入
+  macOS Keychain 的 `OpenFX Node` service，成功后已消费的配对码立即从原生文本框清除。
+  偏好写入抛错时会恢复提交前的序列化快照，只有持久化成功后才更新进程内 UI 状态；若恢复
+  本身也失败，界面会明确要求重启后检查设置。
 - 公网 IPv6 只从两个固定 HTTPS
   观察端点确认，并且必须与本机候选地址匹配；不匹配和观察错误 会显式保留在网络状态中。
 - OpenFX 控制面上报只走 `node:https.request`，包括实时 Agent delta 与审批事件；OMLX
