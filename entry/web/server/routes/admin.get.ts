@@ -1,7 +1,9 @@
 import { defineEventHandler } from "h3";
 
-import { renderSpaDocument } from "../utils/spa.ts";
+export const redirectLegacyAdminRequest = (): Response =>
+  new Response(null, {
+    status: 302,
+    headers: { location: "/" },
+  });
 
-export default defineEventHandler(async () => {
-  return await renderSpaDocument();
-});
+export default defineEventHandler(() => redirectLegacyAdminRequest());

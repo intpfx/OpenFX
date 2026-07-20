@@ -1923,7 +1923,7 @@ textarea {
   view-transition-name: card-data;
 }
 
-.domain-panel[data-panel-id="admin-console"] {
+.domain-panel[data-panel-id="openfx-data"] {
   grid-template-rows: 1fr;
 }
 

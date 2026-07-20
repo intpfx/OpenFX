@@ -20,7 +20,11 @@ import {
   type HomepageProjectCard,
   listHiddenHomepageProjects,
 } from "../homepage-projects";
-import { type ActiveDomainPanel, isProjectDetailPanelId } from "../homepage-panels";
+import {
+  type ActiveDomainPanel,
+  isProjectDetailPanelId,
+  resolveHomepageRoute,
+} from "../homepage-panels";
 import { MapPosterPanelContent } from "./MapPosterPanel.tsx";
 import { ConsoleApp } from "./console/ConsoleApp.tsx";
 
@@ -751,24 +755,16 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
   }
 
   function closeProjectPanel() {
-    const shouldResetAdminRoute = activePanel === "admin-console" &&
-      globalThis.location?.pathname === "/admin";
     if (document.startViewTransition && document.visibilityState === "visible") {
       document.startViewTransition(() =>
         flushSync(() => {
           setActivePanel(null);
-          if (shouldResetAdminRoute) {
-            navigate("/");
-          }
         })
       );
       return;
     }
 
     setActivePanel(null);
-    if (shouldResetAdminRoute) {
-      navigate("/");
-    }
   }
 
   function buildProxyFrameUrl(input: string) {
@@ -1019,16 +1015,6 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
         </div>
 
         {/* 面板叠加层 */}
-        {activePanel === "admin-console"
-          ? (
-            <div
-              className="domain-panel admin-domain-panel"
-              data-panel-id="admin-console"
-            >
-              <ConsoleApp />
-            </div>
-          )
-          : null}
         {activePanel === "how-much-this" ? <HowMuchPanel /> : null}
         {activePanel === "ipv6-sync-suite"
           ? <DownipPanel accessKey={currentAccessKey} />
@@ -1036,7 +1022,16 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
         {activePanel === "relay-proxy-gateway"
           ? <ProxyPanel frameUrl={proxyFrameUrl} />
           : null}
-        {activePanel === "openfx-data" ? <DataPanel /> : null}
+        {activePanel === "openfx-data"
+          ? (
+            <div
+              className="domain-panel admin-domain-panel"
+              data-panel-id="openfx-data"
+            >
+              <ConsoleApp onExit={closeProjectPanel} />
+            </div>
+          )
+          : null}
         {activePanel === "wanone-memorial"
           ? (
             <div
@@ -2708,13 +2703,16 @@ function HowMuchPanel() {
 
 export function App() {
   const pathname = usePathname();
+  const route = resolveHomepageRoute(pathname);
 
-  if (pathname === "/admin") {
-    return <ConsoleApp />;
-  }
+  useEffect(() => {
+    if (route.canonicalPath === pathname) return;
+    globalThis.history?.replaceState({}, "", route.canonicalPath);
+    dispatchPopstate();
+  }, [pathname, route.canonicalPath]);
 
   if (pathname !== "/downip") {
-    return <Homepage />;
+    return <Homepage initialPanel={route.initialPanel} />;
   }
 
   return (

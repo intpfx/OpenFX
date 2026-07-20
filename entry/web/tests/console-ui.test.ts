@@ -245,7 +245,7 @@ Deno.test("relay effect reports approval instead of claiming immediate change", 
 
 Deno.test("pairing guide exposes only the current HTTPS origin to Perry", () => {
   expect(derivePairingGuide({
-    currentUrl: "https://console.openfx.example/admin?tab=mac",
+    currentUrl: "https://console.openfx.example/?tab=mac",
     availability: "unknown",
     pairing: null,
     now: 1_000,
@@ -265,9 +265,9 @@ Deno.test("pairing guide exposes only the current HTTPS origin to Perry", () => 
 
   for (
     const currentUrl of [
-      "http://console.openfx.example/admin",
-      "http://localhost:8000/admin",
-      "http://127.0.0.1:8000/admin",
+      "http://console.openfx.example/",
+      "http://localhost:8000/",
+      "http://127.0.0.1:8000/",
       null,
     ]
   ) {
@@ -287,7 +287,7 @@ Deno.test("pairing guide exposes only the current HTTPS origin to Perry", () => 
 
 Deno.test("pairing guide never labels an HTTP origin as an HTTPS server address", () => {
   expect(derivePairingGuide({
-    currentUrl: "http://localhost:8000/admin",
+    currentUrl: "http://localhost:8000/",
     availability: "unknown",
     pairing: null,
     now: 1_000,
@@ -348,7 +348,7 @@ Deno.test("pairing countdown subscription clears its timer once and never leaks"
 
 Deno.test("pairing guide rendering keeps online rotation code and instructions visible", () => {
   expect(derivePairingGuide({
-    currentUrl: "https://console.openfx.example/admin",
+    currentUrl: "https://console.openfx.example/",
     availability: "online",
     pairing: { code: "ABC2EFGH", expiresAt: 601_000 },
     now: 1_000,
@@ -360,7 +360,7 @@ Deno.test("pairing guide rendering keeps online rotation code and instructions v
     showInstructions: true,
   });
   expect(derivePairingGuide({
-    currentUrl: "https://console.openfx.example/admin",
+    currentUrl: "https://console.openfx.example/",
     availability: "offline",
     pairing: { code: "ABC2EFGH", expiresAt: 601_000 },
     now: 1_000,
@@ -371,7 +371,7 @@ Deno.test("pairing guide rendering keeps online rotation code and instructions v
     showInstructions: true,
   });
   expect(derivePairingGuide({
-    currentUrl: "https://console.openfx.example/admin",
+    currentUrl: "https://console.openfx.example/",
     availability: "online",
     pairing: null,
     now: 1_000,

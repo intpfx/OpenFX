@@ -89,7 +89,7 @@ type AuditEvent = {
   createdAt: number;
 };
 
-export function ConsoleApp() {
+export function ConsoleApp(props: { onExit?: () => void } = {}) {
   const [session, setSession] = useState<SessionState>("checking");
   const [password, setPassword] = useState("");
   const [loginStatus, setLoginStatus] = useState("");
@@ -538,6 +538,17 @@ export function ConsoleApp() {
             {session === "checking" ? "连接中" : "建立安全会话"}
           </button>
           <span className="console-login-status" role="status">{loginStatus}</span>
+          {props.onExit
+            ? (
+              <button
+                className="console-login-exit"
+                type="button"
+                onClick={props.onExit}
+              >
+                返回首页
+              </button>
+            )
+            : null}
         </form>
       </main>
     );
@@ -562,6 +573,13 @@ export function ConsoleApp() {
           <small>{relay?.publicIpv6 ?? "等待地址"}</small>
         </div>
         <div className="console-top-actions">
+          {props.onExit
+            ? (
+              <button type="button" onClick={props.onExit}>
+                返回首页
+              </button>
+            )
+            : null}
           <button
             className="console-approval-trigger"
             type="button"

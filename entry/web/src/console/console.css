@@ -1064,6 +1064,12 @@
   margin-top: 12px;
   color: var(--console-accent);
 }
+.console-login form > button.console-login-exit {
+  margin-top: 4px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--console-muted);
+}
 .console-login-status {
   display: block;
   min-height: 16px;

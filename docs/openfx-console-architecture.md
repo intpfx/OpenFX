@@ -7,7 +7,8 @@ Mac 节点，以及运行时无关的 `domains/e` Agent/审批内核。Web 控�
 
 ## 运行边界
 
-- `entry/web` 提供 `/admin`、管理员会话、配对、Deno KV 历史、SSE 和固定 Relay。
+- `entry/web` 在根页 OpenFX Logo 打开的后台面板中提供控制台、管理员会话、配对、Deno KV
+  历史、SSE 和固定 Relay；旧 `/admin` 仅重定向到 `/`，不再维护独立页面。
 - `entry/desktop` 是目标 Mac 节点。它默认以 Perry regular 应用显示 Dock、应用菜单、FX
   Tray 和主窗口；用户主动选择的 `menuBarOnly` 模式只在下次启动切换为 accessory。
   两种模式都监听 `[::]:24531`，关闭窗口不停止节点服务。
@@ -61,10 +62,11 @@ Mac 节点，以及运行时无关的 `domains/e` Agent/审批内核。Web 控�
 
 ### Web 配对引导
 
-管理员在“远程接入”或“设置”打开 Mac 配对卡片后，控制台只把当前页面的 HTTPS origin 作为
-Perry 服务端地址，不复制 `/admin` 路径、查询参数或片段。卡片提供地址复制、8 位短码
-复制和实时倒计时，并按“检测公网 IPv6 → 输入 HTTPS 地址与短码 → 写入 macOS Keychain”
-说明桌面端的三个步骤。复制被浏览器拒绝时会保留可选择文本，并给出中文失败提示。
+管理员从根页 OpenFX Logo 进入后台面板，并在“远程接入”或“设置”打开 Mac 配对卡片后，
+控制台只把当前页面的 HTTPS origin 作为 Perry 服务端地址，不复制路径、查询参数或片段。
+卡片提供地址复制、8 位短码复制和实时倒计时，并按“检测公网 IPv6 → 输入 HTTPS 地址与短码 →
+写入 macOS Keychain”说明桌面端的三个步骤。复制被浏览器拒绝时会保留可选择文本，并给出
+中文失败提示。
 
 HTTP 页面（包括 localhost 和 `127.0.0.1` 预览）不会生成配对码，固定显示“请通过 HTTPS
 控制台打开”，也不会把 HTTP origin 放进“HTTPS 服务端地址”字段。这是产品门禁，不使用

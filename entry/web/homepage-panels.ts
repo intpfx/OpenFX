@@ -17,7 +17,18 @@ export const PROJECT_DETAIL_PANEL_IDS = [
 
 export type ProjectDetailPanelId = typeof PROJECT_DETAIL_PANEL_IDS[number];
 
-export type ActiveDomainPanel = "admin-console" | ProjectDetailPanelId;
+export type ActiveDomainPanel = ProjectDetailPanelId;
+
+export interface HomepageRoute {
+  canonicalPath: string;
+  initialPanel?: ActiveDomainPanel;
+}
+
+export function resolveHomepageRoute(pathname: string): HomepageRoute {
+  return pathname === "/admin"
+    ? { canonicalPath: "/", initialPanel: "openfx-data" }
+    : { canonicalPath: pathname };
+}
 
 export function isProjectDetailPanelId(
   projectId: string,
