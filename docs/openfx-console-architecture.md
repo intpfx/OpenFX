@@ -8,7 +8,7 @@ Mac 节点，以及运行时无关的 `domains/e` Agent/审批内核。Web 控�
 ## 运行边界
 
 - `entry/web` 在根页 OpenFX Logo 打开的后台面板中提供控制台、管理员会话、配对、Deno KV
-  历史、SSE 和固定 Relay；旧 `/admin` 仅重定向到 `/`，不再维护独立页面。
+  历史、SSE 和固定 Relay，不提供独立控制台页面路由。
 - `entry/desktop` 是目标 Mac 节点。它默认以 Perry regular 应用显示 Dock、应用菜单、FX
   Tray 和主窗口；用户主动选择的 `menuBarOnly` 模式只在下次启动切换为 accessory。
   两种模式都监听 `[::]:24531`，关闭窗口不停止节点服务。

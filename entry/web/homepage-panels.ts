@@ -19,15 +19,10 @@ export type ProjectDetailPanelId = typeof PROJECT_DETAIL_PANEL_IDS[number];
 
 export type ActiveDomainPanel = ProjectDetailPanelId;
 
-export interface HomepageRoute {
-  canonicalPath: string;
-  initialPanel?: ActiveDomainPanel;
-}
+export type StandalonePage = "downip";
 
-export function resolveHomepageRoute(pathname: string): HomepageRoute {
-  return pathname === "/admin"
-    ? { canonicalPath: "/", initialPanel: "openfx-data" }
-    : { canonicalPath: pathname };
+export function resolveStandalonePage(pathname: string): StandalonePage | null {
+  return pathname === "/downip" ? "downip" : null;
 }
 
 export function isProjectDetailPanelId(

@@ -1,8 +1,7 @@
 import { expect } from "@std/expect";
 
 import { HOMEPAGE_PROJECTS } from "../homepage-projects.ts";
-import { PROJECT_DETAIL_PANEL_IDS, resolveHomepageRoute } from "../homepage-panels.ts";
-import { redirectLegacyAdminRequest } from "../server/routes/admin.get.ts";
+import { PROJECT_DETAIL_PANEL_IDS, resolveStandalonePage } from "../homepage-panels.ts";
 
 Deno.test("homepage project cards all have detail panels", () => {
   const projectCardIds = HOMEPAGE_PROJECTS.columns.flatMap((column) =>
@@ -23,18 +22,9 @@ Deno.test("homepage data panel is opened from the OpenFX logo", () => {
   expect(PROJECT_DETAIL_PANEL_IDS).toContain("openfx-data");
 });
 
-Deno.test("legacy admin URL opens the root homepage data console", () => {
-  expect(resolveHomepageRoute("/admin")).toEqual({
-    canonicalPath: "/",
-    initialPanel: "openfx-data",
-  });
-});
-
-Deno.test("legacy admin HTTP route redirects to the root homepage", () => {
-  const response = redirectLegacyAdminRequest();
-
-  expect(response.status).toBe(302);
-  expect(response.headers.get("location")).toBe("/");
+Deno.test("admin is not a standalone page route", () => {
+  expect(resolveStandalonePage("/admin")).toBeNull();
+  expect(resolveStandalonePage("/downip")).toBe("downip");
 });
 
 Deno.test("homepage project cards are visible by default", () => {

@@ -74,9 +74,8 @@ Web 页底部会展示构建版本。`deno task build` 会自动补齐：
 
 ## OpenFX Console 控制面
 
-控制台不再使用独立页面。点击根页的 OpenFX Logo 会在首页后台面板中打开完整控制台；旧
-`/admin` 地址只作为兼容入口重定向到 `/`，控制台统一从根页后台入口打开，避免维护两套管理
-界面或登录状态。
+控制台不使用独立页面或独立页面路由。点击根页的 OpenFX Logo 会在首页后台面板中打开完整
+控制台，统一维护一套管理界面和登录状态。
 
 管理 API 使用 12 小时绝对有效期的 `HttpOnly`、`SameSite=Strict` cookie，会话 token 仅以
 SHA-256 摘要保存。除 localhost 外 cookie 同时带 `Secure`；旧的 `x-openfx-admin-key`

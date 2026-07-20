@@ -23,7 +23,7 @@ import {
 import {
   type ActiveDomainPanel,
   isProjectDetailPanelId,
-  resolveHomepageRoute,
+  resolveStandalonePage,
 } from "../homepage-panels";
 import { MapPosterPanelContent } from "./MapPosterPanel.tsx";
 import { ConsoleApp } from "./console/ConsoleApp.tsx";
@@ -444,7 +444,7 @@ function getProjectCardClick(
   return undefined;
 }
 
-function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
+function Homepage() {
   const primaryControlAnimationRef = useRef<JSAnimation | null>(null);
   const statusAnimationRef = useRef<JSAnimation | null>(null);
   const brandWordRef = useRef<HTMLButtonElement | null>(null);
@@ -459,9 +459,7 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
   const [brandLockWidth, setBrandLockWidth] = useState<number | null>(null);
   const [showMessageComposer, setShowMessageComposer] = useState(false);
   const [projectQuery, setProjectQuery] = useState("");
-  const [activePanel, setActivePanel] = useState<ActiveDomainPanel | null>(
-    props.initialPanel ?? null,
-  );
+  const [activePanel, setActivePanel] = useState<ActiveDomainPanel | null>(null);
   const [proxyInput, setProxyInput] = useState("");
   const [proxyFrameUrl, setProxyFrameUrl] = useState("");
   const [messageContent, setMessageContent] = useState("");
@@ -849,12 +847,6 @@ function Homepage(props: { initialPanel?: ActiveDomainPanel } = {}) {
       globalThis.removeEventListener("resize", queueUpdate);
     };
   }, []);
-
-  useEffect(() => {
-    if (props.initialPanel) {
-      setActivePanel(props.initialPanel);
-    }
-  }, [props.initialPanel]);
 
   useEffect(() => {
     renderPrimaryControl();
@@ -2703,22 +2695,16 @@ function HowMuchPanel() {
 
 export function App() {
   const pathname = usePathname();
-  const route = resolveHomepageRoute(pathname);
+  const standalonePage = resolveStandalonePage(pathname);
 
-  useEffect(() => {
-    if (route.canonicalPath === pathname) return;
-    globalThis.history?.replaceState({}, "", route.canonicalPath);
-    dispatchPopstate();
-  }, [pathname, route.canonicalPath]);
-
-  if (pathname !== "/downip") {
-    return <Homepage initialPanel={route.initialPanel} />;
+  if (standalonePage === null) {
+    return <Homepage />;
   }
 
   return (
     <div className="app-frame">
       <main>
-        {pathname === "/downip" ? <DownipPage /> : null}
+        {standalonePage === "downip" ? <DownipPage /> : null}
       </main>
     </div>
   );
