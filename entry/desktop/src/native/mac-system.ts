@@ -117,7 +117,7 @@ export const createMacSystemAdapter = (
     async openConsole(serverUrl) {
       let url: URL;
       try {
-        url = new URL("/admin", serverUrl);
+        url = new URL("/", serverUrl);
       } catch {
         throw new Error("https_required");
       }

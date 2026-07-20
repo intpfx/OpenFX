@@ -47,7 +47,7 @@ Deno.test("macOS adapter uses fixed executables and argument arrays for monitori
     },
     { file: "/bin/kill", args: ["-TERM", "42"] },
     { file: "/usr/bin/open", args: ["-a", "Safari"] },
-    { file: "/usr/bin/open", args: ["https://console.example/admin"] },
+    { file: "/usr/bin/open", args: ["https://console.example/"] },
   ]);
 });
 

@@ -72,6 +72,10 @@ Web 页底部会展示构建版本。`deno task build` 会自动补齐：
 - `OPENFX_NODE_CREDENTIAL_KEY` — 32 字节文本或 32 字节 Base64URL 密钥，用于 AES-256-GCM
   加密保存配对节点凭据
 
+本地开发可以在启动命令前显式设置 `OPENFX_ADMIN_KEY`，获得跨重启稳定的登录 key；若还需
+保留已配对节点，应同时固定 32 字节的 `OPENFX_NODE_CREDENTIAL_KEY`。这些开发值不得提交为
+生产默认配置。
+
 ## OpenFX Console 控制面
 
 控制台不使用独立页面或独立页面路由。点击根页的 OpenFX Logo 会在首页后台面板中打开完整
