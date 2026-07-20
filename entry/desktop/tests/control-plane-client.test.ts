@@ -16,6 +16,7 @@ import {
 import { createDesktopPreferenceStore } from "../src/native/preferences.ts";
 import { createRelayReporter } from "../src/native/relay-reporter.ts";
 import type { DesktopPreferences } from "../src/core/types.ts";
+import type { ParsedSystemState } from "../src/core/types.ts";
 import type { HttpJsonRequest } from "../src/native/omlx-client.ts";
 
 Deno.test("control-plane pairing and reports use HTTPS v1 contracts", async () => {
@@ -623,6 +624,117 @@ Deno.test("post-pair signed reports preserve the HTTPS-only control-plane bounda
   assertEquals(requests, 0);
 });
 
+Deno.test("relay reporter uploads at most once per minute while samples stay live", async () => {
+  let now = 20_000;
+  const calls: string[] = [];
+  const relay = createRelayReporter({
+    heartbeat() {
+      calls.push("heartbeat");
+      return Promise.resolve();
+    },
+    telemetry() {
+      calls.push("telemetry");
+      return Promise.resolve();
+    },
+  }, { now: () => now, reportIntervalMs: 60_000 });
+  relay.setPairing({
+    preferences: {
+      serverUrl: "https://openfx.example",
+      nodeId: "node-1",
+      nodeName: "Studio Mac",
+      relayEnabled: true,
+      pairedAt: 1,
+      launchMode: "regular",
+      reduceMotion: false,
+    },
+    nodeSecret: "encoded-secret",
+  });
+  const state = relayState();
+
+  await relay.report(state);
+  now += 5_000;
+  await relay.report(state);
+  assertEquals(calls, ["heartbeat", "telemetry"]);
+
+  now += 55_000;
+  await relay.report(state);
+  assertEquals(calls, ["heartbeat", "telemetry", "heartbeat", "telemetry"]);
+  assertEquals(relay.status().lastReportedAt, now);
+});
+
+Deno.test("relay reporter throttles failed attempts for the full report interval", async () => {
+  let now = 20_000;
+  let heartbeatCalls = 0;
+  const relay = createRelayReporter({
+    heartbeat() {
+      heartbeatCalls += 1;
+      return Promise.reject(new Error("control plane unavailable"));
+    },
+    telemetry() {
+      throw new Error("telemetry must not run after heartbeat failure");
+    },
+  }, { now: () => now, reportIntervalMs: 60_000 });
+  relay.setPairing({
+    preferences: {
+      serverUrl: "https://openfx.example",
+      nodeId: "node-1",
+      nodeName: "Studio Mac",
+      relayEnabled: true,
+      pairedAt: 1,
+      launchMode: "regular",
+      reduceMotion: false,
+    },
+    nodeSecret: "encoded-secret",
+  });
+  const state = relayState();
+
+  await relay.report(state);
+  now += 5_000;
+  await relay.report(state);
+  assertEquals(heartbeatCalls, 1);
+  assertEquals(relay.status().errorMessage, "control plane unavailable");
+
+  now += 55_000;
+  await relay.report(state);
+  assertEquals(heartbeatCalls, 2);
+});
+
+Deno.test("relay reporter resets its cadence when pairing authority changes", async () => {
+  let now = 20_000;
+  let heartbeatCalls = 0;
+  const relay = createRelayReporter({
+    heartbeat() {
+      heartbeatCalls += 1;
+      return Promise.resolve();
+    },
+    telemetry() {
+      return Promise.resolve();
+    },
+  }, { now: () => now, reportIntervalMs: 60_000 });
+  const preferences: DesktopPreferences = {
+    serverUrl: "https://openfx.example",
+    nodeId: "node-1",
+    nodeName: "Studio Mac",
+    relayEnabled: true,
+    pairedAt: 1,
+    launchMode: "regular",
+    reduceMotion: false,
+  };
+
+  relay.setPairing({ preferences, nodeSecret: "first-secret" });
+  await relay.report(relayState());
+  now += 5_000;
+  relay.setPairing({
+    preferences: { ...preferences, nodeId: "node-2" },
+    nodeSecret: "second-secret",
+  });
+  assertEquals(relay.status().lastReportedAt, null);
+  await relay.report(relayState());
+
+  assertEquals(heartbeatCalls, 2);
+  assertEquals(relay.status().lastReportedAt, now);
+});
+
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
   let reject!: (reason?: unknown) => void;
@@ -631,6 +743,30 @@ function deferred<T>() {
     reject = rejectPromise;
   });
   return { promise, resolve, reject };
+}
+
+function relayState(): ParsedSystemState {
+  return {
+    overview: {
+      collectedAt: 1,
+      cpuUsagePercent: 1,
+      memoryUsedBytes: 1,
+      memoryTotalBytes: 2,
+      diskUsedBytes: 1,
+      diskTotalBytes: 2,
+      networkRxBytes: 1,
+      networkTxBytes: 2,
+      batteryPercent: null,
+      processCount: 1,
+      topProcesses: [],
+    },
+    processes: [],
+    network: {
+      publicIpv6: "240e::1",
+      ipv6Addresses: ["240e::1"],
+      collectedAt: 1,
+    },
+  };
 }
 
 function mergePreferences(

@@ -21,8 +21,12 @@ OpenFX Node 是常驻 macOS 菜单栏的原生 Perry 节点。它承载本机监
   Keychain 的 `OpenFX Node` service，成功后已消费的配对码立即从原生文本框清除。
   偏好写入抛错时会恢复提交前的序列化快照，只有持久化成功后才更新进程内 UI 状态；若恢复
   本身也失败，界面会明确要求重启后检查设置。
-- 公网 IPv6 只从两个固定 HTTPS
-  观察端点确认，并且必须与本机候选地址匹配；不匹配和观察错误 会显式保留在网络状态中。
+- 本机 CPU、内存、进程和网络候选地址每 5 秒采样；公网 IPv6 只从两个固定 HTTPS
+  观察端点确认，外部结果缓存 1 分钟且并发采样复用同一个 in-flight。每次本地采样仍用最新
+  候选地址重新匹配；不匹配和观察错误会显式保留在网络状态中。
+- 已配对节点的签名 heartbeat 与 telemetry 每分钟最多尝试一组；失败尝试也进入 1 分钟
+  节流窗口，避免控制面不可用时退化为每 5 秒两次公网请求。重新配对或切换权威配对状态会
+  重置该节奏。
 - OpenFX 控制面上报只走 `node:https.request`，包括实时 Agent delta 与审批事件；OMLX
   固定使用 `node:http.request` 流式访问 `127.0.0.1:8000/v1/chat/completions`。
 - Agent 工具是封闭的 v1 清单。三个有副作用的工具必须经过 `domains/e` 的
@@ -46,8 +50,8 @@ OpenFX Node 是常驻 macOS 菜单栏的原生 Perry 节点。它承载本机监
 ## Perry 原生库
 
 稳定版 Perry 0.5.1220 需要仓库内的最小补丁，以修复外部 HTTP 静态库的 stdlib 符号边界、
-IPv6 listen 地址格式，以及入站 HTTP 回调之后 `ClientRequest.end()` 被其他小整数 handle
-注册表抢先分派的问题。补丁固定在
+IPv6 listen 地址格式、小整数 handle 被 Set 当成 GC 字符串指针，以及 `ClientRequest`
+分派和长期生命周期回收问题。补丁固定在
 [`perry/perry-v0.5.1220-openfx.patch`](perry/perry-v0.5.1220-openfx.patch)，构建脚本会校验
 官方 tag 的精确提交，并在套补丁前拒绝错误提交、已修改文件和未跟踪文件。
 
@@ -58,8 +62,9 @@ deno task perry:runtime --source /tmp/perry-openfx
 export PERRY_LIB_DIR=/tmp/perry-openfx/target/openfx-v0.5.1220/release
 ```
 
-Perry UI 的 AppKit timer 持续驱动 async reactor、stdlib 与 HTTP/HTTPS
-pump；窗口隐藏只取消 Canvas frame callback，不停止节点。Tray 相对图标先解析
+Perry UI 的 AppKit timer 持续驱动 async reactor、stdlib 与 HTTP/HTTPS pump。完成的 HTTP
+request/response 会保留到 terminal 回调后的下一次 pump，再从注册表移除并进入 handle
+quarantine；窗口隐藏只取消 Canvas frame callback，不停止节点。Tray 相对图标先解析
 `.app/Contents/Resources`，再回退到
 可执行文件目录。构建完成后，`PERRY_LIB_DIR/openfx-perry-runtime-provenance.json`
 记录精确 Perry 提交、Rust 1.96.1、补丁 SHA-256 和 Perry CLI/四个静态库的

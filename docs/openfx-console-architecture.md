@@ -110,7 +110,10 @@ OMLX 工具调用最多进行 3 轮、12 次。每轮工具结果经字节上限
 
 ## 数据与事件
 
-- Perry 每 5 秒采样一次；云端按分钟聚合遥测，保留最近 7 天。
+- Perry 每 5 秒采样一次本机状态；公网 IPv6 外部观察缓存 1 分钟，但每次仍以最新本机候选
+  地址重新匹配，并发观察共享同一个 in-flight。
+- 已配对节点每分钟最多尝试一次顺序 heartbeat + telemetry；失败尝试同样节流 1 分钟。
+  云端按分钟聚合遥测，保留最近 7 天。
 - SSE 事件包含 `heartbeat`、`telemetry`、`agent.delta`、 `approval.requested` 和
   `approval.resolved`，支持 `Last-Event-ID` 续接。
 - 节点事件批次具有请求级幂等性；失败不会留下半批事件，安全重试也不会重复追加。
@@ -190,6 +193,11 @@ HTTPS 配对、签名心跳与遥测、OMLX 离线降级、SSE 续接，以及�
 - `node:http` server 对 `::` 和其他 IPv6 listen host 使用带方括号的 socket 地址；
 - 外部 `ClientRequest` 注册自己的方法/属性分派扩展，避免共享小整数 handle ID 在 SQLite
   等其他注册表中碰撞后吞掉 `end()`；
+- Set 在任何 GC header 解引用前先用 `addr_class::is_handle_band` 排除完整
+  `[0, 0x100000)` handle 段，并只通过 `try_read_gc_header` 识别真实 GC 字符串；
+- 客户端 terminal 回调完成后把 `ClientRequest` 与对应 `IncomingMessage` 延迟到下一次
+  HTTP pump 统一移除，同时清理 surface 状态并通过 perry-ffi quarantine 延迟数字 ID
+  复用，既避免长期耗尽 `[1, 0x40000)`，也避免回调同轮发生 ABA；
 - AppKit 事件循环始终驱动 Perry async reactor、stdlib、HTTP/HTTPS 与微任务
   pump，隐藏窗口 不会停止 health、采样或 Relay；原生 visibility 回调只暂停隐藏窗口的
   Canvas frame， `menuBarOnly` 冷启动在窗口真正显示前不会绘制或排帧；

@@ -86,154 +86,158 @@ index 84ebb7a4a37fabfa8ec70d3de30fc54761e0327a..b0f6f885ad8fadcc2f265d0252eba388
 @@ -26 +26 @@ perry-ext-http-server = { path = "../perry-ext-http-server" }
 -perry-runtime = { workspace = true, features = ["external-ws-symbols"] }
 +perry-runtime = { workspace = true, features = ["default", "external-ws-symbols", "stdlib"] }
-diff --git a/crates/perry-ext-http/src/client_dispatch_ext.rs b/crates/perry-ext-http/src/client_dispatch_ext.rs
-new file mode 100644
-index 0000000000000000000000000000000000000000..53263363c9918e76fd50fdce3d937ee25d456b3a
---- /dev/null
-+++ b/crates/perry-ext-http/src/client_dispatch_ext.rs
-@@ -0,0 +1,134 @@
-+//! Runtime handle-dispatch extension for external HTTP client requests.
-+//!
-+//! `ClientRequestHandle` values live in perry-ffi's external handle registry,
-+//! while the primary stdlib dispatcher also probes several independent
-+//! small-integer registries. Once another subsystem allocates the same numeric
-+//! id, a generic `req.end()` can be claimed before the HTTP-client arm is
-+//! reached. Registering an authoritative extension keeps external client
-+//! handles on their owning dispatch surface.
-+
-+use std::sync::Once;
-+
-+extern "C" {
-+    fn js_register_handle_method_dispatch_extension(
-+        f: unsafe extern "C" fn(i64, *const u8, usize, *const f64, usize, *mut f64) -> i32,
-+    );
-+    fn js_register_handle_property_dispatch_extension(
-+        f: unsafe extern "C" fn(i64, *const u8, usize, *mut f64) -> i32,
-+    );
+diff --git a/crates/perry-ext-http/src/client_events.rs b/crates/perry-ext-http/src/client_events.rs
+index 9672435c40c67c5bccb7c651fcc5c8ef82c2320c..cc894905aa766ce5b89b4b5586ab856f54297eb1 100644
+--- a/crates/perry-ext-http/src/client_events.rs
++++ b/crates/perry-ext-http/src/client_events.rs
+@@ -6,0 +7,41 @@ use super::*;
++lazy_static! {
++    static ref COMPLETED_HTTP_HANDLES: Mutex<Vec<(Handle, Handle)>> = Mutex::new(Vec::new());
 +}
 +
-+pub(crate) fn ensure_dispatch_extensions_registered() {
-+    static REGISTER: Once = Once::new();
-+    REGISTER.call_once(|| unsafe {
-+        js_register_handle_method_dispatch_extension(client_request_method_dispatch_ext);
-+        js_register_handle_property_dispatch_extension(client_request_property_dispatch_ext);
++fn schedule_completed_http_handles(request_handle: Handle) {
++    let incoming_handle =
++        with_handle_mut::<ClientRequestHandle, _, _>(request_handle, |req| req.incoming_handle)
++            .unwrap_or(0);
++    let mut pending = COMPLETED_HTTP_HANDLES
++        .lock()
++        .unwrap_or_else(|poisoned| poisoned.into_inner());
++    if !pending
++        .iter()
++        .any(|(pending_request, _)| *pending_request == request_handle)
++    {
++        pending.push((request_handle, incoming_handle));
++    }
++}
++
++/// Release client handles one pump turn after their terminal callbacks.
++///
++/// Keeping both handles registered through the remainder of the terminal turn
++/// lets callback-created microtasks and zero-delay timers observe the same
++/// request/response values. `drop_handle` then parks each numeric id in
++/// perry-ffi's quarantine before it can be reused, preventing same-tick ABA.
++pub(crate) fn finalize_completed_http_handles() {
++    let completed = {
++        let mut pending = COMPLETED_HTTP_HANDLES
++            .lock()
++            .unwrap_or_else(|poisoned| poisoned.into_inner());
++        std::mem::take(&mut *pending)
++    };
++    for (request_handle, incoming_handle) in completed {
++        client_request_surface::remove_state(request_handle);
++        if incoming_handle != 0 {
++            perry_ffi::drop_handle(incoming_handle);
++        }
++        perry_ffi::drop_handle(request_handle);
++    }
++}
++
+@@ -104,0 +146 @@ pub(crate) fn fire_request_close_once(request_handle: Handle) {
++        schedule_completed_http_handles(request_handle);
+@@ -182,0 +225,3 @@ pub(crate) unsafe fn handle_response_event(
++    with_handle_mut::<ClientRequestHandle, _, _>(request_handle, |req| {
++        req.incoming_handle = incoming;
 +    });
+diff --git a/crates/perry-ext-http/src/client_request_surface.rs b/crates/perry-ext-http/src/client_request_surface.rs
+index 2ce0e6bb64950a606245ef9a5d593e7383322b0e..7aebb1a845179e8c74f5b4c79fe1aa691642bf06 100644
+--- a/crates/perry-ext-http/src/client_request_surface.rs
++++ b/crates/perry-ext-http/src/client_request_surface.rs
+@@ -66,0 +67,4 @@ pub(crate) fn request_destroyed(handle: Handle) -> bool {
++pub(crate) fn remove_state(handle: Handle) {
++    CLIENT_REQUEST_SURFACE.lock().unwrap().remove(&handle);
 +}
 +
-+#[inline]
-+unsafe fn name_str<'a>(ptr: *const u8, len: usize) -> &'a str {
-+    if ptr.is_null() || len == 0 {
-+        ""
-+    } else {
-+        std::str::from_utf8(std::slice::from_raw_parts(ptr, len)).unwrap_or("")
-+    }
-+}
-+
-+fn is_client_request_method(name: &str) -> bool {
-+    matches!(
-+        name,
-+        "end"
-+            | "write"
-+            | "setHeader"
-+            | "setTimeout"
-+            | "listenerCount"
-+            | "getHeader"
-+            | "hasHeader"
-+            | "removeHeader"
-+            | "getHeaderNames"
-+            | "getHeaders"
-+            | "getRawHeaderNames"
-+            | "abort"
-+            | "destroy"
-+            | "flushHeaders"
-+            | "cork"
-+            | "uncork"
-+            | "setNoDelay"
-+            | "setSocketKeepAlive"
-+            | "on"
-+            | "once"
-+            | "addListener"
-+            | "prependListener"
-+            | "removeListener"
-+            | "off"
-+            | "removeAllListeners"
-+    )
-+}
-+
-+fn is_client_request_property(name: &str) -> bool {
-+    is_client_request_method(name)
-+        || matches!(
-+            name,
-+            "method"
-+                | "protocol"
-+                | "host"
-+                | "path"
-+                | "aborted"
-+                | "destroyed"
-+                | "finished"
-+                | "reusedSocket"
-+                | "maxHeadersCount"
-+                | "writableEnded"
-+                | "writableFinished"
-+                | "socket"
-+                | "connection"
-+                | "constructor"
-+        )
-+}
-+
-+unsafe extern "C" fn client_request_method_dispatch_ext(
-+    handle: i64,
-+    method_ptr: *const u8,
-+    method_len: usize,
-+    args_ptr: *const f64,
-+    args_len: usize,
-+    out: *mut f64,
-+) -> i32 {
-+    let name = name_str(method_ptr, method_len);
-+    if !is_client_request_method(name)
-+        || crate::client_request_surface::js_ext_http_client_request_is_handle(handle) == 0
-+    {
-+        return 0;
-+    }
-+    let value = crate::client_request_surface::js_ext_http_client_request_dispatch_method(
-+        handle, method_ptr, method_len, args_ptr, args_len,
-+    );
-+    if !out.is_null() {
-+        *out = value;
-+    }
-+    1
-+}
-+
-+unsafe extern "C" fn client_request_property_dispatch_ext(
-+    handle: i64,
-+    property_ptr: *const u8,
-+    property_len: usize,
-+    out: *mut f64,
-+) -> i32 {
-+    let name = name_str(property_ptr, property_len);
-+    if !is_client_request_property(name)
-+        || crate::client_request_surface::js_ext_http_client_request_is_handle(handle) == 0
-+    {
-+        return 0;
-+    }
-+    let value = crate::client_request_surface::js_ext_http_client_request_dispatch_property(
-+        handle,
-+        property_ptr,
-+        property_len,
-+    );
-+    if !out.is_null() {
-+        *out = value;
-+    }
-+    1
-+}
 diff --git a/crates/perry-ext-http/src/lib.rs b/crates/perry-ext-http/src/lib.rs
-index d816401e4bf93df1b3440227e95105fbf30e80fc..af9a182e9fcd2165225d30c0a5bb47dd3d2dc121 100644
+index d816401e4bf93df1b3440227e95105fbf30e80fc..9d8ea89b1aa8d5c3390895e10702f7f62338333c 100644
 --- a/crates/perry-ext-http/src/lib.rs
 +++ b/crates/perry-ext-http/src/lib.rs
 @@ -55,0 +56 @@ use client_overload::{merge_url_and_options, method_for_overload, parse_client_a
 +mod client_dispatch_ext;
 @@ -250,0 +252 @@ pub(crate) fn ensure_gc_scanner_registered() {
 +        client_dispatch_ext::ensure_dispatch_extensions_registered();
+@@ -1692,0 +1695,6 @@ pub unsafe extern "C" fn js_http_process_pending() -> i32 {
++    // Terminal callbacks keep their request/response handles for the rest of
++    // the turn. Reclaim them only when the next client pump begins; perry-ffi
++    // then quarantines the numeric ids before any later registration can reuse
++    // them.
++    client_events::finalize_completed_http_handles();
++
+diff --git a/crates/perry-ext-http/src/tests.rs b/crates/perry-ext-http/src/tests.rs
+index 602cc4c03be40cbb34af84be5d6a560bf7fc7fa4..af55383a3c942d57f8f661f15c438bd2d77246a0 100644
+--- a/crates/perry-ext-http/src/tests.rs
++++ b/crates/perry-ext-http/src/tests.rs
+@@ -170,2 +170,2 @@ fn drain_streamed_body(chunks: &[&[u8]]) -> Vec<u8> {
+-    drop_handle(incoming_handle);
+-    drop_handle(request_handle);
++    client_events::finalize_completed_http_handles();
++    perry_ffi::drain_quarantined_handles();
+@@ -202,0 +203,66 @@ fn streamed_response_reassembles_chunks_byte_identically() {
++#[test]
++fn completed_client_handles_live_through_callbacks_then_enter_quarantine() {
++    let _guard = GcTestGuard::new();
++    client_events::finalize_completed_http_handles();
++
++    let request_handle = make_request_handle(
++        "GET".to_string(),
++        "https://openfx.example/health".to_string(),
++        HashMap::new(),
++        None,
++        0,
++        0,
++    );
++    unsafe {
++        client_events::handle_response_head_event(
++            request_handle,
++            200,
++            "OK".to_string(),
++            Vec::new(),
++        );
++        client_events::handle_response_end_event(request_handle);
++    }
++    let incoming_handle = get_handle::<ClientRequestHandle>(request_handle)
++        .expect("request must remain live until the next pump turn")
++        .incoming_handle;
++    assert!(get_handle::<IncomingMessageHandle>(incoming_handle).is_some());
++
++    client_events::finalize_completed_http_handles();
++    assert!(get_handle::<ClientRequestHandle>(request_handle).is_none());
++    assert!(get_handle::<IncomingMessageHandle>(incoming_handle).is_none());
++
++    let same_turn_probe = register_handle(());
++    assert_ne!(same_turn_probe, request_handle);
++    assert_ne!(same_turn_probe, incoming_handle);
++    drop_handle(same_turn_probe);
++    perry_ffi::drain_quarantined_handles();
++}
++
++#[test]
++fn completed_client_handle_churn_does_not_exhaust_the_ffi_band() {
++    let _guard = GcTestGuard::new();
++    client_events::finalize_completed_http_handles();
++
++    for _ in 0..(0x40000 + 1024) {
++        let request_handle = make_request_handle(
++            "GET".to_string(),
++            "https://openfx.example/health".to_string(),
++            HashMap::new(),
++            None,
++            0,
++            0,
++        );
++        unsafe {
++            client_events::handle_response_head_event(
++                request_handle,
++                200,
++                "OK".to_string(),
++                Vec::new(),
++            );
++            client_events::handle_response_end_event(request_handle);
++        }
++        client_events::finalize_completed_http_handles();
++        perry_ffi::drain_quarantined_handles();
++    }
++}
++
 diff --git a/crates/perry-runtime/src/event_pump.rs b/crates/perry-runtime/src/event_pump.rs
 index d39855815176ff7231c516649b6988113016e8a2..d28a419ac51a3537ce5e388ebb3b5318f68f48c3 100644
 --- a/crates/perry-runtime/src/event_pump.rs
@@ -290,6 +294,54 @@ index 605b0d89e57064a4d7909e3292f394bb3cede1ac..5f3bc55d3e7ed55804300c5a0820fefc
 +        assert_eq!(js_frame_has_pending(), 1);
 +        js_cancel_all_frames();
 +        assert_eq!(js_frame_has_pending(), 0);
++    }
+diff --git a/crates/perry-runtime/src/set.rs b/crates/perry-runtime/src/set.rs
+index 25780b55add1175ee1cff50c3cc3f70c5c02e27f..0f5409b4c8561a641138499429e4e438b93f28f6 100644
+--- a/crates/perry-runtime/src/set.rs
++++ b/crates/perry-runtime/src/set.rs
+@@ -450 +450 @@ fn string_view_from_bits(
+-    if ptr.is_null() || (ptr as usize) < 0x1000 {
++    if ptr.is_null() || crate::value::addr_class::is_handle_band(ptr as usize) {
+@@ -464,0 +465,4 @@ fn is_string_like(bits: u64) -> bool {
++    let ptr = extract_string_ptr_from_value(bits);
++    if ptr.is_null() || crate::value::addr_class::is_handle_band(ptr as usize) {
++        return false;
++    }
+@@ -467 +471 @@ fn is_string_like(bits: u64) -> bool {
+-        return !extract_string_ptr_from_value(bits).is_null();
++        return true;
+@@ -474,9 +478,2 @@ fn is_string_like(bits: u64) -> bool {
+-    let ptr = extract_string_ptr_from_value(bits);
+-    if ptr.is_null() || (ptr as usize) < 0x1000 {
+-        return false;
+-    }
+-    unsafe {
+-        let gc_hdr =
+-            (ptr as *const u8).sub(crate::gc::GC_HEADER_SIZE) as *const crate::gc::GcHeader;
+-        (*gc_hdr).obj_type == crate::gc::GC_TYPE_STRING
+-    }
++    unsafe { crate::value::addr_class::try_read_gc_header(ptr as usize) }
++        .is_some_and(|header| header.obj_type == crate::gc::GC_TYPE_STRING)
+@@ -1597,0 +1595,20 @@ mod tests {
++    use std::collections::hash_map::DefaultHasher;
++
++    #[test]
++    fn pointer_tag_handle_band_is_never_treated_as_a_string_pointer() {
++        for handle in [1_u64, 0x0fff, 0x1000, 0x1001, 0x3ffff, 0xfffff] {
++            let bits = crate::value::POINTER_TAG | handle;
++            let mut scratch = [0_u8; crate::value::SHORT_STRING_MAX_LEN];
++            assert!(
++                !is_string_like(bits),
++                "handle {handle:#x} looked like a string"
++            );
++            assert!(
++                string_view_from_bits(bits, &mut scratch).is_none(),
++                "handle {handle:#x} yielded a string view"
++            );
++            let mut hasher = DefaultHasher::new();
++            JSValueKey(f64::from_bits(bits)).hash(&mut hasher);
++            let _ = hasher.finish();
++        }
 +    }
 diff --git a/crates/perry-stdlib/src/common/async_bridge.rs b/crates/perry-stdlib/src/common/async_bridge.rs
 index 6a0b2e834244e1426b0546d82ff35c291f2f62de..cc61f4195a69acb742322d17035f89c59bae5709 100644
@@ -566,3 +618,143 @@ index 955f0d33bf6369d5758306ec827c1ebd79dccf47..d91d638e5fc7d163ca808511ac2e0d0f
 +    callback: (visible: boolean) => void,
 +): void;
 +
+diff --git a/crates/perry-ext-http/src/client_dispatch_ext.rs b/crates/perry-ext-http/src/client_dispatch_ext.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..53263363c9918e76fd50fdce3d937ee25d456b3a
+--- /dev/null
++++ b/crates/perry-ext-http/src/client_dispatch_ext.rs
+@@ -0,0 +1,134 @@
++//! Runtime handle-dispatch extension for external HTTP client requests.
++//!
++//! `ClientRequestHandle` values live in perry-ffi's external handle registry,
++//! while the primary stdlib dispatcher also probes several independent
++//! small-integer registries. Once another subsystem allocates the same numeric
++//! id, a generic `req.end()` can be claimed before the HTTP-client arm is
++//! reached. Registering an authoritative extension keeps external client
++//! handles on their owning dispatch surface.
++
++use std::sync::Once;
++
++extern "C" {
++    fn js_register_handle_method_dispatch_extension(
++        f: unsafe extern "C" fn(i64, *const u8, usize, *const f64, usize, *mut f64) -> i32,
++    );
++    fn js_register_handle_property_dispatch_extension(
++        f: unsafe extern "C" fn(i64, *const u8, usize, *mut f64) -> i32,
++    );
++}
++
++pub(crate) fn ensure_dispatch_extensions_registered() {
++    static REGISTER: Once = Once::new();
++    REGISTER.call_once(|| unsafe {
++        js_register_handle_method_dispatch_extension(client_request_method_dispatch_ext);
++        js_register_handle_property_dispatch_extension(client_request_property_dispatch_ext);
++    });
++}
++
++#[inline]
++unsafe fn name_str<'a>(ptr: *const u8, len: usize) -> &'a str {
++    if ptr.is_null() || len == 0 {
++        ""
++    } else {
++        std::str::from_utf8(std::slice::from_raw_parts(ptr, len)).unwrap_or("")
++    }
++}
++
++fn is_client_request_method(name: &str) -> bool {
++    matches!(
++        name,
++        "end"
++            | "write"
++            | "setHeader"
++            | "setTimeout"
++            | "listenerCount"
++            | "getHeader"
++            | "hasHeader"
++            | "removeHeader"
++            | "getHeaderNames"
++            | "getHeaders"
++            | "getRawHeaderNames"
++            | "abort"
++            | "destroy"
++            | "flushHeaders"
++            | "cork"
++            | "uncork"
++            | "setNoDelay"
++            | "setSocketKeepAlive"
++            | "on"
++            | "once"
++            | "addListener"
++            | "prependListener"
++            | "removeListener"
++            | "off"
++            | "removeAllListeners"
++    )
++}
++
++fn is_client_request_property(name: &str) -> bool {
++    is_client_request_method(name)
++        || matches!(
++            name,
++            "method"
++                | "protocol"
++                | "host"
++                | "path"
++                | "aborted"
++                | "destroyed"
++                | "finished"
++                | "reusedSocket"
++                | "maxHeadersCount"
++                | "writableEnded"
++                | "writableFinished"
++                | "socket"
++                | "connection"
++                | "constructor"
++        )
++}
++
++unsafe extern "C" fn client_request_method_dispatch_ext(
++    handle: i64,
++    method_ptr: *const u8,
++    method_len: usize,
++    args_ptr: *const f64,
++    args_len: usize,
++    out: *mut f64,
++) -> i32 {
++    let name = name_str(method_ptr, method_len);
++    if !is_client_request_method(name)
++        || crate::client_request_surface::js_ext_http_client_request_is_handle(handle) == 0
++    {
++        return 0;
++    }
++    let value = crate::client_request_surface::js_ext_http_client_request_dispatch_method(
++        handle, method_ptr, method_len, args_ptr, args_len,
++    );
++    if !out.is_null() {
++        *out = value;
++    }
++    1
++}
++
++unsafe extern "C" fn client_request_property_dispatch_ext(
++    handle: i64,
++    property_ptr: *const u8,
++    property_len: usize,
++    out: *mut f64,
++) -> i32 {
++    let name = name_str(property_ptr, property_len);
++    if !is_client_request_property(name)
++        || crate::client_request_surface::js_ext_http_client_request_is_handle(handle) == 0
++    {
++        return 0;
++    }
++    let value = crate::client_request_surface::js_ext_http_client_request_dispatch_property(
++        handle,
++        property_ptr,
++        property_len,
++    );
++    if !out.is_null() {
++        *out = value;
++    }
++    1
++}

@@ -67,20 +67,34 @@ Deno.test("desktop entry schedules services from the native App event loop", asy
 
   assert(appIndex > 0, "desktop entry must start the native App event loop");
   assert(
-    main.includes("appSetTimer(1, () => {") &&
+    main.includes("setTimeout(() => {") &&
       main.includes("void lifecycle.start();"),
-    "service startup must be scheduled onto the native App timer pump",
+    "service startup must be scheduled once onto the native event loop",
   );
-  assert(
-    main.includes("if (servicesStarted) return;") &&
-      main.includes("servicesStarted = true;"),
-    "the recurring native timer must start services only once",
-  );
+  assertEquals(main.includes("appSetTimer"), false);
+  assertEquals(main.includes("let servicesStarted"), false);
   assertEquals(
     main.slice(appIndex).includes("lifecycle.mainWindowShown()"),
     false,
     "App() blocks, so lifecycle updates after it are unreachable",
   );
+});
+
+Deno.test("pinned Perry Set hashing rejects the complete native handle band", async () => {
+  const patch = await Deno.readTextFile(PERRY_PATCH_URL);
+
+  assert(
+    patch.includes("diff --git a/crates/perry-runtime/src/set.rs") &&
+      patch.includes("addr_class::is_handle_band") &&
+      patch.includes("try_read_gc_header"),
+    "Set string detection must classify handles before reading a GC header",
+  );
+  for (const boundary of ["0x0fff", "0x1000", "0x1001", "0x3ffff", "0xfffff"]) {
+    assert(
+      patch.includes(boundary),
+      `missing Perry handle regression boundary ${boundary}`,
+    );
+  }
 });
 
 Deno.test("native main-window visibility owns renderer lifecycle", async () => {

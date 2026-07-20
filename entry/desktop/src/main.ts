@@ -1,7 +1,6 @@
 import {
   App,
   appSetActivationPolicy,
-  appSetTimer,
   HStack,
   onActivate,
   onMainWindowVisibilityChanged,
@@ -358,12 +357,9 @@ appSetActivationPolicy(
   startupPreferences.launchMode === "menuBarOnly" ? "accessory" : "regular",
 );
 coreRenderer.start();
-let servicesStarted = false;
-appSetTimer(1, () => {
-  if (servicesStarted) return;
-  servicesStarted = true;
+setTimeout(() => {
   void lifecycle.start();
-});
+}, 1);
 App({
   title: "OpenFX Node",
   width: 960,

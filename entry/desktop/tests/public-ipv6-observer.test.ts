@@ -43,6 +43,54 @@ Deno.test("public IPv6 observer reports mismatch and never selects an unobserved
   });
 });
 
+Deno.test("public IPv6 observer reuses one external observation during the minute window", async () => {
+  let now = 10_000;
+  let requests = 0;
+  const observer = createPublicIpv6Observer(
+    () => {
+      requests += 1;
+      return Promise.resolve({ status: 200, body: { ip: "240e::2" } });
+    },
+    { now: () => now, refreshIntervalMs: 60_000 },
+  );
+
+  assertEquals((await observer.observe(["240e::2"])).publicIpv6, "240e::2");
+  assertEquals(requests, 2);
+
+  now += 5_000;
+  assertEquals((await observer.observe(["240e::1"])).publicIpv6, null);
+  assertEquals(requests, 2);
+
+  now += 55_000;
+  assertEquals((await observer.observe(["240e::2"])).publicIpv6, "240e::2");
+  assertEquals(requests, 4);
+});
+
+Deno.test("concurrent public IPv6 observations share one in-flight refresh", async () => {
+  let requests = 0;
+  const pending = Promise.withResolvers<{
+    status: number;
+    body: { ip: string };
+  }>();
+  const observer = createPublicIpv6Observer(
+    () => {
+      requests += 1;
+      return pending.promise;
+    },
+    { now: () => 10_000, refreshIntervalMs: 60_000 },
+  );
+
+  const matching = observer.observe(["240e::2"]);
+  const mismatching = observer.observe(["240e::1"]);
+  await Promise.resolve();
+  assertEquals(requests, 2);
+
+  pending.resolve({ status: 200, body: { ip: "240e::2" } });
+  assertEquals((await matching).publicIpv6, "240e::2");
+  assertEquals((await mismatching).publicIpv6, null);
+  assertEquals(requests, 2);
+});
+
 Deno.test("observed collector merges reachability into the real system state", async () => {
   const collector = createObservedSystemCollector({
     collect: () =>
