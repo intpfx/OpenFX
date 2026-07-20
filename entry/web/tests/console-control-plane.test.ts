@@ -14,6 +14,7 @@ import {
   sealRelayEnvelope,
   signedRequestHeaders,
   signRequest,
+  TELEMETRY_AGGREGATE_MS,
 } from "../../../domains/_shared/openfx-node/mod.ts";
 import { decodeBase64Url } from "../../../domains/_shared/openfx-node/encoding.ts";
 
@@ -925,6 +926,41 @@ Deno.test("Relay reports an offline node before attempting a network request", a
   expect(response.status).toBe(503);
   expect(calls).toBe(0);
   await expect(response.json()).resolves.toMatchObject({ error: "node_offline" });
+});
+
+Deno.test("Relay keeps a minute-cadence node online until its next heartbeat", async () => {
+  let now = Date.parse("2026-07-18T00:00:00Z");
+  let calls = 0;
+  const { plane } = createHarness({
+    now: () => now,
+    fetch: () => {
+      calls += 1;
+      return Promise.resolve(Response.json({}));
+    },
+  });
+  const cookie = await login(plane);
+  const paired = await pair(plane, cookie);
+  const heartbeat = await plane.node.heartbeat(
+    await signedJsonRequest(
+      "http://localhost/api/node/heartbeat",
+      heartbeatBody(paired.node.id),
+      paired.nodeSecret,
+      now,
+    ),
+  );
+  expect(heartbeat.status).toBe(200);
+
+  now += TELEMETRY_AGGREGATE_MS;
+  const response = await plane.console.handle(
+    new Request("http://localhost/api/console/overview", { headers: { cookie } }),
+    "overview",
+  );
+
+  expect(calls).toBe(1);
+  expect(response.status).toBe(502);
+  await expect(response.json()).resolves.toMatchObject({
+    error: "node_protocol_mismatch",
+  });
 });
 
 Deno.test("SSE formats supported event names, monotonic ids, keepalive, and resume", async () => {

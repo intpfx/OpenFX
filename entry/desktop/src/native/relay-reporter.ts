@@ -1,4 +1,4 @@
-import { TELEMETRY_AGGREGATE_MS } from "../../../../domains/_shared/openfx-node/constants.ts";
+import { NODE_REPORT_INTERVAL_MS } from "../../../../domains/_shared/openfx-node/constants.ts";
 import type { ParsedSystemState, RelayStatus } from "../core/types.ts";
 import type { RestoredPairing } from "./pairing-service.ts";
 import type { ControlPlaneClient } from "./control-plane-client.ts";
@@ -19,7 +19,7 @@ export const createRelayReporter = (
   options: RelayReporterOptions = {},
 ): RelayReporter => {
   const now = options.now ?? Date.now;
-  const reportIntervalMs = options.reportIntervalMs ?? TELEMETRY_AGGREGATE_MS;
+  const reportIntervalMs = options.reportIntervalMs ?? NODE_REPORT_INTERVAL_MS;
   let pairing: RestoredPairing | null = null;
   let lastAttemptedAt: number | null = null;
   let lastReportedAt: number | null = null;

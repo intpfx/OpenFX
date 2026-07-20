@@ -5,6 +5,7 @@ import {
   constantTimeEqual,
   createWebCryptoAdapter,
   generatePairingCode,
+  NODE_ONLINE_WINDOW_MS,
   NODE_PORT,
   type NodeRecord,
   type NodeStatus,
@@ -60,7 +61,6 @@ export { formatSseEvent } from "./event-service.ts";
 const ROOT = ["openfx-console"] as const;
 const LOGIN_LIMIT = 5;
 const LOGIN_WINDOW_MS = 15 * 60_000;
-const NODE_ONLINE_WINDOW_MS = 45_000;
 const TELEMETRY_CLOCK_SKEW_MS = 60_000;
 const RELAY_RESPONSE_MAX_BYTES = 64 * 1024;
 const PROCESS_RELAY_RESPONSE_MAX_BYTES = 256 * 1024;

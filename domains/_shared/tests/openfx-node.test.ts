@@ -7,7 +7,9 @@ import {
   createReplayProtector,
   createWebCryptoAdapter,
   generatePairingCode,
+  NODE_ONLINE_WINDOW_MS,
   NODE_PORT,
+  NODE_REPORT_INTERVAL_MS,
   OPENFX_NODE_ERROR_CODES,
   openRelayEnvelope,
   PAIRING_CODE_LENGTH,
@@ -32,6 +34,8 @@ Deno.test("OpenFX node protocol exposes stable v1 timing and port constants", ()
   assertEquals(APPROVAL_TTL_MS, 5 * 60_000);
   assertEquals(TELEMETRY_SAMPLE_MS, 5_000);
   assertEquals(TELEMETRY_AGGREGATE_MS, 60_000);
+  assertEquals(NODE_REPORT_INTERVAL_MS, 60_000);
+  assertEquals(NODE_ONLINE_WINDOW_MS, 120_000);
   assertEquals(TELEMETRY_RETENTION_MS, 7 * 24 * 60 * 60_000);
   assertEquals(OPENFX_NODE_ERROR_CODES.replayDetected, "node_replay_detected");
 });

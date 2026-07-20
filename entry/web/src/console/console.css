@@ -10,7 +10,10 @@
 
 .openfx-console,
 .console-login {
-  min-height: 100svh;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
   background: var(--console-bg);
   color: var(--console-text);
@@ -64,7 +67,7 @@
 }
 
 .console-topbar {
-  position: fixed;
+  position: absolute;
   z-index: 40;
   inset: 0 0 auto;
   height: 58px;
@@ -148,7 +151,7 @@
 }
 
 .console-rail {
-  position: fixed;
+  position: absolute;
   z-index: 35;
   inset: 58px auto 0 0;
   width: 176px;
@@ -217,12 +220,12 @@
 }
 
 .console-stage {
-  position: fixed;
+  position: absolute;
   inset: 58px 0 0 58px;
   transition: right 260ms cubic-bezier(.2,.8,.2,1);
 }
 .openfx-console.has-workbench .console-stage {
-  right: min(620px, 48vw);
+  right: min(620px, 48%);
 }
 .console-core-scene {
   position: absolute;
@@ -263,7 +266,7 @@
   position: absolute;
   top: 50%;
   left: 50%;
-  width: min(45vw, 54svh);
+  width: min(45%, 54svh);
   aspect-ratio: 1;
   transform: translate(-50%, -50%);
   border: 1px solid rgba(84, 220, 230, 0.16);
@@ -347,7 +350,7 @@
   position: absolute;
   left: 28px;
   bottom: 82px;
-  max-width: min(420px, 50vw);
+  max-width: min(420px, 50%);
   margin: 0;
   color: var(--console-muted);
   font-size: 11px;
@@ -366,12 +369,12 @@
 }
 
 .console-workbench {
-  position: fixed;
+  position: absolute;
   z-index: 30;
   top: 58px;
   right: 0;
   bottom: 0;
-  width: min(620px, 48vw);
+  width: min(620px, 48%);
   border-left: 1px solid var(--console-line-strong);
   background: var(--console-surface);
   box-shadow: -30px 0 90px rgba(0,0,0,.34);
@@ -951,7 +954,7 @@
 }
 
 .console-whisper {
-  position: fixed;
+  position: absolute;
   z-index: 50;
   left: calc(50% - 230px);
   bottom: 18px;
@@ -1009,7 +1012,6 @@
 }
 
 .console-login {
-  position: relative;
   display: grid;
   place-items: center;
 }
@@ -1021,7 +1023,7 @@
 .console-login form {
   position: relative;
   z-index: 2;
-  width: min(340px, calc(100vw - 36px));
+  width: min(340px, calc(100% - 36px));
   padding: 24px;
   border: 1px solid var(--console-line-strong);
   border-radius: 10px;
@@ -1086,14 +1088,14 @@
     display: none;
   }
   .console-workbench {
-    width: calc(100vw - 58px);
+    width: calc(100% - 58px);
   }
   .openfx-console.has-workbench .console-stage {
-    right: calc(100vw - 58px);
+    right: calc(100% - 58px);
   }
   .has-workbench .console-whisper {
     left: 50%;
-    width: min(460px, calc(100vw - 80px));
+    width: min(460px, calc(100% - 80px));
     transform: translateX(-50%);
   }
 }
@@ -1153,13 +1155,13 @@
   .console-global-status {
     left: 14px;
     bottom: 72px;
-    max-width: calc(100vw - 28px);
+    max-width: calc(100% - 28px);
   }
   .console-workbench {
     top: 52px;
     right: 0;
     bottom: 58px;
-    width: 100vw;
+    width: 100%;
     border-left: 0;
   }
   .console-workbench-head {
@@ -1179,7 +1181,7 @@
     transform: none;
   }
   .console-whisper output {
-    max-width: calc(100vw - 20px);
+    max-width: calc(100% - 20px);
   }
   .console-database {
     grid-template-columns: 1fr;
