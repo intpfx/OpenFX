@@ -392,6 +392,67 @@ Deno.test("renderer stays idle while hidden and resumes exactly one render path"
   assertEquals(pendingFrames.size, 1, "reopen must schedule one animation loop");
 });
 
+Deno.test("static renderer repaints only for node-state changes and reopening", () => {
+  let paintCount = 0;
+  let frameRequests = 0;
+  const renderer = createCoreCanvasRenderer({
+    width: 560,
+    height: 576,
+    initialMetrics: {
+      state: "online",
+      cpuUsagePercent: 25,
+      memoryUsagePercent: 35,
+      reduceMotion: true,
+    },
+    now: () => 1_000,
+    canvas: {
+      ...createRecordingCanvas(),
+      clearRect() {
+        paintCount += 1;
+      },
+    } as unknown as import("perry/ui").Canvas,
+    frameDriver: {
+      request() {
+        frameRequests += 1;
+        return frameRequests;
+      },
+      cancel() {},
+    },
+  });
+
+  renderer.start();
+  for (let index = 0; index < 1_000; index += 1) {
+    renderer.update({
+      state: "online",
+      cpuUsagePercent: index % 100,
+      memoryUsagePercent: (index * 3) % 100,
+      reduceMotion: true,
+    });
+  }
+  assertEquals(paintCount, 1, "telemetry-only updates must not repaint static core");
+  assertEquals(frameRequests, 0, "static core must never request an onFrame callback");
+
+  renderer.update({
+    state: "degraded",
+    cpuUsagePercent: 80,
+    memoryUsagePercent: 90,
+    reduceMotion: true,
+  });
+  assertEquals(paintCount, 2, "a node-state change must repaint static core once");
+
+  renderer.setWindowVisible(false);
+  renderer.update({
+    state: "fault",
+    cpuUsagePercent: 90,
+    memoryUsagePercent: 95,
+    reduceMotion: true,
+  });
+  assertEquals(paintCount, 2, "hidden static core must not paint");
+  renderer.setWindowVisible(true);
+  assertEquals(paintCount, 3, "reopening must repaint static core once");
+  assertEquals(frameRequests, 0);
+});
+
 Deno.test("menu-bar-only renderer paints zero frames until native visibility", () => {
   let paintCount = 0;
   let requestCount = 0;

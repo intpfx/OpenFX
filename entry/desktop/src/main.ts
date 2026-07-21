@@ -23,6 +23,10 @@ import {
 import type { AuditLog } from "./core/audit-log.ts";
 import { createDesktopJournal } from "./core/durable-journal.ts";
 import { createDesktopLifecycleController } from "./core/lifecycle-controller.ts";
+import {
+  deriveCoreMotionPolicy,
+  PERRY_ANIMATED_CORE_AVAILABLE,
+} from "./core/core-motion-policy.ts";
 import { derivePairingReadiness } from "./core/pairing-readiness.ts";
 import { createDesktopRouteDispatcher } from "./core/route-dispatcher.ts";
 import type { DesktopLaunchMode, DesktopPreferences } from "./core/types.ts";
@@ -380,6 +384,7 @@ function currentPresentation() {
     overview: systemMonitor.overview(),
     publicIpv6: network?.publicIpv6 ?? null,
     relay: reporter.status(),
+    motionPolicy: currentMotionPolicy(),
     now: Date.now(),
   });
 }
@@ -393,8 +398,15 @@ function createCoreMetrics(): CoreCanvasMetrics {
     state: currentCoreState(),
     cpuUsagePercent: overview?.cpuUsagePercent ?? 0,
     memoryUsagePercent,
-    reduceMotion: preferences.value.reduceMotion,
+    reduceMotion: currentMotionPolicy().reduceMotion,
   };
+}
+
+function currentMotionPolicy() {
+  return deriveCoreMotionPolicy(
+    preferences.value.reduceMotion,
+    PERRY_ANIMATED_CORE_AVAILABLE,
+  );
 }
 
 function currentCoreState(): CoreNodeState {

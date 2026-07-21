@@ -8,9 +8,13 @@ OpenFX Node 是常驻 macOS 菜单栏的原生 Perry 节点。它承载本机监
 
 - Perry 默认使用 `regular` Dock 模式、单个主窗口和 Tray；用户选择的 `menuBarOnly`
   只在下次启动时切换为 `accessory`。关闭主窗口会清除待处理绘制帧，Tray 或 Dock 通过
-  Perry 原生 selector 重新显示同一窗口并恢复 24 FPS Canvas；节点服务与 5
-  秒采样始终继续运行。`menuBarOnly` 冷启动在原生窗口可见前保持零 Canvas 绘制；静态核心
-  也遵循同一 visibility 边界。
+  Perry 原生 selector 重新显示同一窗口；节点服务与 5 秒采样始终继续运行。
+  `menuBarOnly` 冷启动在原生窗口可见前保持零 Canvas 绘制。
+- Perry 0.5.1220 的生产核心固定为“静态核心（Perry 稳定模式）”，以避开已确认的原生
+  IOAccelerator 内存增长风险：静态模式不注册 `onFrame`，只在节点状态变化或窗口重新显示时
+  绘制一次，窗口隐藏时不绘制。CPU、内存等遥测仍独立采样并显示。`reduceMotion` 偏好默认
+  为 `true`，但明确持久化的 `false` 会原样保留，供未来恢复动画能力使用；当前动画开关不可
+  操作，只显示稳定模式状态。只有原生内存门禁通过后才可以重新启用动态核心。
 - 节点 API 监听 `[::]:24531`。公开 `/v1/health` 只返回健康状态和协议版本，
   其余固定路由统一经过 v1 签名、AES-GCM 信封、时间窗和 nonce 防重放校验。
 - 配对使用 OpenFX 服务端 URL 与 8 位配对码。普通偏好只保存非敏感节点信息以及 Relay

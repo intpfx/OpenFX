@@ -5,6 +5,7 @@ import {
   DEFAULT_DESKTOP_PREFERENCES,
   sanitizeDesktopPreferences,
 } from "../src/core/desktop-state.ts";
+import { deriveCoreMotionPolicy } from "../src/core/core-motion-policy.ts";
 import {
   derivePairingReadiness,
   type PairingReadinessInput,
@@ -30,7 +31,7 @@ const READY_PAIRING: PairingReadinessInput = {
   submitting: false,
 };
 
-Deno.test("old desktop preferences migrate to regular launch with motion enabled", () => {
+Deno.test("old desktop preferences migrate to regular launch with the stable static core", () => {
   assertEquals(
     sanitizeDesktopPreferences({
       serverUrl: "https://openfx.example/path",
@@ -46,9 +47,23 @@ Deno.test("old desktop preferences migrate to regular launch with motion enabled
       relayEnabled: false,
       pairedAt: 123,
       launchMode: "regular",
-      reduceMotion: false,
+      reduceMotion: true,
     },
   );
+});
+
+Deno.test("core motion policy forces the production Perry stable mode while retaining future capability", () => {
+  assertEquals(deriveCoreMotionPolicy(false, false), {
+    mode: "static",
+    reduceMotion: true,
+    controlAvailable: false,
+    status: "静态核心（Perry 稳定模式）",
+  });
+  assertEquals(deriveCoreMotionPolicy(false, true).mode, "animated");
+  assertEquals(deriveCoreMotionPolicy(true, true).mode, "static");
+  assertEquals(DEFAULT_DESKTOP_PREFERENCES.reduceMotion, true);
+  assertEquals(sanitizeDesktopPreferences({}).reduceMotion, true);
+  assertEquals(sanitizeDesktopPreferences({ reduceMotion: false }).reduceMotion, false);
 });
 
 Deno.test("desktop preferences preserve supported launch and motion choices", () => {
@@ -370,7 +385,8 @@ Deno.test("UI snapshots use static core for reduced motion and contain no undefi
     networkStatus: "未检测到公网 IPv6",
     relayStatus: "Relay 已启用",
     launchModeStatus: "仅菜单栏模式（下次启动生效）",
-    motionStatus: "静态核心",
+    motionStatus: "静态核心（Perry 稳定模式）",
+    motionControlAvailable: false,
     coreMotion: "static",
     serviceStatus: "节点服务准备中",
     monitorStatus: "等待系统采样",
@@ -394,8 +410,9 @@ Deno.test("unpaired UI snapshots provide deterministic fallback strings", () => 
   assertEquals(snapshot.pairingDetail, "输入控制台 HTTPS 地址和 8 位配对码。");
   assertEquals(snapshot.serverStatus, "尚未设置服务端");
   assertEquals(snapshot.launchModeStatus, "常规模式（Dock 与菜单栏）");
-  assertEquals(snapshot.motionStatus, "动态核心");
-  assertEquals(snapshot.coreMotion, "animated");
+  assertEquals(snapshot.motionStatus, "静态核心（Perry 稳定模式）");
+  assertEquals(snapshot.coreMotion, "static");
+  assertEquals(snapshot.motionControlAvailable, false);
   assertEquals(snapshot.primaryAction, "正在配对…");
   assertEquals(snapshot.errorMessage, "配对码已使用，请在控制台重新生成。");
   assert(!containsUndefined(snapshot));
@@ -450,6 +467,7 @@ Deno.test("control panel presentation formats paired telemetry without undefined
       lastReportedAt: 9_000,
       errorMessage: null,
     },
+    motionPolicy: deriveCoreMotionPolicy(false, false),
     now: 10_000,
   });
 
@@ -458,6 +476,9 @@ Deno.test("control panel presentation formats paired telemetry without undefined
   assertEquals(presentation.processStatus, "321 个");
   assertEquals(presentation.relayStatus, "已启用");
   assertEquals(presentation.lastReportStatus, "1 秒前");
+  assertEquals(presentation.motionStatus, "静态核心（Perry 稳定模式）");
+  assertEquals(presentation.motionControlAvailable, false);
+  assertEquals(presentation.reduceMotion, true);
   assert(!containsUndefined(presentation));
 });
 

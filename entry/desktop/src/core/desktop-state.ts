@@ -15,7 +15,7 @@ export const DEFAULT_DESKTOP_PREFERENCES: DesktopPreferences = Object.freeze({
   relayEnabled: true,
   pairedAt: null,
   launchMode: "regular",
-  reduceMotion: false,
+  reduceMotion: true,
 });
 
 export const sanitizeDesktopPreferences = (
@@ -43,7 +43,9 @@ export const sanitizeDesktopPreferences = (
       ? candidate.pairedAt
       : null,
     launchMode: candidate.launchMode === "menuBarOnly" ? "menuBarOnly" : "regular",
-    reduceMotion: candidate.reduceMotion === true,
+    reduceMotion: typeof candidate.reduceMotion === "boolean"
+      ? candidate.reduceMotion
+      : DEFAULT_DESKTOP_PREFERENCES.reduceMotion,
   };
 };
 

@@ -12,6 +12,12 @@ Mac 节点，以及运行时无关的 `domains/e` Agent/审批内核。Web 控�
 - `entry/desktop` 是目标 Mac 节点。它默认以 Perry regular 应用显示 Dock、应用菜单、FX
   Tray 和主窗口；用户主动选择的 `menuBarOnly` 模式只在下次启动切换为 accessory。
   两种模式都监听 `[::]:24531`，关闭窗口不停止节点服务。
+- Perry 0.5.1220 的生产桌面核心强制使用“静态核心（Perry 稳定模式）”，规避已确认的
+  原生 IOAccelerator 内存增长风险。静态模式不注册 `onFrame` 回调，只会在节点状态变化或
+  窗口重新显示时绘制一次；隐藏窗口不绘制。CPU、内存等遥测仍按既有节奏独立采样、上报并在
+  面板显示。持久化的 `reduceMotion` 偏好为未来兼容性保留：新偏好默认 `true`，明确保存的
+  `false` 不会被改写，但当前动画控制不可操作且只显示稳定模式状态。只有原生内存门禁通过后
+  才能重新启用动态核心。
 - `domains/e` 只提供工具执行与 `SafetyActionGate`，不依赖 Perry、Nitro、Bun 或 Web UI。
 - OMLX 只允许 `127.0.0.1:8000/v1`；OMLX 不可用时 Agent 显示离线，监控、Relay
   和手动审批仍然工作。

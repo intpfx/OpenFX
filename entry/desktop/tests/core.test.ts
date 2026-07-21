@@ -78,7 +78,7 @@ Deno.test("ordinary preferences discard secrets and normalize pairing state", ()
       relayEnabled: true,
       pairedAt: null,
       launchMode: "regular",
-      reduceMotion: false,
+      reduceMotion: true,
     },
   );
 });

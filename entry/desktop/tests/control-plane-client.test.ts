@@ -159,7 +159,7 @@ Deno.test("pairing stores nodeSecret only in Keychain and recovers it after rest
     relayEnabled: true,
     pairedAt: 123,
     launchMode: "regular",
-    reduceMotion: false,
+    reduceMotion: true,
   });
   assertEquals(JSON.stringify(preferences).includes("secret"), false);
   assertEquals(await service.restore(), {
@@ -170,7 +170,7 @@ Deno.test("pairing stores nodeSecret only in Keychain and recovers it after rest
       relayEnabled: true,
       pairedAt: 123,
       launchMode: "regular",
-      reduceMotion: false,
+      reduceMotion: true,
     },
     nodeSecret: "encoded-secret",
   });

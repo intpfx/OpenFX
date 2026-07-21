@@ -1,7 +1,12 @@
+import {
+  type CoreMotion,
+  deriveCoreMotionPolicy,
+  PERRY_ANIMATED_CORE_AVAILABLE,
+} from "./core-motion-policy.ts";
 import type { PairingNetworkState } from "./pairing-readiness.ts";
 import type { DesktopPreferences } from "./types.ts";
 
-export type CoreMotion = "animated" | "static";
+export type { CoreMotion } from "./core-motion-policy.ts";
 
 export interface DesktopUiSnapshotInput {
   preferences: DesktopPreferences;
@@ -23,6 +28,7 @@ export interface DesktopUiSnapshot {
   relayStatus: string;
   launchModeStatus: string;
   motionStatus: string;
+  motionControlAvailable: boolean;
   coreMotion: CoreMotion;
   serviceStatus: string;
   monitorStatus: string;
@@ -34,7 +40,10 @@ export const createDesktopUiSnapshot = (
   input: DesktopUiSnapshotInput,
 ): DesktopUiSnapshot => {
   const paired = input.paired;
-  const reduceMotion = input.preferences.reduceMotion;
+  const motionPolicy = deriveCoreMotionPolicy(
+    input.preferences.reduceMotion,
+    PERRY_ANIMATED_CORE_AVAILABLE,
+  );
   return {
     appTitle: "OpenFX Node",
     nodeName: input.preferences.nodeName || "OpenFX Mac",
@@ -48,8 +57,9 @@ export const createDesktopUiSnapshot = (
     launchModeStatus: input.preferences.launchMode === "menuBarOnly"
       ? "仅菜单栏模式（下次启动生效）"
       : "常规模式（Dock 与菜单栏）",
-    motionStatus: reduceMotion ? "静态核心" : "动态核心",
-    coreMotion: reduceMotion ? "static" : "animated",
+    motionStatus: motionPolicy.status,
+    motionControlAvailable: motionPolicy.controlAvailable,
+    coreMotion: motionPolicy.mode,
     serviceStatus: nonempty(input.serviceStatus, "节点服务准备中"),
     monitorStatus: nonempty(input.monitorStatus, "等待系统采样"),
     errorMessage: input.pairingError === undefined || input.pairingError === null

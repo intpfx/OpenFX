@@ -129,16 +129,21 @@ export const createCoreCanvasRenderer = (
       }
     },
     update(nextMetrics) {
+      const stateChanged = metrics.state !== nextMetrics.state;
+      const motionChangedToStatic = !metrics.reduceMotion &&
+        nextMetrics.reduceMotion;
       metrics = {
         state: nextMetrics.state,
         cpuUsagePercent: nextMetrics.cpuUsagePercent,
         memoryUsagePercent: nextMetrics.memoryUsagePercent,
         reduceMotion: nextMetrics.reduceMotion,
       };
-      if (metrics.reduceMotion && windowVisible) {
-        staticFrameDrawn = false;
+      if (metrics.reduceMotion) {
         cancelPending();
-        draw(now());
+        if (
+          windowVisible &&
+          (!staticFrameDrawn || motionChangedToStatic || stateChanged)
+        ) draw(now());
       } else schedule();
     },
     setReduceMotion(reduceMotion) {

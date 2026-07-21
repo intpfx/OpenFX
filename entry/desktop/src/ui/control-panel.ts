@@ -30,6 +30,7 @@ import type {
   RelayStatus,
   SystemOverview,
 } from "../core/types.ts";
+import type { CoreMotionPolicy } from "../core/core-motion-policy.ts";
 
 export interface PairingFormInput {
   serverUrl: string;
@@ -55,6 +56,8 @@ export interface ControlPanelPresentation {
   serverUrl: string;
   launchMode: DesktopLaunchMode;
   reduceMotion: boolean;
+  motionStatus: string;
+  motionControlAvailable: boolean;
 }
 
 export interface ControlPanelPresentationInput {
@@ -65,6 +68,7 @@ export interface ControlPanelPresentationInput {
   overview: SystemOverview | null;
   publicIpv6: string | null;
   relay: RelayStatus;
+  motionPolicy: CoreMotionPolicy;
   now: number;
 }
 
@@ -113,7 +117,9 @@ export const createControlPanelPresentation = (
       : `${reportAgeSeconds} 秒前`,
     serverUrl: preferences.serverUrl,
     launchMode: preferences.launchMode,
-    reduceMotion: preferences.reduceMotion,
+    reduceMotion: input.motionPolicy.reduceMotion,
+    motionStatus: input.motionPolicy.status,
+    motionControlAvailable: input.motionPolicy.controlAvailable,
   };
 };
 
@@ -215,6 +221,7 @@ export const createControlPanel = (
   const reduceMotionToggle = Toggle("减少动态效果", (enabled: boolean) => {
     actions.setReduceMotion(enabled);
   });
+  const motionStatusLabel = caption(initial.motionStatus);
   const menuBarToggle = Toggle("下次启动仅菜单栏", (enabled: boolean) => {
     actions.setLaunchMode(enabled ? "menuBarOnly" : "regular");
   });
@@ -231,6 +238,7 @@ export const createControlPanel = (
     Spacer(),
     Divider(),
     reduceMotionToggle,
+    motionStatusLabel,
     menuBarToggle,
   ]);
   widgetSetWidth(body, 400);
@@ -239,6 +247,11 @@ export const createControlPanel = (
   stackSetAlignment(body, 7);
   stackSetDetachesHidden(body, 1);
   updateVisibility(guide, dashboard, pairingGuideVisible);
+  updateMotionControlVisibility(
+    reduceMotionToggle,
+    motionStatusLabel,
+    initial.motionControlAvailable,
+  );
 
   return {
     body,
@@ -258,6 +271,12 @@ export const createControlPanel = (
       textSetString(lastReportLabel, `上次上报  ${presentation.lastReportStatus}`);
       buttonSetTitle(pairButton, presentation.paired ? "更新配对" : "配对");
       toggleSetState(reduceMotionToggle, presentation.reduceMotion ? 1 : 0);
+      textSetString(motionStatusLabel, presentation.motionStatus);
+      updateMotionControlVisibility(
+        reduceMotionToggle,
+        motionStatusLabel,
+        presentation.motionControlAvailable,
+      );
       toggleSetState(
         menuBarToggle,
         presentation.launchMode === "menuBarOnly" ? 1 : 0,
@@ -284,6 +303,15 @@ export const createControlPanel = (
       textfieldSetString(codeField, "");
     },
   };
+};
+
+const updateMotionControlVisibility = (
+  toggle: Widget,
+  status: Widget,
+  controlAvailable: boolean,
+): void => {
+  widgetSetHidden(toggle, controlAvailable ? 0 : 1);
+  widgetSetHidden(status, controlAvailable ? 1 : 0);
 };
 
 const updateVisibility = (

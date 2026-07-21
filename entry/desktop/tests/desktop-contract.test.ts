@@ -385,6 +385,23 @@ Deno.test("desktop entry assembles the immersive regular-or-menu-bar native app"
   );
 });
 
+Deno.test("production desktop forces the Perry stable static core while retaining the preference surface", async () => {
+  const main = await Deno.readTextFile(MAIN_URL);
+  const policy = await Deno.readTextFile(
+    new URL("../src/core/core-motion-policy.ts", import.meta.url),
+  );
+  const controlPanel = await Deno.readTextFile(
+    new URL("../src/ui/control-panel.ts", import.meta.url),
+  );
+
+  assert(policy.includes("PERRY_ANIMATED_CORE_AVAILABLE = false"));
+  assert(main.includes("reduceMotion: currentMotionPolicy().reduceMotion"));
+  assert(main.includes("motionPolicy: currentMotionPolicy()"));
+  assert(controlPanel.includes("motionControlAvailable: boolean"));
+  assert(controlPanel.includes("updateMotionControlVisibility("));
+  assert(controlPanel.includes("widgetSetHidden(toggle, controlAvailable ? 0 : 1)"));
+});
+
 Deno.test("desktop controls clear consumed codes and expose only Chinese operation errors", async () => {
   const main = await Deno.readTextFile(MAIN_URL);
   const controlPanel = await Deno.readTextFile(
