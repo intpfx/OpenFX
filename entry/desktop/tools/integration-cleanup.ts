@@ -45,6 +45,13 @@ export interface CollectedBoundedChild {
   cleanExitTimedOut: boolean;
 }
 
+export interface CleanupCollectionResult<T> {
+  primaryFailure: unknown | null;
+  collected: T | null;
+  cleanupFailure: unknown | null;
+  collectionFailure: unknown | null;
+}
+
 export const runBoundedCommand = async (
   spawn: () => BoundedChildProcess,
   options: BoundedCommandOptions,
@@ -93,6 +100,35 @@ export const collectBoundedChild = async (
     throw new Error("child_process_reap_timeout_after_sigkill");
   }
   return { output: killed, cleanExitTimedOut };
+};
+
+export const collectAfterCleanupAttempt = async <T>(
+  primaryFailure: unknown | null,
+  cleanup: () => Promise<void>,
+  collect: () => Promise<T>,
+): Promise<CleanupCollectionResult<T>> => {
+  let cleanupFailure: unknown | null = null;
+  try {
+    await cleanup();
+  } catch (error) {
+    cleanupFailure = error;
+  }
+
+  try {
+    return {
+      primaryFailure,
+      collected: await collect(),
+      cleanupFailure,
+      collectionFailure: null,
+    };
+  } catch (error) {
+    return {
+      primaryFailure,
+      collected: null,
+      cleanupFailure,
+      collectionFailure: error,
+    };
+  }
 };
 
 export const cleanupIntegrationIdentity = async (

@@ -12,7 +12,7 @@ Mac 节点，以及运行时无关的 `domains/e` Agent/审批内核。Web 控�
 - `entry/desktop` 是目标 Mac 节点。它默认以 Perry regular 应用显示 Dock、应用菜单、FX
   Tray 和主窗口；用户主动选择的 `menuBarOnly` 模式只在下次启动切换为 accessory。
   两种模式都监听 `[::]:24531`，关闭窗口不停止节点服务。
-- Perry 0.5.1220 的生产桌面核心强制使用“静态核心（Perry 稳定模式）”，规避已确认的
+- Perry 0.5.1220 的生产桌面核心强制使用“静态核心（Perry 稳定模式）”。这用于规避已确认的
   原生 IOAccelerator 内存增长风险。静态模式不注册 `onFrame` 回调，只会在节点状态变化或
   窗口重新显示时绘制一次；隐藏窗口不绘制。CPU、内存等遥测仍按既有节奏独立采样、上报并在
   面板显示。持久化的 `reduceMotion` 偏好为未来兼容性保留：新偏好默认 `true`，明确保存的
@@ -55,14 +55,14 @@ Mac 节点，以及运行时无关的 `domains/e` Agent/审批内核。Web 控�
 3. Perry 节点通过 HTTPS 提交配对码和经本机、外部观察共同确认的公网 IPv6。服务端只在
    初次配对或上述同请求传输重试中返回 32 字节 `nodeSecret`。
 4. 节点把 secret 写入 macOS Keychain 的 `OpenFX Node` service；普通偏好只保存
-   `nodeId`、节点名、服务端 URL、Relay 开关、配对时间、下次启动模式 `launchMode` 与
-   静态核心开关
-   `reduceMotion`。Relay、界面设置和配对提交统一通过同步原子补丁合并最新值； 即使用户在
-   HTTPS 或 Keychain 等待期间切换设置，配对提交也只覆盖节点字段，不重置 Relay，绝不把
-   secret 写入偏好。每个异步配对或恢复边界结束后，State、Relay reporter 和 Event
-   reporter 从同步权威偏好一次性重建；若 Keychain 查询前后的 `nodeId` 不一致，则拒绝旧
+   `nodeId`、节点名、服务端 URL、Relay 开关、配对时间、下次启动模式 `launchMode`，以及
+   为前向兼容保留的 `reduceMotion` 偏好。当前动画控制不可用，因此它不是可操作的静态核心
+   开关。Relay、界面设置和配对提交统一通过同步原子补丁合并最新值；即使用户在 HTTPS 或
+   Keychain 等待期间切换设置，配对提交也只覆盖节点字段，不重置 Relay，绝不把 secret
+   写入偏好。每个异步配对或恢复边界结束后，State、Relay reporter 和 Event reporter
+   从同步权威偏好一次性重建；若 Keychain 查询前后的 `nodeId` 不一致，则拒绝旧
    secret，且不会清除查询期间已完成的新配对。持久化失败会先恢复提交前的原始序列化快照，
-   调用方只在成功后更新进程内状态； 恢复失败则返回独立错误，避免把磁盘状态误报为已保存。
+   调用方只在成功后更新进程内状态；恢复失败则返回独立错误，避免把磁盘状态误报为已保存。
 5. 服务端只保存校验摘要和由 `OPENFX_NODE_CREDENTIAL_KEY` 加密的凭据副本。浏览器 API
    不返回 secret、摘要、密文或解密结果。
 
@@ -179,8 +179,16 @@ deno task perry:runtime --source /path/to/Perry-v0.5.1220
 PERRY_LIB_DIR=/path/to/release perry check entry/desktop/src/main.ts --deep-deps
 deno task desktop:app
 deno task desktop:app-smoke
+deno task desktop:memory-smoke
 deno run --unstable-kv -A entry/desktop/tools/console-integration-smoke.ts
 ```
+
+`desktop:memory-smoke` 只针对通过 provenance 校验的固定 Perry 0.5.1220 运行库和已构建的
+`dist/OpenFX Node.app`。它先通过 token、marker PID、可执行文件真实路径、`ps` 和 `lsof`
+绑定应用包实例，预热 30 秒后建立基线，再每 30 秒采样一次 `vmmap -summary`，采样窗口持续
+10 分钟。相对基线，门禁要求 IOAccelerator region 数量增量 `<= 0`、IOAccelerator
+虚拟内存增量 `<= 64 MiB`、物理 footprint 增量 `<= 96 MiB`。字段缺失时 fail closed；
+结束时输出基线、峰值、最终及失败快照，并只清理已经核验的 PID。
 
 最后一条命令使用本机受信任的 `mkcert` 根证书创建只监听 loopback 的 TLS 控制面，编译并
 运行真实 Perry 节点，再通过机器实际分配的公网 IPv6 访问固定 Relay。测试使用独立 Keychain

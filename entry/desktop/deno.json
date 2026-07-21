@@ -8,7 +8,8 @@
     "test": "deno test --allow-read --allow-write --allow-net --allow-run=deno tests",
     "check": "deno fmt --check src tests tools README.md deno.json && deno lint src tests tools && deno test --allow-read --allow-write --allow-net --allow-run=deno tests",
     "app": "deno run -A tools/build-macos-app.ts",
-    "app-smoke": "deno run -A tools/desktop-app-smoke.ts"
+    "app-smoke": "deno run -A tools/desktop-app-smoke.ts",
+    "memory-smoke": "deno run -A tools/desktop-app-smoke.ts --memory"
   },
   "fmt": {
     "lineWidth": 88,

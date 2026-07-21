@@ -38,12 +38,20 @@ Deno.test("desktop tasks expose the signed app build and app-bundle smoke", asyn
     "deno run -A entry/desktop/tools/desktop-app-smoke.ts",
   );
   assertEquals(
+    rootConfig.tasks["desktop:memory-smoke"],
+    "deno run -A entry/desktop/tools/desktop-app-smoke.ts --memory",
+  );
+  assertEquals(
     desktopConfig.tasks.app,
     "deno run -A tools/build-macos-app.ts",
   );
   assertEquals(
     desktopConfig.tasks["app-smoke"],
     "deno run -A tools/desktop-app-smoke.ts",
+  );
+  assertEquals(
+    desktopConfig.tasks["memory-smoke"],
+    "deno run -A tools/desktop-app-smoke.ts --memory",
   );
 });
 
@@ -259,6 +267,50 @@ Deno.test("desktop app smoke launches the packaged app executable", async () => 
   assertStringIncludes(smokeSource, '"dist/OpenFX Node.app"');
   assertStringIncludes(smokeSource, '"Contents/MacOS/OpenFX Node"');
   assert(!smokeSource.includes("runPerryCompile(MAIN_PATH"));
+});
+
+Deno.test("desktop memory smoke uses the exact native growth gate", async () => {
+  const smokeSource = await Deno.readTextFile(
+    join(REPOSITORY_ROOT, "entry/desktop/tools/desktop-app-smoke.ts"),
+  );
+
+  assertStringIncludes(smokeSource, "const MEMORY_WARMUP_MS = 30_000;");
+  assertStringIncludes(smokeSource, "const MEMORY_SAMPLE_INTERVAL_MS = 30_000;");
+  assertStringIncludes(smokeSource, "const MEMORY_SAMPLE_COUNT = 20;");
+  assertStringIncludes(
+    smokeSource,
+    "const IO_ACCELERATOR_VIRTUAL_GROWTH_LIMIT_BYTES = 64 * 1024 ** 2;",
+  );
+  assertStringIncludes(
+    smokeSource,
+    "const PHYSICAL_FOOTPRINT_GROWTH_LIMIT_BYTES = 96 * 1024 ** 2;",
+  );
+  assertStringIncludes(
+    smokeSource,
+    'new Deno.Command("/usr/bin/vmmap", {',
+  );
+  assertStringIncludes(smokeSource, 'args: ["-summary", String(instance.pid)]');
+});
+
+Deno.test("desktop memory smoke requires clean exit before reporting failure", async () => {
+  const smokeSource = await Deno.readTextFile(
+    join(REPOSITORY_ROOT, "entry/desktop/tools/desktop-app-smoke.ts"),
+  );
+  const collectionIndex = smokeSource.indexOf(
+    "const collected = await collectBoundedChild",
+  );
+  const cleanExitIndex = smokeSource.indexOf(
+    "await assertVerifiedCleanExit(instance, cleanExitMarker);",
+  );
+  const failureIndex = smokeSource.indexOf(
+    "if (lifecycle.primaryFailure)",
+    collectionIndex,
+  );
+
+  assertStringIncludes(smokeSource, "collectAfterCleanupAttempt");
+  assert(collectionIndex >= 0);
+  assert(cleanExitIndex > collectionIndex);
+  assert(failureIndex > cleanExitIndex);
 });
 
 async function loadBuildTool(): Promise<BuildToolModule> {

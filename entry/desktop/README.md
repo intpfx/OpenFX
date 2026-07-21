@@ -8,8 +8,8 @@ OpenFX Node 是常驻 macOS 菜单栏的原生 Perry 节点。它承载本机监
 
 - Perry 默认使用 `regular` Dock 模式、单个主窗口和 Tray；用户选择的 `menuBarOnly`
   只在下次启动时切换为 `accessory`。关闭主窗口会清除待处理绘制帧，Tray 或 Dock 通过
-  Perry 原生 selector 重新显示同一窗口；节点服务与 5 秒采样始终继续运行。
-  `menuBarOnly` 冷启动在原生窗口可见前保持零 Canvas 绘制。
+  Perry 原生 selector 重新显示同一窗口；节点服务与 5 秒采样始终继续运行。 `menuBarOnly`
+  冷启动在原生窗口可见前保持零 Canvas 绘制。
 - Perry 0.5.1220 的生产核心固定为“静态核心（Perry 稳定模式）”，以避开已确认的原生
   IOAccelerator 内存增长风险：静态模式不注册 `onFrame`，只在节点状态变化或窗口重新显示时
   绘制一次，窗口隐藏时不绘制。CPU、内存等遥测仍独立采样并显示。`reduceMotion` 偏好默认
@@ -102,6 +102,7 @@ deno task --config entry/desktop/deno.json test
 perry check entry/desktop/src/main.ts --deep-deps
 deno task desktop:app
 deno task desktop:app-smoke
+deno task desktop:memory-smoke
 deno run --unstable-kv -A entry/desktop/tools/console-integration-smoke.ts
 ```
 
@@ -109,6 +110,17 @@ deno run --unstable-kv -A entry/desktop/tools/console-integration-smoke.ts
 部署目标、`Info.plist`、ad-hoc 签名、bundle 内 Tray 像素透明度、
 `[::1]:24531/v1/health`、原生截图和清洁退出。每次 smoke 都使用唯一 token；真实应用写出
 PID/可执行路径和退出哨兵，测试再用 `ps` 与 `lsof` 核验它确实是当前 bundle 实例。超时清理
-只会终止这个已核验 PID。最后一条是真实本机组合门，覆盖受信任 HTTPS 配对、Keychain、
-真实公网 IPv6 health、签名上报、固定 Relay、SSE 续接、OMLX 离线降级和审批
-执行/拒绝/过期/重放闭环。
+只会终止这个已核验 PID。
+
+`desktop:memory-smoke` 要求已经通过 provenance 校验的固定 Perry 0.5.1220
+运行库和构建好的 `dist/OpenFX Node.app`。它复用同一 token/PID/可执行文件核验，启动后预热
+30 秒。预热后的首个快照作为基线，之后每 30 秒采样一次，采样窗口持续 10 分钟。门禁要求：
+
+- IOAccelerator region 数量增量 `<= 0`；
+- IOAccelerator 虚拟内存增量 `<= 64 MiB`；
+- 物理 footprint 增量 `<= 96 MiB`。
+
+缺失任一字段都会 fail closed，并输出基线、峰值、最终及失败快照。
+
+最后一条是真实本机组合门，覆盖受信任 HTTPS 配对、Keychain、真实公网 IPv6 health、
+签名上报、固定 Relay、SSE 续接、OMLX 离线降级和审批执行/拒绝/过期/重放闭环。

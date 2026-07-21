@@ -4,6 +4,7 @@ import * as cleanupTools from "../tools/integration-cleanup.ts";
 
 import {
   cleanupIntegrationIdentity,
+  collectAfterCleanupAttempt,
   runBoundedCommand,
 } from "../tools/integration-cleanup.ts";
 
@@ -127,4 +128,27 @@ Deno.test("desktop child collection bounds clean exit, escalates, and reaps outp
   assertEquals(result.cleanExitTimedOut, true);
   assertEquals(new TextDecoder().decode(result.output.stdout), "bounded stdout");
   assertEquals(new TextDecoder().decode(result.output.stderr), "bounded stderr");
+});
+
+Deno.test("desktop collection preserves primary and cleanup failures", async () => {
+  const order: string[] = [];
+  const primaryFailure = new Error("native memory threshold failed");
+  const cleanupFailure = new Error("verified PID cleanup failed");
+  const result = await collectAfterCleanupAttempt(
+    primaryFailure,
+    () => {
+      order.push("cleanup");
+      return Promise.reject(cleanupFailure);
+    },
+    () => {
+      order.push("collect");
+      return Promise.resolve("bounded child output");
+    },
+  );
+
+  assertEquals(order, ["cleanup", "collect"]);
+  assertEquals(result.primaryFailure, primaryFailure);
+  assertEquals(result.collected, "bounded child output");
+  assertEquals(result.cleanupFailure, cleanupFailure);
+  assertEquals(result.collectionFailure, null);
 });

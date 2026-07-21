@@ -1,6 +1,15 @@
 import { dirname, fromFileUrl, join, resolve } from "jsr:@std/path@^1.1.4";
 
-import { collectBoundedChild } from "./integration-cleanup.ts";
+import {
+  parseVmmapSummary,
+  type ProcessMemorySamplingResult,
+  type ProcessMemorySnapshot,
+  runProcessMemorySampling,
+} from "../src/core/process-memory.ts";
+import {
+  collectAfterCleanupAttempt,
+  collectBoundedChild,
+} from "./integration-cleanup.ts";
 import { inspectPngTransparency } from "./png-transparency.ts";
 import { validatePerryRuntimeDirectory } from "./perry-runtime-provenance.ts";
 
@@ -22,6 +31,14 @@ const APP_EXIT_DEADLINE_MS = 13_000;
 const TERMINATION_GRACE_MS = 1_000;
 const INSTANCE_IDENTITY_TIMEOUT_MS = 5_000;
 const SMOKE_TOKEN_FLAG = "--openfx-smoke-token";
+const MEMORY_WARMUP_MS = 30_000;
+const MEMORY_SAMPLE_INTERVAL_MS = 30_000;
+const MEMORY_SAMPLE_COUNT = 20;
+const IO_ACCELERATOR_REGION_GROWTH_LIMIT = 0;
+const IO_ACCELERATOR_VIRTUAL_GROWTH_LIMIT_BYTES = 64 * 1024 ** 2;
+const PHYSICAL_FOOTPRINT_GROWTH_LIMIT_BYTES = 96 * 1024 ** 2;
+
+const memoryMode = Deno.args.includes("--memory");
 
 const perryLibDirectory = Deno.env.get("PERRY_LIB_DIR")?.trim();
 if (!perryLibDirectory) {
@@ -69,27 +86,27 @@ App({
   );
   await runPerryCompile(uiOnlySource, uiOnlyExecutable, perryLibDirectory);
   const startedAt = Date.now();
+  const launchArguments = [
+    "-W",
+    "-n",
+    "--env",
+    "PERRY_UI_TEST_MODE=1",
+    ...(memoryMode ? [] : ["--env", "PERRY_UI_TEST_EXIT_AFTER_MS=12000"]),
+    "--env",
+    `PERRY_UI_SCREENSHOT_PATH=${screenshot}`,
+    "--env",
+    `OPENFX_APP_SMOKE_TOKEN=${runToken}`,
+    "--env",
+    `OPENFX_APP_SMOKE_LAUNCH_PATH=${launchMarker}`,
+    "--env",
+    `OPENFX_APP_SMOKE_CLEAN_EXIT_PATH=${cleanExitMarker}`,
+    APP_BUNDLE,
+    "--args",
+    SMOKE_TOKEN_FLAG,
+    runToken,
+  ];
   const child = new Deno.Command("/usr/bin/open", {
-    args: [
-      "-W",
-      "-n",
-      "--env",
-      "PERRY_UI_TEST_MODE=1",
-      "--env",
-      "PERRY_UI_TEST_EXIT_AFTER_MS=12000",
-      "--env",
-      `PERRY_UI_SCREENSHOT_PATH=${screenshot}`,
-      "--env",
-      `OPENFX_APP_SMOKE_TOKEN=${runToken}`,
-      "--env",
-      `OPENFX_APP_SMOKE_LAUNCH_PATH=${launchMarker}`,
-      "--env",
-      `OPENFX_APP_SMOKE_CLEAN_EXIT_PATH=${cleanExitMarker}`,
-      APP_BUNDLE,
-      "--args",
-      SMOKE_TOKEN_FLAG,
-      runToken,
-    ],
+    args: launchArguments,
     cwd: REPOSITORY_ROOT,
     stdin: "null",
     stdout: "piped",
@@ -99,6 +116,7 @@ App({
   let health: Record<string, unknown> | null = null;
   let failure: unknown = null;
   let instance: VerifiedAppInstance | null = null;
+  let memoryResult: ProcessMemorySamplingResult | null = null;
   try {
     instance = await waitForVerifiedAppInstance(
       launchMarker,
@@ -106,50 +124,100 @@ App({
       Date.now() + INSTANCE_IDENTITY_TIMEOUT_MS,
     );
     health = await waitForHealth();
+    if (memoryMode) {
+      memoryResult = await runMemorySmoke(instance);
+      if (!memoryResult.passed) {
+        throw new Error(formatMemoryDiagnostics(memoryResult));
+      }
+      await terminateVerifiedAppInstance(instance);
+    }
   } catch (error) {
     failure = error;
   }
 
-  if (failure) {
-    instance ??= await findVerifiedAppInstance(runToken);
-    if (instance) await terminateVerifiedAppInstance(instance);
+  const lifecycle = await collectAfterCleanupAttempt(
+    failure,
+    async () => {
+      if (!failure) return;
+      instance ??= await findVerifiedAppInstance(runToken);
+      if (instance) await terminateVerifiedAppInstance(instance);
+    },
+    async () => {
+      const collected = await collectBoundedChild(child, {
+        deadlineAt: memoryMode
+          ? Date.now() + APP_EXIT_DEADLINE_MS
+          : startedAt + APP_EXIT_DEADLINE_MS,
+        terminationGraceMs: TERMINATION_GRACE_MS,
+        terminateImmediately: false,
+      });
+      return collected;
+    },
+  );
+  const lifecycleFailures: AppSmokeFailure[] = [];
+  if (lifecycle.cleanupFailure) {
+    lifecycleFailures.push({
+      stage: "verified PID cleanup",
+      error: lifecycle.cleanupFailure,
+    });
+  }
+  if (lifecycle.collectionFailure) {
+    lifecycleFailures.push({
+      stage: "bounded child collection",
+      error: lifecycle.collectionFailure,
+    });
   }
 
-  const collected = await collectBoundedChild(child, {
-    deadlineAt: startedAt + APP_EXIT_DEADLINE_MS,
-    terminationGraceMs: TERMINATION_GRACE_MS,
-    terminateImmediately: false,
-  });
-  const status = collected.output;
-  const stdout = new TextDecoder().decode(collected.output.stdout);
-  const stderr = new TextDecoder().decode(collected.output.stderr);
-  if (collected.cleanExitTimedOut) {
-    instance ??= await findVerifiedAppInstance(runToken);
-    if (instance) await terminateVerifiedAppInstance(instance);
-    throw new Error(
-      `Perry UI app clean-exit timed out after ${APP_EXIT_DEADLINE_MS} ms; ` +
-        `sent SIGTERM and escalated to SIGKILL when required.\n` +
-        `stdout:\n${stdout}\nstderr:\n${stderr}`,
-    );
+  const collected = lifecycle.collected;
+  const status = collected?.output ?? null;
+  const stdout = status ? new TextDecoder().decode(status.stdout) : "";
+  const stderr = status ? new TextDecoder().decode(status.stderr) : "";
+  if (collected?.cleanExitTimedOut) {
+    lifecycleFailures.push({
+      stage: "clean-exit deadline",
+      error: new Error(
+        `Perry UI app clean-exit timed out after ${APP_EXIT_DEADLINE_MS} ms; ` +
+          "the Launch Services child was bounded and reaped.",
+      ),
+    });
   }
-  if (failure) {
-    throw new Error(
-      `${failure instanceof Error ? failure.message : String(failure)}\n` +
-        `stdout:\n${stdout}\nstderr:\n${stderr}`,
-    );
+  if (collected?.cleanExitTimedOut || lifecycle.collectionFailure) {
+    try {
+      instance ??= await findVerifiedAppInstance(runToken);
+      if (instance) await terminateVerifiedAppInstance(instance);
+    } catch (error) {
+      lifecycleFailures.push({
+        stage: "verified PID post-collection cleanup",
+        error,
+      });
+    }
   }
-  if (!status.success) {
-    throw new Error(
-      `Perry UI app exited with status ${status.code}.\nstdout:\n${stdout}\n` +
-        `stderr:\n${stderr}`,
-    );
+
+  let cleanExitVerified = false;
+  if (instance) {
+    try {
+      await assertVerifiedCleanExit(instance, cleanExitMarker);
+      cleanExitVerified = true;
+    } catch (error) {
+      lifecycleFailures.push({ stage: "clean-exit verification", error });
+    }
+  }
+  if (lifecycle.primaryFailure) {
+    lifecycleFailures.unshift({
+      stage: "primary smoke failure",
+      error: lifecycle.primaryFailure,
+    });
+  }
+  if (status && !status.success) {
+    lifecycleFailures.push({
+      stage: "Launch Services child status",
+      error: new Error(`Perry UI app exited with status ${status.code}.`),
+    });
+  }
+  if (lifecycleFailures.length > 0) {
+    throw new Error(formatAppSmokeFailures(lifecycleFailures, stdout, stderr));
   }
   assert(instance, "OpenFX Node app instance identity was not observed.");
-  await assertCleanExitMarker(cleanExitMarker, instance);
-  assert(
-    await waitForPidExit(instance.pid, Date.now() + TERMINATION_GRACE_MS),
-    `OpenFX Node app process ${instance.pid} remained alive after clean exit.`,
-  );
+  assert(cleanExitVerified, "OpenFX Node app clean exit was not verified.");
   assert(
     health?.ok === true && health.protocolVersion === 1,
     `Unexpected health payload: ${JSON.stringify(health)}`,
@@ -162,7 +230,7 @@ App({
   console.log(
     `[openfx:desktop-app-smoke] PASS app=${APP_BUNDLE} health=${HEALTH_URL} screenshot=${
       screenshotArtifact ?? screenshot
-    }`,
+    }${memoryResult ? `\n${formatMemoryDiagnostics(memoryResult)}` : ""}`,
   );
 } finally {
   await Deno.remove(temporaryDirectory, { recursive: true }).catch(() => {});
@@ -240,6 +308,70 @@ interface VerifiedAppInstance {
   token: string;
   pid: number;
   executable: string;
+}
+
+interface AppSmokeFailure {
+  stage: string;
+  error: unknown;
+}
+
+async function runMemorySmoke(
+  instance: VerifiedAppInstance,
+): Promise<ProcessMemorySamplingResult> {
+  await delay(MEMORY_WARMUP_MS);
+  return await runProcessMemorySampling({
+    sampleCount: MEMORY_SAMPLE_COUNT,
+    sampleIntervalMs: MEMORY_SAMPLE_INTERVAL_MS,
+    ioAcceleratorRegionGrowthLimit: IO_ACCELERATOR_REGION_GROWTH_LIMIT,
+    ioAcceleratorVirtualGrowthLimitBytes: IO_ACCELERATOR_VIRTUAL_GROWTH_LIMIT_BYTES,
+    physicalFootprintGrowthLimitBytes: PHYSICAL_FOOTPRINT_GROWTH_LIMIT_BYTES,
+    delay,
+    sample: (index) => sampleProcessMemory(instance, index),
+  });
+}
+
+async function sampleProcessMemory(
+  instance: VerifiedAppInstance,
+  index: number,
+): Promise<ProcessMemorySnapshot> {
+  await verifyAppInstance(instance);
+  const result = await new Deno.Command("/usr/bin/vmmap", {
+    args: ["-summary", String(instance.pid)],
+    stdin: "null",
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  if (!result.success) {
+    throw new Error(
+      `vmmap sample ${index} failed with status ${result.code}: ` +
+        new TextDecoder().decode(result.stderr).trim(),
+    );
+  }
+  return parseVmmapSummary(new TextDecoder().decode(result.stdout));
+}
+
+function formatMemoryDiagnostics(result: ProcessMemorySamplingResult): string {
+  return `[openfx:desktop-memory-smoke] ${result.passed ? "PASS" : "FAIL"} ` +
+    `baseline=${JSON.stringify(result.baseline)} ` +
+    `peak=${JSON.stringify(result.peak)} ` +
+    `final=${JSON.stringify(result.final)} ` +
+    `failure=${JSON.stringify(result.failure)} ` +
+    `reason=${result.reason ?? "none"}`;
+}
+
+function formatAppSmokeFailures(
+  failures: AppSmokeFailure[],
+  stdout: string,
+  stderr: string,
+): string {
+  const details = failures.map(({ stage, error }) =>
+    `${stage}: ${error instanceof Error ? error.message : String(error)}`
+  ).join("\n");
+  return `${details}\nstdout:\n${stdout}\nstderr:\n${stderr}`;
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 async function waitForVerifiedAppInstance(
@@ -358,6 +490,18 @@ async function terminateVerifiedAppInstance(
   assert(
     await waitForPidExit(instance.pid, Date.now() + TERMINATION_GRACE_MS),
     `Unable to terminate verified OpenFX Node app PID ${instance.pid}.`,
+  );
+}
+
+async function assertVerifiedCleanExit(
+  instance: VerifiedAppInstance | null,
+  markerPath: string,
+): Promise<void> {
+  assert(instance, "OpenFX Node app instance identity was not observed.");
+  await assertCleanExitMarker(markerPath, instance);
+  assert(
+    await waitForPidExit(instance.pid, Date.now() + TERMINATION_GRACE_MS),
+    `OpenFX Node app process ${instance.pid} remained alive after clean exit.`,
   );
 }
 
