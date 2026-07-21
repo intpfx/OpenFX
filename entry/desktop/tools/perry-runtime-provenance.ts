@@ -4,7 +4,7 @@ export const PINNED_PERRY_VERSION = "v0.5.1220";
 export const PINNED_PERRY_COMMIT = "06137858dc8c6f80975238377138f2f948d6ef88";
 export const PINNED_PERRY_RUST_TOOLCHAIN = "1.96.1";
 export const PINNED_PERRY_PATCH_SHA256 =
-  "b386485fe618e399f73741676b441383caaf18ff3b1c16d64af5ab3c1f734617";
+  "13cf2c41c30be5ece5ef9e740d3fb5cf8c86fe68699ed4a17974485635eb9bbb";
 export const PERRY_RUNTIME_PROVENANCE_FILENAME = "openfx-perry-runtime-provenance.json";
 export const REQUIRED_PERRY_RUNTIME_ARTIFACTS = [
   "perry",

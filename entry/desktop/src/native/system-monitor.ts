@@ -1,4 +1,3 @@
-import { TELEMETRY_SAMPLE_MS } from "../../../../domains/_shared/openfx-node/constants.ts";
 import type {
   TelemetryMinute,
   TelemetrySample,
@@ -12,7 +11,9 @@ import type {
 } from "../core/types.ts";
 
 export interface SystemCollector {
-  collect(): Promise<ParsedSystemState>;
+  collect(
+    callback: (error: unknown | null, state: ParsedSystemState | null) => void,
+  ): void;
 }
 
 export interface SystemMonitorOptions {
@@ -36,34 +37,66 @@ export const createSystemMonitor = (
 ): SystemMonitor => {
   const telemetry = createTelemetryAccumulator();
   let latest: ParsedSystemState | null = null;
-  let timer: ReturnType<typeof setInterval> | null = null;
+  let started = false;
   let collecting = false;
+
+  const finishError = (
+    error: unknown,
+    done: (state: ParsedSystemState | null) => void,
+  ): void => {
+    const finish = () => {
+      collecting = false;
+      done(latest);
+    };
+    try {
+      const hook = options.onError?.(error);
+      if (isPromiseLike(hook)) hook.then(finish, finish);
+      else finish();
+    } catch {
+      finish();
+    }
+  };
+
+  const sample = (
+    done: (state: ParsedSystemState | null) => void = () => {},
+  ): void => {
+    if (collecting) {
+      done(latest);
+      return;
+    }
+    collecting = true;
+    options.collector.collect((error, state) => {
+      if (error || !state) {
+        finishError(error ?? new Error("system_collection_empty"), done);
+        return;
+      }
+      latest = state;
+      telemetry.add(toSample(state.overview));
+      const finish = () => {
+        collecting = false;
+        done(state);
+      };
+      try {
+        const hook = options.onSample?.(state);
+        if (isPromiseLike(hook)) {
+          hook.then(finish, (hookError) => finishError(hookError, done));
+        } else finish();
+      } catch (hookError) {
+        finishError(hookError, done);
+      }
+    });
+  };
+
   const monitor: SystemMonitor = {
     start() {
-      if (timer !== null) return;
-      void monitor.sampleNow();
-      timer = setInterval(() => void monitor.sampleNow(), TELEMETRY_SAMPLE_MS);
+      if (started) return;
+      started = true;
+      sample();
     },
     stop() {
-      if (timer !== null) clearInterval(timer);
-      timer = null;
+      started = false;
     },
-    async sampleNow() {
-      if (collecting) return latest;
-      collecting = true;
-      try {
-        const state = await options.collector.collect();
-        latest = state;
-        telemetry.add(toSample(state.overview));
-        await options.onSample?.(state);
-        return state;
-      } catch (error) {
-        await options.onError?.(error);
-        return latest;
-      } finally {
-        collecting = false;
-      }
-    },
+    sampleNow: () => new Promise((resolve) => sample(resolve)),
     overview: () => latest?.overview ?? null,
     processes: () => latest?.processes.slice() ?? [],
     network: () => latest?.network ?? null,
@@ -71,6 +104,10 @@ export const createSystemMonitor = (
   };
   return monitor;
 };
+
+const isPromiseLike = (value: unknown): value is PromiseLike<void> =>
+  value !== null && typeof value === "object" &&
+  typeof (value as { then?: unknown }).then === "function";
 
 const toSample = (overview: SystemOverview): TelemetrySample => ({
   collectedAt: overview.collectedAt,

@@ -1,19 +1,23 @@
 import { assertEquals, assertRejects } from "@std/assert";
 
-import { createMacSystemAdapter } from "../src/native/mac-system.ts";
+import {
+  createMacSystemAdapter,
+  type MacSystemAdapter,
+} from "../src/native/mac-system.ts";
+import type { ParsedSystemState } from "../src/core/types.ts";
 
 Deno.test("macOS adapter uses fixed executables and argument arrays for monitoring/effects", async () => {
   const calls: Array<{ file: string; args: readonly string[] }> = [];
-  const adapter = createMacSystemAdapter((file, args) => {
+  const adapter = createMacSystemAdapter((file, args, callback) => {
     calls.push({ file, args: [...args] });
-    if (file === "/usr/sbin/sysctl") return Promise.resolve("100");
+    if (file === "/usr/sbin/sysctl") return callback(null, "100", "");
     if (args.includes("pid=,lstart=,comm=")) {
-      return Promise.resolve("42 Mon Jul 18 20:00:00 2026 worker\n");
+      return callback(null, "42 Mon Jul 18 20:00:00 2026 worker\n", "");
     }
-    return Promise.resolve("");
+    callback(null, "", "");
   });
 
-  await adapter.collect();
+  await collectOnce(adapter);
   await adapter.kill(42, {
     pid: 42,
     command: "worker",
@@ -33,14 +37,27 @@ Deno.test("macOS adapter uses fixed executables and argument arrays for monitori
   );
 
   assertEquals(calls, [
-    { file: "/usr/bin/top", args: ["-l", "1", "-n", "0"] },
+    {
+      file: "/usr/bin/top",
+      args: [
+        "-l",
+        "2",
+        "-s",
+        "1",
+        "-o",
+        "cpu",
+        "-n",
+        "100",
+        "-stats",
+        "pid,cpu,mem,command",
+      ],
+    },
     { file: "/usr/sbin/sysctl", args: ["-n", "hw.memsize"] },
     { file: "/usr/bin/vm_stat", args: [] },
     { file: "/bin/df", args: ["-k", "/"] },
     { file: "/usr/sbin/netstat", args: ["-ibn"] },
     { file: "/usr/bin/pmset", args: ["-g", "batt"] },
-    { file: "/bin/ps", args: ["-Ao", "pid=,pcpu=,pmem=,comm="] },
-    { file: "/sbin/ifconfig", args: [] },
+    { file: "/usr/sbin/scutil", args: ["--nwi"] },
     {
       file: "/bin/ps",
       args: ["-p", "42", "-o", "pid=,lstart=,comm="],
@@ -53,13 +70,16 @@ Deno.test("macOS adapter uses fixed executables and argument arrays for monitori
 
 Deno.test("system collection starts every fixed command asynchronously in parallel", async () => {
   const started: string[] = [];
-  const pending = new Map<string, (value: string) => void>();
-  const adapter = createMacSystemAdapter((file) => {
+  const pending = new Map<
+    string,
+    (error: Error | null, stdout: string, stderr: string) => void
+  >();
+  const adapter = createMacSystemAdapter((file, _args, callback) => {
     started.push(file);
-    return new Promise<string>((resolve) => pending.set(file, resolve));
+    pending.set(file, callback);
   });
 
-  const collecting = adapter.collect();
+  const collecting = collectOnce(adapter);
   await Promise.resolve();
   assertEquals(started, [
     "/usr/bin/top",
@@ -68,9 +88,19 @@ Deno.test("system collection starts every fixed command asynchronously in parall
     "/bin/df",
     "/usr/sbin/netstat",
     "/usr/bin/pmset",
-    "/bin/ps",
-    "/sbin/ifconfig",
+    "/usr/sbin/scutil",
   ]);
-  for (const resolve of pending.values()) resolve("");
+  for (const callback of pending.values()) callback(null, "", "");
   assertEquals((await collecting).processes, []);
 });
+
+const collectOnce = (adapter: MacSystemAdapter) =>
+  new Promise<ParsedSystemState>(
+    (resolve, reject) => {
+      adapter.collect((error, state) => {
+        if (error) reject(error);
+        else if (state) resolve(state);
+        else reject(new Error("missing system state"));
+      });
+    },
+  );

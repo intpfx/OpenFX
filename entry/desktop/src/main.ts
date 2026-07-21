@@ -25,7 +25,9 @@ import { createDesktopJournal } from "./core/durable-journal.ts";
 import { createDesktopLifecycleController } from "./core/lifecycle-controller.ts";
 import {
   deriveCoreMotionPolicy,
+  derivePerryWindowPolicy,
   PERRY_ANIMATED_CORE_AVAILABLE,
+  PERRY_VISIBLE_MAIN_WINDOW_AVAILABLE,
 } from "./core/core-motion-policy.ts";
 import { derivePairingReadiness } from "./core/pairing-readiness.ts";
 import { createDesktopRouteDispatcher } from "./core/route-dispatcher.ts";
@@ -67,6 +69,7 @@ import {
   createCoreCanvasRenderer,
 } from "./ui/core-canvas.ts";
 import type { CoreNodeState } from "./ui/core-frame.ts";
+import { createStableCorePanel } from "./ui/stable-core.ts";
 import { createNodeTray } from "./ui/tray.ts";
 
 const desktopAppSmokeRun = deriveDesktopAppSmokeRun({
@@ -125,13 +128,11 @@ const pairingStatus = State("等待输入配对信息。");
 
 const systemMonitor = createSystemMonitor({
   collector: systemCollector,
-  async onSample(state) {
-    await reporter.report(state);
-    refreshPresentation();
+  onSample(state) {
+    return reporter.report(state);
   },
   async onError(error) {
     serviceStatus.set(`采样失败：${errorMessage(error)}`);
-    refreshPresentation();
     await audit.append({
       category: "node",
       action: "telemetry.sample",
@@ -289,6 +290,9 @@ const bootstrap = async (): Promise<void> => {
     systemMonitor.start();
     refreshPresentation();
   } catch (error) {
+    systemMonitor.stop();
+    if (nodeServer) await nodeServer.close();
+    nodeServer = null;
     serviceStatus.set(`节点启动失败：${errorMessage(error)}`);
     refreshPresentation();
   }
@@ -303,19 +307,22 @@ const lifecycle = createDesktopLifecycleController({
   },
 });
 
-coreRenderer = createCoreCanvasRenderer({
-  width: 560,
-  height: 640,
-  initialMetrics: createCoreMetrics(),
-  initialWindowVisible: startupPreferences.launchMode !== "menuBarOnly",
-});
+coreRenderer = currentMotionPolicy().mode === "animated"
+  ? createCoreCanvasRenderer({
+    width: 560,
+    height: 640,
+    initialMetrics: createCoreMetrics(),
+    initialWindowVisible: currentWindowPolicy().mode !== "menuBarOnly",
+  })
+  : null;
+const coreWidget = coreRenderer?.canvas ?? createStableCorePanel();
 
 controlPanel = createControlPanel(currentPresentation(), {
   pair(input) {
     void pairWithControlPlane(input);
   },
   sample() {
-    void systemMonitor.sampleNow();
+    void sampleAndRefreshPresentation();
   },
   openConsole() {
     void openControlPlaneConsole();
@@ -330,7 +337,7 @@ controlPanel = createControlPanel(currentPresentation(), {
 
 createNodeTray({
   sample() {
-    void systemMonitor.sampleNow();
+    void sampleAndRefreshPresentation();
   },
   openConsole() {
     void openControlPlaneConsole();
@@ -342,7 +349,7 @@ createNodeTray({
 });
 
 onActivate(() => {
-  controlPanel?.update(currentPresentation());
+  void sampleAndRefreshPresentation();
 });
 
 onMainWindowVisibilityChanged((visible) => {
@@ -358,9 +365,9 @@ onTerminate(() => {
 });
 
 appSetActivationPolicy(
-  startupPreferences.launchMode === "menuBarOnly" ? "accessory" : "regular",
+  currentWindowPolicy().mode === "menuBarOnly" ? "accessory" : "regular",
 );
-coreRenderer.start();
+coreRenderer?.start();
 setTimeout(() => {
   void lifecycle.start();
 }, 1);
@@ -371,7 +378,7 @@ App({
   minWidth: 880,
   minHeight: 580,
   vibrancy: "underWindowBackground",
-  body: HStack(0, [coreRenderer.canvas, controlPanel.body]),
+  body: HStack(0, [coreWidget, controlPanel.body]),
 });
 
 function currentPresentation() {
@@ -385,6 +392,7 @@ function currentPresentation() {
     publicIpv6: network?.publicIpv6 ?? null,
     relay: reporter.status(),
     motionPolicy: currentMotionPolicy(),
+    windowPolicy: currentWindowPolicy(),
     now: Date.now(),
   });
 }
@@ -406,6 +414,13 @@ function currentMotionPolicy() {
   return deriveCoreMotionPolicy(
     preferences.value.reduceMotion,
     PERRY_ANIMATED_CORE_AVAILABLE,
+  );
+}
+
+function currentWindowPolicy() {
+  return derivePerryWindowPolicy(
+    preferences.value.launchMode,
+    PERRY_VISIBLE_MAIN_WINDOW_AVAILABLE,
   );
 }
 
@@ -436,6 +451,11 @@ function applyAuthoritativePairing(
 function refreshPresentation(): void {
   controlPanel?.update(currentPresentation());
   coreRenderer?.update(createCoreMetrics());
+}
+
+async function sampleAndRefreshPresentation(): Promise<void> {
+  await systemMonitor.sampleNow();
+  refreshPresentation();
 }
 
 function persistLaunchMode(mode: DesktopLaunchMode): void {

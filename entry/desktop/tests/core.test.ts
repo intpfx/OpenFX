@@ -43,8 +43,9 @@ Deno.test("macOS command output becomes a system overview, process list, and pub
       "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=1) 77%; discharging",
     processes: "101 12.5 4.2 /Applications/Test App.app/Contents/MacOS/Test App\n" +
       "202 1.0 0.5 /usr/bin/helper\n",
-    ifconfig: "en0: flags=8863<UP>\n\tinet6 fe80::1%en0 prefixlen 64\n" +
-      "\tinet6 240e:1234:5678::9 prefixlen 64 autoconf\n",
+    networkState: "IPv6 network interface information\n" +
+      "     en0 : flags      : 0x7 (IPv4,IPv6,DNS)\n" +
+      "           address    : 240e:1234:5678::9\n",
   }, 1_700_000_000_000);
 
   assertEquals(parsed.overview.cpuUsagePercent, 20);
@@ -60,6 +61,41 @@ Deno.test("macOS command output becomes a system overview, process list, and pub
     "/Applications/Test App.app/Contents/MacOS/Test App",
   );
   assertEquals(parsed.network.publicIpv6, "240e:1234:5678::9");
+});
+
+Deno.test("top final sample supplies current CPU and bounded process diagnostics", () => {
+  const parsed = parseSystemCommandOutputs({
+    top: "Processes: 601 total, 3 running, 598 sleeping\n" +
+      "CPU usage: 9.0% user, 1.0% sys, 90.0% idle\n" +
+      "PID %CPU MEM COMMAND\n101 1.0 100B stale\n" +
+      "Processes: 609 total, 4 running, 605 sleeping\n" +
+      "CPU usage: 20.0% user, 10.0% sys, 70.0% idle\n" +
+      "PID %CPU MEM COMMAND\n202 7.5 250M+ Current App\n203 2.5 100M helper\n",
+    memsize: "1048576000\n",
+    vmStat: "",
+    df: "",
+    netstat: "",
+    battery: "",
+    processes: "",
+    networkState: "",
+  }, 1_700_000_000_000);
+
+  assertEquals(parsed.overview.cpuUsagePercent, 30);
+  assertEquals(parsed.overview.processCount, 609);
+  assertEquals(parsed.processes, [
+    {
+      pid: 202,
+      cpuUsagePercent: 7.5,
+      memoryUsagePercent: 25,
+      command: "Current App",
+    },
+    {
+      pid: 203,
+      cpuUsagePercent: 2.5,
+      memoryUsagePercent: 10,
+      command: "helper",
+    },
+  ]);
 });
 
 Deno.test("ordinary preferences discard secrets and normalize pairing state", () => {

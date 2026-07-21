@@ -134,6 +134,10 @@ export const textSetFontWeight = (
   _weight: number,
 ): void => {};
 export const textSetWraps = (_widget: Widget, _maxWidth: number): void => {};
+export const textSetTextAlignment = (
+  _widget: Widget,
+  _alignment: number,
+): void => {};
 export const textfieldSetString = (_widget: Widget, _text: string): void => {};
 export const buttonSetTitle = (_widget: Widget, _title: string): void => {};
 export const buttonSetBordered = (_widget: Widget, _bordered: number): void => {};

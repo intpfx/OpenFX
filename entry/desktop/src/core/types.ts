@@ -49,7 +49,7 @@ export interface SystemCommandOutputs {
   netstat: string;
   battery: string;
   processes: string;
-  ifconfig: string;
+  networkState: string;
 }
 
 export interface ParsedSystemState {

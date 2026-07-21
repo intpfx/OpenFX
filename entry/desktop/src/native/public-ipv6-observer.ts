@@ -30,7 +30,9 @@ export interface PublicIpv6Observation {
 }
 
 export interface PublicIpv6Observer {
-  observe(localCandidates: readonly string[]): Promise<PublicIpv6Observation>;
+  observe(
+    localCandidates: readonly string[],
+  ): PublicIpv6Observation | Promise<PublicIpv6Observation>;
 }
 
 export interface PublicIpv6ObserverOptions {
@@ -85,31 +87,24 @@ export const createPublicIpv6Observer = (
     return observation;
   };
 
-  const externalObservation = async (): Promise<ExternalIpv6Observation> => {
+  const externalObservation = ():
+    | ExternalIpv6Observation
+    | Promise<ExternalIpv6Observation> => {
     const current = now();
     if (cached && current - cached.observedAt < refreshIntervalMs) return cached;
     const pending = inFlight ?? refresh();
     inFlight = pending;
-    try {
-      return await pending;
-    } finally {
+    return pending.finally(() => {
       if (inFlight === pending) inFlight = null;
-    }
+    });
   };
 
   return {
-    async observe(localCandidates) {
-      const { observedIpv6, observationErrors } = await externalObservation();
-      const local = localCandidates.map((value) => value.toLowerCase())
-        .filter(isPublicIpv6);
-      const publicIpv6 = local.find((candidate) => observedIpv6.includes(candidate)) ??
-        null;
-      return {
-        publicIpv6,
-        observedIpv6,
-        mismatch: observedIpv6.length > 0 && publicIpv6 === null,
-        observationErrors,
-      };
+    observe(localCandidates) {
+      const external = externalObservation();
+      return isPromiseLike<ExternalIpv6Observation>(external)
+        ? external.then((observation) => mergeObservation(localCandidates, observation))
+        : mergeObservation(localCandidates, external);
     },
   };
 };
@@ -118,15 +113,54 @@ export const createObservedSystemCollector = (
   collector: SystemCollector,
   observer: PublicIpv6Observer,
 ): SystemCollector => ({
-  async collect(): Promise<ParsedSystemState> {
-    const state = await collector.collect();
-    const observation = await observer.observe(state.network.ipv6Addresses);
-    return {
-      ...state,
-      network: { ...state.network, ...observation },
-    };
+  collect(callback) {
+    collector.collect((error, state) => {
+      if (error || !state) {
+        callback(error ?? new Error("system_collection_empty"), null);
+        return;
+      }
+      try {
+        const observed = observer.observe(state.network.ipv6Addresses);
+        if (isPromiseLike<PublicIpv6Observation>(observed)) {
+          observed.then(
+            (observation) => callback(null, withObservation(state, observation)),
+            (observationError) => callback(observationError, null),
+          );
+        } else callback(null, withObservation(state, observed));
+      } catch (observationError) {
+        callback(observationError, null);
+      }
+    });
   },
 });
+
+const mergeObservation = (
+  localCandidates: readonly string[],
+  observation: ExternalIpv6Observation,
+): PublicIpv6Observation => {
+  const local = localCandidates.map((value) => value.toLowerCase())
+    .filter(isPublicIpv6);
+  const publicIpv6 =
+    local.find((candidate) => observation.observedIpv6.includes(candidate)) ?? null;
+  return {
+    publicIpv6,
+    observedIpv6: observation.observedIpv6,
+    mismatch: observation.observedIpv6.length > 0 && publicIpv6 === null,
+    observationErrors: observation.observationErrors,
+  };
+};
+
+const withObservation = (
+  state: ParsedSystemState,
+  observation: PublicIpv6Observation,
+): ParsedSystemState => ({
+  ...state,
+  network: { ...state.network, ...observation },
+});
+
+const isPromiseLike = <Value>(value: unknown): value is PromiseLike<Value> =>
+  value !== null && typeof value === "object" &&
+  typeof (value as { then?: unknown }).then === "function";
 
 const objectValue = (value: unknown): Record<string, unknown> =>
   value && typeof value === "object" && !Array.isArray(value)

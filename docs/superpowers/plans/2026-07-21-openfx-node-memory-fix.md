@@ -4,22 +4,24 @@
 > superpowers:subagent-driven-development (recommended) or superpowers:executing-plans
 > to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Stop the Perry desktop core from continuously allocating native graphics
+**Goal:** Stop the Perry desktop node from continuously allocating native graphics
 resources and add a reproducible long-running memory gate for the packaged macOS app.
 
 **Architecture:** Keep the persisted `reduceMotion` preference backward compatible, but
 derive an explicit effective motion policy at the desktop runtime boundary. Perry
 animation remains unavailable in production until a future runtime fix passes the
-long-run memory gate, so the core draws only on first visibility and node-state changes.
-A pure `vmmap` parser feeds an opt-in packaged-app smoke that samples the verified
-process for ten minutes.
+long-run memory gate. The effective static production path uses native `Text/VStack`
+only and never instantiates a Perry `Canvas`. Service-level and pump-level probes
+isolate the remaining native growth before correcting Perry's quiet HTTP/ext-net pump
+paths. A pure `vmmap` parser feeds an opt-in packaged-app smoke that samples the
+verified process for ten minutes.
 
 **Tech Stack:** Deno 2, TypeScript, Perry 0.5.1220 native UI, macOS `vmmap`, Deno tests.
 
 ## Global Constraints
 
-- Production must set `animatedCoreAvailable=false`; do not modify or upgrade the pinned
-  Perry 0.5.1220 runtime patch in this fix.
+- Production must set `animatedCoreAvailable=false`; keep Perry at 0.5.1220 and make the
+  runtime correction only through the pinned, hash-verified OpenFX patch.
 - Effective production status must be `静态核心（Perry 稳定模式）`, with
   `mode: "static"`, `reduceMotion: true`, and `controlAvailable: false`.
 - New preferences default to `reduceMotion: true`; an explicitly persisted `false` value
@@ -27,18 +29,33 @@ process for ten minutes.
   the effective static policy.
 - The unavailable animation control must not be actionable, while CPU and memory
   telemetry remain visible in the control panel.
-- Static mode registers zero `onFrame` callbacks, ignores CPU/memory-only updates,
-  redraws once per node-state change, draws nothing while hidden, and redraws once when
-  reopened.
+- System telemetry takes one startup snapshot and then runs only for activation, manual
+  refresh, or pairing checks. This avoids the confirmed Perry arena growth from repeated
+  command-output parsing while retaining all user-driven diagnostics and reporting.
+- Effective production static mode instantiates no `Canvas` and registers zero `onFrame`
+  callbacks. The retained Canvas renderer is future-only and must stay unreachable while
+  `animatedCoreAvailable=false`.
 - The memory smoke must launch `dist/OpenFX Node.app`, bind samples to its
   token-verified PID, warm up for 30 seconds, then sample every 30 seconds for 10
   minutes.
 - From the post-warmup baseline, IOAccelerator region count may not increase,
-  IOAccelerator virtual memory may grow by at most 64 MiB, and physical footprint may
-  grow by at most 96 MiB.
+  IOAccelerator virtual memory may grow by at most 64 MiB, resident memory by at most 16
+  MiB, and physical footprint by at most 96 MiB.
 - Keep the desktop stack Perry-first and Deno-native; introduce no Electron, Tauri,
   Node-only runtime assumption, or shell-interpolated process command.
 - Human-facing product copy and documentation remain Simplified Chinese.
+
+## Confirmed Runtime Finding
+
+The final controlled bisection isolated the growth to `systemMonitor`: minimal Perry UI,
+the full static UI without services, a no-op interval, `execFile(true)`, and repeated
+`top` with discarded output were stable. Parsing and constructing a fresh system object
+graph every five seconds grew IOAccelerator resident pages by about 8 MiB/minute;
+explicit GC inside or after the callback did not reclaim the arena pages. Production
+therefore takes one startup snapshot and refreshes only on activation, manual sampling,
+or pairing. A three-minute full-service comparison held IOAccelerator resident at 13.8
+MiB and region count at five. The quiet HTTP/ext-net allocation reductions remain a
+separate defensive runtime hardening layer, not the primary root-cause fix.
 
 ---
 
@@ -69,7 +86,7 @@ process for ten minutes.
   `motionControlAvailable`; `reduceMotion` represents the effective policy used by the
   visible control.
 
-- [ ] **Step 1: Add failing motion-policy and preference migration tests**
+- [x] **Step 1: Add failing motion-policy and preference migration tests**
 
 Add focused assertions equivalent to:
 
@@ -90,7 +107,7 @@ assertEquals(sanitizeDesktopPreferences({ reduceMotion: false }).reduceMotion, f
 Also make the UI-model/control-panel tests require the production-stable status and
 unavailable control while retaining CPU and memory strings.
 
-- [ ] **Step 2: Run the focused UI-model test and verify RED**
+- [x] **Step 2: Run the focused UI-model test and verify RED**
 
 Run:
 `deno test --config entry/desktop/deno.json --allow-read --allow-write --allow-net --allow-run=deno entry/desktop/tests/ui-model.test.ts`
@@ -98,7 +115,7 @@ Run:
 Expected: FAIL because `core-motion-policy.ts` and the effective policy fields do not
 exist, and because the old default is `false`.
 
-- [ ] **Step 3: Implement the minimal pure policy and wire it through production**
+- [x] **Step 3: Implement the minimal pure policy and wire it through production**
 
 Create the focused policy module with this behavior:
 
@@ -138,36 +155,36 @@ persisted preferences. Derive presentation state with `animatedCoreAvailable=fal
 Hide/detach the reduce-motion toggle when `motionControlAvailable` is false and show the
 status caption instead; keep the action/type surface for future compatibility.
 
-- [ ] **Step 4: Run the focused UI-model test and verify GREEN**
+- [x] **Step 4: Run the focused UI-model test and verify GREEN**
 
 Run the Step 2 command.
 
 Expected: PASS with the new policy, migration, presentation, and compatibility
 assertions.
 
-- [ ] **Step 5: Add failing state-driven static renderer tests**
+- [x] **Step 5: Add failing state-driven static renderer tests**
 
-Add a renderer test that starts visible and static, applies 1,000 updates with the same
-node state but changing CPU/memory values, and asserts exactly one paint and zero
-frame-driver requests. Then change the node state and assert exactly one additional
-paint; hide, change state, assert no paint; reopen and assert exactly one paint.
+Add a renderer test that starts visible and static, applies 1,000 updates with changing
+CPU/memory values, and asserts exactly one paint and zero frame-driver requests. Change
+the node state, hide, update again, and reopen; all operations must reuse the lifetime
+static frame without another paint.
 
-- [ ] **Step 6: Run the focused renderer test and verify RED**
+- [x] **Step 6: Run the focused renderer test and verify RED**
 
 Run:
 `deno test --config entry/desktop/deno.json --allow-read --allow-write --allow-net --allow-run=deno entry/desktop/tests/core-frame.test.ts`
 
 Expected: FAIL because static `update()` currently redraws on every telemetry update.
 
-- [ ] **Step 7: Implement state-driven static invalidation**
+- [x] **Step 7: Implement state-driven static invalidation**
 
-In `createCoreCanvasRenderer.update`, compare the previous and next `state` before
-replacing metrics. In static mode, cancel any pending callback and draw only when no
-static frame has been drawn, motion just changed to static, or the node state changed.
-Do not schedule an `onFrame` callback in static mode. Preserve the existing animated
-code path for the future capability flag and preserve one redraw on reopening.
+In `createCoreCanvasRenderer.update`, replace the latest metrics but do not invalidate
+an already drawn static frame. In static mode, cancel any pending callback and draw only
+when no static frame has been drawn and the window is visible. Do not schedule an
+`onFrame` callback in static mode. Preserve the existing animated code path for the
+future capability flag.
 
-- [ ] **Step 8: Run focused and full desktop tests**
+- [x] **Step 8: Run focused and full desktop tests**
 
 Run the Step 6 command, then:
 
@@ -175,14 +192,14 @@ Run the Step 6 command, then:
 
 Expected: the focused renderer tests and all desktop tests pass with no failures.
 
-- [ ] **Step 9: Update behavior documentation**
+- [x] **Step 9: Update behavior documentation**
 
 Document in `entry/desktop/README.md` and `docs/openfx-console-architecture.md` that
 Perry 0.5.1220 currently uses the stable static core, telemetry continues independently,
 the persisted preference remains for forward compatibility, and animation can return
 only after the native memory gate passes.
 
-- [ ] **Step 10: Commit Task 1**
+- [x] **Step 10: Commit Task 1**
 
 ```bash
 git add docs/superpowers/plans/2026-07-21-openfx-node-memory-fix.md \
@@ -215,16 +232,17 @@ git commit -m "fix(desktop): disable unsafe Perry core animation"
 - Produces: root task `desktop:memory-smoke` and desktop task `memory-smoke`, both
   invoking the packaged-app smoke with `--memory`.
 
-- [ ] **Step 1: Add failing `vmmap` parser tests**
+- [x] **Step 1: Add failing `vmmap` parser tests**
 
-Use fixtures covering K/M/G units, whitespace, an IOAccelerator summary row with a
-trailing region count, and missing fields. Require missing values to be `null`, not
-zero. Example expectations:
+Use fixtures covering K/M/G units, whitespace, a real multi-column IOAccelerator summary
+row with virtual, resident, and trailing region-count fields, and missing fields.
+Require missing values to be `null`, not zero. Example expectations:
 
 ```ts
 assertEquals(parseVmmapSummary(fixture), {
   physicalFootprintBytes: 34.7 * 1024 ** 3,
   ioAcceleratorVirtualBytes: 37.8 * 1024 ** 3,
+  ioAcceleratorResidentBytes: null,
   ioAcceleratorRegionCount: 381,
 });
 assertEquals(
@@ -233,27 +251,27 @@ assertEquals(
 );
 ```
 
-- [ ] **Step 2: Run the parser test and verify RED**
+- [x] **Step 2: Run the parser test and verify RED**
 
 Run:
 `deno test --config entry/desktop/deno.json entry/desktop/tests/process-memory.test.ts`
 
 Expected: FAIL because the parser module does not exist.
 
-- [ ] **Step 3: Implement the pure parser**
+- [x] **Step 3: Implement the pure parser**
 
 Parse `Physical footprint:` independently of the IOAccelerator summary row. Convert K,
 M, and G with powers of 1024 and preserve decimal precision. Treat absent or malformed
-fields as `null`. Parse the IOAccelerator region count only from the row that supplies
-IOAccelerator virtual size.
+fields as `null`. Parse IOAccelerator virtual size, resident size, and region count only
+from the exact base IOAccelerator row.
 
-- [ ] **Step 4: Run the parser test and verify GREEN**
+- [x] **Step 4: Run the parser test and verify GREEN**
 
 Run the Step 2 command.
 
 Expected: PASS for all unit, whitespace, malformed, and missing-field fixtures.
 
-- [ ] **Step 5: Add failing task and smoke-contract tests**
+- [x] **Step 5: Add failing task and smoke-contract tests**
 
 Extend `macos-app-bundle.test.ts` to require:
 
@@ -271,14 +289,14 @@ assertEquals(
 Also require the smoke source to contain the exact warmup/sample durations and 64 MiB /
 96 MiB limits.
 
-- [ ] **Step 6: Run the contract test and verify RED**
+- [x] **Step 6: Run the contract test and verify RED**
 
 Run:
 `deno test --config entry/desktop/deno.json --allow-read entry/desktop/tests/macos-app-bundle.test.ts`
 
 Expected: FAIL because neither task nor memory-mode gate exists.
 
-- [ ] **Step 7: Add opt-in memory mode to the packaged-app smoke**
+- [x] **Step 7: Add opt-in memory mode to the packaged-app smoke**
 
 Keep the existing normal smoke behavior unchanged. When `--memory` is present:
 
@@ -292,13 +310,14 @@ Keep the existing normal smoke behavior unchanged. When `--memory` is present:
 5. Fail closed if any required snapshot field is `null`.
 6. Compare the maximum sampled IOAccelerator region count and memory sizes to the
    post-warmup baseline. Require region delta `<= 0`, IOAccelerator virtual delta
-   `<= 64 * 1024 ** 2`, and physical-footprint delta `<= 96 * 1024 ** 2`.
+   `<= 64 * 1024 ** 2`, resident delta `<= 16 * 1024 ** 2`, and physical-footprint delta
+   `<= 96 * 1024 ** 2`.
 7. Print baseline, peak, final, and any failing snapshot in the final PASS/FAIL
    diagnostic.
 8. Terminate only the token-verified PID through the existing bounded cleanup path and
    still require clean exit.
 
-- [ ] **Step 8: Run parser, contract, and full desktop tests**
+- [x] **Step 8: Run parser, contract, and full desktop tests**
 
 Run the Step 2 and Step 6 commands, then:
 
@@ -306,13 +325,13 @@ Run the Step 2 and Step 6 commands, then:
 
 Expected: all desktop tests pass with no failures.
 
-- [ ] **Step 9: Document the memory gate**
+- [x] **Step 9: Document the memory gate**
 
 Add `deno task desktop:memory-smoke` to both desktop validation documents. State the
 30-second warmup, 10-minute sampling window, sample interval, three exact thresholds,
 and that the task requires the verified pinned Perry runtime and packaged app.
 
-- [ ] **Step 10: Commit Task 2**
+- [x] **Step 10: Commit Task 2**
 
 ```bash
 git add deno.json entry/desktop/deno.json entry/desktop/src/core/process-memory.ts \
@@ -321,6 +340,78 @@ git add deno.json entry/desktop/deno.json entry/desktop/src/core/process-memory.
   docs/openfx-console-architecture.md
 git commit -m "test(desktop): gate native graphics memory growth"
 ```
+
+---
+
+### Task 3: Reduce idle Perry HTTP/ext-net allocator churn
+
+**Files:**
+
+- Modify: `entry/desktop/perry/perry-v0.5.1220-openfx.patch`
+- Modify: `entry/desktop/tools/perry-runtime-provenance.ts`
+- Modify: `entry/desktop/tests/desktop-contract.test.ts`
+- Modify: `entry/desktop/README.md`
+- Modify: `docs/openfx-console-architecture.md`
+
+- [x] **Step 1: Bisect the real packaged app by service and pump boundary**
+
+  Use HTTP and pump boundaries as an intermediate bisection, then retain the allocation
+  reductions as defensive hardening after the final system-monitor isolation supersedes
+  the initial attribution.
+
+- [x] **Step 2: Make quiet and active pump paths allocation-stable**
+
+  Separate server liveness from pending work, run the parked-response reaper before the
+  work gate, reuse typed handle snapshot capacity on active ticks, and use a
+  producer-maintained atomic ext-net pending hint before taking the empty queue lock.
+
+- [x] **Step 3: Add runtime and repository regression coverage**
+
+  Cover the quiet server predicate, reusable handle scratch behavior, 10,000 empty
+  ext-net drains, queued-event hint lifecycle, and the pinned-patch ordering contract.
+
+- [x] **Step 4: Rebuild from the exact clean Perry commit and refresh provenance**
+
+  Apply the hash-pinned patch to commit `06137858dc8c6f80975238377138f2f948d6ef88`,
+  build with Rust 1.96.1, validate all runtime artifact hashes, and rebuild the packaged
+  app.
+
+- [x] **Step 5: Pass the packaged-app 10-minute memory gate**
+
+  Require zero IOAccelerator region growth and retain the full baseline/peak/final
+  diagnostics from the real token-verified app process.
+
+---
+
+### Task 4: Remove unbounded background system parsing
+
+**Files:**
+
+- Modify: `entry/desktop/src/native/system-monitor.ts`
+- Modify: `entry/desktop/src/main.ts`
+- Modify: `entry/desktop/src/core/process-memory.ts`
+- Modify: `entry/desktop/tools/desktop-app-smoke.ts`
+- Modify: `entry/desktop/tests/system-monitor.test.ts`
+- Modify: `entry/desktop/tests/process-memory.test.ts`
+
+- [x] **Step 1: Isolate system parsing from UI, timers, HTTP, and child creation**
+
+  Confirm the stable controls and reproduce growth with `systemMonitor` alone.
+
+- [x] **Step 2: Replace five-second polling with event-driven snapshots**
+
+  Take one idempotent startup sample, then refresh on activation, manual actions, and
+  pairing checks. Keep health, Agent, Relay, and explicit sampling available.
+
+- [x] **Step 3: Gate resident memory inside stable IOAccelerator regions**
+
+  Parse the real multi-column resident value and fail when its delta exceeds 16 MiB,
+  even when virtual size and region count have not changed.
+
+- [x] **Step 4: Verify the full-service comparison**
+
+  Hold IOAccelerator resident at 13.8 MiB and region count at five from 30 to 180
+  seconds while health and all production services are running.
 
 ---
 
@@ -335,3 +426,14 @@ git commit -m "test(desktop): gate native graphics memory growth"
 - `PERRY_LIB_DIR=/tmp/perry-openfx-memory-fix/target/openfx-v0.5.1220/release deno task desktop:app-smoke`
 - `PERRY_LIB_DIR=/tmp/perry-openfx-memory-fix/target/openfx-v0.5.1220/release deno task desktop:memory-smoke`
 - `git diff --check codex/openfx-console-freemac...HEAD`
+
+### Verification result
+
+- Clean Perry source commit: `06137858dc8c6f80975238377138f2f948d6ef88`.
+- Patched runtime source: `/tmp/perry-openfx-clean.Nupvg9/Perry`.
+- `deno task check`: 349 Web/shared tests passed, one ignored; 174 desktop tests passed.
+- `perry check entry/desktop/src/main.ts --deep-deps`: 38 files passed.
+- Packaged-app memory smoke: 20 post-warmup samples across ten minutes passed.
+  IOAccelerator virtual memory stayed at 138,831,462.4 bytes, resident memory stayed at
+  14,050,918.4 bytes, and region count stayed at five. Physical footprint changed from
+  74,553,753.6 bytes to 56,518,246.4 bytes.

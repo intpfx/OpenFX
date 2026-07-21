@@ -29,13 +29,18 @@ const PERRY_UI_ARCHIVE = "libperry_ui_macos.a";
 const HEALTH_TIMEOUT_MS = 10_000;
 const APP_EXIT_DEADLINE_MS = 13_000;
 const TERMINATION_GRACE_MS = 1_000;
+const GRACEFUL_QUIT_TIMEOUT_MS = 5_000;
 const INSTANCE_IDENTITY_TIMEOUT_MS = 5_000;
 const SMOKE_TOKEN_FLAG = "--openfx-smoke-token";
 const MEMORY_WARMUP_MS = 30_000;
 const MEMORY_SAMPLE_INTERVAL_MS = 30_000;
 const MEMORY_SAMPLE_COUNT = 20;
+const MEMORY_TEST_EXIT_AFTER_MS = MEMORY_WARMUP_MS +
+  MEMORY_SAMPLE_INTERVAL_MS * MEMORY_SAMPLE_COUNT +
+  60_000;
 const IO_ACCELERATOR_REGION_GROWTH_LIMIT = 0;
 const IO_ACCELERATOR_VIRTUAL_GROWTH_LIMIT_BYTES = 64 * 1024 ** 2;
+const IO_ACCELERATOR_RESIDENT_GROWTH_LIMIT_BYTES = 16 * 1024 ** 2;
 const PHYSICAL_FOOTPRINT_GROWTH_LIMIT_BYTES = 96 * 1024 ** 2;
 
 const memoryMode = Deno.args.includes("--memory");
@@ -91,7 +96,12 @@ App({
     "-n",
     "--env",
     "PERRY_UI_TEST_MODE=1",
-    ...(memoryMode ? [] : ["--env", "PERRY_UI_TEST_EXIT_AFTER_MS=12000"]),
+    ...(memoryMode
+      ? [
+        "--env",
+        `PERRY_UI_TEST_EXIT_AFTER_MS=${MEMORY_TEST_EXIT_AFTER_MS}`,
+      ]
+      : ["--env", "PERRY_UI_TEST_EXIT_AFTER_MS=12000"]),
     "--env",
     `PERRY_UI_SCREENSHOT_PATH=${screenshot}`,
     "--env",
@@ -124,6 +134,7 @@ App({
       Date.now() + INSTANCE_IDENTITY_TIMEOUT_MS,
     );
     health = await waitForHealth();
+    if (!memoryMode) await showVerifiedAppInstance(instance);
     if (memoryMode) {
       memoryResult = await runMemorySmoke(instance);
       if (!memoryResult.passed) {
@@ -222,15 +233,20 @@ App({
     health?.ok === true && health.protocolVersion === 1,
     `Unexpected health payload: ${JSON.stringify(health)}`,
   );
-  await assertPng(screenshot);
-  if (screenshotArtifact) {
-    await Deno.mkdir(dirname(screenshotArtifact), { recursive: true });
-    await Deno.copyFile(screenshot, screenshotArtifact);
+  if (!memoryMode) {
+    await assertPng(screenshot);
+    if (screenshotArtifact) {
+      await Deno.mkdir(dirname(screenshotArtifact), { recursive: true });
+      await Deno.copyFile(screenshot, screenshotArtifact);
+    }
   }
+  const screenshotDetails = memoryMode
+    ? ""
+    : ` screenshot=${screenshotArtifact ?? screenshot}`;
   console.log(
-    `[openfx:desktop-app-smoke] PASS app=${APP_BUNDLE} health=${HEALTH_URL} screenshot=${
-      screenshotArtifact ?? screenshot
-    }${memoryResult ? `\n${formatMemoryDiagnostics(memoryResult)}` : ""}`,
+    `[openfx:desktop-app-smoke] PASS app=${APP_BUNDLE} health=${HEALTH_URL}${screenshotDetails}${
+      memoryResult ? `\n${formatMemoryDiagnostics(memoryResult)}` : ""
+    }`,
   );
 } finally {
   await Deno.remove(temporaryDirectory, { recursive: true }).catch(() => {});
@@ -324,6 +340,7 @@ async function runMemorySmoke(
     sampleIntervalMs: MEMORY_SAMPLE_INTERVAL_MS,
     ioAcceleratorRegionGrowthLimit: IO_ACCELERATOR_REGION_GROWTH_LIMIT,
     ioAcceleratorVirtualGrowthLimitBytes: IO_ACCELERATOR_VIRTUAL_GROWTH_LIMIT_BYTES,
+    ioAcceleratorResidentGrowthLimitBytes: IO_ACCELERATOR_RESIDENT_GROWTH_LIMIT_BYTES,
     physicalFootprintGrowthLimitBytes: PHYSICAL_FOOTPRINT_GROWTH_LIMIT_BYTES,
     delay,
     sample: (index) => sampleProcessMemory(instance, index),
@@ -473,10 +490,65 @@ async function verifyAppInstance(instance: VerifiedAppInstance): Promise<void> {
   );
 }
 
+async function showVerifiedAppInstance(
+  instance: VerifiedAppInstance,
+): Promise<void> {
+  await verifyAppInstance(instance);
+  const result = await new Deno.Command("/usr/bin/open", {
+    args: [APP_BUNDLE],
+    cwd: REPOSITORY_ROOT,
+    stdin: "null",
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  if (!result.success) {
+    throw new Error(
+      `Unable to show verified OpenFX Node app (${result.code}): ${
+        new TextDecoder().decode(result.stderr).trim() || "no command output"
+      }`,
+    );
+  }
+  await verifyAppInstance(instance);
+}
+
 async function terminateVerifiedAppInstance(
   instance: VerifiedAppInstance,
 ): Promise<void> {
   if (!(await isPidAlive(instance.pid))) return;
+  await verifyAppInstance(instance);
+
+  let gracefulQuitFailure: unknown = null;
+  try {
+    const quit = await new Deno.Command("/usr/bin/osascript", {
+      args: [
+        "-e",
+        'tell application id "com.openfx.node" to quit',
+      ],
+      stdin: "null",
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+    if (!quit.success) {
+      const stderr = new TextDecoder().decode(quit.stderr).trim();
+      throw new Error(
+        `OpenFX Node graceful quit failed with status ${quit.code}: ${
+          stderr || "no command output"
+        }`,
+      );
+    }
+    if (
+      await waitForPidExit(
+        instance.pid,
+        Date.now() + GRACEFUL_QUIT_TIMEOUT_MS,
+      )
+    ) return;
+    gracefulQuitFailure = new Error(
+      `OpenFX Node graceful quit timed out after ${GRACEFUL_QUIT_TIMEOUT_MS} ms.`,
+    );
+  } catch (error) {
+    gracefulQuitFailure = error;
+  }
+
   await verifyAppInstance(instance);
   try {
     Deno.kill(instance.pid, "SIGTERM");
@@ -484,13 +556,15 @@ async function terminateVerifiedAppInstance(
     if (error instanceof Deno.errors.NotFound) return;
     throw error;
   }
-  if (await waitForPidExit(instance.pid, Date.now() + TERMINATION_GRACE_MS)) return;
-  await verifyAppInstance(instance);
-  Deno.kill(instance.pid, "SIGKILL");
-  assert(
-    await waitForPidExit(instance.pid, Date.now() + TERMINATION_GRACE_MS),
-    `Unable to terminate verified OpenFX Node app PID ${instance.pid}.`,
-  );
+  if (!(await waitForPidExit(instance.pid, Date.now() + TERMINATION_GRACE_MS))) {
+    await verifyAppInstance(instance);
+    Deno.kill(instance.pid, "SIGKILL");
+    assert(
+      await waitForPidExit(instance.pid, Date.now() + TERMINATION_GRACE_MS),
+      `Unable to terminate verified OpenFX Node app PID ${instance.pid}.`,
+    );
+  }
+  throw gracefulQuitFailure;
 }
 
 async function assertVerifiedCleanExit(
@@ -577,7 +651,12 @@ async function commandOutput(command: string, args: string[]): Promise<string> {
     stderr: "piped",
   }).output();
   if (!result.success) {
-    throw new Error(new TextDecoder().decode(result.stderr).trim());
+    const stderr = new TextDecoder().decode(result.stderr).trim();
+    const stdout = new TextDecoder().decode(result.stdout).trim();
+    const diagnostics = stderr || stdout || "no command output";
+    throw new Error(
+      `${command} exited with status ${result.code}: ${diagnostics}`,
+    );
   }
   return new TextDecoder().decode(result.stdout);
 }

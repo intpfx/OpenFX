@@ -1,11 +1,11 @@
 diff --git a/crates/perry-api-manifest/src/entries/part_4.rs b/crates/perry-api-manifest/src/entries/part_4.rs
-index 4d38c85be22854d3f56b21eadeb382023f78116e..40b7243f9dd7343a6ab43b1df7a1f2cc8a07d858 100644
+index 4d38c85..40b7243 100644
 --- a/crates/perry-api-manifest/src/entries/part_4.rs
 +++ b/crates/perry-api-manifest/src/entries/part_4.rs
 @@ -426,0 +427 @@ pub(crate) const API_MANIFEST_PART_4: &[ApiEntry] = &[
 +    method("perry/ui", "onMainWindowVisibilityChanged", false, None),
 diff --git a/crates/perry-codegen/src/lower_call/native/native_ui_appshell_branch.rs b/crates/perry-codegen/src/lower_call/native/native_ui_appshell_branch.rs
-index 20d38ae1418faab96e60a4db02e8195abc5bd4e4..d2ae31e04772758f726a911b66989f943d8ad219 100644
+index 20d38ae..d2ae31e 100644
 --- a/crates/perry-codegen/src/lower_call/native/native_ui_appshell_branch.rs
 +++ b/crates/perry-codegen/src/lower_call/native/native_ui_appshell_branch.rs
 @@ -241,0 +242,3 @@
@@ -54,7 +54,7 @@ index 20d38ae1418faab96e60a4db02e8195abc5bd4e4..d2ae31e04772758f726a911b66989f94
 +            );
 +        }
 diff --git a/crates/perry-dispatch/src/ui_table/part_b.rs b/crates/perry-dispatch/src/ui_table/part_b.rs
-index 313a8f419579c5a33d111d02f94e67c8da903cc5..b569dc8a5d6395c8766eac8f040b66cbbb81bc44 100644
+index 313a8f4..b569dc8 100644
 --- a/crates/perry-dispatch/src/ui_table/part_b.rs
 +++ b/crates/perry-dispatch/src/ui_table/part_b.rs
 @@ -744,0 +745,6 @@ pub(crate) const PERRY_UI_TABLE_PART_B: &[MethodRow] = &[
@@ -64,11 +64,103 @@ index 313a8f419579c5a33d111d02f94e67c8da903cc5..b569dc8a5d6395c8766eac8f040b66cb
 +        args: &[ArgKind::Closure],
 +        ret: ReturnKind::Void,
 +    },
+diff --git a/crates/perry-ext-http-server/src/lib.rs b/crates/perry-ext-http-server/src/lib.rs
+index 4ebfe48..9368910 100644
+--- a/crates/perry-ext-http-server/src/lib.rs
++++ b/crates/perry-ext-http-server/src/lib.rs
+@@ -276,0 +277,18 @@ mod tests {
++    /// A ref'ed listening server keeps the outer event loop alive, but an
++    /// otherwise quiet server must not make the HTTP pump snapshot every
++    /// registered handle on every idle tick. The allocator retains those
++    /// short-lived allocations in long-lived slabs, growing resident memory
++    /// when the server had never accepted a request.
++    #[test]
++    fn quiet_listening_server_is_active_without_pending_pump_work() {
++        let mut server = HttpServer::with_handler(0);
++        server.listening = true;
++        server.refed = true;
++
++        assert!(crate::server::server_is_active(&server));
++        assert!(!crate::server::server_has_pending_work(&server));
++
++        server.pending_listening_emit = true;
++        assert!(crate::server::server_has_pending_work(&server));
++    }
++
 diff --git a/crates/perry-ext-http-server/src/server.rs b/crates/perry-ext-http-server/src/server.rs
-index 3882f5477cbae49f820835f2e1e595dc7713ccc1..d83f02b4def2e9fd962e154d580a195959dc039b 100644
+index 3882f54..a6c4ff1 100644
 --- a/crates/perry-ext-http-server/src/server.rs
 +++ b/crates/perry-ext-http-server/src/server.rs
-@@ -860 +860,9 @@ pub unsafe extern "C" fn js_node_http_server_listen(server_handle: i64, args_arr
+@@ -255,0 +256,68 @@ pub(crate) static NEXT_CONNECTION_ID: AtomicU64 = AtomicU64::new(1);
++// The HTTP pump snapshots typed handle ids before it mutates server state. A
++// fresh Vec for that snapshot on every 8ms macOS tick made the allocator keep
++// acquiring slabs even when the same single listening server was the only
++// handle. Keep one recyclable buffer instead. The Option is checked out while
++// callbacks run so a re-entrant pump can fall back to its own Vec rather than
++// deadlocking on this mutex; the buffer with the larger capacity wins when
++// both invocations return it.
++static HTTP_PUMP_HANDLE_SCRATCH: Mutex<Option<Vec<i64>>> = Mutex::new(Some(Vec::new()));
++
++fn take_recycled_handle_buffer(scratch: &Mutex<Option<Vec<i64>>>) -> Vec<i64> {
++    scratch
++        .lock()
++        .ok()
++        .and_then(|mut buffer| buffer.take())
++        .unwrap_or_default()
++}
++
++fn return_recycled_handle_buffer(scratch: &Mutex<Option<Vec<i64>>>, mut handles: Vec<i64>) {
++    handles.clear();
++    if let Ok(mut buffer) = scratch.lock() {
++        let replace = buffer
++            .as_ref()
++            .map(|current| handles.capacity() > current.capacity())
++            .unwrap_or(true);
++        if replace {
++            *buffer = Some(handles);
++        }
++    }
++}
++
++fn snapshot_http_pump_handles<T>() -> Vec<i64>
++where
++    T: Send + Sync + 'static,
++{
++    let mut handles = take_recycled_handle_buffer(&HTTP_PUMP_HANDLE_SCRATCH);
++    handles.clear();
++    perry_ffi::iter_handle_ids_of::<T, _>(|id| handles.push(id));
++    handles
++}
++
++fn recycle_http_pump_handles(handles: Vec<i64>) {
++    return_recycled_handle_buffer(&HTTP_PUMP_HANDLE_SCRATCH, handles);
++}
++
++#[cfg(test)]
++mod pump_handle_scratch_tests {
++    use super::{return_recycled_handle_buffer, take_recycled_handle_buffer};
++    use std::sync::Mutex;
++
++    #[test]
++    fn returns_the_largest_checked_out_capacity_for_reuse() {
++        let scratch = Mutex::new(Some(Vec::new()));
++        let mut outer = take_recycled_handle_buffer(&scratch);
++        outer.reserve(32);
++        let outer_capacity = outer.capacity();
++
++        // A re-entrant pump checks out while the primary buffer is in use.
++        let mut nested = take_recycled_handle_buffer(&scratch);
++        nested.reserve(4);
++        return_recycled_handle_buffer(&scratch, nested);
++        return_recycled_handle_buffer(&scratch, outer);
++
++        let reused = take_recycled_handle_buffer(&scratch);
++        assert!(reused.is_empty());
++        assert!(reused.capacity() >= outer_capacity);
++    }
++}
++
+@@ -860 +928,9 @@ pub unsafe extern "C" fn js_node_http_server_listen(server_handle: i64, args_arr
 -        let bind_str = format!("{}:{}", host, bind_port);
 +        let bind_host = host
 +            .strip_prefix('[')
@@ -79,15 +171,105 @@ index 3882f5477cbae49f820835f2e1e595dc7713ccc1..d83f02b4def2e9fd962e154d580a1959
 +        } else {
 +            format!("{}:{}", bind_host, bind_port)
 +        };
+@@ -1562,2 +1638,4 @@ pub extern "C" fn js_node_http_server_process_pending() -> i32 {
+-    // #4728 — finalize any async-handler requests that have flushed their
+-    // response since the last tick (or timed out) before draining new ones.
++    // #4728 — parked async responses need a cheap readiness check every tick,
++    // but their mere liveness is not a reason to snapshot every registered
++    // HTTP/HTTPS/HTTP2 server. Reap first, then let only actual queue/listen/h2
++    // work open the full pump below.
+@@ -1565,0 +1644,17 @@ pub extern "C" fn js_node_http_server_process_pending() -> i32 {
++    // A ref'ed listening server keeps the outer event loop alive, but that
++    // alone is not work for this pump. Avoid snapshotting every registered
++    // server handle on quiet ticks: each snapshot grows a temporary Vec and
++    // the allocator retains those tiny allocations in long-lived slabs. At
++    // the event-loop tick rate this manifested as steady
++    // resident growth even when the server had never received a request.
++    //
++    // The checks below only borrow existing queues/handles and allocate
++    // nothing. A producer racing this check also wakes the main thread, so a
++    // newly queued item is consumed on the following tick.
++    if !http_server_pump_has_pending_work() {
++        // Raw upgraded sockets use ext-net's independent pending queue. Keep
++        // draining that zero-allocation idle path even when HTTP itself is
++        // quiet so close/error events cannot be stranded.
++        return unsafe { perry_ext_net::js_ext_net_drain_pending() };
++    }
++
+@@ -1594,3 +1689,2 @@ pub extern "C" fn js_node_http_server_process_pending() -> i32 {
+-    let mut http_handles: Vec<i64> = Vec::new();
+-    perry_ffi::iter_handle_ids_of::<HttpServer, _>(|id| http_handles.push(id));
+-    for h in http_handles {
++    let http_handles = snapshot_http_pump_handles::<HttpServer>();
++    for h in http_handles.iter().copied() {
+@@ -1629,0 +1724 @@ pub extern "C" fn js_node_http_server_process_pending() -> i32 {
++    recycle_http_pump_handles(http_handles);
+@@ -1631,5 +1726,2 @@ pub extern "C" fn js_node_http_server_process_pending() -> i32 {
+-    let mut https_handles: Vec<i64> = Vec::new();
+-    perry_ffi::iter_handle_ids_of::<crate::https_server::HttpsServer, _>(|id| {
+-        https_handles.push(id)
+-    });
+-    for h in https_handles {
++    let https_handles = snapshot_http_pump_handles::<crate::https_server::HttpsServer>();
++    for h in https_handles.iter().copied() {
+@@ -1642,0 +1735 @@ pub extern "C" fn js_node_http_server_process_pending() -> i32 {
++    recycle_http_pump_handles(https_handles);
+@@ -1644,5 +1737,2 @@ pub extern "C" fn js_node_http_server_process_pending() -> i32 {
+-    let mut h2_handles: Vec<i64> = Vec::new();
+-    perry_ffi::iter_handle_ids_of::<crate::http2_server::Http2SecureServer, _>(|id| {
+-        h2_handles.push(id)
+-    });
+-    for h in h2_handles {
++    let h2_handles = snapshot_http_pump_handles::<crate::http2_server::Http2SecureServer>();
++    for h in h2_handles.iter().copied() {
+@@ -1658,0 +1749 @@ pub extern "C" fn js_node_http_server_process_pending() -> i32 {
++    recycle_http_pump_handles(h2_handles);
+@@ -1678 +1769,35 @@ pub extern "C" fn js_node_http_server_process_pending() -> i32 {
+-fn server_is_active(s: &HttpServer) -> bool {
++pub(crate) fn server_has_pending_work(s: &HttpServer) -> bool {
++    s.pending_listening_emit
++        || !s.deferred_listen_cbs.is_empty()
++        || s.request_rx.as_ref().is_some_and(|rx| rx.len() > 0)
++        || s.upgrade_rx.as_ref().is_some_and(|rx| rx.len() > 0)
++}
++
++fn http_server_pump_has_pending_work() -> bool {
++    if PENDING_CONNECTION_EVENTS
++        .lock()
++        .map(|q| !q.is_empty())
++        .unwrap_or(false)
++        || crate::http2_server::has_pending_h2_events()
++    {
++        return true;
++    }
++
++    let mut pending = false;
++    iter_handles_of::<HttpServer, _>(|s| pending |= server_has_pending_work(s));
++    if pending {
++        return true;
++    }
++    iter_handles_of::<crate::https_server::HttpsServer, _>(|s| {
++        pending |= server_has_pending_work(&s.base)
++    });
++    if pending {
++        return true;
++    }
++    iter_handles_of::<crate::http2_server::Http2SecureServer, _>(|s| {
++        pending |= server_has_pending_work(&s.base)
++    });
++    pending
++}
++
++pub(crate) fn server_is_active(s: &HttpServer) -> bool {
 diff --git a/crates/perry-ext-http/Cargo.toml b/crates/perry-ext-http/Cargo.toml
-index 84ebb7a4a37fabfa8ec70d3de30fc54761e0327a..b0f6f885ad8fadcc2f265d0252eba388a9df001c 100644
+index 84ebb7a..b0f6f88 100644
 --- a/crates/perry-ext-http/Cargo.toml
 +++ b/crates/perry-ext-http/Cargo.toml
 @@ -26 +26 @@ perry-ext-http-server = { path = "../perry-ext-http-server" }
 -perry-runtime = { workspace = true, features = ["external-ws-symbols"] }
 +perry-runtime = { workspace = true, features = ["default", "external-ws-symbols", "stdlib"] }
 diff --git a/crates/perry-ext-http/src/client_events.rs b/crates/perry-ext-http/src/client_events.rs
-index 9672435c40c67c5bccb7c651fcc5c8ef82c2320c..cc894905aa766ce5b89b4b5586ab856f54297eb1 100644
+index 9672435..cc89490 100644
 --- a/crates/perry-ext-http/src/client_events.rs
 +++ b/crates/perry-ext-http/src/client_events.rs
 @@ -6,0 +7,41 @@ use super::*;
@@ -139,7 +321,7 @@ index 9672435c40c67c5bccb7c651fcc5c8ef82c2320c..cc894905aa766ce5b89b4b5586ab856f
 +        req.incoming_handle = incoming;
 +    });
 diff --git a/crates/perry-ext-http/src/client_request_surface.rs b/crates/perry-ext-http/src/client_request_surface.rs
-index 2ce0e6bb64950a606245ef9a5d593e7383322b0e..7aebb1a845179e8c74f5b4c79fe1aa691642bf06 100644
+index 2ce0e6b..7aebb1a 100644
 --- a/crates/perry-ext-http/src/client_request_surface.rs
 +++ b/crates/perry-ext-http/src/client_request_surface.rs
 @@ -66,0 +67,4 @@ pub(crate) fn request_destroyed(handle: Handle) -> bool {
@@ -148,7 +330,7 @@ index 2ce0e6bb64950a606245ef9a5d593e7383322b0e..7aebb1a845179e8c74f5b4c79fe1aa69
 +}
 +
 diff --git a/crates/perry-ext-http/src/lib.rs b/crates/perry-ext-http/src/lib.rs
-index d816401e4bf93df1b3440227e95105fbf30e80fc..9d8ea89b1aa8d5c3390895e10702f7f62338333c 100644
+index d816401..9d8ea89 100644
 --- a/crates/perry-ext-http/src/lib.rs
 +++ b/crates/perry-ext-http/src/lib.rs
 @@ -55,0 +56 @@ use client_overload::{merge_url_and_options, method_for_overload, parse_client_a
@@ -163,7 +345,7 @@ index d816401e4bf93df1b3440227e95105fbf30e80fc..9d8ea89b1aa8d5c3390895e10702f7f6
 +    client_events::finalize_completed_http_handles();
 +
 diff --git a/crates/perry-ext-http/src/tests.rs b/crates/perry-ext-http/src/tests.rs
-index 602cc4c03be40cbb34af84be5d6a560bf7fc7fa4..af55383a3c942d57f8f661f15c438bd2d77246a0 100644
+index 602cc4c..af55383 100644
 --- a/crates/perry-ext-http/src/tests.rs
 +++ b/crates/perry-ext-http/src/tests.rs
 @@ -170,2 +170,2 @@ fn drain_streamed_body(chunks: &[&[u8]]) -> Vec<u8> {
@@ -238,8 +420,88 @@ index 602cc4c03be40cbb34af84be5d6a560bf7fc7fa4..af55383a3c942d57f8f661f15c438bd2
 +    }
 +}
 +
+diff --git a/crates/perry-ext-net/src/lib.rs b/crates/perry-ext-net/src/lib.rs
+index b844796..93dd4da 100644
+--- a/crates/perry-ext-net/src/lib.rs
++++ b/crates/perry-ext-net/src/lib.rs
+@@ -437,0 +438,3 @@ pub(crate) fn next_id() -> i64 {
++pub(crate) static EXT_NET_PENDING_EVENTS_HINT: std::sync::atomic::AtomicBool =
++    std::sync::atomic::AtomicBool::new(false);
++
+@@ -439,0 +443 @@ fn push_event(ev: PendingNetEvent) {
++    EXT_NET_PENDING_EVENTS_HINT.store(true, std::sync::atomic::Ordering::Release);
+@@ -1452,0 +1457,13 @@ pub unsafe extern "C" fn js_ext_net_drain_pending() -> i32 {
++    // The macOS host drives auxiliary pumps on every 8 ms timer tick. Avoid
++    // entering the scratch-buffer path when no producer has queued an event:
++    // even an empty take/restore cycle is hot enough for the native allocator
++    // to retain additional resident slabs over a long-lived idle server.
++    // Producers push under this same lock and wake the main thread, so an
++    // event racing an empty check is drained on the following tick.
++    if !EXT_NET_PENDING_EVENTS_HINT.load(std::sync::atomic::Ordering::Acquire) {
++        return 0;
++    }
++
++    #[cfg(test)]
++    EXT_NET_DRAIN_SLOW_PATH_ENTRIES.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
++
+@@ -1460,0 +1478,4 @@ pub unsafe extern "C" fn js_ext_net_drain_pending() -> i32 {
++        if g.is_empty() {
++            EXT_NET_PENDING_EVENTS_HINT.store(false, std::sync::atomic::Ordering::Release);
++            return 0;
++        }
+@@ -1461,0 +1483 @@ pub unsafe extern "C" fn js_ext_net_drain_pending() -> i32 {
++        EXT_NET_PENDING_EVENTS_HINT.store(false, std::sync::atomic::Ordering::Release);
+@@ -1687,0 +1710,4 @@ pub unsafe extern "C" fn js_ext_net_drain_pending() -> i32 {
++#[cfg(test)]
++static EXT_NET_DRAIN_SLOW_PATH_ENTRIES: std::sync::atomic::AtomicUsize =
++    std::sync::atomic::AtomicUsize::new(0);
++
+@@ -1907,0 +1934,34 @@ mod tests {
++    #[test]
++    fn empty_drain_skips_the_scratch_buffer_path() {
++        let _lock = GC_TEST_LOCK
++            .lock()
++            .unwrap_or_else(|poisoned| poisoned.into_inner());
++        statics::pending_events().lock().unwrap().clear();
++        EXT_NET_PENDING_EVENTS_HINT.store(false, std::sync::atomic::Ordering::Release);
++
++        let before = EXT_NET_DRAIN_SLOW_PATH_ENTRIES.load(std::sync::atomic::Ordering::SeqCst);
++        for _ in 0..10_000 {
++            assert_eq!(unsafe { js_ext_net_drain_pending() }, 0);
++        }
++        let after = EXT_NET_DRAIN_SLOW_PATH_ENTRIES.load(std::sync::atomic::Ordering::SeqCst);
++
++        assert_eq!(
++            after, before,
++            "an empty net queue must not enter the allocation-retaining scratch path"
++        );
++    }
++
++    #[test]
++    fn queued_event_sets_and_drain_clears_pending_hint() {
++        let _lock = GC_TEST_LOCK
++            .lock()
++            .unwrap_or_else(|poisoned| poisoned.into_inner());
++        statics::pending_events().lock().unwrap().clear();
++        EXT_NET_PENDING_EVENTS_HINT.store(false, std::sync::atomic::Ordering::Release);
++
++        push_event(PendingNetEvent::Close(-1));
++        assert!(EXT_NET_PENDING_EVENTS_HINT.load(std::sync::atomic::Ordering::Acquire));
++        assert_eq!(unsafe { js_ext_net_drain_pending() }, 1);
++        assert!(!EXT_NET_PENDING_EVENTS_HINT.load(std::sync::atomic::Ordering::Acquire));
++    }
++
+diff --git a/crates/perry-ext-net/src/server_state.rs b/crates/perry-ext-net/src/server_state.rs
+index 256632f..ecb0233 100644
+--- a/crates/perry-ext-net/src/server_state.rs
++++ b/crates/perry-ext-net/src/server_state.rs
+@@ -107 +107,3 @@ pub(crate) fn has_active_handles() -> bool {
+-    if !statics::pending_events().lock().unwrap().is_empty() {
++    if crate::EXT_NET_PENDING_EVENTS_HINT.load(std::sync::atomic::Ordering::Acquire)
++        && !statics::pending_events().lock().unwrap().is_empty()
++    {
 diff --git a/crates/perry-runtime/src/event_pump.rs b/crates/perry-runtime/src/event_pump.rs
-index d39855815176ff7231c516649b6988113016e8a2..d28a419ac51a3537ce5e388ebb3b5318f68f48c3 100644
+index d398558..d28a419 100644
 --- a/crates/perry-runtime/src/event_pump.rs
 +++ b/crates/perry-runtime/src/event_pump.rs
 @@ -114,0 +115 @@ static WAIT_DRIVER_WAKE: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
@@ -272,7 +534,7 @@ index d39855815176ff7231c516649b6988113016e8a2..d28a419ac51a3537ce5e388ebb3b5318
 +}
 +
 diff --git a/crates/perry-runtime/src/frame.rs b/crates/perry-runtime/src/frame.rs
-index 605b0d89e57064a4d7909e3292f394bb3cede1ac..5f3bc55d3e7ed55804300c5a0820fefcb9185104 100644
+index 605b0d8..5f3bc55 100644
 --- a/crates/perry-runtime/src/frame.rs
 +++ b/crates/perry-runtime/src/frame.rs
 @@ -87,0 +88,7 @@ pub extern "C" fn js_cancel_frame(id: i64) {
@@ -296,7 +558,7 @@ index 605b0d89e57064a4d7909e3292f394bb3cede1ac..5f3bc55d3e7ed55804300c5a0820fefc
 +        assert_eq!(js_frame_has_pending(), 0);
 +    }
 diff --git a/crates/perry-runtime/src/set.rs b/crates/perry-runtime/src/set.rs
-index 25780b55add1175ee1cff50c3cc3f70c5c02e27f..0f5409b4c8561a641138499429e4e438b93f28f6 100644
+index 25780b5..0f5409b 100644
 --- a/crates/perry-runtime/src/set.rs
 +++ b/crates/perry-runtime/src/set.rs
 @@ -450 +450 @@ fn string_view_from_bits(
@@ -344,7 +606,7 @@ index 25780b55add1175ee1cff50c3cc3f70c5c02e27f..0f5409b4c8561a641138499429e4e438
 +        }
 +    }
 diff --git a/crates/perry-stdlib/src/common/async_bridge.rs b/crates/perry-stdlib/src/common/async_bridge.rs
-index 6a0b2e834244e1426b0546d82ff35c291f2f62de..cc61f4195a69acb742322d17035f89c59bae5709 100644
+index 6a0b2e8..cc61f41 100644
 --- a/crates/perry-stdlib/src/common/async_bridge.rs
 +++ b/crates/perry-stdlib/src/common/async_bridge.rs
 @@ -328,0 +329,4 @@ pub fn drive_pending(budget_ms: u64) {
@@ -383,7 +645,7 @@ index 6a0b2e834244e1426b0546d82ff35c291f2f62de..cc61f4195a69acb742322d17035f89c5
 +}
 +
 diff --git a/crates/perry-stdlib/src/common/dispatch/init.rs b/crates/perry-stdlib/src/common/dispatch/init.rs
-index 613024ea49fc2c256ed078fba12c9845d5d853ba..b4fc422e82a8b12898b22b536f3fee994d64a4a4 100644
+index 613024e..b4fc422 100644
 --- a/crates/perry-stdlib/src/common/dispatch/init.rs
 +++ b/crates/perry-stdlib/src/common/dispatch/init.rs
 @@ -366,0 +367,7 @@ pub unsafe extern "C" fn js_stdlib_init_dispatch() {
@@ -395,7 +657,7 @@ index 613024ea49fc2c256ed078fba12c9845d5d853ba..b4fc422e82a8b12898b22b536f3fee99
 +
 +unsafe fn js_stdlib_init_dispatch_inner() {
 diff --git a/crates/perry-ui-macos/src/app.rs b/crates/perry-ui-macos/src/app.rs
-index 72255abcb7230fbb633325f1535f55dec0819f31..667439c5192fb049850ec0660d18e15b90819de0 100644
+index 72255ab..667439c 100644
 --- a/crates/perry-ui-macos/src/app.rs
 +++ b/crates/perry-ui-macos/src/app.rs
 @@ -30,0 +31 @@ thread_local! {
@@ -488,7 +750,7 @@ index 72255abcb7230fbb633325f1535f55dec0819f31..667439c5192fb049850ec0660d18e15b
 +}
 +
 diff --git a/crates/perry-ui-macos/src/lib_ffi/dialogs_lifecycle.rs b/crates/perry-ui-macos/src/lib_ffi/dialogs_lifecycle.rs
-index 6ac1b1a5967ca9f9d034958de6589b7319a9f953..2a46d2ed796de38d2471bf41f287ff278ae0d2d3 100644
+index 6ac1b1a..2a46d2e 100644
 --- a/crates/perry-ui-macos/src/lib_ffi/dialogs_lifecycle.rs
 +++ b/crates/perry-ui-macos/src/lib_ffi/dialogs_lifecycle.rs
 @@ -102,0 +103,6 @@ pub extern "C" fn perry_ui_app_on_activate(callback: f64) {
@@ -499,7 +761,7 @@ index 6ac1b1a5967ca9f9d034958de6589b7319a9f953..2a46d2ed796de38d2471bf41f287ff27
 +}
 +
 diff --git a/crates/perry-ui-macos/src/screenshot.rs b/crates/perry-ui-macos/src/screenshot.rs
-index 25bf6807aaefec0cd7df9313fe7151658bb11605..7118245fc5e7172850e9f8f31ce1bf92e24e6a33 100644
+index 25bf680..7118245 100644
 --- a/crates/perry-ui-macos/src/screenshot.rs
 +++ b/crates/perry-ui-macos/src/screenshot.rs
 @@ -5,0 +6 @@ use objc2::runtime::{AnyClass, AnyObject};
@@ -554,7 +816,7 @@ index 25bf6807aaefec0cd7df9313fe7151658bb11605..7118245fc5e7172850e9f8f31ce1bf92
 +    buf
 +}
 diff --git a/crates/perry-ui-macos/src/tray.rs b/crates/perry-ui-macos/src/tray.rs
-index 2f52976c29d788480f4f9f913748637c1f22e741..b77185db91860793a522fbf8426f3aeb1fbc2ac5 100644
+index 2f52976..b77185d 100644
 --- a/crates/perry-ui-macos/src/tray.rs
 +++ b/crates/perry-ui-macos/src/tray.rs
 @@ -17,0 +18 @@ use std::collections::HashMap;
@@ -600,7 +862,7 @@ index 2f52976c29d788480f4f9f913748637c1f22e741..b77185db91860793a522fbf8426f3aeb
 +                let resolved_path = resolve_resource_path(path);
 +                let ns_path = NSString::from_str(&resolved_path.to_string_lossy());
 diff --git a/types/perry/ui/index.d.ts b/types/perry/ui/index.d.ts
-index 955f0d33bf6369d5758306ec827c1ebd79dccf47..d91d638e5fc7d163ca808511ac2e0d0f7f13184c 100644
+index 955f0d3..d91d638 100644
 --- a/types/perry/ui/index.d.ts
 +++ b/types/perry/ui/index.d.ts
 @@ -221,0 +222,3 @@ export function App(config: {
@@ -620,7 +882,7 @@ index 955f0d33bf6369d5758306ec827c1ebd79dccf47..d91d638e5fc7d163ca808511ac2e0d0f
 +
 diff --git a/crates/perry-ext-http/src/client_dispatch_ext.rs b/crates/perry-ext-http/src/client_dispatch_ext.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..53263363c9918e76fd50fdce3d937ee25d456b3a
+index 0000000..5326336
 --- /dev/null
 +++ b/crates/perry-ext-http/src/client_dispatch_ext.rs
 @@ -0,0 +1,134 @@

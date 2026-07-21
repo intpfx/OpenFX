@@ -9,15 +9,24 @@ Mac 节点，以及运行时无关的 `domains/e` Agent/审批内核。Web 控�
 
 - `entry/web` 在根页 OpenFX Logo 打开的后台面板中提供控制台、管理员会话、配对、Deno KV
   历史、SSE 和固定 Relay，不提供独立控制台页面路由。
-- `entry/desktop` 是目标 Mac 节点。它默认以 Perry regular 应用显示 Dock、应用菜单、FX
-  Tray 和主窗口；用户主动选择的 `menuBarOnly` 模式只在下次启动切换为 accessory。
-  两种模式都监听 `[::]:24531`，关闭窗口不停止节点服务。
+- `entry/desktop` 是目标 Mac 节点。Perry 0.5.1220 稳定策略暂时固定为 accessory 菜单栏
+  后台模式；已保存的 `launchMode` 保留作未来兼容，当前切换控件不可操作。FX Tray 可显示
+  同一主窗口；节点始终监听 `[::]:24531`，关闭窗口不停止服务。
 - Perry 0.5.1220 的生产桌面核心强制使用“静态核心（Perry 稳定模式）”。这用于规避已确认的
-  原生 IOAccelerator 内存增长风险。静态模式不注册 `onFrame` 回调，只会在节点状态变化或
-  窗口重新显示时绘制一次；隐藏窗口不绘制。CPU、内存等遥测仍按既有节奏独立采样、上报并在
-  面板显示。持久化的 `reduceMotion` 偏好为未来兼容性保留：新偏好默认 `true`，明确保存的
+  原生 IOAccelerator 风险。生产静态模式完全不创建 `Canvas`，左侧改用不变的原生
+  `Text/VStack` 面板；节点状态变化和窗口重新显示不会触发图形表面重绘。CPU、内存等遥测
+  在服务启动时采集一次，之后由窗口激活、手动刷新或配对检查触发；后台不会持续重建 Perry
+  对象。持久化的 `reduceMotion` 偏好为未来兼容性保留：新偏好默认 `true`，明确保存的
   `false` 不会被改写，但当前动画控制不可操作且只显示稳定模式状态。只有原生内存门禁通过后
-  才能重新启用动态核心。
+  才能重新启用动态核心；Canvas 渲染器只作为未来能力保留。
+- 最终二分确认增长路径是 5 秒系统轮询：最小 Perry UI、完整静态 UI、空定时器、空输出
+  `execFile` 以及丢弃输出的 `top` 均稳定；仅启动 `systemMonitor`
+  就会因反复文本解析与对象图 构造产生约 8 MiB/分钟的 IOAccelerator
+  驻留增长。生产节点改为启动一次加用户事件驱动的 完整快照，3 分钟完整服务验证中驻留保持
+  13.8 MiB、区域保持 5 个。Perry HTTP/ext-net pump 的无分配空闲快路径作为独立防线保留。
+- 单次本地采样复用 `top` 第二帧。活动 IPv6 来自精简的 `scutil --nwi`。进程诊断按 CPU
+  排序且最多保留 100 条，摘要仍提供真实总数。按 PID 单次运行的 `ps` 只用于已审批进程终止
+  前的身份复核；这些输出收敛是防御性约束，不是本次内存根因。
 - `domains/e` 只提供工具执行与 `SafetyActionGate`，不依赖 Perry、Nitro、Bun 或 Web UI。
 - OMLX 只允许 `127.0.0.1:8000/v1`；OMLX 不可用时 Agent 显示离线，监控、Relay
   和手动审批仍然工作。
@@ -118,10 +127,11 @@ OMLX 工具调用最多进行 3 轮、12 次。每轮工具结果经字节上限
 
 ## 数据与事件
 
-- Perry 每 5 秒采样一次本机状态；公网 IPv6 外部观察缓存 1 分钟，但每次仍以最新本机候选
-  地址重新匹配，并发观察共享同一个 in-flight。
-- 已配对节点每分钟最多尝试一次顺序 heartbeat + telemetry；失败尝试同样节流 1 分钟。
-  云端按分钟聚合遥测，保留最近 7 天。
+- Perry 在服务启动时采样一次本机状态，之后由窗口激活、手动刷新或配对检查触发；公网 IPv6
+  外部观察缓存 1 分钟，但每次仍以最新本机候选地址重新匹配，并发观察共享同一个
+  in-flight。
+- 已配对节点在事件驱动采样后尝试顺序 heartbeat + telemetry；成功与失败都节流 1 分钟。
+  云端继续按分钟聚合收到的遥测并保留最近 7 天。
 - SSE 事件包含 `heartbeat`、`telemetry`、`agent.delta`、 `approval.requested` 和
   `approval.resolved`，支持 `Last-Event-ID` 续接。
 - 节点事件批次具有请求级幂等性；失败不会留下半批事件，安全重试也不会重复追加。
@@ -187,8 +197,9 @@ deno run --unstable-kv -A entry/desktop/tools/console-integration-smoke.ts
 `dist/OpenFX Node.app`。它先通过 token、marker PID、可执行文件真实路径、`ps` 和 `lsof`
 绑定应用包实例，预热 30 秒后建立基线，再每 30 秒采样一次 `vmmap -summary`，采样窗口持续
 10 分钟。相对基线，门禁要求 IOAccelerator region 数量增量 `<= 0`、IOAccelerator
-虚拟内存增量 `<= 64 MiB`、物理 footprint 增量 `<= 96 MiB`。字段缺失时 fail closed；
-结束时输出基线、峰值、最终及失败快照，并只清理已经核验的 PID。
+虚拟内存增量 `<= 64 MiB`、resident 增量 `<= 16 MiB`、物理 footprint 增量 `<= 96 MiB`。
+字段缺失时 fail closed； 结束时输出基线、峰值、最终及失败快照；清理先向已核验 bundle
+发送原生 Quit Apple Event， 失败后才终止已经核验的 PID。
 
 最后一条命令使用本机受信任的 `mkcert` 根证书创建只监听 loopback 的 TLS 控制面，编译并
 运行真实 Perry 节点，再通过机器实际分配的公网 IPv6 访问固定 Relay。测试使用独立 Keychain
@@ -214,9 +225,14 @@ HTTPS 配对、签名心跳与遥测、OMLX 离线降级、SSE 续接，以及�
 - 客户端 terminal 回调完成后把 `ClientRequest` 与对应 `IncomingMessage` 延迟到下一次
   HTTP pump 统一移除，同时清理 surface 状态并通过 perry-ffi quarantine 延迟数字 ID
   复用，既避免长期耗尽 `[1, 0x40000)`，也避免回调同轮发生 ABA；
+- HTTP server pump 把“监听存活”和“待处理工作”分开；安静时跳过 typed handle 快照，活动时
+  通过可重入复用缓冲区保存 HTTP/HTTPS/HTTP2 handle ID，避免 8 ms tick 持续分配临时
+  `Vec`； 挂起响应的 reaper 在门控前独立运行；ext-net 生产者设置原子 pending hint，空闲
+  tick 在 队列加锁和 scratch buffer 分配前返回；
 - AppKit 事件循环始终驱动 Perry async reactor、stdlib、HTTP/HTTPS 与微任务
-  pump，隐藏窗口 不会停止 health、采样或 Relay；原生 visibility 回调只暂停隐藏窗口的
-  Canvas frame， `menuBarOnly` 冷启动在窗口真正显示前不会绘制或排帧；
+  pump，隐藏窗口不会停止 health、Agent 或 Relay；系统快照由启动与用户事件触发。原生
+  visibility 回调只暂停隐藏窗口的 Canvas frame， `menuBarOnly`
+  冷启动在窗口真正显示前不会绘制或排帧；
 - Tray 相对资源先从 `.app/Contents/Resources` 解析，再回退到可执行文件目录，确保应用包与
   开发二进制使用同一资源名。
 

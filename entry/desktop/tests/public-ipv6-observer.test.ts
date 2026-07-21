@@ -5,6 +5,8 @@ import {
   createPublicIpv6Observer,
   PUBLIC_IPV6_OBSERVATION_ENDPOINTS,
 } from "../src/native/public-ipv6-observer.ts";
+import type { SystemCollector } from "../src/native/system-monitor.ts";
+import type { ParsedSystemState } from "../src/core/types.ts";
 
 Deno.test("public IPv6 observer chooses the externally reachable local address", async () => {
   const requests: unknown[] = [];
@@ -93,8 +95,8 @@ Deno.test("concurrent public IPv6 observations share one in-flight refresh", asy
 
 Deno.test("observed collector merges reachability into the real system state", async () => {
   const collector = createObservedSystemCollector({
-    collect: () =>
-      Promise.resolve({
+    collect: (callback) =>
+      callback(null, {
         overview: {
           collectedAt: 1,
           cpuUsagePercent: 1,
@@ -125,7 +127,7 @@ Deno.test("observed collector merges reachability into the real system state", a
       }),
   });
 
-  assertEquals((await collector.collect()).network, {
+  assertEquals((await collectOnce(collector)).network, {
     publicIpv6: "240e::2",
     ipv6Addresses: ["240e::1", "240e::2"],
     collectedAt: 1,
@@ -134,3 +136,12 @@ Deno.test("observed collector merges reachability into the real system state", a
     observationErrors: [],
   });
 });
+
+const collectOnce = (collector: SystemCollector) =>
+  new Promise<ParsedSystemState>((resolve, reject) => {
+    collector.collect((error, state) => {
+      if (error) reject(error);
+      else if (state) resolve(state);
+      else reject(new Error("missing system state"));
+    });
+  });

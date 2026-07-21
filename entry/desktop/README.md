@@ -6,15 +6,16 @@ OpenFX Node 是常驻 macOS 菜单栏的原生 Perry 节点。它承载本机监
 
 ## 运行边界
 
-- Perry 默认使用 `regular` Dock 模式、单个主窗口和 Tray；用户选择的 `menuBarOnly`
-  只在下次启动时切换为 `accessory`。关闭主窗口会清除待处理绘制帧，Tray 或 Dock 通过
-  Perry 原生 selector 重新显示同一窗口；节点服务与 5 秒采样始终继续运行。 `menuBarOnly`
-  冷启动在原生窗口可见前保持零 Canvas 绘制。
+- Perry 0.5.1220 稳定策略暂时固定为 `accessory` 菜单栏后台模式；已保存的 `launchMode`
+  继续保留以兼容未来版本，但当前切换控件不可操作。Tray 通过 Perry 原生 selector 显示同一
+  主窗口，关闭窗口不退出节点；服务始终继续运行。系统快照在服务启动时采集一次，并在窗口
+  激活、手动刷新或配对检查时按需更新。冷启动在原生窗口可见前保持零 Canvas 绘制。
 - Perry 0.5.1220 的生产核心固定为“静态核心（Perry 稳定模式）”，以避开已确认的原生
-  IOAccelerator 内存增长风险：静态模式不注册 `onFrame`，只在节点状态变化或窗口重新显示时
-  绘制一次，窗口隐藏时不绘制。CPU、内存等遥测仍独立采样并显示。`reduceMotion` 偏好默认
-  为 `true`，但明确持久化的 `false` 会原样保留，供未来恢复动画能力使用；当前动画开关不可
-  操作，只显示稳定模式状态。只有原生内存门禁通过后才可以重新启用动态核心。
+  IOAccelerator 风险：生产静态模式完全不创建 `Canvas`，左侧使用不变的原生 `Text/VStack`
+  面板。节点状态变化和窗口重新显示不会触发图形表面重绘。CPU、内存等遥测随启动与用户
+  事件按需采样和上报，后台不会持续重建原生对象；用户立即采样或窗口激活时，右侧面板读取
+  最新值。 动画偏好仍按原值保存，但当前开关不可操作。Canvas
+  渲染器仅为未来能力保留；通过原生 内存门禁后才能重新启用。
 - 节点 API 监听 `[::]:24531`。公开 `/v1/health` 只返回健康状态和协议版本，
   其余固定路由统一经过 v1 签名、AES-GCM 信封、时间窗和 nonce 防重放校验。
 - 配对使用 OpenFX 服务端 URL 与 8 位配对码。普通偏好只保存非敏感节点信息以及 Relay
@@ -25,12 +26,23 @@ OpenFX Node 是常驻 macOS 菜单栏的原生 Perry 节点。它承载本机监
   Keychain 的 `OpenFX Node` service，成功后已消费的配对码立即从原生文本框清除。
   偏好写入抛错时会恢复提交前的序列化快照，只有持久化成功后才更新进程内 UI 状态；若恢复
   本身也失败，界面会明确要求重启后检查设置。
-- 本机 CPU、内存、进程和网络候选地址每 5 秒采样；公网 IPv6 只从两个固定 HTTPS
-  观察端点确认，外部结果缓存 1 分钟且并发采样复用同一个 in-flight。每次本地采样仍用最新
+- 本机 CPU、内存、进程和网络候选地址在启动时采样一次，之后由窗口激活、手动刷新和配对
+  检查触发；公网 IPv6 只从两个固定 HTTPS 观察端点确认，外部结果缓存 1 分钟且并发采样复用
+  同一个 in-flight。每次本地采样仍用最新
   候选地址重新匹配；不匹配和观察错误会显式保留在网络状态中。
-- 已配对节点的签名 heartbeat 与 telemetry 每分钟最多尝试一组；失败尝试也进入 1 分钟
-  节流窗口，避免控制面不可用时退化为每 5 秒两次公网请求。重新配对或切换权威配对状态会
-  重置该节奏。
+- 长时诊断确认，根因是 5 秒系统轮询在 Perry 中反复解析 `top`、`netstat` 等文本并构造新
+  对象图。最小 Perry UI、完整静态 UI、空 `setInterval`、`execFile(true)` 以及丢弃输出的
+  `top` 都稳定；只启动 `systemMonitor` 即复现约 8 MiB/分钟的 IOAccelerator 驻留增长。
+  Activity Monitor 的巨大“内存”不是同等大小的实时物理占用，而是 Perry arena 长期保留并
+  继续扩展的原生页。生产节点因此取消无人值守的 5
+  秒轮询，改为启动一次和用户事件驱动的完整 快照；HTTP、Agent、Relay
+  和手动采样能力不变。固定 Perry 补丁仍为安静 HTTP/ext-net pump
+  提供无分配快路径，作为独立的原生分配防线。
+- 常规采样仍主动限制原生边界的输出量：进程数据复用 `top` 第二帧，IPv6 候选改读精简的
+  `scutil --nwi`。`top` 两帧间隔 1 秒，按 CPU 排序并最多保留 100 条进程诊断；摘要仍提供
+  真实系统进程总数。仅审批后的进程终止会按 PID 单次调用 `ps`，用于副作用前的身份复核。
+- 已配对节点在每次事件驱动采样后尝试签名 heartbeat 与 telemetry；1 分钟节流同时覆盖成功
+  与失败，避免频繁激活时重复公网请求。重新配对或切换权威配对状态会重置该节奏。
 - OpenFX 控制面上报只走 `node:https.request`，包括实时 Agent delta 与审批事件；OMLX
   固定使用 `node:http.request` 流式访问 `127.0.0.1:8000/v1/chat/completions`。
 - Agent 工具是封闭的 v1 清单。三个有副作用的工具必须经过 `domains/e` 的
@@ -66,9 +78,13 @@ deno task perry:runtime --source /tmp/perry-openfx
 export PERRY_LIB_DIR=/tmp/perry-openfx/target/openfx-v0.5.1220/release
 ```
 
-Perry UI 的 AppKit timer 持续驱动 async reactor、stdlib 与 HTTP/HTTPS pump。完成的 HTTP
-request/response 会保留到 terminal 回调后的下一次 pump，再从注册表移除并进入 handle
-quarantine；窗口隐藏只取消 Canvas frame callback，不停止节点。Tray 相对图标先解析
+Perry UI 的 AppKit timer 持续驱动 async reactor、stdlib 与 HTTP/HTTPS pump。补丁为
+`node:http` 增加无分配的待处理工作检查，并为 ext-net 增加空队列快路径；安静监听只保持
+事件循环存活，不再触发每 8 ms 一次的 handle 快照或 scratch-buffer 循环。有真实事件时，
+HTTP/HTTPS/HTTP2 handle ID 使用可重入的复用缓冲区完成快照，不再逐 tick 创建临时 `Vec`；
+ext-net 的原子 pending hint 让空闲 tick 无需读取队列锁。挂起响应先走轻量 reaper，并不
+单独开启全量 pump。request/response、raw upgrade 和 handle quarantine
+仍沿原路径处理。窗口隐藏只取消 Canvas frame callback，不停止节点。Tray 相对图标先解析
 `.app/Contents/Resources`，再回退到
 可执行文件目录。构建完成后，`PERRY_LIB_DIR/openfx-perry-runtime-provenance.json`
 记录精确 Perry 提交、Rust 1.96.1、补丁 SHA-256 和 Perry CLI/四个静态库的
@@ -110,7 +126,8 @@ deno run --unstable-kv -A entry/desktop/tools/console-integration-smoke.ts
 部署目标、`Info.plist`、ad-hoc 签名、bundle 内 Tray 像素透明度、
 `[::1]:24531/v1/health`、原生截图和清洁退出。每次 smoke 都使用唯一 token；真实应用写出
 PID/可执行路径和退出哨兵，测试再用 `ps` 与 `lsof` 核验它确实是当前 bundle 实例。超时清理
-只会终止这个已核验 PID。
+先向该 bundle 发送原生 Quit Apple Event，失败后才会终止这个已核验 PID。普通模式会在实例
+核验后显式显示窗口并截图；内存模式保持真实菜单栏后台运行，避免自动化激活干扰长时样本。
 
 `desktop:memory-smoke` 要求已经通过 provenance 校验的固定 Perry 0.5.1220
 运行库和构建好的 `dist/OpenFX Node.app`。它复用同一 token/PID/可执行文件核验，启动后预热
@@ -118,6 +135,7 @@ PID/可执行路径和退出哨兵，测试再用 `ps` 与 `lsof` 核验它确�
 
 - IOAccelerator region 数量增量 `<= 0`；
 - IOAccelerator 虚拟内存增量 `<= 64 MiB`；
+- IOAccelerator resident 增量 `<= 16 MiB`；
 - 物理 footprint 增量 `<= 96 MiB`。
 
 缺失任一字段都会 fail closed，并输出基线、峰值、最终及失败快照。

@@ -18,6 +18,7 @@ IOAccelerator                   37.8G      381
   assertEquals(parseVmmapSummary(fixture), {
     physicalFootprintBytes: 34.7 * 1024 ** 3,
     ioAcceleratorVirtualBytes: 37.8 * 1024 ** 3,
+    ioAcceleratorResidentBytes: null,
     ioAcceleratorRegionCount: 381,
   });
 });
@@ -32,6 +33,7 @@ IOAccelerator                64K   64K   64K    0K    0K    0K    0K    2
   assertEquals(parseVmmapSummary(fixture), {
     physicalFootprintBytes: 128.5 * 1024 ** 2,
     ioAcceleratorVirtualBytes: 64 * 1024,
+    ioAcceleratorResidentBytes: 64 * 1024,
     ioAcceleratorRegionCount: 2,
   });
 });
@@ -59,6 +61,7 @@ Deno.test("vmmap summary accepts flexible row whitespace", () => {
   assertEquals(snapshot, {
     physicalFootprintBytes: 768.25 * 1024 ** 2,
     ioAcceleratorVirtualBytes: 64 * 1024,
+    ioAcceleratorResidentBytes: null,
     ioAcceleratorRegionCount: 7,
   });
 });
@@ -67,6 +70,7 @@ Deno.test("vmmap summary reports absent and malformed fields as null", () => {
   assertEquals(parseVmmapSummary("Physical footprint: 512M"), {
     physicalFootprintBytes: 512 * 1024 ** 2,
     ioAcceleratorVirtualBytes: null,
+    ioAcceleratorResidentBytes: null,
     ioAcceleratorRegionCount: null,
   });
   assertEquals(
@@ -76,6 +80,7 @@ Deno.test("vmmap summary reports absent and malformed fields as null", () => {
     {
       physicalFootprintBytes: null,
       ioAcceleratorVirtualBytes: null,
+      ioAcceleratorResidentBytes: null,
       ioAcceleratorRegionCount: null,
     },
   );
@@ -84,6 +89,7 @@ Deno.test("vmmap summary reports absent and malformed fields as null", () => {
     {
       physicalFootprintBytes: null,
       ioAcceleratorVirtualBytes: null,
+      ioAcceleratorResidentBytes: null,
       ioAcceleratorRegionCount: null,
     },
   );
@@ -93,11 +99,13 @@ Deno.test("memory sampling preserves diagnostics when a later sample throws", as
   const baseline = {
     physicalFootprintBytes: 100 * 1024 ** 2,
     ioAcceleratorVirtualBytes: 64 * 1024 ** 2,
+    ioAcceleratorResidentBytes: 8 * 1024 ** 2,
     ioAcceleratorRegionCount: 2,
   };
   const second = {
     physicalFootprintBytes: 120 * 1024 ** 2,
     ioAcceleratorVirtualBytes: 72 * 1024 ** 2,
+    ioAcceleratorResidentBytes: 12 * 1024 ** 2,
     ioAcceleratorRegionCount: 2,
   };
   const sampledIndexes: number[] = [];
@@ -108,6 +116,7 @@ Deno.test("memory sampling preserves diagnostics when a later sample throws", as
     sampleIntervalMs: 30_000,
     ioAcceleratorRegionGrowthLimit: 0,
     ioAcceleratorVirtualGrowthLimitBytes: 64 * 1024 ** 2,
+    ioAcceleratorResidentGrowthLimitBytes: 16 * 1024 ** 2,
     physicalFootprintGrowthLimitBytes: 96 * 1024 ** 2,
     delay(milliseconds: number) {
       delays.push(milliseconds);
@@ -132,4 +141,32 @@ Deno.test("memory sampling preserves diagnostics when a later sample throws", as
     final: { index: 1, snapshot: second },
     failure: null,
   });
+});
+
+Deno.test("memory sampling fails on retained IOAccelerator growth inside a stable region", async () => {
+  const mib = 1024 ** 2;
+  const snapshots = [8, 26].map((residentMiB) => ({
+    physicalFootprintBytes: 64 * mib,
+    ioAcceleratorVirtualBytes: 132.4 * mib,
+    ioAcceleratorResidentBytes: residentMiB * mib,
+    ioAcceleratorRegionCount: 5,
+  }));
+
+  const result = await runProcessMemorySampling({
+    sampleCount: 1,
+    sampleIntervalMs: 30_000,
+    ioAcceleratorRegionGrowthLimit: 0,
+    ioAcceleratorVirtualGrowthLimitBytes: 64 * mib,
+    ioAcceleratorResidentGrowthLimitBytes: 16 * mib,
+    physicalFootprintGrowthLimitBytes: 96 * mib,
+    delay: () => Promise.resolve(),
+    sample: (index) => Promise.resolve(snapshots[index]!),
+  });
+
+  assertEquals(result.passed, false);
+  assertEquals(result.failure?.index, 1);
+  assertEquals(
+    result.reason,
+    `IOAccelerator resident delta ${18 * mib} > ${16 * mib}`,
+  );
 });

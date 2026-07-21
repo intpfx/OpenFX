@@ -341,7 +341,11 @@ Deno.test("renderer stays idle while hidden and resumes exactly one render path"
   staticRenderer.setWindowVisible(false);
   staticRenderer.setWindowVisible(true);
   staticRenderer.setWindowVisible(true);
-  assertEquals(staticPaintCount, 2, "reopen must paint one static frame");
+  assertEquals(
+    staticPaintCount,
+    1,
+    "reopen must reuse the lifetime static frame",
+  );
 
   let animatedPaintCount = 0;
   let nextFrameId = 0;
@@ -392,7 +396,7 @@ Deno.test("renderer stays idle while hidden and resumes exactly one render path"
   assertEquals(pendingFrames.size, 1, "reopen must schedule one animation loop");
 });
 
-Deno.test("static renderer repaints only for node-state changes and reopening", () => {
+Deno.test("static renderer paints once across telemetry, state, and reopening", () => {
   let paintCount = 0;
   let frameRequests = 0;
   const renderer = createCoreCanvasRenderer({
@@ -438,7 +442,7 @@ Deno.test("static renderer repaints only for node-state changes and reopening", 
     memoryUsagePercent: 90,
     reduceMotion: true,
   });
-  assertEquals(paintCount, 2, "a node-state change must repaint static core once");
+  assertEquals(paintCount, 1, "a node-state change must reuse the static core");
 
   renderer.setWindowVisible(false);
   renderer.update({
@@ -447,9 +451,9 @@ Deno.test("static renderer repaints only for node-state changes and reopening", 
     memoryUsagePercent: 95,
     reduceMotion: true,
   });
-  assertEquals(paintCount, 2, "hidden static core must not paint");
+  assertEquals(paintCount, 1, "hidden static core must not paint");
   renderer.setWindowVisible(true);
-  assertEquals(paintCount, 3, "reopening must repaint static core once");
+  assertEquals(paintCount, 1, "reopening must reuse the lifetime static frame");
   assertEquals(frameRequests, 0);
 });
 

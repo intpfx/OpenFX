@@ -5,7 +5,11 @@ import {
   DEFAULT_DESKTOP_PREFERENCES,
   sanitizeDesktopPreferences,
 } from "../src/core/desktop-state.ts";
-import { deriveCoreMotionPolicy } from "../src/core/core-motion-policy.ts";
+import {
+  deriveCoreMotionPolicy,
+  derivePerryWindowPolicy,
+  PERRY_VISIBLE_MAIN_WINDOW_AVAILABLE,
+} from "../src/core/core-motion-policy.ts";
 import {
   derivePairingReadiness,
   type PairingReadinessInput,
@@ -64,6 +68,17 @@ Deno.test("core motion policy forces the production Perry stable mode while reta
   assertEquals(DEFAULT_DESKTOP_PREFERENCES.reduceMotion, true);
   assertEquals(sanitizeDesktopPreferences({}).reduceMotion, true);
   assertEquals(sanitizeDesktopPreferences({ reduceMotion: false }).reduceMotion, false);
+  assertEquals(PERRY_VISIBLE_MAIN_WINDOW_AVAILABLE, false);
+  assertEquals(derivePerryWindowPolicy("regular", false), {
+    mode: "menuBarOnly",
+    controlAvailable: false,
+    status: "菜单栏后台（Perry 稳定模式）",
+  });
+  assertEquals(derivePerryWindowPolicy("regular", true).mode, "regular");
+  assertEquals(
+    derivePerryWindowPolicy("menuBarOnly", true).mode,
+    "menuBarOnly",
+  );
 });
 
 Deno.test("desktop preferences preserve supported launch and motion choices", () => {
@@ -468,6 +483,7 @@ Deno.test("control panel presentation formats paired telemetry without undefined
       errorMessage: null,
     },
     motionPolicy: deriveCoreMotionPolicy(false, false),
+    windowPolicy: derivePerryWindowPolicy("regular", false),
     now: 10_000,
   });
 
@@ -479,6 +495,9 @@ Deno.test("control panel presentation formats paired telemetry without undefined
   assertEquals(presentation.motionStatus, "静态核心（Perry 稳定模式）");
   assertEquals(presentation.motionControlAvailable, false);
   assertEquals(presentation.reduceMotion, true);
+  assertEquals(presentation.launchMode, "menuBarOnly");
+  assertEquals(presentation.launchControlAvailable, false);
+  assertEquals(presentation.launchStatus, "菜单栏后台（Perry 稳定模式）");
   assert(!containsUndefined(presentation));
 });
 

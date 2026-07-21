@@ -80,6 +80,38 @@ Deno.test("desktop entry schedules services from the native App event loop", asy
   );
 });
 
+Deno.test("system telemetry is startup and user-event driven", async () => {
+  const main = await Deno.readTextFile(MAIN_URL);
+  const monitor = await Deno.readTextFile(
+    new URL("../src/native/system-monitor.ts", import.meta.url),
+  );
+  const sampleHook = main.slice(
+    main.indexOf("onSample(state) {"),
+    main.indexOf("async onError(error) {"),
+  );
+  const errorHook = main.slice(
+    main.indexOf("async onError(error) {"),
+    main.indexOf("const gate = new SafetyActionGate"),
+  );
+
+  assertEquals(main.includes("automaticTelemetryPresentationComplete"), false);
+  assertEquals(sampleHook.includes("refresh"), false);
+  assertEquals(errorHook.includes("refresh"), false);
+  assert(
+    sampleHook.includes("return reporter.report(state);"),
+    "unpaired samples must finish synchronously without a Promise",
+  );
+  assertEquals(sampleHook.includes("async onSample"), false);
+  assertEquals(monitor.includes("setInterval("), false);
+  assert(monitor.includes("let started = false;"));
+  assert(monitor.includes("if (started) return;") && monitor.includes("sample();"));
+  assert(
+    main.includes("async function sampleAndRefreshPresentation()") &&
+      main.match(/void sampleAndRefreshPresentation\(\);/g)?.length === 3,
+    "activation, control-panel, and tray samples must refresh the presentation",
+  );
+});
+
 Deno.test("pinned Perry Set hashing rejects the complete native handle band", async () => {
   const patch = await Deno.readTextFile(PERRY_PATCH_URL);
 
@@ -95,6 +127,33 @@ Deno.test("pinned Perry Set hashing rejects the complete native handle band", as
       `missing Perry handle regression boundary ${boundary}`,
     );
   }
+});
+
+Deno.test("pinned Perry HTTP pump reaps parked requests without full handle churn", async () => {
+  const patch = await Deno.readTextFile(PERRY_PATCH_URL);
+  const pumpStart = patch.indexOf(
+    'pub extern "C" fn js_node_http_server_process_pending() -> i32',
+  );
+  const gateStart = patch.indexOf(
+    "fn http_server_pump_has_pending_work() -> bool",
+  );
+  const gateEnd = patch.indexOf("pub(crate) fn server_is_active", gateStart);
+  assert(pumpStart >= 0 && gateStart > pumpStart && gateEnd > gateStart);
+
+  const pump = patch.slice(pumpStart, gateStart);
+  assert(
+    pump.includes("parked async responses need a cheap readiness check every tick") &&
+      pump.includes("Reap first, then let only actual queue/listen/h2"),
+    "the pinned patch must keep the reaper before the full-pump work gate",
+  );
+  assert(patch.includes("HTTP_PUMP_HANDLE_SCRATCH"));
+  assert(pump.includes("snapshot_http_pump_handles::<HttpServer>()"));
+  assert(pump.includes("recycle_http_pump_handles(http_handles)"));
+  assertEquals(
+    patch.slice(gateStart, gateEnd).includes("has_in_flight_requests()"),
+    false,
+    "parked response liveness must not open the full handle-snapshot pump",
+  );
 });
 
 Deno.test("native main-window visibility owns renderer lifecycle", async () => {
@@ -156,14 +215,14 @@ Deno.test("native main-window visibility owns renderer lifecycle", async () => {
   );
 });
 
-Deno.test("native visible then activation paints reduced motion exactly once", async () => {
+Deno.test("native reopening reuses the lifetime static frame", async () => {
   const main = await Deno.readTextFile(MAIN_URL);
   const activateHook = main.slice(
     main.indexOf("onActivate(() => {"),
     main.indexOf("onMainWindowVisibilityChanged((visible) => {"),
   );
   const activationRefreshesRenderer = activateHook.includes(
-    "refreshPresentation();",
+    "sampleAndRefreshPresentation();",
   );
   const replayActivation = (
     renderer: CoreCanvasRenderer,
@@ -187,8 +246,8 @@ Deno.test("native visible then activation paints reduced motion exactly once", a
   replayActivation(reopened.renderer, hiddenMetrics);
   assertEquals(
     reopened.paintCount() - hiddenPaints,
-    1,
-    "hidden metrics -> visible -> activation must paint one static frame",
+    0,
+    "hidden metrics -> visible -> activation must reuse the static frame",
   );
 
   const startup = createReducedMotionPaintHarness();
@@ -208,10 +267,10 @@ Deno.test("native visible then activation paints reduced motion exactly once", a
   );
 
   assert(
-    activateHook.includes("controlPanel?.update(currentPresentation());") &&
+    activateHook.includes("void sampleAndRefreshPresentation();") &&
       !activateHook.includes("refreshPresentation();") &&
       !activateHook.includes("coreRenderer"),
-    "activation must update only the control panel",
+    "activation must request one event-driven sample without direct renderer mutation",
   );
 });
 
@@ -329,15 +388,15 @@ Deno.test("desktop entry assembles the immersive regular-or-menu-bar native app"
 
   assert(main.includes("readDesktopPreferencesSync()"));
   assert(
-    main.includes('startupPreferences.launchMode === "menuBarOnly"') &&
+    main.includes('currentWindowPolicy().mode === "menuBarOnly"') &&
       main.includes('? "accessory"') && main.includes(': "regular"'),
-    "activation policy must be selected synchronously from persisted startup preferences",
+    "activation policy must be selected synchronously from the effective Perry window policy",
   );
   assertEquals(main.includes('appSetActivationPolicy("accessory")'), false);
   assert(main.includes("createCoreCanvasRenderer("));
   assert(
     main.includes(
-      'initialWindowVisible: startupPreferences.launchMode !== "menuBarOnly"',
+      'initialWindowVisible: currentWindowPolicy().mode !== "menuBarOnly"',
     ),
     "menu-bar-only cold start must keep Canvas hidden before native visibility",
   );
@@ -350,9 +409,9 @@ Deno.test("desktop entry assembles the immersive regular-or-menu-bar native app"
   assert(main.includes('vibrancy: "underWindowBackground"'));
   assert(
     main.includes(
-      "onActivate(() => {\n  controlPanel?.update(currentPresentation());\n});",
+      "onActivate(() => {\n  void sampleAndRefreshPresentation();\n});",
     ),
-    "activation may refresh the control panel, but native visibility owns renderer restart",
+    "activation must refresh the snapshot while native visibility owns renderer restart",
   );
   assert(source.includes("textSetString("));
   assertEquals(source.includes("WebView("), false);
@@ -393,10 +452,22 @@ Deno.test("production desktop forces the Perry stable static core while retainin
   const controlPanel = await Deno.readTextFile(
     new URL("../src/ui/control-panel.ts", import.meta.url),
   );
+  const stableCore = await Deno.readTextFile(
+    new URL("../src/ui/stable-core.ts", import.meta.url),
+  );
 
   assert(policy.includes("PERRY_ANIMATED_CORE_AVAILABLE = false"));
+  assert(policy.includes("PERRY_VISIBLE_MAIN_WINDOW_AVAILABLE = false"));
   assert(main.includes("reduceMotion: currentMotionPolicy().reduceMotion"));
   assert(main.includes("motionPolicy: currentMotionPolicy()"));
+  assert(main.includes("windowPolicy: currentWindowPolicy()"));
+  assert(main.includes('currentWindowPolicy().mode === "menuBarOnly"'));
+  assert(main.includes('currentMotionPolicy().mode === "animated"'));
+  assert(main.includes("coreRenderer?.canvas ?? createStableCorePanel()"));
+  assert(stableCore.includes('Text("FX")'));
+  assert(stableCore.includes("VStack("));
+  assertEquals(stableCore.includes("Canvas("), false);
+  assertEquals(stableCore.includes("onFrame("), false);
   assert(controlPanel.includes("motionControlAvailable: boolean"));
   assert(controlPanel.includes("updateMotionControlVisibility("));
   assert(controlPanel.includes("widgetSetHidden(toggle, controlAvailable ? 0 : 1)"));
@@ -512,8 +583,11 @@ Deno.test("real desktop app smoke launches the bundle, checks IPv6 health, and c
   assert(smoke.includes("OPENFX_APP_SMOKE_LAUNCH_PATH"));
   assert(smoke.includes("OPENFX_APP_SMOKE_CLEAN_EXIT_PATH"));
   assert(smoke.includes("waitForVerifiedAppInstance"));
+  assert(smoke.includes("if (!memoryMode) await showVerifiedAppInstance(instance);"));
   assert(smoke.includes("terminateVerifiedAppInstance"));
   assert(smoke.includes("assertCleanExitMarker"));
+  assert(smoke.includes('new Deno.Command("/usr/bin/osascript"'));
+  assert(smoke.includes('tell application id "com.openfx.node" to quit'));
   assert(smoke.includes("/usr/sbin/lsof"));
   assert(smoke.includes("Deno.kill(instance.pid"));
   assertEquals(smoke.includes("killall"), false);
@@ -525,12 +599,21 @@ Deno.test("real desktop app smoke launches the bundle, checks IPv6 health, and c
   assert(smoke.includes("PERRY_UI_TEST_MODE"));
   assert(smoke.includes("PERRY_UI_SCREENSHOT_PATH"));
   assert(smoke.includes('"PERRY_UI_TEST_EXIT_AFTER_MS=12000"'));
+  assert(smoke.includes("MEMORY_TEST_EXIT_AFTER_MS"));
+  assert(smoke.includes("MEMORY_WARMUP_MS +"));
+  assert(smoke.includes("MEMORY_SAMPLE_INTERVAL_MS * MEMORY_SAMPLE_COUNT"));
+  assert(
+    smoke.includes(
+      "PERRY_UI_TEST_EXIT_AFTER_MS=${MEMORY_TEST_EXIT_AFTER_MS}",
+    ),
+  );
   assert(smoke.includes("APP_EXIT_DEADLINE_MS = 13_000"));
   assert(smoke.includes("collectBoundedChild"));
   assert(smoke.includes("Perry UI app clean-exit timed out"));
   assert(smoke.includes("openfx-ui-only-link"));
   assert(smoke.includes("OpenFX UI-only link gate"));
   assert(smoke.includes("assertPng"));
+  assert(smoke.includes("if (!memoryMode) {\n    await assertPng(screenshot);"));
   assert(smoke.includes("Contents/Resources/openfx-tray-template.png"));
   assert(smoke.includes("assertTransparentTrayIcon"));
   assert(smoke.includes("assertNonEmptyFile(TRAY_ICON)"));

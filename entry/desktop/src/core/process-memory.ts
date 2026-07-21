@@ -1,6 +1,7 @@
 export interface ProcessMemorySnapshot {
   physicalFootprintBytes: number | null;
   ioAcceleratorVirtualBytes: number | null;
+  ioAcceleratorResidentBytes: number | null;
   ioAcceleratorRegionCount: number | null;
 }
 
@@ -23,6 +24,7 @@ export interface ProcessMemorySamplingOptions {
   sampleIntervalMs: number;
   ioAcceleratorRegionGrowthLimit: number;
   ioAcceleratorVirtualGrowthLimitBytes: number;
+  ioAcceleratorResidentGrowthLimitBytes: number;
   physicalFootprintGrowthLimitBytes: number;
   delay(milliseconds: number): Promise<void>;
   sample(index: number): Promise<ProcessMemorySnapshot>;
@@ -31,6 +33,7 @@ export interface ProcessMemorySamplingOptions {
 interface CompleteProcessMemorySnapshot extends ProcessMemorySnapshot {
   physicalFootprintBytes: number;
   ioAcceleratorVirtualBytes: number;
+  ioAcceleratorResidentBytes: number;
   ioAcceleratorRegionCount: number;
 }
 
@@ -44,9 +47,14 @@ export function parseVmmapSummary(text: string): ProcessMemorySnapshot {
   const physicalMatch = text.match(
     /^[ \t]*Physical footprint:[ \t]*(\d+(?:\.\d+)?)[ \t]*([KMG])[ \t]*$/m,
   );
-  const ioAcceleratorMatch = text.match(
-    /^[ \t]*IOAccelerator[ \t]+(\d+(?:\.\d+)?)[ \t]*([KMG])(?:[ \t]+\d+(?:\.\d+)?[ \t]*[KMG])*[ \t]+(\d+)[ \t]*$/m,
+  const ioAcceleratorMultiColumnMatch = text.match(
+    /^[ \t]*IOAccelerator[ \t]+(\d+(?:\.\d+)?)[ \t]*([KMG])[ \t]+(\d+(?:\.\d+)?)[ \t]*([KMG])(?:[ \t]+\d+(?:\.\d+)?[ \t]*[KMG])*[ \t]+(\d+)[ \t]*$/m,
   );
+  const ioAcceleratorSimpleMatch = text.match(
+    /^[ \t]*IOAccelerator[ \t]+(\d+(?:\.\d+)?)[ \t]*([KMG])[ \t]+(\d+)[ \t]*$/m,
+  );
+  const ioAcceleratorMatch = ioAcceleratorMultiColumnMatch ??
+    ioAcceleratorSimpleMatch;
 
   return {
     physicalFootprintBytes: physicalMatch
@@ -55,8 +63,14 @@ export function parseVmmapSummary(text: string): ProcessMemorySnapshot {
     ioAcceleratorVirtualBytes: ioAcceleratorMatch
       ? toBinaryBytes(ioAcceleratorMatch[1], ioAcceleratorMatch[2])
       : null,
+    ioAcceleratorResidentBytes: ioAcceleratorMultiColumnMatch
+      ? toBinaryBytes(
+        ioAcceleratorMultiColumnMatch[3],
+        ioAcceleratorMultiColumnMatch[4],
+      )
+      : null,
     ioAcceleratorRegionCount: ioAcceleratorMatch
-      ? parseNonNegativeInteger(ioAcceleratorMatch[3])
+      ? parseNonNegativeInteger(ioAcceleratorMatch.at(-1)!)
       : null,
   };
 }
@@ -136,6 +150,7 @@ function memoryGrowthFailure(
     ProcessMemorySamplingOptions,
     | "ioAcceleratorRegionGrowthLimit"
     | "ioAcceleratorVirtualGrowthLimitBytes"
+    | "ioAcceleratorResidentGrowthLimitBytes"
     | "physicalFootprintGrowthLimitBytes"
   >,
 ): string | null {
@@ -144,6 +159,8 @@ function memoryGrowthFailure(
     baseline.ioAcceleratorRegionCount;
   const virtualDelta = sample.ioAcceleratorVirtualBytes -
     baseline.ioAcceleratorVirtualBytes;
+  const residentDelta = sample.ioAcceleratorResidentBytes -
+    baseline.ioAcceleratorResidentBytes;
   const footprintDelta = sample.physicalFootprintBytes -
     baseline.physicalFootprintBytes;
   if (regionDelta > limits.ioAcceleratorRegionGrowthLimit) {
@@ -154,6 +171,11 @@ function memoryGrowthFailure(
   if (virtualDelta > limits.ioAcceleratorVirtualGrowthLimitBytes) {
     failures.push(
       `IOAccelerator virtual delta ${virtualDelta} > ${limits.ioAcceleratorVirtualGrowthLimitBytes}`,
+    );
+  }
+  if (residentDelta > limits.ioAcceleratorResidentGrowthLimitBytes) {
+    failures.push(
+      `IOAccelerator resident delta ${residentDelta} > ${limits.ioAcceleratorResidentGrowthLimitBytes}`,
     );
   }
   if (footprintDelta > limits.physicalFootprintGrowthLimitBytes) {
@@ -177,6 +199,10 @@ function maxMemorySnapshot(
       left.ioAcceleratorVirtualBytes,
       right.ioAcceleratorVirtualBytes,
     ),
+    ioAcceleratorResidentBytes: Math.max(
+      left.ioAcceleratorResidentBytes,
+      right.ioAcceleratorResidentBytes,
+    ),
     ioAcceleratorRegionCount: Math.max(
       left.ioAcceleratorRegionCount,
       right.ioAcceleratorRegionCount,
@@ -189,6 +215,7 @@ function isCompleteMemorySnapshot(
 ): snapshot is CompleteProcessMemorySnapshot {
   return snapshot.physicalFootprintBytes !== null &&
     snapshot.ioAcceleratorVirtualBytes !== null &&
+    snapshot.ioAcceleratorResidentBytes !== null &&
     snapshot.ioAcceleratorRegionCount !== null;
 }
 

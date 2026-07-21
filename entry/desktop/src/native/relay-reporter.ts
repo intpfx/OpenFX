@@ -6,7 +6,7 @@ import type { ControlPlaneClient } from "./control-plane-client.ts";
 export interface RelayReporter {
   setPairing(pairing: RestoredPairing | null): void;
   status(): RelayStatus;
-  report(state: ParsedSystemState): Promise<void>;
+  report(state: ParsedSystemState): void | Promise<void>;
 }
 
 export interface RelayReporterOptions {
@@ -42,7 +42,7 @@ export const createRelayReporter = (
         errorMessage,
       };
     },
-    async report(state) {
+    report(state) {
       currentIpv6 = state.network.publicIpv6;
       if (!pairing || !pairing.preferences.relayEnabled || !currentIpv6) return;
       const attemptedAt = now();
@@ -57,25 +57,27 @@ export const createRelayReporter = (
         nodeId: activePairing.preferences.nodeId,
         nodeSecret: activePairing.nodeSecret,
       };
-      try {
-        // Perry's native promise scheduler can lose the second native I/O
-        // branch when two signed HTTPS requests start in the same Promise.all.
-        // The minute cadence does not need concurrency, so preserve ordering.
-        await client.heartbeat({
-          ...auth,
-          publicIpv6: currentIpv6,
-          availability: "online",
-        });
-        await client.telemetry({ ...auth, sample: state.overview });
-        if (pairing === activePairing) {
-          lastReportedAt = now();
-          errorMessage = null;
+      return (async () => {
+        try {
+          // Perry's native promise scheduler can lose the second native I/O
+          // branch when two signed HTTPS requests start in the same Promise.all.
+          // The minute cadence does not need concurrency, so preserve ordering.
+          await client.heartbeat({
+            ...auth,
+            publicIpv6: currentIpv6,
+            availability: "online",
+          });
+          await client.telemetry({ ...auth, sample: state.overview });
+          if (pairing === activePairing) {
+            lastReportedAt = now();
+            errorMessage = null;
+          }
+        } catch (error) {
+          if (pairing === activePairing) {
+            errorMessage = error instanceof Error ? error.message : String(error);
+          }
         }
-      } catch (error) {
-        if (pairing === activePairing) {
-          errorMessage = error instanceof Error ? error.message : String(error);
-        }
-      }
+      })();
     },
   };
 };

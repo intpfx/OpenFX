@@ -30,7 +30,10 @@ import type {
   RelayStatus,
   SystemOverview,
 } from "../core/types.ts";
-import type { CoreMotionPolicy } from "../core/core-motion-policy.ts";
+import type {
+  CoreMotionPolicy,
+  PerryWindowPolicy,
+} from "../core/core-motion-policy.ts";
 
 export interface PairingFormInput {
   serverUrl: string;
@@ -55,6 +58,8 @@ export interface ControlPanelPresentation {
   lastReportStatus: string;
   serverUrl: string;
   launchMode: DesktopLaunchMode;
+  launchStatus: string;
+  launchControlAvailable: boolean;
   reduceMotion: boolean;
   motionStatus: string;
   motionControlAvailable: boolean;
@@ -69,6 +74,7 @@ export interface ControlPanelPresentationInput {
   publicIpv6: string | null;
   relay: RelayStatus;
   motionPolicy: CoreMotionPolicy;
+  windowPolicy: PerryWindowPolicy;
   now: number;
 }
 
@@ -116,7 +122,9 @@ export const createControlPanelPresentation = (
       ? "尚未上报"
       : `${reportAgeSeconds} 秒前`,
     serverUrl: preferences.serverUrl,
-    launchMode: preferences.launchMode,
+    launchMode: input.windowPolicy.mode,
+    launchStatus: input.windowPolicy.status,
+    launchControlAvailable: input.windowPolicy.controlAvailable,
     reduceMotion: input.motionPolicy.reduceMotion,
     motionStatus: input.motionPolicy.status,
     motionControlAvailable: input.motionPolicy.controlAvailable,
@@ -225,6 +233,7 @@ export const createControlPanel = (
   const menuBarToggle = Toggle("下次启动仅菜单栏", (enabled: boolean) => {
     actions.setLaunchMode(enabled ? "menuBarOnly" : "regular");
   });
+  const launchStatusLabel = caption(initial.launchStatus);
   toggleSetState(reduceMotionToggle, initial.reduceMotion ? 1 : 0);
   toggleSetState(menuBarToggle, initial.launchMode === "menuBarOnly" ? 1 : 0);
 
@@ -240,6 +249,7 @@ export const createControlPanel = (
     reduceMotionToggle,
     motionStatusLabel,
     menuBarToggle,
+    launchStatusLabel,
   ]);
   widgetSetWidth(body, 400);
   widgetSetEdgeInsets(body, 20, 20, 16, 20);
@@ -251,6 +261,11 @@ export const createControlPanel = (
     reduceMotionToggle,
     motionStatusLabel,
     initial.motionControlAvailable,
+  );
+  updateLaunchControlVisibility(
+    menuBarToggle,
+    launchStatusLabel,
+    initial.launchControlAvailable,
   );
 
   return {
@@ -281,6 +296,12 @@ export const createControlPanel = (
         menuBarToggle,
         presentation.launchMode === "menuBarOnly" ? 1 : 0,
       );
+      textSetString(launchStatusLabel, presentation.launchStatus);
+      updateLaunchControlVisibility(
+        menuBarToggle,
+        launchStatusLabel,
+        presentation.launchControlAvailable,
+      );
       if (!presentation.paired) pairingGuideVisible = true;
       updateVisibility(guide, dashboard, pairingGuideVisible);
     },
@@ -306,6 +327,15 @@ export const createControlPanel = (
 };
 
 const updateMotionControlVisibility = (
+  toggle: Widget,
+  status: Widget,
+  controlAvailable: boolean,
+): void => {
+  widgetSetHidden(toggle, controlAvailable ? 0 : 1);
+  widgetSetHidden(status, controlAvailable ? 1 : 0);
+};
+
+const updateLaunchControlVisibility = (
   toggle: Widget,
   status: Widget,
   controlAvailable: boolean,

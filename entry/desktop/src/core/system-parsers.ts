@@ -4,9 +4,12 @@ export const parseSystemCommandOutputs = (
   outputs: SystemCommandOutputs,
   collectedAt = Date.now(),
 ): ParsedSystemState => {
-  const processes = parseProcesses(outputs.processes);
-  const ipv6Addresses = parseIpv6Addresses(outputs.ifconfig);
   const memoryTotalBytes = nonNegativeNumber(outputs.memsize.trim());
+  const processes = parseProcesses(
+    outputs.processes || outputs.top,
+    memoryTotalBytes,
+  );
+  const ipv6Addresses = parseIpv6Addresses(outputs.networkState);
   return {
     overview: {
       collectedAt,
@@ -15,7 +18,7 @@ export const parseSystemCommandOutputs = (
       ...parseDisk(outputs.df),
       ...parseNetwork(outputs.netstat),
       batteryPercent: parseBattery(outputs.battery),
-      processCount: processes.length,
+      processCount: parseProcessCount(outputs.top, processes.length),
       topProcesses: processes.slice(0, 10),
     },
     processes,
@@ -27,8 +30,40 @@ export const parseSystemCommandOutputs = (
   };
 };
 
-export const parseProcesses = (output: string): ProcessInfo[] =>
-  output.split("\n")
+export const parseProcesses = (
+  output: string,
+  memoryTotalBytes = 0,
+): ProcessInfo[] => {
+  const lines = output.split("\n");
+  let topHeaderIndex = -1;
+  for (let index = 0; index < lines.length; index += 1) {
+    if (/^PID\s+%CPU\s+MEM\s+COMMAND\s*$/.test(lines[index]!.trim())) {
+      topHeaderIndex = index;
+    }
+  }
+  if (topHeaderIndex >= 0) {
+    return lines.slice(topHeaderIndex + 1)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const match = line.match(
+          /^(\d+)\s+([\d.]+)\s+([\d.]+)([BKMGT]?)[+-]?\s+(.+)$/i,
+        );
+        if (!match) return null;
+        const memoryBytes = Number(match[3]) * memoryUnitBytes(match[4] ?? "");
+        return {
+          pid: Number(match[1]),
+          cpuUsagePercent: Number(match[2]),
+          memoryUsagePercent: memoryTotalBytes > 0
+            ? round((memoryBytes / memoryTotalBytes) * 100)
+            : 0,
+          command: match[5]!.trim(),
+        };
+      })
+      .filter((process): process is ProcessInfo => process !== null)
+      .sort((left, right) => right.cpuUsagePercent - left.cpuUsagePercent);
+  }
+  return lines
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => {
@@ -43,13 +78,16 @@ export const parseProcesses = (output: string): ProcessInfo[] =>
     })
     .filter((process): process is ProcessInfo => process !== null)
     .sort((left, right) => right.cpuUsagePercent - left.cpuUsagePercent);
+};
 
 export const parseIpv6Addresses = (output: string): string[] => {
   const addresses: string[] = [];
-  const matcher = /\binet6\s+([0-9a-f:]+)(?:%[\w.-]+)?\b/gi;
+  const matcher = /(?:\binet6\s+|\baddress\s+:\s*)([0-9a-f:]+)(?:%[\w.-]+)?\b/gi;
   for (const match of output.matchAll(matcher)) {
     const value = match[1]?.toLowerCase();
-    if (value && value !== "::1" && !addresses.includes(value)) {
+    if (
+      value?.includes(":") && value !== "::1" && !addresses.includes(value)
+    ) {
       addresses.push(value);
     }
   }
@@ -75,8 +113,20 @@ export const isPublicIpv6 = (value: string): boolean => {
 };
 
 const parseCpu = (output: string): number => {
-  const idle = Number(output.match(/([\d.]+)%\s+idle/i)?.[1] ?? 100);
+  const samples = [...output.matchAll(/([\d.]+)%\s+idle/gi)];
+  const idle = Number(samples.at(-1)?.[1] ?? 100);
   return round(Math.max(0, Math.min(100, 100 - idle)));
+};
+
+const parseProcessCount = (output: string, fallback: number): number => {
+  const samples = [...output.matchAll(/Processes:\s+(\d+)\s+total/gi)];
+  const latest = samples.at(-1)?.[1];
+  return latest === undefined ? fallback : nonNegativeNumber(latest);
+};
+
+const memoryUnitBytes = (unit: string): number => {
+  const exponent = ["", "K", "M", "G", "T"].indexOf(unit.toUpperCase());
+  return exponent < 0 ? 1 : 1024 ** exponent;
 };
 
 const parseMemory = (output: string, memoryTotalBytes: number) => {

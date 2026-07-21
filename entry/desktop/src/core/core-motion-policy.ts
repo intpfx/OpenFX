@@ -1,3 +1,5 @@
+import type { DesktopLaunchMode } from "./types.ts";
+
 export type CoreMotion = "animated" | "static";
 
 export interface CoreMotionPolicy {
@@ -8,6 +10,29 @@ export interface CoreMotionPolicy {
 }
 
 export const PERRY_ANIMATED_CORE_AVAILABLE = false;
+export const PERRY_VISIBLE_MAIN_WINDOW_AVAILABLE = false;
+
+export interface PerryWindowPolicy {
+  mode: DesktopLaunchMode;
+  controlAvailable: boolean;
+  status: string;
+}
+
+export const derivePerryWindowPolicy = (
+  requestedMode: DesktopLaunchMode,
+  visibleMainWindowAvailable: boolean,
+): PerryWindowPolicy =>
+  visibleMainWindowAvailable
+    ? {
+      mode: requestedMode,
+      controlAvailable: true,
+      status: requestedMode === "menuBarOnly" ? "菜单栏后台" : "常规窗口",
+    }
+    : {
+      mode: "menuBarOnly",
+      controlAvailable: false,
+      status: "菜单栏后台（Perry 稳定模式）",
+    };
 
 export const deriveCoreMotionPolicy = (
   requestedReduceMotion: boolean,
