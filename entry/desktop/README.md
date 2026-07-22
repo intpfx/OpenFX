@@ -85,7 +85,7 @@ HTTP/HTTPS/HTTP2 handle ID 使用可重入的复用缓冲区完成快照，不�
 ext-net 的原子 pending hint 让空闲 tick 无需读取队列锁。挂起响应先走轻量 reaper，并不
 单独开启全量 pump。request/response、raw upgrade 和 handle quarantine
 仍沿原路径处理。窗口隐藏只取消 Canvas frame callback，不停止节点。空 Tray 图标路径由
-Perry 直接 映射为原生实心圆点 `●`，不解析应用包资源。构建完成后，
+Perry 直接映射为原生实心圆点 `●`，不解析应用包资源。构建完成后，
 `PERRY_LIB_DIR/openfx-perry-runtime-provenance.json` 记录精确 Perry 提交、Rust
 1.96.1、补丁 SHA-256 和 Perry CLI/四个静态库的 SHA-256。应用构建、应用 smoke 与组合
 smoke 都会重新校验 manifest 和实际文件；缺失或篡改会直接失败。由于源码在
