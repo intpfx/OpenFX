@@ -60,7 +60,11 @@
           "name": "GasMap",
           "description": "燃气工程单线图绘制与统计工具，支持管线布置、设备插入、工程持久化和统计导出。",
           "tech": ["React", "Vite", "Canvas", "Deno KV"],
-          "sourcePath": "domains/gasmap/"
+          "sourcePath": "domains/gasmap/",
+          "preview": {
+            "src": "/homepage-previews/gasmap.webp",
+            "alt": "燃气管线单线图编辑界面"
+          }
         }
       ]
     },
@@ -74,7 +78,12 @@
           "name": "Finlyzer",
           "description": "本地优先账单分析器，整理支付宝、微信和银行账单，完成分类、镜像关系、承诺结转和图表分析。",
           "tech": ["Electron", "React", "Dexie", "ECharts"],
-          "sourcePath": "domains/finlyzer/"
+          "sourcePath": "domains/finlyzer/",
+          "preview": {
+            "src": "/homepage-previews/finlyzer.webp",
+            "alt": "账单分类与分析工作台",
+            "position": "top"
+          }
         },
         {
           "id": "costing-assistant",
@@ -105,6 +114,11 @@
           "description": "基于 originalankur/maptoposter 的 OpenFX 改造版，从 OpenStreetMap 数据生成 SVG/PNG 地图海报。",
           "tech": ["Bun", "OSM", "SVG", "Sharp"],
           "sourcePath": "domains/map-poster/",
+          "preview": {
+            "src": "/map-poster/tokyo-japanese-ink.webp",
+            "alt": "东京地图海报预览",
+            "position": "top"
+          },
           "provenance": {
             "origin": {
               "label": "originalankur/maptoposter",
@@ -126,7 +140,11 @@
           "name": "这个好多?",
           "description": "查一查你常买的东西在各地都是什么价。输入商品名，看看全国各地的实时价格分布。",
           "tech": ["Deno", "Nitro", "D3.js", "高德地图"],
-          "sourcePath": "domains/how-much/"
+          "sourcePath": "domains/how-much/",
+          "preview": {
+            "src": "/homepage-previews/how-much.webp",
+            "alt": "全国价格地图与商品搜索界面"
+          }
         },
         {
           "id": "wanone-memorial",

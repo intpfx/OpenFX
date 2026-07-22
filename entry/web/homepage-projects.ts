@@ -9,8 +9,15 @@ export type HomepageProjectCard = {
   description: string;
   tech: string[];
   sourcePath: string;
+  preview?: HomepageProjectPreview;
   provenance?: HomepageProjectProvenance;
   links?: HomepageProjectLink[];
+};
+
+export type HomepageProjectPreview = {
+  src: string;
+  alt: string;
+  position?: "center" | "top" | "bottom";
 };
 
 export type HomepageProjectProvenance = {

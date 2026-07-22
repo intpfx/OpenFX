@@ -37,6 +37,31 @@ deno task --config entry/web/deno.json preview
 `entry/web/tests/homepage-projects.test.ts` 会校验 JSON 卡片 ID 与详情面板 ID
 完全一致，新增卡片后需要让 `deno task check` 继续通过。
 
+### 首页 Source Field 预览
+
+首页项目卡片可以通过可选的 `preview` 字段声明真实运行时预览：
+
+```ts
+type HomepageProjectPreview = {
+  src: string;
+  alt: string;
+  position?: "center" | "top" | "bottom";
+};
+```
+
+首版只为 `how-much-this`、`map-poster`、`gasmap` 和 `finlyzer` 四张卡片启用预览。 其中
+Map Poster 直接复用 `/map-poster/tokyo-japanese-ink.webp`，其余资产位于
+`public/homepage-previews/`。预览必须来自 1200×800
+的真实本地页面截图；如果无法在不修改产品
+状态的前提下生成示例数据，应使用真实默认空状态，禁止为截图增加 demo mode、HTTP API
+或运行时 依赖。资产使用 `cwebp -q 78` 生成，每张不超过 180 KiB，四张合计不超过 700 KiB。
+
+宽屏卡片默认显示 `sourcePath`，悬停或键盘聚焦时显示运行时预览；1100px 及以下改为静态顶部
+横幅。窄屏或 `prefers-reduced-motion: reduce`
+环境会关闭卡片入场、滚动透明衰减、预览擦入和 View
+Transition，并保持所有卡片完整不透明。图片必须延迟加载、异步解码，加载前或失败后继续
+展示 source 层，不显示破图占位。
+
 ## 部署目标
 
 默认部署目标是 Deno Deploy，由 Nitro 输出服务端入口并由 VitePlus 构建 SPA 客户端。

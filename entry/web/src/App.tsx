@@ -27,6 +27,12 @@ import {
 } from "../homepage-panels";
 import { MapPosterPanelContent } from "./MapPosterPanel.tsx";
 import { ConsoleApp } from "./console/ConsoleApp.tsx";
+import {
+  getProjectSearchText,
+  shouldAnimateHomepageCards,
+  shouldUseHomepageViewTransition,
+} from "./homepage/experience.ts";
+import { ProjectCard } from "./homepage/ProjectCard.tsx";
 
 type UnlockRule = {
   key: string;
@@ -133,15 +139,6 @@ function BuildVersion() {
 
 function getDefaultAdminKey() {
   return globalThis.location?.hostname === "localhost" ? "TEST" : "";
-}
-
-function getProjectSearchText(project: HomepageProjectCard) {
-  return [
-    project.name,
-    project.description,
-    project.sourcePath,
-    ...project.tech,
-  ].join(" ").toLowerCase();
 }
 
 function createDefaultExpiryInput() {
@@ -312,7 +309,7 @@ export function navigate(pathname: string) {
 
 function BrandWord(props: {
   lockWidthPx: number | null;
-  onOpenData: () => void;
+  onOpenData: (trigger: HTMLButtonElement) => void;
 }) {
   const style = props.lockWidthPx === null ? undefined : ({
     "--brand-lock-width": `${props.lockWidthPx}px`,
@@ -327,7 +324,7 @@ function BrandWord(props: {
           id="brandWord"
           style={style}
           type="button"
-          onClick={props.onOpenData}
+          onClick={(event) => props.onOpenData(event.currentTarget)}
           aria-label="打开数据面板"
         >
           <span className="brand-text" id="brandText" />
@@ -337,108 +334,14 @@ function BrandWord(props: {
   );
 }
 
-function ProjectCard(props: {
-  project: HomepageProjectCard;
-  revealed: boolean;
-  onClick?: () => void;
-}) {
-  const classes = [
-    "project-card",
-    props.project.variant,
-    props.project.hidden ? "hidden-card" : "",
-    props.revealed ? "revealed" : "",
-    props.onClick ? "clickable" : "",
-  ].filter(Boolean).join(" ");
-
-  function handleKeyDown(event: React.KeyboardEvent) {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      props.onClick?.();
-    }
-  }
-
-  function stopCardClick(event: React.MouseEvent<HTMLAnchorElement>) {
-    event.stopPropagation();
-  }
-
-  function handleLinkKeyDown(event: React.KeyboardEvent<HTMLAnchorElement>) {
-    event.stopPropagation();
-  }
-
-  return (
-    <div
-      className={classes}
-      data-card-id={props.project.id}
-      onClick={props.onClick}
-      role={props.onClick ? "button" : undefined}
-      tabIndex={props.onClick ? 0 : undefined}
-      onKeyDown={props.onClick ? handleKeyDown : undefined}
-    >
-      <div className="pc-name">{props.project.name}</div>
-      <div className="pc-desc">{props.project.description}</div>
-      {props.project.provenance
-        ? (
-          <div className="pc-provenance" aria-label={`${props.project.name} 来源说明`}>
-            <p>
-              <span>来源</span>
-              <a
-                href={props.project.provenance.origin.href}
-                onClick={stopCardClick}
-                onKeyDown={handleLinkKeyDown}
-                rel="noreferrer"
-                target="_blank"
-              >
-                {props.project.provenance.origin.label}
-              </a>
-            </p>
-            <p>
-              <span>改动</span>
-              {props.project.provenance.changes}
-            </p>
-            <p>
-              <span>区别</span>
-              {props.project.provenance.differences}
-            </p>
-          </div>
-        )
-        : null}
-      <div className="pc-tech">
-        {props.project.tech.map((item) => (
-          <span key={`${props.project.id}-${item}`}>{item}</span>
-        ))}
-      </div>
-      {props.project.links?.length
-        ? (
-          <div className="pc-links">
-            {props.project.links.map((link) => (
-              <a
-                key={`${props.project.id}-${link.href}`}
-                href={link.href}
-                download={link.download}
-                onClick={stopCardClick}
-                onKeyDown={handleLinkKeyDown}
-                rel={link.href.startsWith("http") ? "noreferrer" : undefined}
-                target={link.href.startsWith("http") ? "_blank" : undefined}
-              >
-                {link.label}
-              </a>
-            ))}
-          </div>
-        )
-        : null}
-      <div className="pc-source">source · {props.project.sourcePath}</div>
-    </div>
-  );
-}
-
-function getProjectCardClick(
+function getProjectCardOpen(
   card: HomepageProjectCard,
   controls: {
-    openPanel: (panel: ActiveDomainPanel) => void;
+    openPanel: (panel: ActiveDomainPanel, trigger: HTMLButtonElement) => void;
   },
-): (() => void) | undefined {
+): ((trigger: HTMLButtonElement) => void) | undefined {
   if (isProjectDetailPanelId(card.id)) {
-    return () => controls.openPanel(card.id);
+    return (trigger) => controls.openPanel(card.id, trigger);
   }
 
   return undefined;
@@ -454,6 +357,9 @@ function Homepage() {
   const statusHintRef = useRef<HTMLSpanElement | null>(null);
   const statusClearTimeoutRef = useRef<number | null>(null);
   const projectScrollerRef = useRef<HTMLDivElement | null>(null);
+  const projectBrowserRef = useRef<HTMLDivElement | null>(null);
+  const lastPanelTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const proxyBackControlRef = useRef<HTMLButtonElement | null>(null);
   const messageContentInputRef = useRef<HTMLInputElement | null>(null);
   const [status, setStatus] = useState("");
   const [brandLockWidth, setBrandLockWidth] = useState<number | null>(null);
@@ -632,7 +538,10 @@ function Homepage() {
     }
 
     const text = isPanelOpen ? "返回" : messageButtonText;
-    primaryControlNode.setAttribute("aria-label", text);
+    primaryControlNode.setAttribute(
+      "aria-label",
+      isPanelOpen ? "返回项目卡片" : text,
+    );
     primaryControlNode.classList.toggle("primary", !isPanelOpen);
 
     if (!isPanelOpen && labelNode.textContent !== text) {
@@ -706,13 +615,15 @@ function Homepage() {
   }
 
   function updateProjectFocus(scroller: HTMLDivElement) {
-    const reduceMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")
+    const reducedMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")
       .matches ?? false;
+    const narrowViewport = globalThis.matchMedia?.("(max-width: 900px)").matches ??
+      globalThis.innerWidth <= 900;
     const cards = [...scroller.querySelectorAll<HTMLElement>(".project-card")]
       .filter((card) => card.offsetParent !== null);
     if (!cards.length) return;
 
-    if (reduceMotion) {
+    if (!shouldAnimateHomepageCards({ reducedMotion, narrowViewport })) {
       gsap.set(cards, { clearProps: "transform,opacity,visibility" });
       return;
     }
@@ -738,13 +649,29 @@ function Homepage() {
     }
   }
 
-  function openProjectPanel(panel: ActiveDomainPanel) {
+  function canUseViewTransition() {
+    return shouldUseHomepageViewTransition({
+      available: typeof document.startViewTransition === "function",
+      reducedMotion: globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")
+        .matches ?? false,
+      visibility: document.visibilityState,
+    });
+  }
+
+  function openProjectPanel(
+    panel: ActiveDomainPanel,
+    trigger?: HTMLButtonElement,
+  ) {
+    if (trigger) {
+      lastPanelTriggerRef.current = trigger;
+    }
+
     const activatePanel = () => {
       closeMessageComposer();
       setActivePanel(panel);
     };
 
-    if (document.startViewTransition && document.visibilityState === "visible") {
+    if (canUseViewTransition()) {
       document.startViewTransition(() => flushSync(activatePanel));
       return;
     }
@@ -752,17 +679,28 @@ function Homepage() {
     activatePanel();
   }
 
+  function restoreProjectTriggerFocus() {
+    const previousTrigger = lastPanelTriggerRef.current;
+    const focusTarget = previousTrigger?.isConnected
+      ? previousTrigger
+      : brandWordRef.current;
+    focusTarget?.focus();
+    lastPanelTriggerRef.current = null;
+  }
+
   function closeProjectPanel() {
-    if (document.startViewTransition && document.visibilityState === "visible") {
-      document.startViewTransition(() =>
+    if (canUseViewTransition()) {
+      const transition = document.startViewTransition(() =>
         flushSync(() => {
           setActivePanel(null);
         })
       );
+      void transition.finished.finally(restoreProjectTriggerFocus);
       return;
     }
 
     setActivePanel(null);
+    requestAnimationFrame(restoreProjectTriggerFocus);
   }
 
   function buildProxyFrameUrl(input: string) {
@@ -865,6 +803,21 @@ function Homepage() {
   }, [isPanelOpen, showMessageComposer]);
 
   useEffect(() => {
+    if (!activePanel) {
+      return;
+    }
+
+    const frameId = requestAnimationFrame(() => {
+      const target = activePanel === "relay-proxy-gateway"
+        ? proxyBackControlRef.current
+        : primaryControlRef.current;
+      target?.focus();
+    });
+
+    return () => cancelAnimationFrame(frameId);
+  }, [activePanel]);
+
+  useEffect(() => {
     if (isPanelOpen) return;
 
     const scroller = projectScrollerRef.current;
@@ -881,8 +834,10 @@ function Homepage() {
 
     const cards = [...scroller.querySelectorAll<HTMLElement>(".project-card")]
       .filter((card) => card.offsetParent !== null);
-    const reduceMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")
+    const reducedMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")
       .matches ?? false;
+    const narrowViewport = globalThis.matchMedia?.("(max-width: 900px)").matches ??
+      globalThis.innerWidth <= 900;
     let frameId: number | null = null;
 
     const queueUpdate = () => {
@@ -893,7 +848,10 @@ function Homepage() {
       });
     };
 
-    if (!reduceMotion && cards.length > 0) {
+    if (
+      shouldAnimateHomepageCards({ reducedMotion, narrowViewport }) &&
+      cards.length > 0
+    ) {
       gsap.fromTo(
         cards,
         { autoAlpha: 0, scale: 0.985, y: 18 },
@@ -951,7 +909,7 @@ function Homepage() {
     <div className="page homepage-page">
       <BrandWord
         lockWidthPx={brandLockWidth}
-        onOpenData={() => openProjectPanel("openfx-data")}
+        onOpenData={(trigger) => openProjectPanel("openfx-data", trigger)}
       />
 
       <div
@@ -960,12 +918,11 @@ function Homepage() {
         {/* 卡片网格 — 面板打开时透明不可交互，但保留在 DOM 中维持 grid 布局 */}
         <div
           className="project-browser-shell"
-          style={{
-            opacity: isPanelOpen ? 0 : 1,
-            pointerEvents: isPanelOpen ? "none" : undefined,
-          }}
+          aria-hidden={isPanelOpen ? true : undefined}
+          inert={isPanelOpen ? true : undefined}
+          ref={projectBrowserRef}
         >
-          <div className="project-stage" aria-live="polite">
+          <div className="project-stage">
             <div
               className="project-stage-scroll"
               ref={projectScrollerRef}
@@ -987,7 +944,7 @@ function Homepage() {
                         key={card.id}
                         project={card}
                         revealed={isProjectRevealed(card)}
-                        onClick={getProjectCardClick(card, {
+                        onOpen={getProjectCardOpen(card, {
                           openPanel: openProjectPanel,
                         })}
                       />
@@ -1235,6 +1192,7 @@ function Homepage() {
                 <button
                   aria-label="返回项目卡片"
                   className="proxy-footer-back"
+                  ref={proxyBackControlRef}
                   type="button"
                   onClick={closeProjectPanel}
                 >
@@ -1315,7 +1273,13 @@ function Homepage() {
                     )
                     : (
                       <>
-                        <span className="project-count">{projectCountLabel}</span>
+                        <span
+                          aria-atomic="true"
+                          aria-live="polite"
+                          className="project-count"
+                        >
+                          {projectCountLabel}
+                        </span>
                         <input
                           aria-label="搜索项目"
                           className="project-search-input project-command-search"
