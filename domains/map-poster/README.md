@@ -36,6 +36,12 @@ OpenFX Web 首页的 Map Poster
 卡片提供交互式生成器：用户可以在地图上选择中心点，再调整标题、主题、画幅和地图范围，
 在线预览生成结果，并下载 SVG 或 PNG。
 
+首页背景复用 `POST /api/map-poster/render` 的直接坐标输入。请求同时提供经纬度但没有
+`displayCity` / `displayCountry` 时，服务端会通过固定的 Nominatim reverse endpoint
+解析城市和国家标题；城市优先使用 `city`、`town`、`municipality`、`village`、`county`。
+反向解析失败不会改变地图中心，渲染器使用中性标题，响应也不会伪造城市名。该流程不持久化坐标
+或解析结果。
+
 ## 参数
 
 | 参数             | 说明              | 默认         |
