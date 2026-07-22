@@ -48,6 +48,9 @@ Deno.test("location poster ready view exposes a compact city status", () => {
   expect(html).toContain("Map Poster");
   expect(html).toContain("重新定位");
   expect(html).toContain('src="blob:openfx-poster"');
+  expect(html).toContain("© OpenStreetMap contributors");
+  expect(html).toContain('href="https://www.openstreetmap.org/copyright"');
+  expect(html).toContain('target="_blank"');
 });
 
 Deno.test("location poster failure never invents a city label", () => {

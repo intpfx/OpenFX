@@ -12,11 +12,13 @@ import {
 } from "react";
 
 import {
+  createHomepageLocationRequestGuard,
   createHomepagePosterRenderRequest,
   getGeolocationFailure,
   type HomepageLocationFailure,
   type HomepageLocationPermission,
   type HomepageLocationPosterState,
+  type HomepageLocationRequest,
   isCityLevelPosition,
   replaceHomepagePosterObjectUrl,
   resolveInitialLocationPosterState,
@@ -132,6 +134,14 @@ export function HomepageLocationPosterView(
           >
             <strong>{cityLabel}</strong>
             <span>Map Poster</span>
+            <a
+              className="homepage-location-attribution"
+              href="https://www.openstreetmap.org/copyright"
+              rel="noreferrer"
+              target="_blank"
+            >
+              © OpenStreetMap contributors
+            </a>
             <button type="button" onClick={props.onRetry}>重新定位</button>
           </section>
         )
@@ -202,6 +212,33 @@ function requestDevicePosition(): Promise<GeolocationPosition> {
   });
 }
 
+function isRestorableFocusTarget(element: HTMLElement | null) {
+  if (!element || element === document.body || !element.isConnected) return false;
+  if (
+    element.closest("[inert], [aria-hidden='true'], [hidden]") ||
+    element.matches(":disabled, [aria-hidden='true'], [hidden]")
+  ) {
+    return false;
+  }
+
+  return element.matches(
+    "a[href], area[href], button:not(:disabled), input:not(:disabled), " +
+      "select:not(:disabled), textarea:not(:disabled), [contenteditable='true'], " +
+      "[tabindex]:not([tabindex='-1'])",
+  );
+}
+
+function focusOrFallback(
+  candidate: HTMLElement | null,
+  fallback: HTMLButtonElement | null,
+) {
+  if (candidate && isRestorableFocusTarget(candidate)) {
+    candidate.focus();
+    if (document.activeElement === candidate) return;
+  }
+  fallback?.focus();
+}
+
 export function HomepageLocationPoster(props: {
   fallbackFocusRef: RefObject<HTMLButtonElement | null>;
   suspended: boolean;
@@ -212,7 +249,7 @@ export function HomepageLocationPoster(props: {
   const [posterUrl, setPosterUrl] = useState<string | null>(null);
   const [place, setPlace] = useState<HomepagePosterPlace | null>(null);
   const posterUrlRef = useRef<string | null>(null);
-  const mountedRef = useRef(true);
+  const requestGuardRef = useRef(createHomepageLocationRequestGuard());
   const primaryButtonRef = useRef<HTMLButtonElement | null>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const wasFocusedRef = useRef(false);
@@ -233,7 +270,10 @@ export function HomepageLocationPoster(props: {
 
   const locateAndRender = useCallback(async (
     permission: HomepageLocationPermission,
+    request: HomepageLocationRequest,
   ) => {
+    const isCurrent = () => requestGuardRef.current.isCurrent(request);
+    if (!isCurrent()) return;
     setFailure(null);
     setState(permission === "granted" ? "rendering" : "requesting");
 
@@ -241,7 +281,7 @@ export function HomepageLocationPoster(props: {
     try {
       position = await requestDevicePosition();
     } catch (error) {
-      if (!mountedRef.current) return;
+      if (!isCurrent()) return;
       const code = typeof error === "object" && error && "code" in error
         ? Number((error as { code: unknown }).code)
         : 2;
@@ -252,7 +292,7 @@ export function HomepageLocationPoster(props: {
       return;
     }
 
-    if (!mountedRef.current) return;
+    if (!isCurrent()) return;
     if (!isCityLevelPosition({ accuracy: position.coords.accuracy })) {
       clearPoster();
       setFailure("low-accuracy");
@@ -260,26 +300,31 @@ export function HomepageLocationPoster(props: {
       return;
     }
 
+    if (!isCurrent()) return;
     setState("rendering");
 
     try {
       const response = await fetch("/api/map-poster/render", {
         method: "POST",
         headers: { "content-type": "application/json" },
+        signal: request.signal,
         body: JSON.stringify(createHomepagePosterRenderRequest({
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
         })),
       });
+      if (!isCurrent()) return;
       const result = await response.json() as Partial<HomepagePosterResponse>;
+      if (!isCurrent()) return;
       if (!response.ok || result.ok !== true || typeof result.svg !== "string") {
         throw new Error("map_render_failed");
       }
 
+      if (!isCurrent()) return;
       const nextUrl = URL.createObjectURL(
         new Blob([result.svg], { type: "image/svg+xml" }),
       );
-      if (!mountedRef.current) {
+      if (!isCurrent()) {
         URL.revokeObjectURL(nextUrl);
         return;
       }
@@ -288,7 +333,7 @@ export function HomepageLocationPoster(props: {
       setPlace(result.place ?? null);
       setState("ready");
     } catch {
-      if (!mountedRef.current) return;
+      if (!isCurrent()) return;
       clearPoster();
       setFailure("render-failed");
       setState("error");
@@ -298,7 +343,11 @@ export function HomepageLocationPoster(props: {
   const startLocationRequest = useCallback(async () => {
     if (state === "denied") return;
 
+    const request = requestGuardRef.current.begin();
+    const isCurrent = () => requestGuardRef.current.isCurrent(request);
+
     if (!globalThis.isSecureContext || !navigator.geolocation) {
+      if (!isCurrent()) return;
       clearPoster();
       setFailure("unavailable");
       setState("unavailable");
@@ -306,6 +355,7 @@ export function HomepageLocationPoster(props: {
     }
 
     const permission = await readLocationPermission();
+    if (!isCurrent()) return;
     if (permission === "denied") {
       clearPoster();
       setFailure("denied");
@@ -313,15 +363,16 @@ export function HomepageLocationPoster(props: {
       return;
     }
 
-    await locateAndRender(permission);
+    await locateAndRender(permission, request);
   }, [clearPoster, locateAndRender, state]);
 
   useEffect(() => {
-    mountedRef.current = true;
+    const request = requestGuardRef.current.begin();
+    const isCurrent = () => requestGuardRef.current.isCurrent(request);
 
     void (async () => {
       if (!globalThis.isSecureContext || !navigator.geolocation) {
-        if (!mountedRef.current) return;
+        if (!isCurrent()) return;
         clearPoster();
         setFailure("unavailable");
         setState("unavailable");
@@ -329,10 +380,10 @@ export function HomepageLocationPoster(props: {
       }
 
       const permission = await readLocationPermission();
-      if (!mountedRef.current) return;
+      if (!isCurrent()) return;
       setState(resolveInitialLocationPosterState(permission));
       if (permission === "granted") {
-        await locateAndRender(permission);
+        await locateAndRender(permission, request);
       } else if (permission === "denied") {
         clearPoster();
         setFailure("denied");
@@ -340,7 +391,7 @@ export function HomepageLocationPoster(props: {
     })();
 
     return () => {
-      mountedRef.current = false;
+      requestGuardRef.current.invalidate();
       posterUrlRef.current = replaceHomepagePosterObjectUrl(
         posterUrlRef.current,
         null,
@@ -356,17 +407,17 @@ export function HomepageLocationPoster(props: {
     let frameId = 0;
 
     if (focusMode && !wasFocusedRef.current) {
-      previousFocusRef.current = document.activeElement instanceof HTMLElement
+      const activeElement = document.activeElement instanceof HTMLElement
         ? document.activeElement
+        : null;
+      previousFocusRef.current = isRestorableFocusTarget(activeElement)
+        ? activeElement
         : null;
       frameId = requestAnimationFrame(() => primaryButtonRef.current?.focus());
     } else if (!focusMode && wasFocusedRef.current) {
       frameId = requestAnimationFrame(() => {
         const previous = previousFocusRef.current;
-        const target = previous?.isConnected
-          ? previous
-          : props.fallbackFocusRef.current;
-        target?.focus();
+        focusOrFallback(previous, props.fallbackFocusRef.current);
         previousFocusRef.current = null;
       });
     }
@@ -380,6 +431,8 @@ export function HomepageLocationPoster(props: {
   }, [props.onFocusModeChange]);
 
   function dismiss() {
+    requestGuardRef.current.invalidate();
+    clearPoster();
     setFailure(null);
     setState("dismissed");
   }

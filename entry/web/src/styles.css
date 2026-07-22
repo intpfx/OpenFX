@@ -268,6 +268,20 @@ textarea {
   color: var(--accent);
 }
 
+.homepage-location-attribution {
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.56rem;
+  text-decoration-color: oklch(0.55 0.08 250 / 0.5);
+  text-underline-offset: 0.16em;
+  white-space: nowrap;
+}
+
+.homepage-location-attribution:focus-visible {
+  outline: 2px solid oklch(0.55 0.2 250 / 0.5);
+  outline-offset: 2px;
+}
+
 .homepage-location-status button {
   min-height: 28px;
   border: 1px solid var(--border);
@@ -2347,6 +2361,10 @@ textarea {
 
   .homepage-location-status button {
     min-height: 44px;
+  }
+
+  .homepage-location-attribution {
+    font-size: 0.5rem;
   }
 }
 

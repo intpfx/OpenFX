@@ -9,16 +9,12 @@ import type {
   GeoFeature,
   Theme,
 } from "../../../domains/map-poster/src/types.ts";
+import {
+  defaultReverseGeocodeService,
+  type MapPosterResolvedPlace,
+} from "./map-poster-reverse-geocoding.ts";
 
 const NOMINATIM_URL = "https://nominatim.openstreetmap.org/search";
-const NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse";
-const REVERSE_CITY_KEYS = [
-  "city",
-  "town",
-  "municipality",
-  "village",
-  "county",
-] as const;
 const DEFAULT_DISTANCE_METERS = 4_000;
 const MIN_DISTANCE_METERS = 4_000;
 const MAX_DISTANCE_METERS = 12_000;
@@ -38,10 +34,7 @@ const KNOWN_PLACE_COORDS = new Map<string, Coord>([
 
 type FetchLike = typeof fetch;
 
-export type MapPosterResolvedPlace = {
-  city: string;
-  country: string;
-};
+export type { MapPosterResolvedPlace } from "./map-poster-reverse-geocoding.ts";
 
 export type MapPosterRenderRequest = {
   city?: unknown;
@@ -304,53 +297,6 @@ async function geocodePlace(
   return { lat, lon };
 }
 
-function readAddressText(address: Record<string, unknown>, key: string) {
-  const value = address[key];
-  return typeof value === "string" ? value.trim() : "";
-}
-
-function resolveReverseAddress(value: unknown): MapPosterResolvedPlace | undefined {
-  if (!value || typeof value !== "object") return undefined;
-
-  const addressValue = (value as { address?: unknown }).address;
-  if (!addressValue || typeof addressValue !== "object") return undefined;
-
-  const address = addressValue as Record<string, unknown>;
-  const city = REVERSE_CITY_KEYS
-    .map((key) => readAddressText(address, key))
-    .find(Boolean) ?? "";
-  const country = readAddressText(address, "country");
-
-  if (!city || !country) return undefined;
-  return { city, country };
-}
-
-async function reverseGeocodePlace(
-  center: Coord,
-  fetcher: FetchLike = fetch,
-): Promise<MapPosterResolvedPlace | undefined> {
-  const url = new URL(NOMINATIM_REVERSE_URL);
-  url.searchParams.set("format", "jsonv2");
-  url.searchParams.set("lat", String(center.lat));
-  url.searchParams.set("lon", String(center.lon));
-  url.searchParams.set("zoom", "10");
-  url.searchParams.set("addressdetails", "1");
-
-  try {
-    const response = await fetcher(url, {
-      headers: {
-        "Accept": "application/json",
-        "User-Agent": "OpenFX-MapPoster-Web/0.1 (github.com/intpfx)",
-      },
-      signal: AbortSignal.timeout(12_000),
-    });
-    if (!response.ok) return undefined;
-    return resolveReverseAddress(await response.json());
-  } catch {
-    return undefined;
-  }
-}
-
 export async function createMapPoster(
   input: MapPosterRenderRequest,
   deps: {
@@ -371,7 +317,7 @@ export async function createMapPoster(
     options.directCenter && !options.displayCity && !options.displayCountry,
   );
   const reverseGeocode = deps.reverseGeocode ??
-    ((point: Coord) => reverseGeocodePlace(point, deps.fetcher));
+    ((point: Coord) => defaultReverseGeocodeService.lookup(point));
   const placePromise = shouldResolvePlace
     ? reverseGeocode(center).catch(() => undefined)
     : Promise.resolve(undefined);

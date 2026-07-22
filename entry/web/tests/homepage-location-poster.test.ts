@@ -1,6 +1,7 @@
 import { expect } from "@std/expect";
 
 import {
+  createHomepageLocationRequestGuard,
   createHomepagePosterRenderRequest,
   getGeolocationFailure,
   isCityLevelPosition,
@@ -74,4 +75,40 @@ Deno.test("homepage poster object URLs are revoked when replaced or cleared", ()
   expect(replaceHomepagePosterObjectUrl(next, null, (url) => revoked.push(url)))
     .toBeNull();
   expect(revoked).toEqual(["blob:old", "blob:new"]);
+});
+
+Deno.test("homepage location requests invalidate stale permission, position, and render work", async () => {
+  const guard = createHomepageLocationRequestGuard();
+  const commits: string[] = [];
+  let resolvePermission = () => {};
+  const delayedPermission = new Promise<void>((resolve) => {
+    resolvePermission = resolve;
+  });
+  let resolvePosition = () => {};
+  const delayedPosition = new Promise<void>((resolve) => {
+    resolvePosition = resolve;
+  });
+
+  const first = guard.begin();
+  expect(guard.isCurrent(first)).toBe(true);
+  const stalePermissionFlow = delayedPermission.then(() => {
+    if (guard.isCurrent(first)) commits.push("stale permission");
+  });
+
+  const second = guard.begin();
+  expect(first.signal.aborted).toBe(true);
+  expect(guard.isCurrent(first)).toBe(false);
+  expect(guard.isCurrent(second)).toBe(true);
+  const stalePositionFlow = delayedPosition.then(() => {
+    if (guard.isCurrent(first)) commits.push("stale position");
+  });
+
+  resolvePermission();
+  resolvePosition();
+  await Promise.all([stalePermissionFlow, stalePositionFlow]);
+  expect(commits).toEqual([]);
+
+  guard.invalidate();
+  expect(second.signal.aborted).toBe(true);
+  expect(guard.isCurrent(second)).toBe(false);
 });

@@ -37,11 +37,25 @@ OpenFX Web 首页的 Map Poster
 在线预览生成结果，并下载 SVG 或 PNG。
 
 首页背景复用 `POST /api/map-poster/render` 的直接坐标输入。请求同时提供经纬度但没有
-`displayCity` / `displayCountry` 时，服务端会通过固定的 Nominatim reverse endpoint
-解析城市和国家标题；城市优先使用 `city`、`town`、`municipality`、`village`、`county`。
-反向解析失败不会改变地图中心，渲染器使用中性标题，响应也不会伪造城市名。OpenFX 不持久化
-坐标或解析结果；坐标会用于上游 Nominatim 反向解析和 Overpass 地图数据请求，第三方服务的
-日志与保留规则以其自身政策为准。
+`displayCity` / `displayCountry`
+时，服务端会通过反向地理编码解析城市和国家标题；城市优先使用
+`city`、`town`、`municipality`、`village`、`county`。反向解析失败不会改变地图中心，渲染器使用
+中性标题，响应也不会伪造城市名。
+
+生产环境必须设置 `OPENFX_MAP_POSTER_NOMINATIM_REVERSE_URL` 为自托管或已签约容量服务的
+HTTPS reverse
+endpoint（不得携带查询串、片段或嵌入式凭据）。只有本地/开发环境在未配置时才使用官方
+Nominatim endpoint；生产环境未配置则跳过 reverse
+lookup，避免对公共服务产生未声明的流量。 每个服务 isolate
+将请求限制为每秒最多一次，并在内存中按约 1 公里网格缓存成功的城市标签 30
+分钟；缓存不会写入文件、数据库、cookie 或浏览器存储，且不同 isolate
+不共享，因此部署方仍须 为自身流量配置足够的上游容量。Overpass
+地图数据使用也受其单独的上游政策约束。
+
+OpenFX 不持久化坐标或解析结果；坐标会用于上游反向地理编码和 Overpass
+地图数据请求，第三方
+服务的日志与保留规则以其自身政策为准。首页城市状态胶囊会展示可访问的 OpenStreetMap
+contributors 归属链接，但不会显示坐标或海报页脚。
 
 ## 参数
 

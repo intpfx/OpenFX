@@ -1,6 +1,11 @@
 import { expect } from "@std/expect";
 
 import { createMapPoster, MapPosterInputError } from "../server/map-poster.ts";
+import {
+  createReverseGeocodeService,
+  parseReverseGeocodeEndpoint,
+  resolveReverseGeocodeEndpoint,
+} from "../server/map-poster-reverse-geocoding.ts";
 
 function emptyMapData(center: { lat: number; lon: number }) {
   return {
@@ -170,6 +175,28 @@ Deno.test("map poster resolves display labels for direct homepage coordinates", 
 Deno.test("map poster reverse lookup uses Nominatim city priority and fixed headers", async () => {
   let requestedUrl = "";
   let requestedUserAgent = "";
+  const reverseGeocoder = createReverseGeocodeService({
+    endpoint: new URL("https://nominatim.openstreetmap.org/reverse"),
+    fetcher: (input, init) => {
+      requestedUrl = String(input);
+      requestedUserAgent = new Headers(init?.headers).get("user-agent") ?? "";
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            address: {
+              city: "Shanghai",
+              municipality: "Shanghai Municipality",
+              country: "China",
+            },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+      );
+    },
+  });
 
   const result = await createMapPoster(
     {
@@ -179,25 +206,7 @@ Deno.test("map poster reverse lookup uses Nominatim city priority and fixed head
     },
     {
       fetchData: (center) => Promise.resolve(emptyMapData(center)),
-      fetcher: (input, init) => {
-        requestedUrl = String(input);
-        requestedUserAgent = new Headers(init?.headers).get("user-agent") ?? "";
-        return Promise.resolve(
-          new Response(
-            JSON.stringify({
-              address: {
-                city: "Shanghai",
-                municipality: "Shanghai Municipality",
-                country: "China",
-              },
-            }),
-            {
-              status: 200,
-              headers: { "content-type": "application/json" },
-            },
-          ),
-        );
-      },
+      reverseGeocode: reverseGeocoder.lookup,
       render: () => "<svg/>",
     },
   );
@@ -208,6 +217,63 @@ Deno.test("map poster reverse lookup uses Nominatim city priority and fixed head
   expect(url.searchParams.get("zoom")).toBe("10");
   expect(requestedUserAgent).toContain("OpenFX-MapPoster-Web");
   expect(result.place).toEqual({ city: "Shanghai", country: "China" });
+});
+
+Deno.test("map poster reverse endpoint permits only configured HTTPS endpoints and fails closed in production", () => {
+  expect(
+    resolveReverseGeocodeEndpoint({ NODE_ENV: "development" })?.toString(),
+  ).toBe("https://nominatim.openstreetmap.org/reverse");
+  expect(resolveReverseGeocodeEndpoint({ NODE_ENV: "production" })).toBeUndefined();
+  expect(
+    resolveReverseGeocodeEndpoint({
+      NODE_ENV: "production",
+      OPENFX_MAP_POSTER_NOMINATIM_REVERSE_URL: "https://geo.openfx.example/reverse",
+    })?.toString(),
+  ).toBe("https://geo.openfx.example/reverse");
+  expect(parseReverseGeocodeEndpoint("http://localhost:8080/reverse"))
+    .toBeUndefined();
+  expect(parseReverseGeocodeEndpoint("https://user:secret@geo.example/reverse"))
+    .toBeUndefined();
+});
+
+Deno.test("map poster reverse geocoding single-flights, caches rounded locations, and spaces upstream calls", async () => {
+  let now = 0;
+  const callTimes: number[] = [];
+  let fetchCalls = 0;
+  const reverseGeocoder = createReverseGeocodeService({
+    endpoint: new URL("https://geo.openfx.example/reverse"),
+    now: () => now,
+    sleep: (milliseconds) => {
+      now += milliseconds;
+      return Promise.resolve();
+    },
+    fetcher: () => {
+      fetchCalls += 1;
+      callTimes.push(now);
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            address: { city: "Shanghai", country: "China" },
+          }),
+          { headers: { "content-type": "application/json" } },
+        ),
+      );
+    },
+  });
+
+  const first = reverseGeocoder.lookup({ lat: 31.2304, lon: 121.4737 });
+  const duplicate = reverseGeocoder.lookup({ lat: 31.23049, lon: 121.47371 });
+  const second = reverseGeocoder.lookup({ lat: 39.9042, lon: 116.4074 });
+  await expect(Promise.all([first, duplicate, second])).resolves.toEqual([
+    { city: "Shanghai", country: "China" },
+    { city: "Shanghai", country: "China" },
+    { city: "Shanghai", country: "China" },
+  ]);
+
+  expect(fetchCalls).toBe(2);
+  expect(callTimes).toEqual([0, 1_000]);
+  await reverseGeocoder.lookup({ lat: 31.23041, lon: 121.47372 });
+  expect(fetchCalls).toBe(2);
 });
 
 Deno.test("map poster keeps real coordinates when reverse lookup fails", async () => {

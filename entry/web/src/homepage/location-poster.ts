@@ -90,3 +90,31 @@ export function replaceHomepagePosterObjectUrl(
   if (currentUrl && currentUrl !== nextUrl) revoke(currentUrl);
   return nextUrl;
 }
+
+export type HomepageLocationRequest = {
+  generation: number;
+  signal: AbortSignal;
+};
+
+export function createHomepageLocationRequestGuard() {
+  let generation = 0;
+  let controller: AbortController | null = null;
+
+  return {
+    begin(): HomepageLocationRequest {
+      generation += 1;
+      controller?.abort();
+      controller = new AbortController();
+      return { generation, signal: controller.signal };
+    },
+    invalidate() {
+      generation += 1;
+      controller?.abort();
+      controller = null;
+    },
+    isCurrent(request: HomepageLocationRequest) {
+      return request.generation === generation &&
+        controller?.signal === request.signal && !request.signal.aborted;
+    },
+  };
+}
