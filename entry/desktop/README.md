@@ -84,13 +84,12 @@ Perry UI 的 AppKit timer 持续驱动 async reactor、stdlib 与 HTTP/HTTPS pum
 HTTP/HTTPS/HTTP2 handle ID 使用可重入的复用缓冲区完成快照，不再逐 tick 创建临时 `Vec`；
 ext-net 的原子 pending hint 让空闲 tick 无需读取队列锁。挂起响应先走轻量 reaper，并不
 单独开启全量 pump。request/response、raw upgrade 和 handle quarantine
-仍沿原路径处理。窗口隐藏只取消 Canvas frame callback，不停止节点。Tray 相对图标先解析
-`.app/Contents/Resources`，再回退到
-可执行文件目录。构建完成后，`PERRY_LIB_DIR/openfx-perry-runtime-provenance.json`
-记录精确 Perry 提交、Rust 1.96.1、补丁 SHA-256 和 Perry CLI/四个静态库的
-SHA-256。应用构建、应用 smoke 与组合 smoke 都会重新校验 manifest
-和实际文件；缺失或篡改会直接失败。由于源码在 构建中会应用补丁，下一次 `perry:runtime`
-必须使用新的干净 clone。
+仍沿原路径处理。窗口隐藏只取消 Canvas frame callback，不停止节点。空 Tray 图标路径由
+Perry 直接 映射为原生实心圆点 `●`，不解析应用包资源。构建完成后，
+`PERRY_LIB_DIR/openfx-perry-runtime-provenance.json` 记录精确 Perry 提交、Rust
+1.96.1、补丁 SHA-256 和 Perry CLI/四个静态库的 SHA-256。应用构建、应用 smoke 与组合
+smoke 都会重新校验 manifest 和实际文件；缺失或篡改会直接失败。由于源码在
+构建中会应用补丁，下一次 `perry:runtime` 必须使用新的干净 clone。
 
 ## 构建 macOS 应用
 
@@ -100,7 +99,8 @@ SHA-256。应用构建、应用 smoke 与组合 smoke 都会重新校验 manifes
 - 生成 arm64-only Mach-O，并把部署目标锁定为 macOS 13.0；
 - 生成 Bundle ID 为 `com.openfx.node` 的 `Info.plist`；
 - 从 OpenFX 512 px 产品图标生成 `OpenFXNode.icns`；
-- 从可审查的 SVG 源生成四角透明、单色 FX Tray 模板图标；
+- 保留 Perry 原生空路径 Tray 契约，由 macOS 状态栏显示实心圆点 `●`，应用包不携带 Tray
+  图片资产；
 - 使用本机 ad-hoc 身份签名并校验完整应用包。
 
 ```bash
