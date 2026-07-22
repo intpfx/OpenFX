@@ -65,6 +65,10 @@ export function HomepageLocationPosterView(
   props: HomepageLocationPosterViewProps,
 ) {
   const isPermissionGate = shouldFocusLocationPoster(props.state);
+  const shouldShowPoster = Boolean(props.posterUrl) &&
+    props.state !== "denied" &&
+    props.state !== "unavailable" &&
+    props.state !== "error";
   const cityLabel = props.place?.city
     ? `背景 · ${props.place.city}`
     : "背景 · 已按当前位置生成";
@@ -74,9 +78,11 @@ export function HomepageLocationPosterView(
       <div
         aria-hidden="true"
         className="homepage-poster-background"
-        data-ready={props.posterUrl ? "true" : "false"}
+        data-ready={shouldShowPoster ? "true" : "false"}
       >
-        {props.posterUrl ? <img alt="" decoding="async" src={props.posterUrl} /> : null}
+        {shouldShowPoster
+          ? <img alt="" decoding="async" src={props.posterUrl ?? undefined} />
+          : null}
       </div>
 
       {props.suspended ? null : isPermissionGate
@@ -220,6 +226,11 @@ export function HomepageLocationPoster(props: {
     setPosterUrl(nextUrl);
   }, []);
 
+  const clearPoster = useCallback(() => {
+    replacePosterUrl(null);
+    setPlace(null);
+  }, [replacePosterUrl]);
+
   const locateAndRender = useCallback(async (
     permission: HomepageLocationPermission,
   ) => {
@@ -235,6 +246,7 @@ export function HomepageLocationPoster(props: {
         ? Number((error as { code: unknown }).code)
         : 2;
       const nextFailure = getGeolocationFailure(code);
+      clearPoster();
       setFailure(nextFailure);
       setState(nextFailure === "denied" ? "denied" : "error");
       return;
@@ -242,6 +254,7 @@ export function HomepageLocationPoster(props: {
 
     if (!mountedRef.current) return;
     if (!isCityLevelPosition({ accuracy: position.coords.accuracy })) {
+      clearPoster();
       setFailure("low-accuracy");
       setState("error");
       return;
@@ -276,15 +289,17 @@ export function HomepageLocationPoster(props: {
       setState("ready");
     } catch {
       if (!mountedRef.current) return;
+      clearPoster();
       setFailure("render-failed");
       setState("error");
     }
-  }, [replacePosterUrl]);
+  }, [clearPoster, replacePosterUrl]);
 
   const startLocationRequest = useCallback(async () => {
     if (state === "denied") return;
 
     if (!globalThis.isSecureContext || !navigator.geolocation) {
+      clearPoster();
       setFailure("unavailable");
       setState("unavailable");
       return;
@@ -292,13 +307,14 @@ export function HomepageLocationPoster(props: {
 
     const permission = await readLocationPermission();
     if (permission === "denied") {
+      clearPoster();
       setFailure("denied");
       setState("denied");
       return;
     }
 
     await locateAndRender(permission);
-  }, [locateAndRender, state]);
+  }, [clearPoster, locateAndRender, state]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -306,6 +322,7 @@ export function HomepageLocationPoster(props: {
     void (async () => {
       if (!globalThis.isSecureContext || !navigator.geolocation) {
         if (!mountedRef.current) return;
+        clearPoster();
         setFailure("unavailable");
         setState("unavailable");
         return;
@@ -317,6 +334,7 @@ export function HomepageLocationPoster(props: {
       if (permission === "granted") {
         await locateAndRender(permission);
       } else if (permission === "denied") {
+        clearPoster();
         setFailure("denied");
       }
     })();
@@ -329,7 +347,7 @@ export function HomepageLocationPoster(props: {
         URL.revokeObjectURL,
       );
     };
-  }, [locateAndRender]);
+  }, [clearPoster, locateAndRender]);
 
   const focusMode = !props.suspended && shouldFocusLocationPoster(state);
 

@@ -62,7 +62,7 @@ Deno.test("homepage poster request rejects invalid coordinates", () => {
     .toThrow(RangeError);
 });
 
-Deno.test("homepage poster object URLs are revoked when replaced", () => {
+Deno.test("homepage poster object URLs are revoked when replaced or cleared", () => {
   const revoked: string[] = [];
   const next = replaceHomepagePosterObjectUrl(
     "blob:old",
@@ -71,5 +71,7 @@ Deno.test("homepage poster object URLs are revoked when replaced", () => {
   );
 
   expect(next).toBe("blob:new");
-  expect(revoked).toEqual(["blob:old"]);
+  expect(replaceHomepagePosterObjectUrl(next, null, (url) => revoked.push(url)))
+    .toBeNull();
+  expect(revoked).toEqual(["blob:old", "blob:new"]);
 });

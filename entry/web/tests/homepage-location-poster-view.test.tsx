@@ -55,7 +55,7 @@ Deno.test("location poster failure never invents a city label", () => {
     <HomepageLocationPosterView
       failure="low-accuracy"
       place={null}
-      posterUrl={null}
+      posterUrl="blob:stale-poster"
       state="error"
       suspended={false}
       onAllow={noop}
@@ -67,6 +67,7 @@ Deno.test("location poster failure never invents a city label", () => {
   expect(html).toContain("定位精度不足");
   expect(html).toContain("重试");
   expect(html).not.toContain("Shanghai");
+  expect(html).not.toContain('src="blob:stale-poster"');
 });
 
 Deno.test("location poster denied view directs users to site settings without retry", () => {

@@ -39,8 +39,9 @@ OpenFX Web 首页的 Map Poster
 首页背景复用 `POST /api/map-poster/render` 的直接坐标输入。请求同时提供经纬度但没有
 `displayCity` / `displayCountry` 时，服务端会通过固定的 Nominatim reverse endpoint
 解析城市和国家标题；城市优先使用 `city`、`town`、`municipality`、`village`、`county`。
-反向解析失败不会改变地图中心，渲染器使用中性标题，响应也不会伪造城市名。该流程不持久化坐标
-或解析结果。
+反向解析失败不会改变地图中心，渲染器使用中性标题，响应也不会伪造城市名。OpenFX 不持久化
+坐标或解析结果；坐标会用于上游 Nominatim 反向解析和 Overpass 地图数据请求，第三方服务的
+日志与保留规则以其自身政策为准。
 
 ## 参数
 
