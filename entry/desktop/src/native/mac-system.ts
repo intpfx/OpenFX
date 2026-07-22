@@ -65,7 +65,7 @@ const SYSTEM_COMMANDS = [
   ["df", "/bin/df", ["-k", "/"]],
   ["netstat", "/usr/sbin/netstat", ["-ibn"]],
   ["battery", "/usr/bin/pmset", ["-g", "batt"]],
-  ["networkState", "/usr/sbin/scutil", ["--nwi"]],
+  ["networkState", "/sbin/ifconfig", []],
 ] as const satisfies ReadonlyArray<
   readonly [
     Exclude<keyof SystemCommandOutputs, "processes">,

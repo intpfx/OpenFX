@@ -57,7 +57,7 @@ Deno.test("macOS adapter uses fixed executables and argument arrays for monitori
     { file: "/bin/df", args: ["-k", "/"] },
     { file: "/usr/sbin/netstat", args: ["-ibn"] },
     { file: "/usr/bin/pmset", args: ["-g", "batt"] },
-    { file: "/usr/sbin/scutil", args: ["--nwi"] },
+    { file: "/sbin/ifconfig", args: [] },
     {
       file: "/bin/ps",
       args: ["-p", "42", "-o", "pid=,lstart=,comm="],
@@ -65,6 +65,29 @@ Deno.test("macOS adapter uses fixed executables and argument arrays for monitori
     { file: "/bin/kill", args: ["-TERM", "42"] },
     { file: "/usr/bin/open", args: ["-a", "Safari"] },
     { file: "/usr/bin/open", args: ["https://console.example/"] },
+  ]);
+});
+
+Deno.test("macOS adapter includes privacy IPv6 addresses from the full interface state", async () => {
+  const stableAddress = "2409:8a62:3214:3940:400:976e:1038:5e26";
+  const privacyAddress = "2409:8a62:3214:3940:c52e:bd6f:339d:e79e";
+  const adapter = createMacSystemAdapter((file, _args, callback) => {
+    if (file === "/usr/sbin/sysctl") return callback(null, "100", "");
+    if (file === "/sbin/ifconfig") {
+      return callback(
+        null,
+        `en1: flags=8863<UP>\n` +
+          `\tinet6 ${stableAddress} prefixlen 64 autoconf secured\n` +
+          `\tinet6 ${privacyAddress} prefixlen 64 autoconf temporary\n`,
+        "",
+      );
+    }
+    callback(null, "", "");
+  });
+
+  assertEquals((await collectOnce(adapter)).network.ipv6Addresses, [
+    stableAddress,
+    privacyAddress,
   ]);
 });
 
@@ -88,7 +111,7 @@ Deno.test("system collection starts every fixed command asynchronously in parall
     "/bin/df",
     "/usr/sbin/netstat",
     "/usr/bin/pmset",
-    "/usr/sbin/scutil",
+    "/sbin/ifconfig",
   ]);
   for (const callback of pending.values()) callback(null, "", "");
   assertEquals((await collecting).processes, []);
