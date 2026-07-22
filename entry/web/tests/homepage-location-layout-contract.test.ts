@@ -39,7 +39,7 @@ Deno.test("mobile location states collapse the empty hint and clear the two-row 
     `.homepage-page:has(.homepage-location-status) .control-hint,
   .homepage-page:has(.homepage-location-progress) .control-hint {
     display: none;
-    }`,
+  }`,
   );
   expect(homepageCss).toContain(
     `.homepage-page:has(.control-hint[data-active="true"]:not(:empty)) .homepage-location-status,
