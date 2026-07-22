@@ -28,10 +28,13 @@ Deno.test("tablet location states clear the command bar", () => {
   }`);
 });
 
-Deno.test("mobile location states clear the full wrapped footer", () => {
+Deno.test("mobile location pills reserve their upward height above both footer rows", () => {
+  // 5.5rem clears the command-row placement only. The pill grows upward from its
+  // bottom edge, so another 2.75rem reserves the 20px version row, 12px wrap gap,
+  // and 12px safety separation proven necessary at 390x844.
   expect(homepageCss).toContain(`.homepage-location-status,
   .homepage-location-progress {
-    bottom: calc(max(0.72rem, env(safe-area-inset-bottom)) + 5.5rem);
+    bottom: calc(max(0.72rem, env(safe-area-inset-bottom)) + 8.25rem);
     max-width: calc(100vw - 2rem);
   }`);
 });
