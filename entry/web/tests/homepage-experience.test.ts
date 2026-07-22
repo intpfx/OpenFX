@@ -38,6 +38,7 @@ Deno.test("homepage view transitions require availability, visibility, and motio
   expect(
     shouldUseHomepageViewTransition({
       available: true,
+      narrowViewport: false,
       reducedMotion: false,
       visibility: "visible",
     }),
@@ -45,6 +46,7 @@ Deno.test("homepage view transitions require availability, visibility, and motio
   expect(
     shouldUseHomepageViewTransition({
       available: false,
+      narrowViewport: false,
       reducedMotion: false,
       visibility: "visible",
     }),
@@ -52,6 +54,7 @@ Deno.test("homepage view transitions require availability, visibility, and motio
   expect(
     shouldUseHomepageViewTransition({
       available: true,
+      narrowViewport: false,
       reducedMotion: true,
       visibility: "visible",
     }),
@@ -59,8 +62,17 @@ Deno.test("homepage view transitions require availability, visibility, and motio
   expect(
     shouldUseHomepageViewTransition({
       available: true,
+      narrowViewport: false,
       reducedMotion: false,
       visibility: "hidden",
+    }),
+  ).toBe(false);
+  expect(
+    shouldUseHomepageViewTransition({
+      available: true,
+      reducedMotion: false,
+      visibility: "visible",
+      narrowViewport: true,
     }),
   ).toBe(false);
 });

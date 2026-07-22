@@ -18,9 +18,10 @@ export function shouldAnimateHomepageCards(options: {
 
 export function shouldUseHomepageViewTransition(options: {
   available: boolean;
+  narrowViewport: boolean;
   reducedMotion: boolean;
   visibility: DocumentVisibilityState;
 }): boolean {
-  return options.available && !options.reducedMotion &&
+  return options.available && !options.narrowViewport && !options.reducedMotion &&
     options.visibility === "visible";
 }

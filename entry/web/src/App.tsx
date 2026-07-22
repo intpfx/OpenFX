@@ -652,6 +652,8 @@ function Homepage() {
   function canUseViewTransition() {
     return shouldUseHomepageViewTransition({
       available: typeof document.startViewTransition === "function",
+      narrowViewport: globalThis.matchMedia?.("(max-width: 900px)").matches ??
+        globalThis.innerWidth <= 900,
       reducedMotion: globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")
         .matches ?? false,
       visibility: document.visibilityState,
