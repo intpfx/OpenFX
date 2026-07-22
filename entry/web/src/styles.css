@@ -2336,7 +2336,7 @@ textarea {
 
   .homepage-location-status,
   .homepage-location-progress {
-    bottom: calc(max(0.72rem, env(safe-area-inset-bottom)) + 5.5rem);
+    bottom: calc(max(0.72rem, env(safe-area-inset-bottom)) + 7.5rem);
     max-width: calc(100vw - 2rem);
   }
 

@@ -36,11 +36,11 @@ Deno.test("mobile location states collapse the empty hint and clear the two-row 
   }`,
   );
 
-  // With the state-scoped empty hint removed, 5.5rem clears the remaining build row,
-  // 12px wrap gap, 44px command row, and a final safety gap above the footer.
+  // The exact 390x844 capture shows that the collapsed two-row footer still needs
+  // another 2rem beyond 5.5rem so the pill bottom clears the build row plus safety.
   expect(homepageCss).toContain(`.homepage-location-status,
   .homepage-location-progress {
-    bottom: calc(max(0.72rem, env(safe-area-inset-bottom)) + 5.5rem);
+    bottom: calc(max(0.72rem, env(safe-area-inset-bottom)) + 7.5rem);
     max-width: calc(100vw - 2rem);
   }`);
 });
