@@ -3,6 +3,7 @@
     "dev": "cd ../.. && deno run --config deno.json --lock deno.lock --frozen -A npm:concurrently@9.2.1 -k -n web,server -c blue,green \"deno run --config deno.json --lock deno.lock --frozen -A npm:vite-plus@0.1.21/vp dev --config entry/web/vite.config.ts\" \"cd entry/web && deno run --config deno.json --lock ../../deno.lock --frozen -A npm:nitropack@2.13.4 dev\"",
     "build": "deno run --config deno.json --lock ../../deno.lock --frozen -A tools/build-with-metadata.ts",
     "preview": "deno task build && deno run --unstable-kv -A .output/server/index.ts",
+    "local-pairing": "deno run --unstable-kv -A tools/local-pairing-server.ts",
     "test": "deno test --allow-env --allow-read=src/console/console.css tests"
   },
   "imports": {

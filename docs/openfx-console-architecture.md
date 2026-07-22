@@ -42,6 +42,27 @@ Mac 节点，以及运行时无关的 `domains/e` Agent/审批内核。Web 控�
 建议把两者保存在 Deno Deploy 的加密环境变量中，不写入仓库、构建日志、浏览器存储或
 命令行参数。Web 构建不需要知道它们，只有服务端运行时读取。
 
+### 本机 HTTPS 配对运行边界
+
+OpenFX Node 的本机配对使用预构建 Web 输出的唯一入口：
+
+```bash
+OPENFX_LOCAL_RUNTIME=/private/path/to/openfx-local-runtime \
+  deno task web:local-pairing
+```
+
+启动器不会构建 `.output`；必须先完成 Web 构建。它从当前 checkout 派生 Web 根目录，在
+`127.0.0.1:8000` 启动 Nitro，并以本机受信任的 `mkcert` 根证书在
+`https://127.0.0.1:34431` 提供 loopback TLS 代理。`OPENFX_LOCAL_RUNTIME` 是权限为 `0700`
+的私有目录，保存 TLS 证书、Deno 缓存与权限为 `0600` 的 `pairing.json`。Nitro 以稳定的
+Deno location `https://127.0.0.1:34431` 运行，因此重复启动复用同一 Deno KV 身份；不要用
+不同 location 取代它，否则会创建独立本地存储。
+
+该本机入口特意从子进程环境剥离 `OPENFX_ADMIN_KEY`、`DENO_DEPLOYMENT_ID` 和生产
+`NODE_ENV`，所以 loopback 开发通过现有控制面回退使用 `TEST`。`TEST` 只用于本机管理员
+登录与受保护的配对信息，不能作为 `OPENFX_NODE_CREDENTIAL_KEY`；后者独立加密节点凭据。
+生产和任何非 loopback 部署仍必须明确配置 `OPENFX_ADMIN_KEY`，且没有默认管理密钥。
+
 ## 会话、配对与密钥
 
 1. 管理员通过 `POST /api/admin/session` 登录，获得 12 小时绝对有效的 `HttpOnly`、

@@ -76,6 +76,25 @@ Web 页底部会展示构建版本。`deno task build` 会自动补齐：
 保留已配对节点，应同时固定 32 字节的 `OPENFX_NODE_CREDENTIAL_KEY`。这些开发值不得提交为
 生产默认配置。
 
+### 本地 HTTPS 配对
+
+OpenFX Node 的 loopback HTTPS 配对使用唯一的规范入口；Web 必须已先构建完成，启动器不会
+自动构建：
+
+```bash
+OPENFX_LOCAL_RUNTIME=/private/path/to/openfx-local-runtime \
+  deno task web:local-pairing
+```
+
+该入口在 `https://127.0.0.1:34431` 提供 TLS，并在 `127.0.0.1:8000` 运行预构建的 Nitro
+服务。loopback 开发默认使用管理 key `TEST`：启动器会刻意移除继承的
+`OPENFX_ADMIN_KEY`、`DENO_DEPLOYMENT_ID` 以及生产值 `NODE_ENV`，让控制面走本地回退路径。
+生产或非 loopback 请求仍必须显式设置 `OPENFX_ADMIN_KEY`，不能依赖 `TEST`。
+
+`OPENFX_NODE_CREDENTIAL_KEY` 是独立的节点凭据加密密钥；可在启动前显式提供以保留本地 Deno
+KV 数据，但绝不能复用管理 key `TEST`。运行目录会保存证书、Deno 缓存和权限为 `0600` 的
+`pairing.json`，其中含有仅供本机配对使用的敏感信息。
+
 ## OpenFX Console 控制面
 
 控制台不使用独立页面或独立页面路由。点击根页的 OpenFX Logo 会在首页后台面板中打开完整
