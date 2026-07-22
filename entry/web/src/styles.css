@@ -97,10 +97,11 @@ textarea {
   z-index: 2;
   background: linear-gradient(
     to bottom,
-    oklch(0.985 0.002 250 / 0.38) 0%,
-    oklch(0.985 0.002 250 / 0.4) 68%,
-    oklch(0.985 0.002 250 / 0.76) 84%,
-    oklch(0.985 0.002 250 / 0.98) 96%,
+    oklch(0.985 0.002 250 / 0.14) 0%,
+    oklch(0.985 0.002 250 / 0.16) 68%,
+    oklch(0.985 0.002 250 / 0.34) 76%,
+    oklch(0.985 0.002 250 / 0.78) 84%,
+    var(--bg) 90%,
     var(--bg) 100%
   );
 }
@@ -108,8 +109,8 @@ textarea {
 .homepage-poster-background::after {
   z-index: 3;
   background-image:
-    linear-gradient(oklch(0.74 0.008 250 / 0.1) 1px, transparent 1px),
-    linear-gradient(90deg, oklch(0.74 0.008 250 / 0.1) 1px, transparent 1px);
+    linear-gradient(oklch(0.74 0.008 250 / 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(0.74 0.008 250 / 0.035) 1px, transparent 1px);
   background-position: -1px -1px;
   background-size: 80px 80px;
 }
@@ -122,13 +123,28 @@ textarea {
   height: 120%;
   object-fit: cover;
   object-position: center top;
-  filter: grayscale(0.08) contrast(1.08);
+  filter: brightness(0.96) contrast(1.48) saturate(0.92);
+  mix-blend-mode: multiply;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    #000 0%,
+    #000 65%,
+    rgb(0 0 0 / 0.78) 69%,
+    transparent 76%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    #000 0%,
+    #000 65%,
+    rgb(0 0 0 / 0.78) 69%,
+    transparent 76%
+  );
   opacity: 0;
   transition: opacity 0.48s ease;
 }
 
 .homepage-poster-background[data-ready="true"] img {
-  opacity: 0.78;
+  opacity: 0.96;
 }
 
 .homepage-location-capsule {

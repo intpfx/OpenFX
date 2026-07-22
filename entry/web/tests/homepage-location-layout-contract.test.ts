@@ -44,7 +44,7 @@ Deno.test("desktop location status reserves space between footer controls", () =
   }`);
 });
 
-Deno.test("ready city poster keeps its footer outside the homepage composition", () => {
+Deno.test("ready city poster uses a strong road field and masks its footer", () => {
   expect(homepageCss).toContain(`.homepage-poster-background img {
   position: absolute;
   z-index: 1;
@@ -52,7 +52,25 @@ Deno.test("ready city poster keeps its footer outside the homepage composition",
   width: 100%;
   height: 120%;`);
   expect(homepageCss).toContain("object-position: center top;");
+  expect(homepageCss).toContain("mix-blend-mode: multiply;");
+  expect(homepageCss).toContain(`-webkit-mask-image: linear-gradient(
+    to bottom,
+    #000 0%,
+    #000 65%,
+    rgb(0 0 0 / 0.78) 69%,
+    transparent 76%
+  );`);
+  expect(homepageCss).toContain(`mask-image: linear-gradient(
+    to bottom,
+    #000 0%,
+    #000 65%,
+    rgb(0 0 0 / 0.78) 69%,
+    transparent 76%
+  );`);
+  expect(homepageCss).toContain(
+    "linear-gradient(oklch(0.74 0.008 250 / 0.035) 1px, transparent 1px)",
+  );
   expect(homepageCss).toContain(`.homepage-poster-background[data-ready="true"] img {
-  opacity: 0.78;
+  opacity: 0.96;
 }`);
 });
