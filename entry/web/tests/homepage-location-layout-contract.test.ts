@@ -67,8 +67,7 @@ Deno.test("desktop location status reserves space between footer controls", () =
 
 Deno.test("poster attribution remains above the ready controls at tablet and mobile widths", () => {
   expect(homepageCss).toContain(`.homepage-location-attribution {
-  flex: 0 1 auto;
-  min-width: 0;
+  flex: 0 0 auto;
   color: var(--text-secondary);
   font: inherit;
   font-size: 0.54rem;`);

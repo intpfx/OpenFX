@@ -281,8 +281,7 @@ textarea {
 }
 
 .homepage-location-attribution {
-  flex: 0 1 auto;
-  min-width: 0;
+  flex: 0 0 auto;
   color: var(--text-secondary);
   font: inherit;
   font-size: 0.54rem;
