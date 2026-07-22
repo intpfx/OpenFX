@@ -11,6 +11,14 @@ import type {
 } from "../../../domains/map-poster/src/types.ts";
 
 const NOMINATIM_URL = "https://nominatim.openstreetmap.org/search";
+const NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse";
+const REVERSE_CITY_KEYS = [
+  "city",
+  "town",
+  "municipality",
+  "village",
+  "county",
+] as const;
 const DEFAULT_DISTANCE_METERS = 4_000;
 const MIN_DISTANCE_METERS = 4_000;
 const MAX_DISTANCE_METERS = 12_000;
@@ -29,6 +37,11 @@ const KNOWN_PLACE_COORDS = new Map<string, Coord>([
 ]);
 
 type FetchLike = typeof fetch;
+
+export type MapPosterResolvedPlace = {
+  city: string;
+  country: string;
+};
 
 export type MapPosterRenderRequest = {
   city?: unknown;
@@ -53,6 +66,7 @@ export type MapPosterRenderResult = {
   city: string;
   country: string;
   center: Coord;
+  place?: MapPosterResolvedPlace;
   stats: {
     roads: number;
     water: number;
@@ -290,11 +304,59 @@ async function geocodePlace(
   return { lat, lon };
 }
 
+function readAddressText(address: Record<string, unknown>, key: string) {
+  const value = address[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function resolveReverseAddress(value: unknown): MapPosterResolvedPlace | undefined {
+  if (!value || typeof value !== "object") return undefined;
+
+  const addressValue = (value as { address?: unknown }).address;
+  if (!addressValue || typeof addressValue !== "object") return undefined;
+
+  const address = addressValue as Record<string, unknown>;
+  const city = REVERSE_CITY_KEYS
+    .map((key) => readAddressText(address, key))
+    .find(Boolean) ?? "";
+  const country = readAddressText(address, "country");
+
+  if (!city || !country) return undefined;
+  return { city, country };
+}
+
+async function reverseGeocodePlace(
+  center: Coord,
+  fetcher: FetchLike = fetch,
+): Promise<MapPosterResolvedPlace | undefined> {
+  const url = new URL(NOMINATIM_REVERSE_URL);
+  url.searchParams.set("format", "jsonv2");
+  url.searchParams.set("lat", String(center.lat));
+  url.searchParams.set("lon", String(center.lon));
+  url.searchParams.set("zoom", "10");
+  url.searchParams.set("addressdetails", "1");
+
+  try {
+    const response = await fetcher(url, {
+      headers: {
+        "Accept": "application/json",
+        "User-Agent": "OpenFX-MapPoster-Web/0.1 (github.com/intpfx)",
+      },
+      signal: AbortSignal.timeout(12_000),
+    });
+    if (!response.ok) return undefined;
+    return resolveReverseAddress(await response.json());
+  } catch {
+    return undefined;
+  }
+}
+
 export async function createMapPoster(
   input: MapPosterRenderRequest,
   deps: {
     fetcher?: FetchLike;
     geocode?: (city: string, country: string) => Promise<Coord>;
+    reverseGeocode?: (center: Coord) => Promise<MapPosterResolvedPlace | undefined>;
     fetchData?: (center: Coord, distanceMeters: number) => Promise<FetchResult>;
     render?: typeof renderSvg;
   } = {},
@@ -305,7 +367,23 @@ export async function createMapPoster(
   const fetchData = deps.fetchData ?? fetchMapData;
   const render = deps.render ?? renderSvg;
   const center = options.directCenter ?? await geocode(options.city, options.country);
-  const data = limitMapData(await fetchData(center, options.distanceMeters));
+  const shouldResolvePlace = Boolean(
+    options.directCenter && !options.displayCity && !options.displayCountry,
+  );
+  const reverseGeocode = deps.reverseGeocode ??
+    ((point: Coord) => reverseGeocodePlace(point, deps.fetcher));
+  const placePromise = shouldResolvePlace
+    ? reverseGeocode(center).catch(() => undefined)
+    : Promise.resolve(undefined);
+  const [rawData, place] = await Promise.all([
+    fetchData(center, options.distanceMeters),
+    placePromise,
+  ]);
+  const data = limitMapData(rawData);
+  const displayCity = options.displayCity ??
+    (options.directCenter ? place?.city ?? "LOCAL AREA" : undefined);
+  const displayCountry = options.displayCountry ??
+    (options.directCenter ? place?.country ?? "OPENSTREETMAP" : undefined);
   const svg = render(
     data,
     center,
@@ -315,8 +393,8 @@ export async function createMapPoster(
     {
       city: options.city,
       country: options.country,
-      displayCity: options.displayCity,
-      displayCountry: options.displayCountry,
+      displayCity,
+      displayCountry,
       distanceMeters: options.distanceMeters,
     },
   );
@@ -331,6 +409,7 @@ export async function createMapPoster(
     city: options.city,
     country: options.country,
     center,
+    place,
     stats: {
       roads: data.roads.length,
       water: data.water.length,
