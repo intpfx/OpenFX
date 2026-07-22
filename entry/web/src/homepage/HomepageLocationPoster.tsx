@@ -52,6 +52,7 @@ export function HomepageLocationPosterView(
   props: HomepageLocationPosterViewProps,
 ) {
   const isPermissionGate = shouldFocusLocationPoster(props.state);
+  const gateVisible = isPermissionGate && !props.suspended;
   const shouldShowPoster = Boolean(props.posterUrl) &&
     props.state !== "denied" &&
     props.state !== "unavailable" &&
@@ -63,7 +64,7 @@ export function HomepageLocationPosterView(
     ? (
       <a
         className={`homepage-poster-attribution${
-          isPermissionGate ? " homepage-location-gate-attribution" : ""
+          gateVisible ? " homepage-location-gate-attribution" : ""
         }`}
         href="https://www.openstreetmap.org/copyright"
         rel="noreferrer"
@@ -86,9 +87,9 @@ export function HomepageLocationPosterView(
           : null}
       </div>
 
-      {!isPermissionGate ? attribution : null}
+      {!gateVisible ? attribution : null}
 
-      {props.suspended ? null : isPermissionGate
+      {props.suspended ? null : gateVisible
         ? (
           <section
             aria-labelledby="homepageLocationTitle"

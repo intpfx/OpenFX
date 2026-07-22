@@ -151,3 +151,22 @@ Deno.test("permission dialog owns the single retained-poster attribution", () =>
   expect(dialogStart).toBeLessThan(attribution);
   expect(dialogEnd).toBeGreaterThan(attribution);
 });
+
+Deno.test("suspended permission request keeps its retained-poster attribution outside hidden controls", () => {
+  const html = renderToStaticMarkup(
+    <HomepageLocationPosterView
+      failure={null}
+      place={{ city: "Shanghai", country: "China" }}
+      posterUrl="blob:openfx-poster"
+      state="requesting"
+      suspended
+      onAllow={noop}
+      onDismiss={noop}
+      onRetry={noop}
+    />,
+  );
+
+  expect(html.match(/© OpenStreetMap contributors/g)?.length).toBe(1);
+  expect(html).not.toContain('role="dialog"');
+  expect(html).not.toContain("homepage-location-gate-attribution");
+});
