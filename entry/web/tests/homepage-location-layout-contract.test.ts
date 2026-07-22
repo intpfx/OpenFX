@@ -66,6 +66,12 @@ Deno.test("desktop location status reserves space between footer controls", () =
 });
 
 Deno.test("poster attribution remains above the ready controls at tablet and mobile widths", () => {
+  expect(homepageCss).toContain(
+    `.homepage-location-capsule.homepage-location-gate .homepage-location-gate-attribution {
+  position: absolute;
+  bottom: calc(100% + 0.55rem);
+}`,
+  );
   expect(homepageCss).toContain(`.homepage-poster-attribution {
     bottom: calc(max(1.4rem, env(safe-area-inset-bottom)) + 6.8rem);
   }`);

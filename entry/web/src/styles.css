@@ -291,6 +291,11 @@ textarea {
   outline-offset: 2px;
 }
 
+.homepage-location-capsule.homepage-location-gate .homepage-location-gate-attribution {
+  position: absolute;
+  bottom: calc(100% + 0.55rem);
+}
+
 .homepage-location-status button {
   min-height: 28px;
   border: 1px solid var(--border);

@@ -118,7 +118,11 @@ function reverseGeocodeKey(center: Coord) {
 }
 
 function searchKey(city: string, country: string) {
-  return `search:${city.trim().toLowerCase()}:${country.trim().toLowerCase()}`;
+  return JSON.stringify([
+    "search",
+    city.trim().toLowerCase(),
+    country.trim().toLowerCase(),
+  ]);
 }
 
 function delay(milliseconds: number) {

@@ -128,3 +128,26 @@ Deno.test("location poster keeps one attribution while a retained poster is rend
   expect(html).toContain("正在生成城市背景");
   expect(html.match(/© OpenStreetMap contributors/g)?.length).toBe(1);
 });
+
+Deno.test("permission dialog owns the single retained-poster attribution", () => {
+  const html = renderToStaticMarkup(
+    <HomepageLocationPosterView
+      failure={null}
+      place={{ city: "Shanghai", country: "China" }}
+      posterUrl="blob:openfx-poster"
+      state="requesting"
+      suspended={false}
+      onAllow={noop}
+      onDismiss={noop}
+      onRetry={noop}
+    />,
+  );
+  const dialogStart = html.indexOf('role="dialog"');
+  const attribution = html.indexOf("© OpenStreetMap contributors");
+  const dialogEnd = html.indexOf("</section>", attribution);
+
+  expect(html.match(/© OpenStreetMap contributors/g)?.length).toBe(1);
+  expect(html).toContain("homepage-location-gate-attribution");
+  expect(dialogStart).toBeLessThan(attribution);
+  expect(dialogEnd).toBeGreaterThan(attribution);
+});

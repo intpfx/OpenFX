@@ -59,6 +59,20 @@ export function HomepageLocationPosterView(
   const cityLabel = props.place?.city
     ? `背景 · ${props.place.city}`
     : "背景 · 已按当前位置生成";
+  const attribution = shouldShowPoster
+    ? (
+      <a
+        className={`homepage-poster-attribution${
+          isPermissionGate ? " homepage-location-gate-attribution" : ""
+        }`}
+        href="https://www.openstreetmap.org/copyright"
+        rel="noreferrer"
+        target="_blank"
+      >
+        © OpenStreetMap contributors
+      </a>
+    )
+    : null;
 
   return (
     <div className="homepage-location-poster">
@@ -72,18 +86,7 @@ export function HomepageLocationPosterView(
           : null}
       </div>
 
-      {shouldShowPoster
-        ? (
-          <a
-            className="homepage-poster-attribution"
-            href="https://www.openstreetmap.org/copyright"
-            rel="noreferrer"
-            target="_blank"
-          >
-            © OpenStreetMap contributors
-          </a>
-        )
-        : null}
+      {!isPermissionGate ? attribution : null}
 
       {props.suspended ? null : isPermissionGate
         ? (
@@ -106,6 +109,7 @@ export function HomepageLocationPosterView(
                   : "设备定位仅用于生成城市海报，不保存原始位置。"}
               </span>
             </div>
+            {attribution}
             <button
               className="homepage-location-dismiss"
               type="button"

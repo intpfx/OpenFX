@@ -346,6 +346,40 @@ Deno.test("map poster Nominatim broker prunes TTL entries, evicts LRU entries, a
   expect(fetchCalls).toBe(5);
 });
 
+Deno.test("map poster Nominatim search cache keys preserve city and country tuple boundaries", async () => {
+  const queries: string[] = [];
+  let now = 0;
+  const broker = createNominatimService({
+    searchEndpoint: new URL("https://geo.openfx.example/search"),
+    now: () => now,
+    sleep: (milliseconds) => {
+      now += milliseconds;
+      return Promise.resolve();
+    },
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      queries.push(url.searchParams.get("q") ?? "");
+      return Promise.resolve(
+        new Response(
+          JSON.stringify([
+            { lat: "31.2304", lon: "121.4737" },
+          ]),
+          { headers: { "content-type": "application/json" } },
+        ),
+      );
+    },
+  });
+
+  await expect(Promise.all([
+    broker.search("AB:C", "DE"),
+    broker.search("AB", "C:DE"),
+  ])).resolves.toEqual([
+    { lat: 31.2304, lon: 121.4737 },
+    { lat: 31.2304, lon: 121.4737 },
+  ]);
+  expect(queries).toEqual(["AB:C, DE", "AB, C:DE"]);
+});
+
 Deno.test("map poster keeps real coordinates when reverse lookup fails", async () => {
   let renderedLabels:
     | { displayCity?: string; displayCountry?: string }
