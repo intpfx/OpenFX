@@ -28,13 +28,19 @@ Deno.test("tablet location states clear the command bar", () => {
   }`);
 });
 
-Deno.test("mobile location pills reserve their upward height above both footer rows", () => {
-  // 5.5rem clears the command-row placement only. The pill grows upward from its
-  // bottom edge, so another 2.75rem reserves the 20px version row, 12px wrap gap,
-  // and 12px safety separation proven necessary at 390x844.
+Deno.test("mobile location states collapse the empty hint and clear the two-row footer", () => {
+  expect(homepageCss).toContain(
+    `.homepage-page:has(.homepage-location-status) .control-hint,
+  .homepage-page:has(.homepage-location-progress) .control-hint {
+    display: none;
+  }`,
+  );
+
+  // With the state-scoped empty hint removed, 5.5rem clears the remaining build row,
+  // 12px wrap gap, 44px command row, and a final safety gap above the footer.
   expect(homepageCss).toContain(`.homepage-location-status,
   .homepage-location-progress {
-    bottom: calc(max(0.72rem, env(safe-area-inset-bottom)) + 8.25rem);
+    bottom: calc(max(0.72rem, env(safe-area-inset-bottom)) + 5.5rem);
     max-width: calc(100vw - 2rem);
   }`);
 });
