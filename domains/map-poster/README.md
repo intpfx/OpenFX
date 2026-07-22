@@ -42,14 +42,18 @@ OpenFX Web 首页的 Map Poster
 `city`、`town`、`municipality`、`village`、`county`。反向解析失败不会改变地图中心，渲染器使用
 中性标题，响应也不会伪造城市名。
 
-生产环境必须设置 `OPENFX_MAP_POSTER_NOMINATIM_REVERSE_URL` 为自托管或已签约容量服务的
-HTTPS reverse
+生产环境必须同时设置 `OPENFX_MAP_POSTER_NOMINATIM_SEARCH_URL` 和
+`OPENFX_MAP_POSTER_NOMINATIM_REVERSE_URL`，分别指向自托管或已签约容量服务的 HTTPS search
+/ reverse
 endpoint（不得携带查询串、片段或嵌入式凭据）。只有本地/开发环境在未配置时才使用官方
-Nominatim endpoint；生产环境未配置则跳过 reverse
-lookup，避免对公共服务产生未声明的流量。 每个服务 isolate
-将请求限制为每秒最多一次，并在内存中按约 1 公里网格缓存成功的城市标签 30
-分钟；缓存不会写入文件、数据库、cookie 或浏览器存储，且不同 isolate
-不共享，因此部署方仍须 为自身流量配置足够的上游容量。Overpass
+Nominatim endpoint；生产环境未配置则跳过相应
+lookup，避免对公共服务产生未声明的流量。每个服务 isolate
+将搜索与反向解析合计限制为每秒最多一次，最多保留 32
+个排队/进行中的唯一请求；队列满时会直接
+返回不可用而不发起上游请求。服务仅在内存中保留最多 256 条、30
+分钟过期的查询结果；反向解析键 按约 1 公里网格取整，缓存不会写入文件、数据库、cookie
+或浏览器存储，且不同 isolate 不共享，
+因此部署方仍须为自身流量配置足够的上游容量。Overpass
 地图数据使用也受其单独的上游政策约束。
 
 OpenFX 不持久化坐标或解析结果；坐标会用于上游反向地理编码和 Overpass

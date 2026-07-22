@@ -5,23 +5,19 @@ import {
   createElement as h,
   type KeyboardEvent,
   type RefObject,
-  useCallback,
   useEffect,
   useRef,
   useState,
 } from "react";
 
 import {
-  createHomepageLocationRequestGuard,
-  createHomepagePosterRenderRequest,
-  getGeolocationFailure,
+  createHomepageLocationPosterController,
+  type HomepagePosterPlace,
+} from "./location-poster-controller.ts";
+import {
   type HomepageLocationFailure,
   type HomepageLocationPermission,
   type HomepageLocationPosterState,
-  type HomepageLocationRequest,
-  isCityLevelPosition,
-  replaceHomepagePosterObjectUrl,
-  resolveInitialLocationPosterState,
   shouldFocusLocationPoster,
 } from "./location-poster.ts";
 
@@ -32,17 +28,6 @@ declare global {
     }
   }
 }
-
-export type HomepagePosterPlace = {
-  city: string;
-  country: string;
-};
-
-type HomepagePosterResponse = {
-  ok: true;
-  svg: string;
-  place?: HomepagePosterPlace;
-};
 
 type HomepageLocationPosterViewProps = {
   state: HomepageLocationPosterState;
@@ -86,6 +71,19 @@ export function HomepageLocationPosterView(
           ? <img alt="" decoding="async" src={props.posterUrl ?? undefined} />
           : null}
       </div>
+
+      {shouldShowPoster
+        ? (
+          <a
+            className="homepage-poster-attribution"
+            href="https://www.openstreetmap.org/copyright"
+            rel="noreferrer"
+            target="_blank"
+          >
+            © OpenStreetMap contributors
+          </a>
+        )
+        : null}
 
       {props.suspended ? null : isPermissionGate
         ? (
@@ -134,14 +132,6 @@ export function HomepageLocationPosterView(
           >
             <strong>{cityLabel}</strong>
             <span>Map Poster</span>
-            <a
-              className="homepage-location-attribution"
-              href="https://www.openstreetmap.org/copyright"
-              rel="noreferrer"
-              target="_blank"
-            >
-              © OpenStreetMap contributors
-            </a>
             <button type="button" onClick={props.onRetry}>重新定位</button>
           </section>
         )
@@ -248,157 +238,44 @@ export function HomepageLocationPoster(props: {
   const [failure, setFailure] = useState<HomepageLocationFailure | null>(null);
   const [posterUrl, setPosterUrl] = useState<string | null>(null);
   const [place, setPlace] = useState<HomepagePosterPlace | null>(null);
-  const posterUrlRef = useRef<string | null>(null);
-  const requestGuardRef = useRef(createHomepageLocationRequestGuard());
+  const controllerRef = useRef<
+    ReturnType<
+      typeof createHomepageLocationPosterController
+    > | null
+  >(null);
   const primaryButtonRef = useRef<HTMLButtonElement | null>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const wasFocusedRef = useRef(false);
 
-  const replacePosterUrl = useCallback((nextUrl: string | null) => {
-    posterUrlRef.current = replaceHomepagePosterObjectUrl(
-      posterUrlRef.current,
-      nextUrl,
-      URL.revokeObjectURL,
-    );
-    setPosterUrl(nextUrl);
-  }, []);
-
-  const clearPoster = useCallback(() => {
-    replacePosterUrl(null);
-    setPlace(null);
-  }, [replacePosterUrl]);
-
-  const locateAndRender = useCallback(async (
-    permission: HomepageLocationPermission,
-    request: HomepageLocationRequest,
-  ) => {
-    const isCurrent = () => requestGuardRef.current.isCurrent(request);
-    if (!isCurrent()) return;
-    setFailure(null);
-    setState(permission === "granted" ? "rendering" : "requesting");
-
-    let position: GeolocationPosition;
-    try {
-      position = await requestDevicePosition();
-    } catch (error) {
-      if (!isCurrent()) return;
-      const code = typeof error === "object" && error && "code" in error
-        ? Number((error as { code: unknown }).code)
-        : 2;
-      const nextFailure = getGeolocationFailure(code);
-      clearPoster();
-      setFailure(nextFailure);
-      setState(nextFailure === "denied" ? "denied" : "error");
-      return;
-    }
-
-    if (!isCurrent()) return;
-    if (!isCityLevelPosition({ accuracy: position.coords.accuracy })) {
-      clearPoster();
-      setFailure("low-accuracy");
-      setState("error");
-      return;
-    }
-
-    if (!isCurrent()) return;
-    setState("rendering");
-
-    try {
-      const response = await fetch("/api/map-poster/render", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        signal: request.signal,
-        body: JSON.stringify(createHomepagePosterRenderRequest({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-        })),
-      });
-      if (!isCurrent()) return;
-      const result = await response.json() as Partial<HomepagePosterResponse>;
-      if (!isCurrent()) return;
-      if (!response.ok || result.ok !== true || typeof result.svg !== "string") {
-        throw new Error("map_render_failed");
-      }
-
-      if (!isCurrent()) return;
-      const nextUrl = URL.createObjectURL(
-        new Blob([result.svg], { type: "image/svg+xml" }),
-      );
-      if (!isCurrent()) {
-        URL.revokeObjectURL(nextUrl);
-        return;
-      }
-
-      replacePosterUrl(nextUrl);
-      setPlace(result.place ?? null);
-      setState("ready");
-    } catch {
-      if (!isCurrent()) return;
-      clearPoster();
-      setFailure("render-failed");
-      setState("error");
-    }
-  }, [clearPoster, replacePosterUrl]);
-
-  const startLocationRequest = useCallback(async () => {
-    if (state === "denied") return;
-
-    const request = requestGuardRef.current.begin();
-    const isCurrent = () => requestGuardRef.current.isCurrent(request);
-
-    if (!globalThis.isSecureContext || !navigator.geolocation) {
-      if (!isCurrent()) return;
-      clearPoster();
-      setFailure("unavailable");
-      setState("unavailable");
-      return;
-    }
-
-    const permission = await readLocationPermission();
-    if (!isCurrent()) return;
-    if (permission === "denied") {
-      clearPoster();
-      setFailure("denied");
-      setState("denied");
-      return;
-    }
-
-    await locateAndRender(permission, request);
-  }, [clearPoster, locateAndRender, state]);
+  if (!controllerRef.current) {
+    controllerRef.current = createHomepageLocationPosterController({
+      isSecureContext: () => globalThis.isSecureContext,
+      hasGeolocation: () => Boolean(navigator.geolocation),
+      readPermission: readLocationPermission,
+      requestPosition: requestDevicePosition,
+      fetchPoster: async (request, signal) => {
+        return await fetch("/api/map-poster/render", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          signal,
+          body: JSON.stringify(request),
+        });
+      },
+      createObjectUrl: (svg) =>
+        URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" })),
+      revokeObjectUrl: URL.revokeObjectURL,
+      onState: setState,
+      onFailure: setFailure,
+      onPosterUrl: setPosterUrl,
+      onPlace: setPlace,
+    });
+  }
+  const controller = controllerRef.current;
 
   useEffect(() => {
-    const request = requestGuardRef.current.begin();
-    const isCurrent = () => requestGuardRef.current.isCurrent(request);
-
-    void (async () => {
-      if (!globalThis.isSecureContext || !navigator.geolocation) {
-        if (!isCurrent()) return;
-        clearPoster();
-        setFailure("unavailable");
-        setState("unavailable");
-        return;
-      }
-
-      const permission = await readLocationPermission();
-      if (!isCurrent()) return;
-      setState(resolveInitialLocationPosterState(permission));
-      if (permission === "granted") {
-        await locateAndRender(permission, request);
-      } else if (permission === "denied") {
-        clearPoster();
-        setFailure("denied");
-      }
-    })();
-
-    return () => {
-      requestGuardRef.current.invalidate();
-      posterUrlRef.current = replaceHomepagePosterObjectUrl(
-        posterUrlRef.current,
-        null,
-        URL.revokeObjectURL,
-      );
-    };
-  }, [clearPoster, locateAndRender]);
+    void controller.initialize();
+    return () => controller.dispose();
+  }, [controller]);
 
   const focusMode = !props.suspended && shouldFocusLocationPoster(state);
 
@@ -431,10 +308,7 @@ export function HomepageLocationPoster(props: {
   }, [props.onFocusModeChange]);
 
   function dismiss() {
-    requestGuardRef.current.invalidate();
-    clearPoster();
-    setFailure(null);
-    setState("dismissed");
+    controller.dismiss();
   }
 
   return (
@@ -458,9 +332,9 @@ export function HomepageLocationPoster(props: {
         posterUrl={posterUrl}
         state={state}
         suspended={props.suspended}
-        onAllow={() => void startLocationRequest()}
+        onAllow={() => void controller.start()}
         onDismiss={dismiss}
-        onRetry={() => void startLocationRequest()}
+        onRetry={() => void controller.start()}
       />
     </div>
   );

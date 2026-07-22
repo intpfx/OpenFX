@@ -108,4 +108,23 @@ Deno.test("location poster suspension hides controls but preserves the backgroun
 
   expect(html).toContain('src="blob:openfx-poster"');
   expect(html).not.toContain("重新定位");
+  expect(html).toContain("© OpenStreetMap contributors");
+});
+
+Deno.test("location poster keeps one attribution while a retained poster is rendering", () => {
+  const html = renderToStaticMarkup(
+    <HomepageLocationPosterView
+      failure={null}
+      place={{ city: "Shanghai", country: "China" }}
+      posterUrl="blob:openfx-poster"
+      state="rendering"
+      suspended={false}
+      onAllow={noop}
+      onDismiss={noop}
+      onRetry={noop}
+    />,
+  );
+
+  expect(html).toContain("正在生成城市背景");
+  expect(html.match(/© OpenStreetMap contributors/g)?.length).toBe(1);
 });

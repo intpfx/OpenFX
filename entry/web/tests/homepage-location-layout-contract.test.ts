@@ -65,6 +65,21 @@ Deno.test("desktop location status reserves space between footer controls", () =
   }`);
 });
 
+Deno.test("poster attribution remains above the ready controls at tablet and mobile widths", () => {
+  expect(homepageCss).toContain(`.homepage-poster-attribution {
+    bottom: calc(max(1.4rem, env(safe-area-inset-bottom)) + 6.8rem);
+  }`);
+  expect(homepageCss).toContain(`.homepage-poster-attribution {
+    bottom: calc(max(0.72rem, env(safe-area-inset-bottom)) + 11.6rem);
+    font-size: 0.5rem;
+  }`);
+  expect(homepageCss).toContain(
+    `.homepage-page:has(.control-hint:not(:empty)) .homepage-poster-attribution {
+    bottom: calc(max(0.72rem, env(safe-area-inset-bottom)) + 14.5rem);
+  }`,
+  );
+});
+
 Deno.test("ready city poster uses a strong road field and masks its footer", () => {
   expect(homepageCss).toContain(`.homepage-poster-background img {
   position: absolute;

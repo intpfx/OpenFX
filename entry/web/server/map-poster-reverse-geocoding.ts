@@ -1,8 +1,11 @@
 import type { Coord } from "../../../domains/map-poster/src/types.ts";
 
+const OFFICIAL_NOMINATIM_SEARCH_URL = "https://nominatim.openstreetmap.org/search";
 const OFFICIAL_NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse";
 const REQUEST_INTERVAL_MS = 1_000;
 const CACHE_TTL_MS = 30 * 60 * 1_000;
+const MAX_CACHE_ENTRIES = 256;
+const MAX_QUEUED_REQUESTS = 32;
 
 type FetchLike = typeof fetch;
 
@@ -11,14 +14,22 @@ export type MapPosterResolvedPlace = {
   country: string;
 };
 
-type ReverseGeocodeEnvironment = Record<string, string | undefined>;
+type NominatimEnvironment = Record<string, string | undefined>;
 
-type ReverseGeocodeDependencies = {
-  endpoint?: URL;
+type NominatimDependencies = {
+  searchEndpoint?: URL;
+  reverseEndpoint?: URL;
   fetcher?: FetchLike;
   now?: () => number;
   sleep?: (milliseconds: number) => Promise<void>;
   cacheTtlMs?: number;
+  maxCacheEntries?: number;
+  maxQueuedRequests?: number;
+};
+
+type CacheEntry = {
+  expiresAt: number;
+  value: Coord | MapPosterResolvedPlace | null;
 };
 
 const REVERSE_CITY_KEYS = [
@@ -52,16 +63,12 @@ export function resolveReverseAddress(
   return { city, country };
 }
 
-export function isProductionEnvironment(
-  environment: ReverseGeocodeEnvironment,
-) {
+export function isProductionEnvironment(environment: NominatimEnvironment) {
   return Boolean(environment.DENO_DEPLOYMENT_ID?.trim()) ||
     environment.NODE_ENV?.trim().toLowerCase() === "production";
 }
 
-export function parseReverseGeocodeEndpoint(
-  value: string | undefined,
-): URL | undefined {
+export function parseNominatimEndpoint(value: string | undefined): URL | undefined {
   const configured = value?.trim();
   if (!configured) return undefined;
 
@@ -79,99 +86,194 @@ export function parseReverseGeocodeEndpoint(
   }
 }
 
-export function resolveReverseGeocodeEndpoint(
-  environment: ReverseGeocodeEnvironment,
-): URL | undefined {
-  const configured = environment.OPENFX_MAP_POSTER_NOMINATIM_REVERSE_URL;
-  if (configured?.trim()) return parseReverseGeocodeEndpoint(configured);
+export function resolveNominatimEndpoints(environment: NominatimEnvironment) {
+  const production = isProductionEnvironment(environment);
+  const searchConfigured = environment.OPENFX_MAP_POSTER_NOMINATIM_SEARCH_URL;
+  const reverseConfigured = environment.OPENFX_MAP_POSTER_NOMINATIM_REVERSE_URL;
 
-  if (isProductionEnvironment(environment)) return undefined;
-  return new URL(OFFICIAL_NOMINATIM_REVERSE_URL);
+  return {
+    search: searchConfigured?.trim()
+      ? parseNominatimEndpoint(searchConfigured)
+      : production
+      ? undefined
+      : new URL(OFFICIAL_NOMINATIM_SEARCH_URL),
+    reverse: reverseConfigured?.trim()
+      ? parseNominatimEndpoint(reverseConfigured)
+      : production
+      ? undefined
+      : new URL(OFFICIAL_NOMINATIM_REVERSE_URL),
+  };
+}
+
+// Backward-compatible narrow helpers keep endpoint policy tests readable.
+export const parseReverseGeocodeEndpoint = parseNominatimEndpoint;
+export function resolveReverseGeocodeEndpoint(environment: NominatimEnvironment) {
+  return resolveNominatimEndpoints(environment).reverse;
 }
 
 function reverseGeocodeKey(center: Coord) {
-  // About one kilometre: sufficient to deduplicate a city-background revisit
-  // without retaining the device's full-precision coordinates in memory.
-  return `${center.lat.toFixed(2)}:${center.lon.toFixed(2)}`;
+  // About one kilometre: enough to deduplicate a city-background revisit without
+  // retaining a device's full-precision location in an in-memory cache.
+  return `reverse:${center.lat.toFixed(2)}:${center.lon.toFixed(2)}`;
+}
+
+function searchKey(city: string, country: string) {
+  return `search:${city.trim().toLowerCase()}:${country.trim().toLowerCase()}`;
 }
 
 function delay(milliseconds: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
 }
 
-export function createReverseGeocodeService(
-  dependencies: ReverseGeocodeDependencies = {},
-) {
-  const endpoint = dependencies.endpoint;
+function addNominatimParameters(url: URL, parameters: Record<string, string>) {
+  for (const [key, value] of Object.entries(parameters)) {
+    url.searchParams.set(key, value);
+  }
+  return url;
+}
+
+export function createNominatimService(dependencies: NominatimDependencies = {}) {
+  const searchEndpoint = dependencies.searchEndpoint;
+  const reverseEndpoint = dependencies.reverseEndpoint;
   const fetcher = dependencies.fetcher ?? fetch;
   const now = dependencies.now ?? Date.now;
   const sleep = dependencies.sleep ?? delay;
   const cacheTtlMs = dependencies.cacheTtlMs ?? CACHE_TTL_MS;
-  const cache = new Map<string, { expiresAt: number; place: MapPosterResolvedPlace }>();
-  const pending = new Map<string, Promise<MapPosterResolvedPlace | undefined>>();
-  let queue = Promise.resolve();
+  const maxCacheEntries = dependencies.maxCacheEntries ?? MAX_CACHE_ENTRIES;
+  const maxQueuedRequests = dependencies.maxQueuedRequests ?? MAX_QUEUED_REQUESTS;
+  const cache = new Map<string, CacheEntry>();
+  const pending = new Map<string, Promise<CacheEntry["value"] | undefined>>();
+  let queue = Promise.resolve<unknown>(undefined);
   let nextRequestAt = 0;
 
-  const requestPlace = async (center: Coord) => {
-    if (!endpoint) return undefined;
+  const pruneExpiredCache = () => {
+    const currentTime = now();
+    for (const [key, entry] of cache) {
+      if (entry.expiresAt <= currentTime) cache.delete(key);
+    }
+  };
 
+  const readCached = (key: string) => {
+    pruneExpiredCache();
+    const entry = cache.get(key);
+    if (!entry) return undefined;
+    // Map insertion order is our LRU order; a read promotes the entry.
+    cache.delete(key);
+    cache.set(key, entry);
+    return entry.value;
+  };
+
+  const cacheValue = (key: string, value: CacheEntry["value"]) => {
+    pruneExpiredCache();
+    cache.delete(key);
+    cache.set(key, { value, expiresAt: now() + cacheTtlMs });
+    while (cache.size > maxCacheEntries) {
+      const oldest = cache.keys().next().value;
+      if (!oldest) break;
+      cache.delete(oldest);
+    }
+  };
+
+  const request = async <T extends CacheEntry["value"]>(
+    endpoint: URL,
+    parameters: Record<string, string>,
+    parse: (response: Response) => Promise<T | undefined>,
+  ) => {
     const waitMs = Math.max(nextRequestAt - now(), 0);
     if (waitMs > 0) await sleep(waitMs);
     nextRequestAt = Math.max(nextRequestAt, now()) + REQUEST_INTERVAL_MS;
 
-    const url = new URL(endpoint);
-    url.searchParams.set("format", "jsonv2");
-    url.searchParams.set("lat", String(center.lat));
-    url.searchParams.set("lon", String(center.lon));
-    url.searchParams.set("zoom", "10");
-    url.searchParams.set("addressdetails", "1");
-
     try {
-      const response = await fetcher(url, {
-        headers: {
-          "Accept": "application/json",
-          "User-Agent": "OpenFX-MapPoster-Web/0.1 (github.com/intpfx)",
+      const response = await fetcher(
+        addNominatimParameters(new URL(endpoint), parameters),
+        {
+          headers: {
+            "Accept": "application/json",
+            "User-Agent": "OpenFX-MapPoster-Web/0.1 (github.com/intpfx)",
+          },
+          signal: AbortSignal.timeout(12_000),
         },
-        signal: AbortSignal.timeout(12_000),
-      });
+      );
       if (!response.ok) return undefined;
-      return resolveReverseAddress(await response.json());
+      return await parse(response);
     } catch {
       return undefined;
     }
   };
 
-  const enqueue = (center: Coord) => {
-    const request = queue.then(() => requestPlace(center));
-    queue = request.then(() => undefined, () => undefined);
-    return request;
+  const enqueue = <T extends CacheEntry["value"]>(
+    key: string,
+    endpoint: URL | undefined,
+    parameters: Record<string, string>,
+    parse: (response: Response) => Promise<T | undefined>,
+  ) => {
+    if (!endpoint) return undefined;
+    const active = pending.get(key);
+    if (active) return active as Promise<T | undefined>;
+    if (pending.size >= maxQueuedRequests) return undefined;
+
+    const queued = queue.then(() => request(endpoint, parameters, parse));
+    queue = queued.then(() => undefined, () => undefined);
+    pending.set(key, queued);
+    void queued.finally(() => pending.delete(key));
+    return queued;
   };
 
   return {
-    async lookup(center: Coord): Promise<MapPosterResolvedPlace | undefined> {
-      if (!endpoint) return undefined;
-
+    async reverse(center: Coord): Promise<MapPosterResolvedPlace | undefined> {
       const key = reverseGeocodeKey(center);
-      const cached = cache.get(key);
-      if (cached && cached.expiresAt > now()) return cached.place;
-      if (cached) cache.delete(key);
+      const cached = readCached(key);
+      if (cached !== undefined) return cached as MapPosterResolvedPlace | undefined;
 
-      const active = pending.get(key);
-      if (active) return await active;
+      const result = await enqueue(
+        key,
+        reverseEndpoint,
+        {
+          format: "jsonv2",
+          lat: String(center.lat),
+          lon: String(center.lon),
+          zoom: "10",
+          addressdetails: "1",
+        },
+        async (response) => resolveReverseAddress(await response.json()),
+      );
+      if (result !== undefined) cacheValue(key, result);
+      return result as MapPosterResolvedPlace | undefined;
+    },
+    async search(city: string, country: string): Promise<Coord | null | undefined> {
+      const key = searchKey(city, country);
+      const cached = readCached(key);
+      if (cached !== undefined) return cached as Coord | null;
 
-      const request = enqueue(center).then((place) => {
-        if (place) {
-          cache.set(key, { place, expiresAt: now() + cacheTtlMs });
-        }
-        return place;
-      }).finally(() => pending.delete(key));
-      pending.set(key, request);
-      return await request;
+      const result = await enqueue(
+        key,
+        searchEndpoint,
+        { format: "jsonv2", limit: "1", q: `${city}, ${country}` },
+        async (response) => {
+          const data = await response.json() as { lat?: string; lon?: string }[];
+          const first = data[0];
+          const lat = Number.parseFloat(first?.lat ?? "");
+          const lon = Number.parseFloat(first?.lon ?? "");
+          return Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : null;
+        },
+      );
+      if (result !== undefined) cacheValue(key, result);
+      return result as Coord | null | undefined;
     },
   };
 }
 
-function readRuntimeEnvironment(): ReverseGeocodeEnvironment {
+export function createReverseGeocodeService(
+  dependencies: Omit<NominatimDependencies, "searchEndpoint"> & { endpoint?: URL } = {},
+) {
+  const service = createNominatimService({
+    ...dependencies,
+    reverseEndpoint: dependencies.endpoint,
+  });
+  return { lookup: service.reverse };
+}
+
+function readRuntimeEnvironment(): NominatimEnvironment {
   try {
     return Deno.env.toObject();
   } catch {
@@ -179,6 +281,11 @@ function readRuntimeEnvironment(): ReverseGeocodeEnvironment {
   }
 }
 
-export const defaultReverseGeocodeService = createReverseGeocodeService({
-  endpoint: resolveReverseGeocodeEndpoint(readRuntimeEnvironment()),
+const runtimeEndpoints = resolveNominatimEndpoints(readRuntimeEnvironment());
+export const defaultNominatimService = createNominatimService({
+  searchEndpoint: runtimeEndpoints.search,
+  reverseEndpoint: runtimeEndpoints.reverse,
 });
+export const defaultReverseGeocodeService = {
+  lookup: defaultNominatimService.reverse,
+};

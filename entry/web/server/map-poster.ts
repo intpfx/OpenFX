@@ -10,11 +10,11 @@ import type {
   Theme,
 } from "../../../domains/map-poster/src/types.ts";
 import {
+  defaultNominatimService,
   defaultReverseGeocodeService,
   type MapPosterResolvedPlace,
 } from "./map-poster-reverse-geocoding.ts";
 
-const NOMINATIM_URL = "https://nominatim.openstreetmap.org/search";
 const DEFAULT_DISTANCE_METERS = 4_000;
 const MIN_DISTANCE_METERS = 4_000;
 const MAX_DISTANCE_METERS = 12_000;
@@ -31,8 +31,6 @@ const KNOWN_PLACE_COORDS = new Map<string, Coord>([
   ["dubai::united arab emirates", { lat: 25.2048, lon: 55.2708 }],
   ["barcelona::spain", { lat: 41.3874, lon: 2.1686 }],
 ]);
-
-type FetchLike = typeof fetch;
 
 export type { MapPosterResolvedPlace } from "./map-poster-reverse-geocoding.ts";
 
@@ -258,49 +256,23 @@ function normalizeInput(input: MapPosterRenderRequest) {
 async function geocodePlace(
   city: string,
   country: string,
-  fetcher: FetchLike = fetch,
 ): Promise<Coord> {
   const knownCoord = KNOWN_PLACE_COORDS.get(placeKey(city, country));
   if (knownCoord) return knownCoord;
 
-  const url = new URL(NOMINATIM_URL);
-  url.searchParams.set("format", "jsonv2");
-  url.searchParams.set("limit", "1");
-  url.searchParams.set("q", `${city}, ${country}`);
-
-  let response: Response;
-  try {
-    response = await fetcher(url, {
-      headers: {
-        "Accept": "application/json",
-        "User-Agent": "OpenFX-MapPoster-Web/0.1 (github.com/intpfx)",
-      },
-      signal: AbortSignal.timeout(12_000),
-    });
-  } catch {
+  const result = await defaultNominatimService.search(city, country);
+  if (result === undefined) {
     throw new MapPosterInputError("geocoding_unavailable", 502);
   }
-
-  if (!response.ok) {
-    throw new MapPosterInputError("geocoding_unavailable", 502);
-  }
-
-  const data = await response.json() as { lat?: string; lon?: string }[];
-  const first = data[0];
-  const lat = Number.parseFloat(first?.lat ?? "");
-  const lon = Number.parseFloat(first?.lon ?? "");
-
-  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+  if (result === null) {
     throw new MapPosterInputError("place_not_found", 404);
   }
-
-  return { lat, lon };
+  return result;
 }
 
 export async function createMapPoster(
   input: MapPosterRenderRequest,
   deps: {
-    fetcher?: FetchLike;
     geocode?: (city: string, country: string) => Promise<Coord>;
     reverseGeocode?: (center: Coord) => Promise<MapPosterResolvedPlace | undefined>;
     fetchData?: (center: Coord, distanceMeters: number) => Promise<FetchResult>;
@@ -309,7 +281,7 @@ export async function createMapPoster(
 ): Promise<MapPosterRenderResult> {
   const options = normalizeInput(input);
   const geocode = deps.geocode ??
-    ((city, country) => geocodePlace(city, country, deps.fetcher));
+    ((city, country) => geocodePlace(city, country));
   const fetchData = deps.fetchData ?? fetchMapData;
   const render = deps.render ?? renderSvg;
   const center = options.directCenter ?? await geocode(options.city, options.country);

@@ -79,19 +79,20 @@ Transition，并保持所有卡片完整不透明。图片必须延迟加载、�
 链接；它是背景数据的 来源归属，不显示海报标题、坐标或海报页脚。
 
 OpenFX 不会把经纬度、城市名、SVG 或授权选择持久化到浏览器存储、URL、cookie 或数据库。
-经纬度只在当前页面和请求中使用：会发送到 OpenFX 渲染接口，并用于上游 Nominatim
-反向解析和 Overpass 地图数据请求。为遵守 Nominatim
-频率要求并避免同一城市背景反复请求，当前服务 isolate 仅保留按约 1 公里网格键控、30
-分钟过期的内存城市标签缓存；它不写入持久化存储， 不同 isolate 之间也不共享。每个 isolate
-对 Nominatim 最多每秒发起一个请求；第三方服务的
+经纬度只在当前页面和请求中使用：会发送到 OpenFX 渲染接口，并用于上游 Nominatim 搜索、
+反向解析和 Overpass 地图数据请求。为遵守 Nominatim 频率要求并避免重复请求，当前服务
+isolate 仅保留按查询键控、30 分钟过期的内存结果缓存；坐标 反向解析键只保留约 1
+公里网格精度，不写入持久化存储，不同 isolate 之间也不共享。每个 isolate 对 Nominatim
+搜索和反向解析合计最多每秒发起一个请求；第三方服务的
 日志与保留规则以其自身政策为准。未授权和失败状态继续使用现有中性网格背景，不得用东京或其他
 预设城市冒充访问者位置。
 
-`OPENFX_MAP_POSTER_NOMINATIM_REVERSE_URL` 可配置反向地理编码服务的 HTTPS endpoint（例如
-自托管或已签约的容量服务，必须不含查询串、片段或嵌入式凭据）。本地/开发环境未配置时才使用
-官方 Nominatim reverse
-endpoint；生产环境未配置时会跳过反向解析并保持中性城市标题，绝不把 请求悄悄发送到公共
-Nominatim。生产部署必须显式配置该变量并确保服务容量与使用条款匹配。
+`OPENFX_MAP_POSTER_NOMINATIM_SEARCH_URL` 与 `OPENFX_MAP_POSTER_NOMINATIM_REVERSE_URL`
+可分别配置地点搜索和反向地理编码服务的 HTTPS
+endpoint（例如自托管或已签约的容量服务，必须不含查询串、片段或嵌入式凭据）。本地/开发环境未
+配置时才使用官方 Nominatim
+endpoint；生产环境任一未配置时会跳过相应查询，绝不把请求悄悄发送 到公共
+Nominatim。生产部署必须显式配置两者并确保服务容量与使用条款匹配。
 
 窄屏把状态胶囊排列在项目命令条上方；`prefers-reduced-motion: reduce`
 会关闭背景淡入、胶囊位移和等待脉冲。
@@ -130,6 +131,8 @@ Web 页底部会展示构建版本。`deno task build` 会自动补齐：
 - `OPENFX_ADMIN_KEY` — 管理控制台登录密钥；Deno Deploy 生产环境必须显式配置
 - `OPENFX_NODE_CREDENTIAL_KEY` — 32 字节文本或 32 字节 Base64URL 密钥，用于 AES-256-GCM
   加密保存配对节点凭据
+- `OPENFX_MAP_POSTER_NOMINATIM_SEARCH_URL` — 生产环境必填的 HTTPS 地点搜索 endpoint
+- `OPENFX_MAP_POSTER_NOMINATIM_REVERSE_URL` — 生产环境必填的 HTTPS 反向地理编码 endpoint
 
 本地开发可以在启动命令前显式设置 `OPENFX_ADMIN_KEY`，获得跨重启稳定的登录 key；若还需
 保留已配对节点，应同时固定 32 字节的 `OPENFX_NODE_CREDENTIAL_KEY`。这些开发值不得提交为
