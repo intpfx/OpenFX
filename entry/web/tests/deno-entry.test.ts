@@ -6,6 +6,7 @@ import {
   readBoundedRequestBody,
   TRUSTED_REMOTE_ADDRESS_HEADER,
 } from "../server/runtime/deno-request.ts";
+import { createDenoServeOptions } from "../server/runtime/deno-serve-options.ts";
 import { assertSafeDenoBundle } from "../tools/verify-deno-entry.ts";
 import {
   createConsoleControlPlane,
@@ -13,6 +14,14 @@ import {
 } from "../server/console/control-plane.ts";
 
 const remoteInfo = (hostname: string) => ({ remoteAddr: { hostname } });
+
+Deno.test("Deno entry binds only the marked local runtime to IPv4 loopback", () => {
+  expect(createDenoServeOptions("/tmp/openfx-local-runtime")).toEqual({
+    hostname: "127.0.0.1",
+  });
+  expect(createDenoServeOptions("   ")).toEqual({});
+  expect(createDenoServeOptions(undefined)).toEqual({});
+});
 
 Deno.test("Deno entry rejects chunked bodies above 64 KiB before localFetch", async () => {
   let localFetchCalls = 0;
