@@ -2340,8 +2340,8 @@ textarea {
     max-width: calc(100vw - 2rem);
   }
 
-  .homepage-page:has(.control-hint[data-active="true"]:not(:empty)) .homepage-location-status,
-  .homepage-page:has(.control-hint[data-active="true"]:not(:empty)) .homepage-location-progress {
+  .homepage-page:has(.control-hint:not(:empty)) .homepage-location-status,
+  .homepage-page:has(.control-hint:not(:empty)) .homepage-location-progress {
     bottom: calc(max(0.72rem, env(safe-area-inset-bottom)) + 10.25rem);
   }
 

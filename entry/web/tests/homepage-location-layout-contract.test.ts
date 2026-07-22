@@ -42,14 +42,14 @@ Deno.test("mobile location states collapse the empty hint and clear the two-row 
   }`,
   );
   expect(homepageCss).toContain(
-    `.homepage-page:has(.control-hint[data-active="true"]:not(:empty)) .homepage-location-status,
-  .homepage-page:has(.control-hint[data-active="true"]:not(:empty)) .homepage-location-progress {
+    `.homepage-page:has(.control-hint:not(:empty)) .homepage-location-status,
+  .homepage-page:has(.control-hint:not(:empty)) .homepage-location-progress {
     bottom: calc(max(0.72rem, env(safe-area-inset-bottom)) + 10.25rem);
   }`,
   );
 
-  // The exact 390x844 capture shows that the collapsed two-row footer still needs
-  // another 2rem beyond 5.5rem so the pill bottom clears the build row plus safety.
+  // The non-empty selector also covers data-active="false" while the old aria-live
+  // text scrambles out; only the final inactive+empty state returns to 7.5rem.
   expect(homepageCss).toContain(`.homepage-location-status,
   .homepage-location-progress {
     bottom: calc(max(0.72rem, env(safe-area-inset-bottom)) + 7.5rem);
