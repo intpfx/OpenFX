@@ -55,6 +55,199 @@ textarea {
   margin: 0 auto;
   padding: 2.5rem 3rem 2rem;
   overflow: hidden;
+  isolation: isolate;
+}
+
+.homepage-page > .brand-zone,
+.homepage-page > .projects-zone,
+.homepage-page > .control-cluster {
+  position: relative;
+  z-index: 2;
+  transition: filter 0.32s ease, opacity 0.32s ease;
+}
+
+.homepage-page[data-location-focus="true"] > .brand-zone,
+.homepage-page[data-location-focus="true"] > .projects-zone,
+.homepage-page[data-location-focus="true"] > .control-cluster {
+  filter: blur(6px);
+  opacity: 0.46;
+}
+
+.homepage-location-poster,
+.homepage-location-controller {
+  display: contents;
+}
+
+.homepage-poster-background {
+  position: fixed;
+  z-index: 0;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.homepage-poster-background::before,
+.homepage-poster-background::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+}
+
+.homepage-poster-background::before {
+  z-index: 2;
+  background: oklch(0.985 0.002 250 / 0.76);
+}
+
+.homepage-poster-background::after {
+  z-index: 3;
+  background-image:
+    linear-gradient(oklch(0.88 0.005 260 / 0.24) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(0.88 0.005 260 / 0.24) 1px, transparent 1px);
+  background-position: -1px -1px;
+  background-size: 80px 80px;
+}
+
+.homepage-poster-background img {
+  position: absolute;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: grayscale(0.12) contrast(0.94);
+  opacity: 0;
+  transition: opacity 0.48s ease;
+}
+
+.homepage-poster-background[data-ready="true"] img {
+  opacity: 0.34;
+}
+
+.homepage-location-capsule {
+  position: fixed;
+  z-index: 80;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  border: 1px solid oklch(0.55 0.2 250 / 0.42);
+  border-radius: 999px;
+  background: oklch(0.99 0.003 250 / 0.97);
+  box-shadow:
+    0 18px 60px oklch(0.25 0.06 250 / 0.24),
+    0 0 0 5px oklch(0.55 0.2 250 / 0.09);
+  backdrop-filter: blur(18px);
+  transform: translateX(-50%);
+}
+
+.homepage-location-gate {
+  bottom: max(1.35rem, env(safe-area-inset-bottom));
+  width: min(760px, calc(100vw - 68px));
+  min-height: 58px;
+  gap: 0.6rem;
+  padding: 7px 8px 7px 20px;
+}
+
+.homepage-location-copy {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 auto;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 2px 10px;
+}
+
+.homepage-location-copy small {
+  color: var(--accent);
+  font-family: ui-monospace, "SFMono-Regular", monospace;
+  font-size: 0.5rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.homepage-location-copy strong,
+.homepage-location-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.homepage-location-copy strong {
+  font-size: 0.86rem;
+}
+
+.homepage-location-copy span {
+  grid-column: 1 / -1;
+  color: var(--text-secondary);
+  font-size: 0.64rem;
+}
+
+.homepage-location-primary,
+.homepage-location-dismiss,
+.homepage-location-status button {
+  flex: 0 0 auto;
+  min-height: 44px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.homepage-location-primary {
+  min-width: 150px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: white;
+  padding-inline: 1rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.homepage-location-primary:disabled {
+  background: transparent;
+  color: var(--accent);
+  cursor: wait;
+}
+
+.homepage-location-dismiss {
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  padding-inline: 0.55rem;
+  font-size: 0.66rem;
+}
+
+.homepage-location-primary:focus-visible,
+.homepage-location-dismiss:focus-visible,
+.homepage-location-status button:focus-visible {
+  outline: 2px solid oklch(0.55 0.2 250 / 0.5);
+  outline-offset: 2px;
+}
+
+.homepage-location-status,
+.homepage-location-progress {
+  bottom: max(1.4rem, env(safe-area-inset-bottom));
+  min-height: 42px;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 6px 8px 6px 14px;
+  color: var(--text-secondary);
+  font-family: ui-monospace, "SFMono-Regular", monospace;
+  font-size: 0.62rem;
+}
+
+.homepage-location-status strong {
+  color: var(--accent);
+}
+
+.homepage-location-status button {
+  min-height: 28px;
+  border: 1px solid var(--border);
+  background: oklch(1 0 0 / 0.7);
+  color: var(--text-secondary);
+  padding-inline: 0.65rem;
+  font: inherit;
+}
+
+.homepage-location-status.is-error strong {
+  color: var(--text-primary);
 }
 
 .brand-zone {
@@ -1939,6 +2132,11 @@ textarea {
     z-index: 30;
   }
 
+  .homepage-page > .control-cluster {
+    position: fixed;
+    z-index: 30;
+  }
+
   .control-status {
     flex: 1 1 100%;
     min-width: 0;
@@ -2051,6 +2249,50 @@ textarea {
   .proxy-footer-back,
   .proxy-footer-input,
   .proxy-footer-submit {
+    min-height: 44px;
+  }
+
+  .homepage-location-gate {
+    bottom: max(0.875rem, env(safe-area-inset-bottom));
+    width: calc(100vw - 28px);
+    gap: 0.35rem;
+    padding-left: 0.95rem;
+  }
+
+  .homepage-location-copy {
+    display: block;
+  }
+
+  .homepage-location-copy small,
+  .homepage-location-copy span {
+    display: none;
+  }
+
+  .homepage-location-copy strong {
+    display: block;
+    font-size: 0.72rem;
+  }
+
+  .homepage-location-primary {
+    min-width: 8.25rem;
+    padding-inline: 0.7rem;
+  }
+
+  .homepage-location-dismiss {
+    min-width: 44px;
+    overflow: hidden;
+    padding-inline: 0.4rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .homepage-location-status,
+  .homepage-location-progress {
+    bottom: calc(max(0.72rem, env(safe-area-inset-bottom)) + 3.5rem);
+    max-width: calc(100vw - 2rem);
+  }
+
+  .homepage-location-status button {
     min-height: 44px;
   }
 }
@@ -2799,6 +3041,15 @@ textarea {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .homepage-page > .brand-zone,
+  .homepage-page > .projects-zone,
+  .homepage-page > .control-cluster,
+  .homepage-poster-background img,
+  .homepage-location-capsule {
+    transition: none !important;
+    animation: none !important;
+  }
+
   .project-browser-shell,
   .project-card,
   .project-card::after,

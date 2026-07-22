@@ -32,6 +32,7 @@ import {
   shouldAnimateHomepageCards,
   shouldUseHomepageViewTransition,
 } from "./homepage/experience.ts";
+import { HomepageLocationPoster } from "./homepage/HomepageLocationPoster.tsx";
 import { ProjectCard } from "./homepage/ProjectCard.tsx";
 
 type UnlockRule = {
@@ -308,6 +309,7 @@ export function navigate(pathname: string) {
 }
 
 function BrandWord(props: {
+  interactionDisabled: boolean;
   lockWidthPx: number | null;
   onOpenData: (trigger: HTMLButtonElement) => void;
 }) {
@@ -316,16 +318,20 @@ function BrandWord(props: {
   } as CSSProperties);
 
   return (
-    <div className="brand-zone">
+    <div
+      aria-hidden={props.interactionDisabled ? true : undefined}
+      className="brand-zone"
+      inert={props.interactionDisabled ? true : undefined}
+    >
       <div className="brand-shell">
         <button
+          aria-label="打开数据面板"
           className="brand-word"
           data-brand="OpenFX"
           id="brandWord"
           style={style}
           type="button"
           onClick={(event) => props.onOpenData(event.currentTarget)}
-          aria-label="打开数据面板"
         >
           <span className="brand-text" id="brandText" />
         </button>
@@ -370,6 +376,7 @@ function Homepage() {
   const [proxyFrameUrl, setProxyFrameUrl] = useState("");
   const [messageContent, setMessageContent] = useState("");
   const [messageButtonText, setMessageButtonText] = useState("MESSAGE");
+  const [locationFocusActive, setLocationFocusActive] = useState(false);
 
   const isPanelOpen = activePanel !== null;
   const currentAccessKey = "";
@@ -908,14 +915,25 @@ function Homepage() {
   }, [status]);
 
   return (
-    <div className="page homepage-page">
+    <div
+      className="page homepage-page"
+      data-location-focus={locationFocusActive ? "true" : "false"}
+    >
+      <HomepageLocationPoster
+        fallbackFocusRef={brandWordRef}
+        suspended={isPanelOpen}
+        onFocusModeChange={setLocationFocusActive}
+      />
       <BrandWord
+        interactionDisabled={locationFocusActive}
         lockWidthPx={brandLockWidth}
         onOpenData={(trigger) => openProjectPanel("openfx-data", trigger)}
       />
 
       <div
+        aria-hidden={locationFocusActive ? true : undefined}
         className={`projects-zone${isPanelOpen ? " panel-active" : ""}`}
+        inert={locationFocusActive ? true : undefined}
       >
         {/* 卡片网格 — 面板打开时透明不可交互，但保留在 DOM 中维持 grid 布局 */}
         <div
@@ -1175,7 +1193,11 @@ function Homepage() {
           : null}
       </div>
 
-      <div className="control-cluster">
+      <div
+        aria-hidden={locationFocusActive ? true : undefined}
+        className="control-cluster"
+        inert={locationFocusActive ? true : undefined}
+      >
         <div className="control-status">
           <span
             className="control-hint"
