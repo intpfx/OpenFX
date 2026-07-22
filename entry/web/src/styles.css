@@ -2420,6 +2420,15 @@ textarea {
   .homepage-location-attribution {
     font-size: 0.48rem;
   }
+
+  .homepage-location-status:not(.is-error) > span {
+    display: none;
+  }
+
+  .homepage-location-status:not(.is-error) strong {
+    flex: 1 1 auto;
+    min-width: 5.5rem;
+  }
 }
 
 .project-card.clickable {

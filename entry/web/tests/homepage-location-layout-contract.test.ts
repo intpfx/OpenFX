@@ -78,6 +78,14 @@ Deno.test("poster attribution remains above the ready controls at tablet and mob
   text-overflow: ellipsis;
   white-space: nowrap;
 }`);
+  expect(homepageCss).toContain(`.homepage-location-status:not(.is-error) > span {
+    display: none;
+  }
+
+  .homepage-location-status:not(.is-error) strong {
+    flex: 1 1 auto;
+    min-width: 5.5rem;
+  }`);
   expect(homepageCss).toContain(
     `.homepage-location-capsule.homepage-location-gate .homepage-location-gate-attribution {
   position: absolute;
