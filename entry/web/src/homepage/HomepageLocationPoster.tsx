@@ -60,12 +60,16 @@ export function HomepageLocationPosterView(
   const cityLabel = props.place?.city
     ? `背景 · ${props.place.city}`
     : "背景 · 已按当前位置生成";
+  const readyStatusVisible = shouldShowPoster && props.state === "ready" &&
+    !props.suspended;
   const attribution = shouldShowPoster
     ? (
       <a
-        className={`homepage-poster-attribution${
-          gateVisible ? " homepage-location-gate-attribution" : ""
-        }`}
+        className={`${
+          readyStatusVisible
+            ? "homepage-location-attribution"
+            : "homepage-poster-attribution"
+        }${gateVisible ? " homepage-location-gate-attribution" : ""}`}
         href="https://www.openstreetmap.org/copyright"
         rel="noreferrer"
         target="_blank"
@@ -87,7 +91,7 @@ export function HomepageLocationPosterView(
           : null}
       </div>
 
-      {!gateVisible ? attribution : null}
+      {!gateVisible && !readyStatusVisible ? attribution : null}
 
       {props.suspended ? null : gateVisible
         ? (
@@ -137,6 +141,7 @@ export function HomepageLocationPosterView(
           >
             <strong>{cityLabel}</strong>
             <span>Map Poster</span>
+            {attribution}
             <button type="button" onClick={props.onRetry}>重新定位</button>
           </section>
         )

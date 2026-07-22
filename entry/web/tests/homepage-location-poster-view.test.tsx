@@ -51,6 +51,8 @@ Deno.test("location poster ready view exposes a compact city status", () => {
   expect(html).toContain("© OpenStreetMap contributors");
   expect(html).toContain('href="https://www.openstreetmap.org/copyright"');
   expect(html).toContain('target="_blank"');
+  expect(html).toContain("homepage-location-attribution");
+  expect(html).not.toContain("homepage-poster-attribution");
 });
 
 Deno.test("location poster failure never invents a city label", () => {
@@ -109,6 +111,7 @@ Deno.test("location poster suspension hides controls but preserves the backgroun
   expect(html).toContain('src="blob:openfx-poster"');
   expect(html).not.toContain("重新定位");
   expect(html).toContain("© OpenStreetMap contributors");
+  expect(html).toContain("homepage-poster-attribution");
 });
 
 Deno.test("location poster keeps one attribution while a retained poster is rendering", () => {
@@ -169,4 +172,5 @@ Deno.test("suspended permission request keeps its retained-poster attribution ou
   expect(html.match(/© OpenStreetMap contributors/g)?.length).toBe(1);
   expect(html).not.toContain('role="dialog"');
   expect(html).not.toContain("homepage-location-gate-attribution");
+  expect(html).toContain("homepage-poster-attribution");
 });
