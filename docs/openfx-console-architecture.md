@@ -59,6 +59,10 @@ OPENFX_LOCAL_RUNTIME=/private/path/to/openfx-local-runtime \
 Deno location `https://127.0.0.1:34431` 运行，因此重复启动复用同一 Deno KV 身份；不要用
 不同 location 取代它，否则会创建独立本地存储。
 
+Perry HTTPS 不读取 macOS 钥匙串中的 mkcert 信任。桌面客户端因此只为精确 loopback 主机从
+`CAROOT` 或 macOS 默认 mkcert 目录加载 `rootCA.pem`；显式 `NODE_EXTRA_CA_CERTS`
+仍优先，公网与生产主机不会继承这条本机开发信任。
+
 该本机入口特意从子进程环境剥离 `OPENFX_ADMIN_KEY`、`DENO_DEPLOYMENT_ID` 和生产
 `NODE_ENV`，所以 loopback 开发通过现有控制面回退使用 `TEST`。`TEST` 只用于本机管理员
 登录与受保护的配对信息，不能作为 `OPENFX_NODE_CREDENTIAL_KEY`；后者独立加密节点凭据。

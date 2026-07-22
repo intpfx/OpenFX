@@ -2,13 +2,15 @@ import { type IncomingMessage, request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { Buffer } from "node:buffer";
 import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 import type { HttpJsonRequest, HttpJsonResponse } from "./omlx-client.ts";
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 const MAX_STREAM_RESPONSE_BYTES = 1024 * 1024;
 const MAX_STREAM_DURATION_MS = 30_000;
-let extraCaCertificate: string | null | undefined;
+const caCertificates = new Map<string, string | null>();
 const activeRequests = new Set<ReturnType<typeof httpsRequest>>();
 
 export const requestJson = (
@@ -29,7 +31,9 @@ export const requestJson = (
       : {}),
     ...request.headers,
   };
-  const ca = request.protocol === "https:" ? loadExtraCaCertificate() : undefined;
+  const ca = request.protocol === "https:"
+    ? loadExtraCaCertificate(request.hostname)
+    : undefined;
   const requestOptions = {
     protocol: request.protocol,
     hostname: request.hostname,
@@ -83,23 +87,36 @@ export const requestJson = (
   return promise;
 };
 
-const loadExtraCaCertificate = (): string | undefined => {
-  if (extraCaCertificate !== undefined) {
-    return extraCaCertificate ?? undefined;
-  }
-  const path = process.env.NODE_EXTRA_CA_CERTS;
-  if (!path) {
-    extraCaCertificate = null;
-    return undefined;
-  }
+export const httpsCaCertificatePath = (
+  hostname: string,
+  environment: Readonly<Record<string, string | undefined>>,
+  homeDirectory: string,
+): string | undefined => {
+  const explicit = environment.NODE_EXTRA_CA_CERTS?.trim();
+  if (explicit) return explicit;
+  if (!isLoopbackHostname(hostname)) return undefined;
+  const caRoot = environment.CAROOT?.trim() ||
+    join(homeDirectory, "Library", "Application Support", "mkcert");
+  return join(caRoot, "rootCA.pem");
+};
+
+const loadExtraCaCertificate = (hostname: string): string | undefined => {
+  const path = httpsCaCertificatePath(hostname, process.env, homedir());
+  if (!path) return undefined;
+  if (caCertificates.has(path)) return caCertificates.get(path) ?? undefined;
   try {
-    extraCaCertificate = readFileSync(path, "utf8");
-    return extraCaCertificate;
+    const certificate = readFileSync(path, "utf8");
+    caCertificates.set(path, certificate);
+    return certificate;
   } catch {
-    extraCaCertificate = null;
+    caCertificates.set(path, null);
     return undefined;
   }
 };
+
+const isLoopbackHostname = (hostname: string): boolean =>
+  hostname === "127.0.0.1" || hostname === "localhost" ||
+  hostname === "::1" || hostname === "[::1]";
 
 export const requestTextStream = (
   request: HttpJsonRequest,

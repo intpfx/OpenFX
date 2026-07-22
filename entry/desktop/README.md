@@ -45,8 +45,11 @@ OpenFX Node 是常驻 macOS 菜单栏的原生 Perry 节点。它承载本机监
   `ps`，用于副作用前的身份复核。
 - 已配对节点在每次事件驱动采样后尝试签名 heartbeat 与 telemetry；1 分钟节流同时覆盖成功
   与失败，避免频繁激活时重复公网请求。重新配对或切换权威配对状态会重置该节奏。
-- OpenFX 控制面上报只走 `node:https.request`，包括实时 Agent delta 与审批事件；OMLX
-  固定使用 `node:http.request` 流式访问 `127.0.0.1:8000/v1/chat/completions`。
+- OpenFX 控制面上报只走 `node:https.request`，包括实时 Agent delta 与审批事件。本机
+  loopback HTTPS 在没有显式 `NODE_EXTRA_CA_CERTS` 时，仅对 `localhost`、`127.0.0.1` 和
+  `::1` 从 `CAROOT` 或 macOS 默认 mkcert 目录加载根证书；公网与生产主机不会隐式获得这条
+  本地 CA。OMLX 固定使用 `node:http.request` 流式访问
+  `127.0.0.1:8000/v1/chat/completions`。
 - Agent 工具是封闭的 v1 清单。三个有副作用的工具必须经过 `domains/e` 的
   `SafetyActionGate`。审批、执行意图/结果和审计使用追加式 SQLite journal；Relay nonce
   使用同一数据库中独立的带过期索引键表，不写入或扫描审计 journal。不完整执行在重启时

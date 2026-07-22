@@ -9,7 +9,37 @@ import {
 import { createKeychain, KEYCHAIN_SERVICE } from "../src/native/keychain.ts";
 import { createNodeCryptoAdapter } from "../src/native/node-crypto.ts";
 import { createOmlxClient } from "../src/native/omlx-client.ts";
-import { requestTextStream } from "../src/native/http-json.ts";
+import { httpsCaCertificatePath, requestTextStream } from "../src/native/http-json.ts";
+
+Deno.test("loopback HTTPS discovers the local mkcert root without launch environment overrides", () => {
+  assertEquals(
+    httpsCaCertificatePath("127.0.0.1", {}, "/Users/tester"),
+    "/Users/tester/Library/Application Support/mkcert/rootCA.pem",
+  );
+  assertEquals(
+    httpsCaCertificatePath("::1", { CAROOT: "/private/ca" }, "/Users/tester"),
+    "/private/ca/rootCA.pem",
+  );
+});
+
+Deno.test("public HTTPS never receives an implicit local mkcert root", () => {
+  assertEquals(
+    httpsCaCertificatePath("api6.ipify.org", {}, "/Users/tester"),
+    undefined,
+  );
+  assertEquals(
+    httpsCaCertificatePath("127.0.0.1.example", {}, "/Users/tester"),
+    undefined,
+  );
+  assertEquals(
+    httpsCaCertificatePath(
+      "api6.ipify.org",
+      { NODE_EXTRA_CA_CERTS: "/private/explicit.pem" },
+      "/Users/tester",
+    ),
+    "/private/explicit.pem",
+  );
+});
 
 Deno.test("node:crypto adapter interoperates with the shared WebCrypto envelope", async () => {
   const nodeCrypto = createNodeCryptoAdapter();
