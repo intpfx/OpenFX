@@ -30,9 +30,21 @@ Deno.test("tablet location states clear the command bar", () => {
 
 Deno.test("mobile location states collapse the empty hint and clear the two-row footer", () => {
   expect(homepageCss).toContain(
+    `.homepage-page:has(.homepage-location-status) .control-hint[data-active="false"]:empty,
+  .homepage-page:has(.homepage-location-progress) .control-hint[data-active="false"]:empty {
+    display: none;
+  }`,
+  );
+  expect(homepageCss).not.toContain(
     `.homepage-page:has(.homepage-location-status) .control-hint,
   .homepage-page:has(.homepage-location-progress) .control-hint {
     display: none;
+    }`,
+  );
+  expect(homepageCss).toContain(
+    `.homepage-page:has(.control-hint[data-active="true"]:not(:empty)) .homepage-location-status,
+  .homepage-page:has(.control-hint[data-active="true"]:not(:empty)) .homepage-location-progress {
+    bottom: calc(max(0.72rem, env(safe-area-inset-bottom)) + 10.25rem);
   }`,
   );
 
