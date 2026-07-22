@@ -20,11 +20,19 @@ Deno.test("location permission gate has an exact 58px outer height", () => {
   min-height: 44px;`);
 });
 
-Deno.test("compact location states clear the command bar at intermediate widths", () => {
+Deno.test("tablet location states clear the command bar", () => {
   expect(homepageCss).toContain(`@media (max-width: 1100px) {
   .homepage-location-status,
   .homepage-location-progress {
     bottom: calc(max(1.4rem, env(safe-area-inset-bottom)) + 3.5rem);
+  }`);
+});
+
+Deno.test("mobile location states clear the full wrapped footer", () => {
+  expect(homepageCss).toContain(`.homepage-location-status,
+  .homepage-location-progress {
+    bottom: calc(max(0.72rem, env(safe-area-inset-bottom)) + 5.5rem);
+    max-width: calc(100vw - 2rem);
   }`);
 });
 
