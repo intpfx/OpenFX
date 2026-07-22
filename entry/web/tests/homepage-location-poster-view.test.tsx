@@ -69,6 +69,25 @@ Deno.test("location poster failure never invents a city label", () => {
   expect(html).not.toContain("Shanghai");
 });
 
+Deno.test("location poster denied view directs users to site settings without retry", () => {
+  const html = renderToStaticMarkup(
+    <HomepageLocationPosterView
+      failure="denied"
+      place={null}
+      posterUrl={null}
+      state="denied"
+      suspended={false}
+      onAllow={noop}
+      onDismiss={noop}
+      onRetry={noop}
+    />,
+  );
+
+  expect(html).toContain("请在浏览器的网站设置中重新开启定位权限。");
+  expect(html).toContain("关闭");
+  expect(html).not.toContain("重试");
+});
+
 Deno.test("location poster suspension hides controls but preserves the background", () => {
   const html = renderToStaticMarkup(
     <HomepageLocationPosterView

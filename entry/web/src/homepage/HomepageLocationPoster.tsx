@@ -135,8 +135,18 @@ export function HomepageLocationPosterView(
             正在生成城市背景
           </p>
         )
-        : props.state === "denied" || props.state === "unavailable" ||
-            props.state === "error"
+        : props.state === "denied"
+        ? (
+          <section
+            aria-label="城市背景定位权限未开启"
+            className="homepage-location-capsule homepage-location-status is-error"
+          >
+            <strong>{getFailureTitle(props.failure)}</strong>
+            <span>请在浏览器的网站设置中重新开启定位权限。</span>
+            <button type="button" onClick={props.onDismiss}>关闭</button>
+          </section>
+        )
+        : props.state === "unavailable" || props.state === "error"
         ? (
           <section
             aria-label="城市背景不可用"
@@ -272,6 +282,8 @@ export function HomepageLocationPoster(props: {
   }, [replacePosterUrl]);
 
   const startLocationRequest = useCallback(async () => {
+    if (state === "denied") return;
+
     if (!globalThis.isSecureContext || !navigator.geolocation) {
       setFailure("unavailable");
       setState("unavailable");
@@ -286,7 +298,7 @@ export function HomepageLocationPoster(props: {
     }
 
     await locateAndRender(permission);
-  }, [locateAndRender]);
+  }, [locateAndRender, state]);
 
   useEffect(() => {
     mountedRef.current = true;
