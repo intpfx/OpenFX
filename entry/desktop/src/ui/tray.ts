@@ -8,8 +8,6 @@ import {
   type Widget,
 } from "perry/ui";
 
-export const TRAY_ICON_PATH = "openfx-tray-template.png";
-
 export interface NodeTrayActions {
   sample(): void;
   openConsole(): void;
@@ -17,7 +15,7 @@ export interface NodeTrayActions {
 }
 
 export const createNodeTray = (actions: NodeTrayActions): Widget => {
-  const tray = trayCreate(TRAY_ICON_PATH);
+  const tray = trayCreate("");
   traySetTooltip(tray, "OpenFX Node");
   const menu = menuCreate();
   menuAddStandardAction(

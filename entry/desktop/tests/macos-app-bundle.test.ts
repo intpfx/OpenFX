@@ -1,4 +1,10 @@
-import { assert, assertEquals, assertStringIncludes, assertThrows } from "@std/assert";
+import {
+  assert,
+  assertEquals,
+  assertRejects,
+  assertStringIncludes,
+  assertThrows,
+} from "@std/assert";
 import { fromFileUrl, join } from "jsr:@std/path@^1.1.4";
 
 const REPOSITORY_ROOT = fromFileUrl(new URL("../../../", import.meta.url));
@@ -16,7 +22,6 @@ interface BuildToolModule {
     entryPoint: string;
     perryExecutable: string;
     resourcesDirectory: string;
-    trayIconDestination: string;
   };
   requirePerryLibDirectory(environment: Record<string, string>): string;
 }
@@ -69,10 +74,6 @@ Deno.test("macOS app plan uses the pinned Perry CLI and canonical bundle layout"
   assertEquals(
     plan.resourcesDirectory,
     "/repo/dist/OpenFX Node.app/Contents/Resources",
-  );
-  assertEquals(
-    plan.trayIconDestination,
-    "/repo/dist/OpenFX Node.app/Contents/Resources/openfx-tray-template.png",
   );
 });
 
@@ -130,134 +131,45 @@ Deno.test("Perry link environment targets the declared macOS 13 minimum", async 
   assertEquals(environment.PATH, "/usr/bin");
 });
 
-Deno.test("desktop resources include a tracked transparent FX template icon", async () => {
-  const trayPath = join(
-    REPOSITORY_ROOT,
-    "entry/desktop/assets/openfx-tray-template.png",
+Deno.test("macOS app uses Perry's native tray dot without image assets", async () => {
+  const builder = await loadBuildTool();
+  const plan = builder.createMacAppPlan("/repo", "/perry/release");
+  const buildSource = await Deno.readTextFile(BUILD_TOOL_URL);
+  const smokeSource = await Deno.readTextFile(
+    join(REPOSITORY_ROOT, "entry/desktop/tools/desktop-app-smoke.ts"),
   );
-  const bytes = await Deno.readFile(trayPath);
-  const image = await decodeRgbaPng(bytes);
-  const cornerIndexes = [
-    0,
-    image.width - 1,
-    (image.height - 1) * image.width,
-    image.width * image.height - 1,
-  ];
-  const transparentPixels = image.alpha.filter((alpha) => alpha === 0).length;
-  const visiblePixels = image.alpha.filter((alpha) => alpha > 0).length;
-
-  assertEquals(image.width, 32);
-  assertEquals(image.height, 32);
-  assert(cornerIndexes.every((index) => image.alpha[index] === 0));
-  assert(transparentPixels >= image.alpha.length * 0.6);
-  assert(transparentPixels <= image.alpha.length * 0.95);
-  assert(visiblePixels >= 48);
-  assert(image.alpha.some((alpha) => alpha === 255));
-
-  const vectorSource = await Deno.readTextFile(
-    join(REPOSITORY_ROOT, "entry/desktop/assets/openfx-tray-template.svg"),
-  ).catch(() => "");
-  assertStringIncludes(vectorSource, 'viewBox="0 0 32 32"');
-  assertStringIncludes(vectorSource, 'fill="#000000"');
-
   const traySource = await Deno.readTextFile(
     join(REPOSITORY_ROOT, "entry/desktop/src/ui/tray.ts"),
   );
-  assertStringIncludes(
-    traySource,
-    'export const TRAY_ICON_PATH = "openfx-tray-template.png";',
+
+  assertEquals("trayIconDestination" in plan, false);
+  assertStringIncludes(traySource, 'trayCreate("")');
+  for (
+    const obsolete of [
+      "openfx-tray-template",
+      "inspectPngTransparency",
+      "createTrayTemplatePng",
+      "verifyTrayTemplatePng",
+    ]
+  ) {
+    assertEquals(buildSource.includes(obsolete), false);
+    assertEquals(smokeSource.includes(obsolete), false);
+  }
+  await assertRejects(
+    () =>
+      Deno.stat(
+        join(REPOSITORY_ROOT, "entry/desktop/assets/openfx-tray-template.svg"),
+      ),
+    Deno.errors.NotFound,
+  );
+  await assertRejects(
+    () =>
+      Deno.stat(
+        join(REPOSITORY_ROOT, "entry/desktop/assets/openfx-tray-template.png"),
+      ),
+    Deno.errors.NotFound,
   );
 });
-
-interface DecodedRgbaPng {
-  width: number;
-  height: number;
-  alpha: number[];
-}
-
-async function decodeRgbaPng(bytes: Uint8Array): Promise<DecodedRgbaPng> {
-  const signature = [137, 80, 78, 71, 13, 10, 26, 10];
-  assert(signature.every((value, index) => bytes[index] === value));
-  let offset = signature.length;
-  let width = 0;
-  let height = 0;
-  const idat: Uint8Array[] = [];
-  while (offset + 12 <= bytes.length) {
-    const length = readUint32(bytes, offset);
-    const type = new TextDecoder().decode(bytes.subarray(offset + 4, offset + 8));
-    const data = bytes.subarray(offset + 8, offset + 8 + length);
-    if (type === "IHDR") {
-      width = readUint32(data, 0);
-      height = readUint32(data, 4);
-      assertEquals(data[8], 8, "Tray PNG must use 8-bit channels");
-      assertEquals(data[9], 6, "Tray PNG must use RGBA color");
-      assertEquals(data[12], 0, "Tray PNG must not be interlaced");
-    } else if (type === "IDAT") idat.push(data);
-    else if (type === "IEND") break;
-    offset += length + 12;
-  }
-  assert(width > 0 && height > 0 && idat.length > 0);
-  const compressedLength = idat.reduce((sum, chunk) => sum + chunk.length, 0);
-  const compressed = new Uint8Array(compressedLength);
-  let compressedOffset = 0;
-  for (const chunk of idat) {
-    compressed.set(chunk, compressedOffset);
-    compressedOffset += chunk.length;
-  }
-  const decompressed = new Uint8Array(
-    await new Response(
-      new Blob([compressed]).stream().pipeThrough(new DecompressionStream("deflate")),
-    ).arrayBuffer(),
-  );
-  const bytesPerPixel = 4;
-  const stride = width * bytesPerPixel;
-  const pixels = new Uint8Array(height * stride);
-  let sourceOffset = 0;
-  for (let row = 0; row < height; row += 1) {
-    const filter = decompressed[sourceOffset++];
-    for (let column = 0; column < stride; column += 1) {
-      const raw = decompressed[sourceOffset++];
-      const target = row * stride + column;
-      const left = column >= bytesPerPixel ? pixels[target - bytesPerPixel] : 0;
-      const up = row > 0 ? pixels[target - stride] : 0;
-      const upLeft = row > 0 && column >= bytesPerPixel
-        ? pixels[target - stride - bytesPerPixel]
-        : 0;
-      pixels[target] = unfilterByte(filter, raw, left, up, upLeft);
-    }
-  }
-  const alpha: number[] = [];
-  for (let index = 3; index < pixels.length; index += 4) alpha.push(pixels[index]);
-  return { width, height, alpha };
-}
-
-function unfilterByte(
-  filter: number,
-  raw: number,
-  left: number,
-  up: number,
-  upLeft: number,
-): number {
-  if (filter === 0) return raw;
-  if (filter === 1) return (raw + left) & 0xff;
-  if (filter === 2) return (raw + up) & 0xff;
-  if (filter === 3) return (raw + Math.floor((left + up) / 2)) & 0xff;
-  if (filter === 4) return (raw + paeth(left, up, upLeft)) & 0xff;
-  throw new Error(`Unsupported PNG filter: ${filter}`);
-}
-
-function paeth(left: number, up: number, upLeft: number): number {
-  const estimate = left + up - upLeft;
-  const leftDistance = Math.abs(estimate - left);
-  const upDistance = Math.abs(estimate - up);
-  const upLeftDistance = Math.abs(estimate - upLeft);
-  if (leftDistance <= upDistance && leftDistance <= upLeftDistance) return left;
-  return upDistance <= upLeftDistance ? up : upLeft;
-}
-
-function readUint32(bytes: Uint8Array, offset: number): number {
-  return new DataView(bytes.buffer, bytes.byteOffset + offset, 4).getUint32(0);
-}
 
 Deno.test("desktop app smoke launches the packaged app executable", async () => {
   const smokeSource = await Deno.readTextFile(

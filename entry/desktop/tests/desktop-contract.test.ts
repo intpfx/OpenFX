@@ -25,12 +25,8 @@ Deno.test("desktop entry keeps native tray and runtime boundaries in both launch
 
   assert(main.includes("appSetActivationPolicy("));
   assert(main.includes("createNodeTray("));
-  assert(source.includes("trayCreate(TRAY_ICON_PATH)"));
-  assert(
-    source.includes(
-      'TRAY_ICON_PATH = "openfx-tray-template.png"',
-    ),
-  );
+  assert(source.includes('trayCreate("")'));
+  assertEquals(source.includes("TRAY_ICON_PATH"), false);
   assert(source.includes('"perryShowMainWindow:"'));
   assertEquals(/\bWindow\(/.test(main), false);
   assert(source.includes('from "node:http"'));
@@ -435,7 +431,7 @@ Deno.test("desktop entry assembles the immersive regular-or-menu-bar native app"
       "退出",
     ]
   ) assert(source.includes(label), `missing desktop label: ${label}`);
-  assertEquals(source.includes('trayCreate("")'), false);
+  assert(source.includes('trayCreate("")'));
   assert(
     source.includes(
       'menuAddStandardAction(\n    menu,\n    "节点状态",\n    "perryShowMainWindow:",',
@@ -614,14 +610,13 @@ Deno.test("real desktop app smoke launches the bundle, checks IPv6 health, and c
   assert(smoke.includes("OpenFX UI-only link gate"));
   assert(smoke.includes("assertPng"));
   assert(smoke.includes("if (!memoryMode) {\n    await assertPng(screenshot);"));
-  assert(smoke.includes("Contents/Resources/openfx-tray-template.png"));
-  assert(smoke.includes("assertTransparentTrayIcon"));
-  assert(smoke.includes("assertNonEmptyFile(TRAY_ICON)"));
-  assertEquals(smoke.includes("TRAY_ICON_NAME"), false);
   assertEquals(
-    smoke.includes("Deno.copyFile(\n    TRAY_ICON_SOURCE"),
+    smoke.includes("Contents/Resources/openfx-tray-template.png"),
     false,
   );
+  assertEquals(smoke.includes("assertTransparentTrayIcon"), false);
+  assertEquals(smoke.includes("assertNonEmptyFile(TRAY_ICON)"), false);
+  assertEquals(smoke.includes("inspectPngTransparency"), false);
   assert(smoke.includes("PERRY_UI_SCREENSHOT_ARTIFACT"));
   assert(smoke.includes("screenshotArtifact"));
   assert(smoke.includes('"CFBundleIdentifier", "com.openfx.node"'));

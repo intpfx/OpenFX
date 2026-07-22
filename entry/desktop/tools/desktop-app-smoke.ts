@@ -10,7 +10,6 @@ import {
   collectAfterCleanupAttempt,
   collectBoundedChild,
 } from "./integration-cleanup.ts";
-import { inspectPngTransparency } from "./png-transparency.ts";
 import { validatePerryRuntimeDirectory } from "./perry-runtime-provenance.ts";
 
 const REPOSITORY_ROOT = fromFileUrl(new URL("../../../", import.meta.url));
@@ -20,10 +19,6 @@ const APP_BUNDLE = join(REPOSITORY_ROOT, APP_BUNDLE_RELATIVE_PATH);
 const APP_EXECUTABLE = join(APP_BUNDLE, APP_EXECUTABLE_RELATIVE_PATH);
 const APP_INFO_PLIST = join(APP_BUNDLE, "Contents/Info.plist");
 const APP_ICON = join(APP_BUNDLE, "Contents/Resources/OpenFXNode.icns");
-const TRAY_ICON = join(
-  APP_BUNDLE,
-  "Contents/Resources/openfx-tray-template.png",
-);
 const HEALTH_URL = "http://[::1]:24531/v1/health";
 const PERRY_UI_ARCHIVE = "libperry_ui_macos.a";
 const HEALTH_TIMEOUT_MS = 10_000;
@@ -64,9 +59,7 @@ await assertFile(join(perryLibDirectory, PERRY_UI_ARCHIVE));
 await assertNonEmptyFile(APP_EXECUTABLE);
 await assertNonEmptyFile(APP_INFO_PLIST);
 await assertNonEmptyFile(APP_ICON);
-await assertNonEmptyFile(TRAY_ICON);
 await verifyAppBundle();
-await assertTransparentTrayIcon();
 await assertPortAvailable();
 
 const temporaryDirectory = await Deno.makeTempDir({ prefix: "openfx-app-smoke-" });
@@ -295,22 +288,6 @@ async function assertPlistValue(key: string, expected: string): Promise<void> {
     APP_INFO_PLIST,
   ])).trim();
   assert(actual === expected, `Unexpected ${key}: ${actual}`);
-}
-
-async function assertTransparentTrayIcon(): Promise<void> {
-  const image = await inspectPngTransparency(await Deno.readFile(TRAY_ICON));
-  assert(image.width === 32 && image.height === 32, "Tray icon must be 32 x 32.");
-  assert(
-    image.cornerAlpha.every((alpha) => alpha === 0),
-    `Tray icon corners must be transparent: ${image.cornerAlpha.join(", ")}`,
-  );
-  assert(
-    image.transparentPixels >= image.totalPixels * 0.6 &&
-      image.transparentPixels <= image.totalPixels * 0.95,
-    `Tray icon transparency is out of range: ${image.transparentPixels}/${image.totalPixels}`,
-  );
-  assert(image.visiblePixels >= 48, "Tray icon FX glyph is missing.");
-  assert(image.opaquePixels > 0, "Tray icon FX glyph has no opaque pixels.");
 }
 
 interface AppSmokeMarker {
