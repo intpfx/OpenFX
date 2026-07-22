@@ -12,6 +12,68 @@ const nitroPort = 8_000;
 const tlsPort = 34_431;
 const origin = `https://127.0.0.1:${tlsPort}`;
 
+type NitroProcess = Pick<Deno.ChildProcess, "kill" | "status">;
+
+export interface NitroLifecycle {
+  raceStartup<T>(phase: string, work: Promise<T>): Promise<T>;
+  assertRunning(phase: string): void;
+  stop(): Promise<Deno.CommandStatus>;
+  waitForFinalStatus(): Promise<Deno.CommandStatus>;
+  isStopping(): boolean;
+}
+
+export function createNitroLifecycle(nitro: NitroProcess): NitroLifecycle {
+  let stopping = false;
+  let exitedStatus: Deno.CommandStatus | undefined;
+  let stopPromise: Promise<Deno.CommandStatus> | undefined;
+  const status = nitro.status.then((result) => {
+    exitedStatus = result;
+    return result;
+  });
+
+  const stoppedError = () => new Error("Local pairing launcher stopped");
+  const prematureExitError = (phase: string, result: Deno.CommandStatus) =>
+    new Error(`Nitro exited before ${phase}: ${formatExitStatus(result)}`);
+  const raceChildExit = <T>(phase: string): Promise<T> =>
+    status.then((result) => {
+      throw stopping ? stoppedError() : prematureExitError(phase, result);
+    });
+
+  return {
+    raceStartup<T>(phase: string, work: Promise<T>): Promise<T> {
+      return Promise.race([work, raceChildExit<T>(phase)]);
+    },
+    assertRunning(phase: string): void {
+      if (stopping) throw stoppedError();
+      if (exitedStatus) throw prematureExitError(phase, exitedStatus);
+    },
+    stop(): Promise<Deno.CommandStatus> {
+      if (!stopPromise) {
+        stopping = true;
+        stopPromise = (async () => {
+          if (!exitedStatus) {
+            try {
+              nitro.kill("SIGTERM");
+            } catch {
+              // The child may already have exited.
+            }
+          }
+          return await status;
+        })();
+      }
+      return stopPromise;
+    },
+    async waitForFinalStatus(): Promise<Deno.CommandStatus> {
+      const result = await status;
+      if (!stopping && !result.success) {
+        throw new Error(`Nitro exited unsuccessfully: ${formatExitStatus(result)}`);
+      }
+      return result;
+    },
+    isStopping: () => stopping,
+  };
+}
+
 export async function main(): Promise<void> {
   const inherited = Deno.env.toObject();
   const runtimeDirectory = inherited.OPENFX_LOCAL_RUNTIME?.trim();
@@ -45,27 +107,35 @@ export async function main(): Promise<void> {
   const rootCertificatePath = join(certificateRoot, "rootCA.pem");
   const rootCertificate = await Deno.readTextFile(rootCertificatePath);
 
-  let nitro: Deno.ChildProcess | undefined;
+  let lifecycle: NitroLifecycle | undefined;
   let tls: Deno.HttpServer | undefined;
   let client: Deno.HttpClient | undefined;
-  let stopping = false;
-  const cleanup = async () => {
-    if (stopping) return;
-    stopping = true;
-    Deno.removeSignalListener("SIGINT", onSignal);
-    Deno.removeSignalListener("SIGTERM", onSignal);
-    try {
-      nitro?.kill("SIGTERM");
-    } catch {
-      // The child may already have exited.
-    }
-    client?.close();
-    await tls?.shutdown().catch(() => undefined);
+  let signalHandlersInstalled = false;
+  let cleanupPromise: Promise<void> | undefined;
+  const cleanup = (): Promise<void> => {
+    if (cleanupPromise) return cleanupPromise;
+    cleanupPromise = (async () => {
+      if (signalHandlersInstalled) {
+        Deno.removeSignalListener("SIGINT", onSignal);
+        Deno.removeSignalListener("SIGTERM", onSignal);
+        signalHandlersInstalled = false;
+      }
+      client?.close();
+      await Promise.all([
+        tls?.shutdown().catch(() => undefined),
+        lifecycle?.stop(),
+      ]);
+    })();
+    return cleanupPromise;
   };
-  const onSignal = () => void cleanup();
+  const onSignal = () => {
+    void cleanup().catch((error) => {
+      console.error("Local pairing cleanup failed", error);
+    });
+  };
 
   try {
-    nitro = new Deno.Command(Deno.execPath(), {
+    const nitro = new Deno.Command(Deno.execPath(), {
       args: [
         "run",
         "--location",
@@ -80,17 +150,25 @@ export async function main(): Promise<void> {
       stdout: "inherit",
       stderr: "inherit",
     }).spawn();
+    lifecycle = createNitroLifecycle(nitro);
     Deno.addSignalListener("SIGINT", onSignal);
     Deno.addSignalListener("SIGTERM", onSignal);
+    signalHandlersInstalled = true;
 
-    await waitForHttp(`http://127.0.0.1:${nitroPort}/api/health`);
-    assertRunning(stopping);
+    await lifecycle.raceStartup(
+      "waiting for health",
+      waitForHttp(`http://127.0.0.1:${nitroPort}/api/health`),
+    );
+    lifecycle.assertRunning("starting the TLS proxy");
 
-    const [certificate, privateKey] = await Promise.all([
-      Deno.readTextFile(certificatePath),
-      Deno.readTextFile(privateKeyPath),
-    ]);
-    assertRunning(stopping);
+    const [certificate, privateKey] = await lifecycle.raceStartup(
+      "loading TLS certificates",
+      Promise.all([
+        Deno.readTextFile(certificatePath),
+        Deno.readTextFile(privateKeyPath),
+      ]),
+    );
+    lifecycle.assertRunning("starting the TLS proxy");
     tls = Deno.serve({
       hostname: "127.0.0.1",
       port: tlsPort,
@@ -100,19 +178,32 @@ export async function main(): Promise<void> {
     }, createProxyHandler());
 
     client = Deno.createHttpClient({ caCerts: [rootCertificate] });
-    const cookie = await createAdminSession(client);
-    assertRunning(stopping);
-    const pairingCode = await createPairing(client, cookie);
-    assertRunning(stopping);
-    await writePairingInfo(
-      pairingInfoPath,
-      pairingCode,
-      cookie,
-      rootCertificatePath,
+    const cookie = await lifecycle.raceStartup(
+      "creating the admin session",
+      createAdminSession(client),
     );
+    lifecycle.assertRunning("creating the pairing");
+    const pairingCode = await lifecycle.raceStartup(
+      "creating the pairing",
+      createPairing(client, cookie),
+    );
+    lifecycle.assertRunning("writing pairing information");
+    await lifecycle.raceStartup(
+      "writing pairing information",
+      writePairingInfo(
+        pairingInfoPath,
+        pairingCode,
+        cookie,
+        rootCertificatePath,
+      ),
+    );
+    lifecycle.assertRunning("reporting pairing readiness");
     console.log(`OPENFX_LOCAL_PAIRING_READY ${pairingInfoPath}`);
 
-    await nitro.status;
+    await lifecycle.waitForFinalStatus();
+  } catch (error) {
+    if (lifecycle?.isStopping()) return;
+    throw error;
   } finally {
     await cleanup();
   }
@@ -232,8 +323,8 @@ function randomHex(length: number): string {
   return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
 }
 
-function assertRunning(stopping: boolean): void {
-  if (stopping) throw new Error("Local pairing launcher stopped");
+function formatExitStatus(status: Deno.CommandStatus): string {
+  return status.signal ? `signal ${status.signal}` : `exit code ${status.code}`;
 }
 
 async function waitForHttp(url: string): Promise<void> {
