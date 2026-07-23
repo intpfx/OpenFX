@@ -4,10 +4,10 @@ const homepageCss = await Deno.readTextFile(
   new URL("../src/styles.css", import.meta.url),
 );
 const desktopFooterTrackStart = homepageCss.indexOf(
-  "@media (min-width: 1100.01px) {",
+  "@media (width > 1100px) {",
 );
 const compactDesktopFooterStart = homepageCss.indexOf(
-  "@media (min-width: 1100.01px) and (max-width: 1375px) {",
+  "@media (1100px < width <= 1375px) {",
 );
 const desktopFooterTrackCss = homepageCss.slice(
   desktopFooterTrackStart,
@@ -121,7 +121,7 @@ Deno.test("desktop footer track keeps long hints on one clipped line above 1100p
 });
 
 Deno.test("compact desktop footer removes empty hint space and bounds location controls", () => {
-  expect(homepageCss).toContain(`@media (min-width: 1100.01px) and (max-width: 1375px) {
+  expect(homepageCss).toContain(`@media (1100px < width <= 1375px) {
   .homepage-page:has(.homepage-location-status) .control-hint[data-active="false"]:empty,
   .homepage-page:has(.homepage-location-progress) .control-hint[data-active="false"]:empty {
     display: none;
