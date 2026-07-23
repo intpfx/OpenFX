@@ -34,6 +34,20 @@ Deno.test("desktop footer is an editorial two-baseline rail", () => {
   expect(cssRule(".homepage-footer-dock__action")).toContain("grid-row: 1 / 3");
 });
 
+Deno.test("desktop Proxy index stays within the editorial second baseline", () => {
+  expect(cssRule(".proxy-footer-form")).toContain("min-height: 32px");
+  expect(cssRule(".proxy-footer-input")).toContain("min-height: 32px");
+  expect(cssRule(".proxy-footer-input:focus")).toContain(
+    "box-shadow: inset 0 -1px 0 var(--accent)",
+  );
+});
+
+Deno.test("message state changes do not animate Dock content into place", () => {
+  expect(cssRule(".message-inline-form")).not.toContain("animation:");
+  expect(homepageCss).not.toContain("@keyframes message-compose-in");
+  expect(homepageCss).not.toContain("translateY(5px)");
+});
+
 Deno.test("normal location status and progress participate in dock layout", () => {
   const status = cssRule(".homepage-location-status,\n.homepage-location-progress");
 
@@ -60,6 +74,8 @@ Deno.test("mobile dock remains one fixed shell with two internal rows", () => {
   expect(mobileCss).toContain("background: var(--dock-mobile-background);");
   expect(mobileCss).toContain(`.homepage-footer-dock__action {
     min-width: 5.8rem;`);
+  expect(mobileCss).toContain(`.proxy-footer-form {
+    min-height: 44px;`);
   expect(mobileCss).toContain(`.homepage-theme-control-label,
   .homepage-theme-control-separator,
   .build-version .footer-eyebrow,
