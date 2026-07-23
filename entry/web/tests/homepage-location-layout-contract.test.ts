@@ -34,6 +34,13 @@ Deno.test("desktop footer is an editorial two-baseline rail", () => {
   expect(cssRule(".homepage-footer-dock__action")).toContain("grid-row: 1 / 3");
 });
 
+Deno.test("inactive status hint does not displace the editorial meta baseline", () => {
+  expect(cssRule(".control-hint")).toContain("flex: 0 1 auto");
+  expect(cssRule('.control-hint:not([data-active="true"])')).toContain(
+    "display: none",
+  );
+});
+
 Deno.test("desktop Proxy index stays within the editorial second baseline", () => {
   expect(cssRule(".proxy-footer-form")).toContain("min-height: 32px");
   expect(cssRule(".proxy-footer-back")).toContain("min-height: 32px");

@@ -1322,7 +1322,7 @@ textarea {
 
 .control-hint {
   display: inline-flex;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
   min-height: 1.25rem;
   align-items: center;
@@ -1340,6 +1340,10 @@ textarea {
   transform: translateX(-4px);
   text-align: left;
   white-space: nowrap;
+}
+
+.control-hint:not([data-active="true"]) {
+  display: none;
 }
 
 .control-hint[data-active="true"] {
