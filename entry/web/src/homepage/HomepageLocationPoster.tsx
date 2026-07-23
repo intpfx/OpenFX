@@ -4,6 +4,7 @@
 import {
   createElement as h,
   type KeyboardEvent,
+  type ReactNode,
   type RefObject,
   useEffect,
   useRef,
@@ -38,6 +39,7 @@ type HomepageLocationPosterViewProps = {
   onAllow: () => void;
   onDismiss: () => void;
   onRetry: () => void;
+  renderStatus: (status: ReactNode) => ReactNode;
 };
 
 function getFailureTitle(failure: HomepageLocationFailure | null) {
@@ -60,22 +62,66 @@ export function HomepageLocationPosterView(
   const cityLabel = props.place?.city
     ? `背景 · ${props.place.city}`
     : "背景 · 已按当前位置生成";
-  const readyStatusVisible = shouldShowPoster && props.state === "ready" &&
-    !props.suspended;
-  const attribution = shouldShowPoster
+  const attribution = (className: string) =>
+    shouldShowPoster
+      ? (
+        <a
+          className={className}
+          href="https://www.openstreetmap.org/copyright"
+          rel="noreferrer"
+          target="_blank"
+        >
+          © OpenStreetMap contributors
+        </a>
+      )
+      : null;
+  const dockAttribution = attribution("homepage-location-attribution");
+  const posterAttribution = attribution("homepage-poster-attribution");
+  const gateAttribution = attribution(
+    "homepage-location-attribution homepage-location-gate-attribution",
+  );
+  const status = props.suspended || gateVisible
+    ? null
+    : props.state === "ready"
     ? (
-      <a
-        className={`${
-          readyStatusVisible
-            ? "homepage-location-attribution"
-            : "homepage-poster-attribution"
-        }${gateVisible ? " homepage-location-gate-attribution" : ""}`}
-        href="https://www.openstreetmap.org/copyright"
-        rel="noreferrer"
-        target="_blank"
+      <section
+        aria-label="城市背景状态"
+        className="homepage-location-status"
       >
-        © OpenStreetMap contributors
-      </a>
+        <strong>{cityLabel}</strong>
+        <span>Map Poster</span>
+        {dockAttribution}
+        <button type="button" onClick={props.onRetry}>重新定位</button>
+      </section>
+    )
+    : props.state === "rendering"
+    ? (
+      <div className="homepage-location-progress">
+        <p>正在生成城市背景</p>
+        {dockAttribution}
+      </div>
+    )
+    : props.state === "denied"
+    ? (
+      <section
+        aria-label="城市背景定位权限未开启"
+        className="homepage-location-status is-error"
+      >
+        <strong>{getFailureTitle(props.failure)}</strong>
+        <span>请在浏览器的网站设置中重新开启定位权限。</span>
+        <button type="button" onClick={props.onDismiss}>关闭</button>
+      </section>
+    )
+    : props.state === "unavailable" || props.state === "error"
+    ? (
+      <section
+        aria-label="城市背景不可用"
+        className="homepage-location-status is-error"
+      >
+        <strong>{getFailureTitle(props.failure)}</strong>
+        <button type="button" onClick={props.onRetry}>重试</button>
+        <button type="button" onClick={props.onDismiss}>关闭</button>
+      </section>
     )
     : null;
 
@@ -91,9 +137,9 @@ export function HomepageLocationPosterView(
           : null}
       </div>
 
-      {!gateVisible && !readyStatusVisible ? attribution : null}
+      {props.suspended && shouldShowPoster ? posterAttribution : null}
 
-      {props.suspended ? null : gateVisible
+      {gateVisible
         ? (
           <section
             aria-labelledby="homepageLocationTitle"
@@ -114,7 +160,7 @@ export function HomepageLocationPosterView(
                   : "设备定位仅用于生成城市海报，不保存原始位置。"}
               </span>
             </div>
-            {attribution}
+            {gateAttribution}
             <button
               className="homepage-location-dismiss"
               type="button"
@@ -133,48 +179,9 @@ export function HomepageLocationPosterView(
             </button>
           </section>
         )
-        : props.state === "ready"
-        ? (
-          <section
-            aria-label="城市背景状态"
-            className="homepage-location-capsule homepage-location-status"
-          >
-            <strong>{cityLabel}</strong>
-            <span>Map Poster</span>
-            {attribution}
-            <button type="button" onClick={props.onRetry}>重新定位</button>
-          </section>
-        )
-        : props.state === "rendering"
-        ? (
-          <p className="homepage-location-capsule homepage-location-progress">
-            正在生成城市背景
-          </p>
-        )
-        : props.state === "denied"
-        ? (
-          <section
-            aria-label="城市背景定位权限未开启"
-            className="homepage-location-capsule homepage-location-status is-error"
-          >
-            <strong>{getFailureTitle(props.failure)}</strong>
-            <span>请在浏览器的网站设置中重新开启定位权限。</span>
-            <button type="button" onClick={props.onDismiss}>关闭</button>
-          </section>
-        )
-        : props.state === "unavailable" || props.state === "error"
-        ? (
-          <section
-            aria-label="城市背景不可用"
-            className="homepage-location-capsule homepage-location-status is-error"
-          >
-            <strong>{getFailureTitle(props.failure)}</strong>
-            <button type="button" onClick={props.onRetry}>重试</button>
-            <button type="button" onClick={props.onDismiss}>关闭</button>
-          </section>
-        )
         : null}
 
+      {props.renderStatus(status)}
       <span aria-live="polite" className="sr-only" role="status">
         {props.state === "requesting"
           ? "等待浏览器定位授权"
@@ -243,6 +250,7 @@ export function HomepageLocationPoster(props: {
   fallbackFocusRef: RefObject<HTMLButtonElement | null>;
   suspended: boolean;
   onFocusModeChange: (active: boolean) => void;
+  renderStatus: (status: ReactNode) => ReactNode;
 }) {
   const [state, setState] = useState<HomepageLocationPosterState>("checking");
   const [failure, setFailure] = useState<HomepageLocationFailure | null>(null);
@@ -345,6 +353,7 @@ export function HomepageLocationPoster(props: {
         onAllow={() => void controller.start()}
         onDismiss={dismiss}
         onRetry={() => void controller.start()}
+        renderStatus={props.renderStatus}
       />
     </div>
   );

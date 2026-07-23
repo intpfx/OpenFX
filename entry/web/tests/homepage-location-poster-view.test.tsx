@@ -3,11 +3,15 @@
 
 import { expect } from "@std/expect";
 import { renderToStaticMarkup } from "npm:react-dom@^19.1.0/server";
-import { createElement as h } from "react";
+import { createElement as h, type ReactNode } from "react";
 
+import { HomepageFooterDock } from "../src/homepage/HomepageFooterDock.tsx";
 import { HomepageLocationPosterView } from "../src/homepage/HomepageLocationPoster.tsx";
 
 const noop = () => {};
+const inDock = (status: ReactNode) => (
+  <HomepageFooterDock left={null} middle={status} right={null} />
+);
 
 Deno.test("location poster permission view is an accessible focused dialog", () => {
   const html = renderToStaticMarkup(
@@ -20,6 +24,7 @@ Deno.test("location poster permission view is an accessible focused dialog", () 
       onAllow={noop}
       onDismiss={noop}
       onRetry={noop}
+      renderStatus={inDock}
     />,
   );
 
@@ -30,7 +35,7 @@ Deno.test("location poster permission view is an accessible focused dialog", () 
   expect(html).toContain("暂不使用");
 });
 
-Deno.test("location poster ready view exposes a compact city status", () => {
+Deno.test("location poster ready view renders city controls inside the dock", () => {
   const html = renderToStaticMarkup(
     <HomepageLocationPosterView
       failure={null}
@@ -41,6 +46,7 @@ Deno.test("location poster ready view exposes a compact city status", () => {
       onAllow={noop}
       onDismiss={noop}
       onRetry={noop}
+      renderStatus={inDock}
     />,
   );
 
@@ -53,6 +59,9 @@ Deno.test("location poster ready view exposes a compact city status", () => {
   expect(html).toContain('target="_blank"');
   expect(html).toContain("homepage-location-attribution");
   expect(html).not.toContain("homepage-poster-attribution");
+  const dockMiddle = html.indexOf('class="homepage-footer-dock__middle"');
+  const readyStatus = html.indexOf('class="homepage-location-status"');
+  expect(dockMiddle).toBeLessThan(readyStatus);
 });
 
 Deno.test("location poster failure never invents a city label", () => {
@@ -66,6 +75,7 @@ Deno.test("location poster failure never invents a city label", () => {
       onAllow={noop}
       onDismiss={noop}
       onRetry={noop}
+      renderStatus={inDock}
     />,
   );
 
@@ -86,6 +96,7 @@ Deno.test("location poster denied view directs users to site settings without re
       onAllow={noop}
       onDismiss={noop}
       onRetry={noop}
+      renderStatus={inDock}
     />,
   );
 
@@ -105,6 +116,7 @@ Deno.test("location poster suspension hides controls but preserves the backgroun
       onAllow={noop}
       onDismiss={noop}
       onRetry={noop}
+      renderStatus={inDock}
     />,
   );
 
@@ -125,11 +137,14 @@ Deno.test("location poster keeps one attribution while a retained poster is rend
       onAllow={noop}
       onDismiss={noop}
       onRetry={noop}
+      renderStatus={inDock}
     />,
   );
 
   expect(html).toContain("正在生成城市背景");
   expect(html.match(/© OpenStreetMap contributors/g)?.length).toBe(1);
+  expect(html).toContain("homepage-location-attribution");
+  expect(html).not.toContain("homepage-poster-attribution");
 });
 
 Deno.test("permission dialog owns the single retained-poster attribution", () => {
@@ -143,6 +158,7 @@ Deno.test("permission dialog owns the single retained-poster attribution", () =>
       onAllow={noop}
       onDismiss={noop}
       onRetry={noop}
+      renderStatus={inDock}
     />,
   );
   const dialogStart = html.indexOf('role="dialog"');
@@ -166,6 +182,7 @@ Deno.test("suspended permission request keeps its retained-poster attribution ou
       onAllow={noop}
       onDismiss={noop}
       onRetry={noop}
+      renderStatus={inDock}
     />,
   );
 

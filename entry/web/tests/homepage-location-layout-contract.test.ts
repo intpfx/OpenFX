@@ -3,217 +3,86 @@ import { expect } from "@std/expect";
 const homepageCss = await Deno.readTextFile(
   new URL("../src/styles.css", import.meta.url),
 );
-const desktopFooterTrackStart = homepageCss.indexOf(
-  "@media (width > 1100px) {",
-);
-const compactDesktopFooterStart = homepageCss.indexOf(
-  "@media (1100px < width <= 1375px) {",
-);
-const desktopFooterTrackCss = homepageCss.slice(
-  desktopFooterTrackStart,
-  compactDesktopFooterStart,
-);
 
-Deno.test("location permission gate has an exact 58px outer height", () => {
-  expect(homepageCss).toContain(`.homepage-location-gate {
-  bottom: max(1.35rem, env(safe-area-inset-bottom));
-  width: min(760px, calc(100vw - 68px));
-  height: 58px;
-  gap: 0.6rem;
-  padding: 6px 8px 6px 20px;
-}`);
-
-  expect(homepageCss).toContain(`.homepage-location-primary,
-.homepage-location-dismiss,
-.homepage-location-status button {
-  flex: 0 0 auto;
-  min-height: 44px;`);
-});
-
-Deno.test("tablet location states clear the command bar", () => {
-  expect(homepageCss).toContain(`@media (max-width: 1100px) {
-  .homepage-location-status,
-  .homepage-location-progress {
-    bottom: calc(max(1.4rem, env(safe-area-inset-bottom)) + 3.5rem);
-  }`);
-});
-
-Deno.test("mobile location states collapse the empty hint and clear the two-row footer", () => {
-  expect(homepageCss).toContain(
-    `.homepage-page:has(.homepage-location-status) .control-hint[data-active="false"]:empty,
-  .homepage-page:has(.homepage-location-progress) .control-hint[data-active="false"]:empty {
-    display: none;
-  }`,
+function cssRule(selector: string) {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = homepageCss.match(
+    new RegExp(`(?:^|\\n)${escaped}\\s*\\{([^}]+)\\}`),
   );
-  expect(homepageCss).not.toContain(
-    `.homepage-page:has(.homepage-location-status) .control-hint,
-  .homepage-page:has(.homepage-location-progress) .control-hint {
-    display: none;
-  }`,
-  );
-  expect(homepageCss).toContain(
-    `.homepage-page:has(.control-hint:not(:empty)) .homepage-location-status,
-  .homepage-page:has(.control-hint:not(:empty)) .homepage-location-progress {
-    bottom: calc(max(0.72rem, env(safe-area-inset-bottom)) + 10.25rem);
-  }`,
-  );
+  expect(match, `missing CSS rule: ${selector}`).not.toBeNull();
+  return match?.[1] ?? "";
+}
 
-  // The non-empty selector also covers data-active="false" while the old aria-live
-  // text scrambles out; only the final inactive+empty state returns to 7.5rem.
-  expect(homepageCss).toContain(`.homepage-location-status,
-  .homepage-location-progress {
-    bottom: calc(max(0.72rem, env(safe-area-inset-bottom)) + 7.5rem);
-    max-width: calc(100vw - 2rem);
+Deno.test("desktop footer is one structural three-column rail", () => {
+  const dock = cssRule(".homepage-footer-dock");
+
+  expect(dock).toContain("display: grid");
+  expect(dock).toContain("grid-template-columns:");
+  expect(dock).toContain("grid-column: 1 / -1");
+  expect(dock).toContain("grid-row: 3");
+  expect(dock).toContain("border: 1px solid");
+  expect(dock).toContain("background:");
+  expect(dock).toContain("box-shadow:");
+  expect(dock).not.toContain("position: fixed");
+
+  expect(cssRule(".homepage-footer-dock__middle")).toContain("min-width: 0");
+  expect(cssRule(".homepage-footer-dock__right")).toContain("min-width: 0");
+});
+
+Deno.test("normal location status and progress participate in dock layout", () => {
+  const status = cssRule(".homepage-location-status,\n.homepage-location-progress");
+
+  expect(status).not.toContain("position: fixed");
+  expect(status).not.toContain("left: 50%");
+  expect(status).not.toContain("transform: translateX(-50%)");
+  expect(status).not.toContain("border:");
+  expect(status).not.toContain("background:");
+  expect(status).not.toContain("box-shadow:");
+  expect(homepageCss).not.toContain(":has(");
+  expect(homepageCss).not.toContain("--homepage-footer-track-");
+});
+
+Deno.test("mobile dock remains one fixed shell with two internal rows", () => {
+  const mobileStart = homepageCss.indexOf("@media (max-width: 900px)");
+  const mobileEnd = homepageCss.indexOf("\n}", mobileStart);
+  const mobileCss = homepageCss.slice(mobileStart, mobileEnd + 2);
+
+  expect(mobileCss).toContain(`.homepage-footer-dock {
+    position: fixed;`);
+  expect(mobileCss).toContain(
+    "grid-template-columns: minmax(7rem, 0.75fr) minmax(0, 1.25fr);",
+  );
+  expect(mobileCss).toContain(`.homepage-footer-dock__right {
+    grid-column: 1 / -1;`);
+  expect(mobileCss).toContain("grid-row: 2;");
+});
+
+Deno.test("mobile dock controls retain a 44px touch target", () => {
+  expect(homepageCss).toContain(`@media (max-width: 900px)`);
+  expect(homepageCss).toContain(`.homepage-footer-dock button,
+  .homepage-footer-dock input {
+    min-height: 44px;
   }`);
 });
 
-Deno.test("desktop location status reserves space between footer controls", () => {
-  expect(homepageCss).toContain(
-    `.homepage-page:has(.homepage-location-status) .control-hint,
-  .homepage-page:has(.homepage-location-progress) .control-hint {
-    width: min(18rem, 100%);
-  }`,
-  );
+Deno.test("permission gate remains fixed above the dock and page", () => {
+  const gate = cssRule(".homepage-location-gate");
+
+  expect(gate).toContain("position: fixed");
+  expect(gate).toContain("z-index: 80");
+  expect(gate).toContain("height: 58px");
+  expect(gate).toContain("bottom:");
 });
 
-Deno.test("desktop footer centers its version, location status, and command bar on one track", () => {
-  expect(desktopFooterTrackCss).toContain(`.homepage-page {
-    --homepage-footer-track-bottom: max(1.4rem, env(safe-area-inset-bottom));
-    --homepage-footer-track-height: 42px;
-    padding-bottom: var(--homepage-footer-track-bottom);
-  }
+Deno.test("ready city poster retains its road field and footer mask", () => {
+  const poster = cssRule(".homepage-poster-background img");
 
-  .control-cluster,
-  .control-status,
-  .build-version,
-  .project-command-bar {
-    min-height: var(--homepage-footer-track-height);
-  }
-`);
-
-  expect(desktopFooterTrackCss).toContain(`.control-status,
-  .build-version,
-  .project-command-bar {
-    height: var(--homepage-footer-track-height);
-  }`);
-
-  expect(desktopFooterTrackCss).toContain(`.homepage-location-status,
-  .homepage-location-progress {
-    bottom: var(--homepage-footer-track-bottom);
-    height: var(--homepage-footer-track-height);
-    min-height: var(--homepage-footer-track-height);
-  }`);
-});
-
-Deno.test("desktop footer track keeps long hints on one clipped line above 1100px", () => {
-  expect(desktopFooterTrackCss).toContain(`.control-status {
-    flex-wrap: nowrap;
-    min-width: 0;
-    overflow: hidden;
-  }
-
-  .control-hint {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }`);
-});
-
-Deno.test("compact desktop footer removes empty hint space and bounds location controls", () => {
-  expect(homepageCss).toContain(`@media (1100px < width <= 1375px) {
-  .homepage-page:has(.homepage-location-status) .control-hint[data-active="false"]:empty,
-  .homepage-page:has(.homepage-location-progress) .control-hint[data-active="false"]:empty {
-    display: none;
-  }
-
-  .homepage-page:has(.homepage-location-status) .control-hint,
-  .homepage-page:has(.homepage-location-progress) .control-hint {
-    width: min(15rem, 100%);
-    flex-shrink: 1;
-  }
-
-  .project-command-bar {
-    min-width: min(100%, 20rem);
-  }
-
-  .homepage-location-status {
-    width: min(15rem, calc(100vw - 2rem));
-    max-width: min(15rem, calc(100vw - 2rem));
-  }
-
-  .homepage-location-status:not(.is-error) > span {
-    display: none;
-  }`);
-});
-
-Deno.test("poster attribution remains above the ready controls at tablet and mobile widths", () => {
-  expect(homepageCss).toContain(`.homepage-location-attribution {
-  flex: 0 0 auto;
-  color: var(--text-secondary);
-  font: inherit;
-  font-size: 0.54rem;`);
-  expect(homepageCss).toContain(`.homepage-location-status strong {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--accent);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}`);
-  expect(homepageCss).toContain(`.homepage-location-status:not(.is-error) > span {
-    display: none;
-  }
-
-  .homepage-location-status:not(.is-error) strong {
-    flex: 1 1 auto;
-    min-width: 5.5rem;
-  }`);
-  expect(homepageCss).toContain(
-    `.homepage-location-capsule.homepage-location-gate .homepage-location-gate-attribution {
-  position: absolute;
-  bottom: calc(100% + 0.55rem);
-}`,
-  );
-  expect(homepageCss).toContain(`.homepage-poster-attribution {
-    bottom: calc(max(1.4rem, env(safe-area-inset-bottom)) + 6.8rem);
-  }`);
-  expect(homepageCss).toContain(`.homepage-poster-attribution {
-    bottom: calc(max(0.72rem, env(safe-area-inset-bottom)) + 11.6rem);
-    font-size: 0.5rem;
-  }`);
-  expect(homepageCss).toContain(
-    `.homepage-page:has(.control-hint:not(:empty)) .homepage-poster-attribution {
-    bottom: calc(max(0.72rem, env(safe-area-inset-bottom)) + 14.5rem);
-  }`,
-  );
-});
-
-Deno.test("ready city poster uses a strong road field and masks its footer", () => {
-  expect(homepageCss).toContain(`.homepage-poster-background img {
-  position: absolute;
-  z-index: 1;
-  top: 0;
-  width: 100%;
-  height: 120%;`);
-  expect(homepageCss).toContain("object-position: center top;");
-  expect(homepageCss).toContain("mix-blend-mode: multiply;");
-  expect(homepageCss).toContain(`-webkit-mask-image: linear-gradient(
-    to bottom,
-    #000 0%,
-    #000 65%,
-    rgb(0 0 0 / 0.78) 69%,
-    transparent 76%
-  );`);
-  expect(homepageCss).toContain(`mask-image: linear-gradient(
-    to bottom,
-    #000 0%,
-    #000 65%,
-    rgb(0 0 0 / 0.78) 69%,
-    transparent 76%
-  );`);
-  expect(homepageCss).toContain(
-    "linear-gradient(oklch(0.74 0.008 250 / 0.035) 1px, transparent 1px)",
-  );
+  expect(poster).toContain("position: absolute");
+  expect(poster).toContain("height: 120%");
+  expect(poster).toContain("object-position: center top");
+  expect(poster).toContain("mix-blend-mode: multiply");
+  expect(poster).toContain("-webkit-mask-image: linear-gradient(");
+  expect(poster).toContain("mask-image: linear-gradient(");
   expect(homepageCss).toContain(`.homepage-poster-background[data-ready="true"] img {
   opacity: 0.96;
 }`);

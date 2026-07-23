@@ -32,6 +32,7 @@ import {
   shouldAnimateHomepageCards,
   shouldUseHomepageViewTransition,
 } from "./homepage/experience.ts";
+import { HomepageFooterDock } from "./homepage/HomepageFooterDock.tsx";
 import { HomepageLocationPoster } from "./homepage/HomepageLocationPoster.tsx";
 import { ProjectCard } from "./homepage/ProjectCard.tsx";
 
@@ -919,11 +920,6 @@ function Homepage() {
       className="page homepage-page"
       data-location-focus={locationFocusActive ? "true" : "false"}
     >
-      <HomepageLocationPoster
-        fallbackFocusRef={brandWordRef}
-        suspended={isPanelOpen}
-        onFocusModeChange={setLocationFocusActive}
-      />
       <BrandWord
         interactionDisabled={locationFocusActive}
         lockWidthPx={brandLockWidth}
@@ -1193,158 +1189,171 @@ function Homepage() {
           : null}
       </div>
 
-      <div
-        aria-hidden={locationFocusActive ? true : undefined}
-        className="control-cluster"
-        inert={locationFocusActive ? true : undefined}
-      >
-        <div className="control-status">
-          <span
-            className="control-hint"
-            data-active={status ? "true" : "false"}
-            id="controlHint"
-            ref={statusHintRef}
-            aria-live="polite"
-          />
-          <BuildVersion />
-        </div>
-
-        <div className="control-actions">
-          {activePanel === "relay-proxy-gateway"
-            ? (
-              <form className="proxy-footer-form" onSubmit={submitProxyUrl}>
-                <button
-                  aria-label="返回项目卡片"
-                  className="proxy-footer-back"
-                  ref={proxyBackControlRef}
-                  type="button"
-                  onClick={closeProjectPanel}
-                >
-                  ←
-                </button>
-                <input
-                  aria-label="Proxy URL"
-                  className="proxy-footer-input"
-                  placeholder="https://example.com/path"
-                  type="text"
-                  value={proxyInput}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setProxyInput(value);
-                    if (!value.trim()) {
-                      setProxyFrameUrl("");
-                    }
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Escape") {
-                      event.preventDefault();
-                      closeProjectPanel();
-                    }
-                  }}
+      <HomepageLocationPoster
+        fallbackFocusRef={brandWordRef}
+        suspended={isPanelOpen}
+        onFocusModeChange={setLocationFocusActive}
+        renderStatus={(locationStatus) => (
+          <HomepageFooterDock
+            ariaHidden={locationFocusActive}
+            inert={locationFocusActive ? true : undefined}
+            left={
+              <div className="control-status">
+                <span
+                  className="control-hint"
+                  data-active={status ? "true" : "false"}
+                  id="controlHint"
+                  ref={statusHintRef}
+                  aria-live="polite"
                 />
-                <button className="proxy-footer-submit" type="submit">OPEN</button>
-              </form>
-            )
-            : null}
-          <div
-            className={`project-command-bar${
-              showMessageComposer && !isPanelOpen ? " message-compose-active" : ""
-            }`}
-            style={{
-              display: activePanel === "relay-proxy-gateway" ? "none" : undefined,
-            }}
-          >
-            {!isPanelOpen
-              ? (
-                <>
-                  {showMessageComposer
+                <BuildVersion />
+              </div>
+            }
+            middle={locationStatus}
+            right={
+              <div className="control-actions">
+                {activePanel === "relay-proxy-gateway"
+                  ? (
+                    <form className="proxy-footer-form" onSubmit={submitProxyUrl}>
+                      <button
+                        aria-label="返回项目卡片"
+                        className="proxy-footer-back"
+                        ref={proxyBackControlRef}
+                        type="button"
+                        onClick={closeProjectPanel}
+                      >
+                        ←
+                      </button>
+                      <input
+                        aria-label="Proxy URL"
+                        className="proxy-footer-input"
+                        placeholder="https://example.com/path"
+                        type="text"
+                        value={proxyInput}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          setProxyInput(value);
+                          if (!value.trim()) {
+                            setProxyFrameUrl("");
+                          }
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape") {
+                            event.preventDefault();
+                            closeProjectPanel();
+                          }
+                        }}
+                      />
+                      <button className="proxy-footer-submit" type="submit">
+                        OPEN
+                      </button>
+                    </form>
+                  )
+                  : null}
+                <div
+                  className={`project-command-bar${
+                    showMessageComposer && !isPanelOpen ? " message-compose-active" : ""
+                  }`}
+                  style={{
+                    display: activePanel === "relay-proxy-gateway" ? "none" : undefined,
+                  }}
+                >
+                  {!isPanelOpen
                     ? (
                       <>
-                        <button
-                          aria-label="返回搜索"
-                          className="message-compose-back"
-                          type="button"
-                          onClick={closeMessageComposer}
-                        >
-                          ←
-                        </button>
-                        <span className="project-count message-count">MSG</span>
-                        <form
-                          className="message-inline-form"
-                          id="messageInlineForm"
-                          onSubmit={(event) => {
-                            event.preventDefault();
-                            void handleSendMessage();
-                          }}
-                        >
-                          <input
-                            aria-label="留言内容"
-                            className="message-inline-content"
-                            placeholder="Message"
-                            ref={messageContentInputRef}
-                            type="text"
-                            value={messageContent}
-                            onChange={(event) => setMessageContent(event.target.value)}
-                            onKeyDown={(event) => {
-                              if (event.key === "Escape") {
-                                event.preventDefault();
-                                closeMessageComposer();
-                              }
-                            }}
-                          />
-                        </form>
+                        {showMessageComposer
+                          ? (
+                            <>
+                              <button
+                                aria-label="返回搜索"
+                                className="message-compose-back"
+                                type="button"
+                                onClick={closeMessageComposer}
+                              >
+                                ←
+                              </button>
+                              <span className="project-count message-count">MSG</span>
+                              <form
+                                className="message-inline-form"
+                                id="messageInlineForm"
+                                onSubmit={(event) => {
+                                  event.preventDefault();
+                                  void handleSendMessage();
+                                }}
+                              >
+                                <input
+                                  aria-label="留言内容"
+                                  className="message-inline-content"
+                                  placeholder="Message"
+                                  ref={messageContentInputRef}
+                                  type="text"
+                                  value={messageContent}
+                                  onChange={(event) =>
+                                    setMessageContent(event.target.value)}
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Escape") {
+                                      event.preventDefault();
+                                      closeMessageComposer();
+                                    }
+                                  }}
+                                />
+                              </form>
+                            </>
+                          )
+                          : (
+                            <>
+                              <span
+                                aria-atomic="true"
+                                aria-live="polite"
+                                className="project-count"
+                              >
+                                {projectCountLabel}
+                              </span>
+                              <input
+                                aria-label="搜索项目"
+                                className="project-search-input project-command-search"
+                                placeholder="Search"
+                                type="search"
+                                value={projectQuery}
+                                onChange={(event) =>
+                                  setProjectQuery(event.target.value)}
+                              />
+                            </>
+                          )}
                       </>
                     )
-                    : (
-                      <>
-                        <span
-                          aria-atomic="true"
-                          aria-live="polite"
-                          className="project-count"
-                        >
-                          {projectCountLabel}
-                        </span>
-                        <input
-                          aria-label="搜索项目"
-                          className="project-search-input project-command-search"
-                          placeholder="Search"
-                          type="search"
-                          value={projectQuery}
-                          onChange={(event) => setProjectQuery(event.target.value)}
-                        />
-                      </>
-                    )}
-                </>
-              )
-              : null}
-            <button
-              className={`ctrl-btn${!isPanelOpen ? " primary" : ""}`}
-              id="homepagePrimaryControl"
-              ref={primaryControlRef}
-              type="button"
-              onClick={() => {
-                if (isPanelOpen) {
-                  closeProjectPanel();
-                  return;
-                }
-                if (showMessageComposer) {
-                  void handleSendMessage();
-                  return;
-                }
-                openMessageComposer();
-              }}
-            >
-              <span
-                className="ctrl-btn-label"
-                id="homepagePrimaryControlLabel"
-                ref={primaryControlLabelRef}
-                style={{ display: isPanelOpen ? "none" : undefined }}
-              />
-              {isPanelOpen && <span className="ctrl-btn-back-text">← 返回</span>}
-            </button>
-          </div>
-        </div>
-      </div>
+                    : null}
+                  <button
+                    className={`ctrl-btn${!isPanelOpen ? " primary" : ""}`}
+                    id="homepagePrimaryControl"
+                    ref={primaryControlRef}
+                    type="button"
+                    onClick={() => {
+                      if (isPanelOpen) {
+                        closeProjectPanel();
+                        return;
+                      }
+                      if (showMessageComposer) {
+                        void handleSendMessage();
+                        return;
+                      }
+                      openMessageComposer();
+                    }}
+                  >
+                    <span
+                      className="ctrl-btn-label"
+                      id="homepagePrimaryControlLabel"
+                      ref={primaryControlLabelRef}
+                      style={{ display: isPanelOpen ? "none" : undefined }}
+                    />
+                    {isPanelOpen && <span className="ctrl-btn-back-text">← 返回</span>}
+                  </button>
+                </div>
+              </div>
+            }
+          />
+        )}
+      />
     </div>
   );
 }
