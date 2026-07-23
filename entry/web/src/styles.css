@@ -336,7 +336,7 @@ textarea {
   color: var(--text-primary);
 }
 
-@media (min-width: 1100.02px) {
+@media (min-width: 1100.01px) {
   .homepage-page {
     --homepage-footer-track-bottom: max(1.4rem, env(safe-area-inset-bottom));
     --homepage-footer-track-height: 42px;
@@ -370,6 +370,45 @@ textarea {
   .homepage-page:has(.homepage-location-status) .control-hint,
   .homepage-page:has(.homepage-location-progress) .control-hint {
     width: min(18rem, 100%);
+  }
+
+  .control-status {
+    flex-wrap: nowrap;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .control-hint {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+@media (min-width: 1100.01px) and (max-width: 1375px) {
+  .homepage-page:has(.homepage-location-status) .control-hint[data-active="false"]:empty,
+  .homepage-page:has(.homepage-location-progress) .control-hint[data-active="false"]:empty {
+    display: none;
+  }
+
+  .homepage-page:has(.homepage-location-status) .control-hint,
+  .homepage-page:has(.homepage-location-progress) .control-hint {
+    width: min(15rem, 100%);
+    flex-shrink: 1;
+  }
+
+  .project-command-bar {
+    min-width: min(100%, 20rem);
+  }
+
+  .homepage-location-status {
+    width: min(15rem, calc(100vw - 2rem));
+    max-width: min(15rem, calc(100vw - 2rem));
+  }
+
+  .homepage-location-status:not(.is-error) > span {
+    display: none;
   }
 }
 

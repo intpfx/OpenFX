@@ -3,6 +3,16 @@ import { expect } from "@std/expect";
 const homepageCss = await Deno.readTextFile(
   new URL("../src/styles.css", import.meta.url),
 );
+const desktopFooterTrackStart = homepageCss.indexOf(
+  "@media (min-width: 1100.01px) {",
+);
+const compactDesktopFooterStart = homepageCss.indexOf(
+  "@media (min-width: 1100.01px) and (max-width: 1375px) {",
+);
+const desktopFooterTrackCss = homepageCss.slice(
+  desktopFooterTrackStart,
+  compactDesktopFooterStart,
+);
 
 Deno.test("location permission gate has an exact 58px outer height", () => {
   expect(homepageCss).toContain(`.homepage-location-gate {
@@ -67,7 +77,7 @@ Deno.test("desktop location status reserves space between footer controls", () =
 });
 
 Deno.test("desktop footer centers its version, location status, and command bar on one track", () => {
-  expect(homepageCss).toContain(`.homepage-page {
+  expect(desktopFooterTrackCss).toContain(`.homepage-page {
     --homepage-footer-track-bottom: max(1.4rem, env(safe-area-inset-bottom));
     --homepage-footer-track-height: 42px;
     padding-bottom: var(--homepage-footer-track-bottom);
@@ -81,17 +91,59 @@ Deno.test("desktop footer centers its version, location status, and command bar 
   }
 `);
 
-  expect(homepageCss).toContain(`.control-status,
+  expect(desktopFooterTrackCss).toContain(`.control-status,
   .build-version,
   .project-command-bar {
     height: var(--homepage-footer-track-height);
   }`);
 
-  expect(homepageCss).toContain(`.homepage-location-status,
+  expect(desktopFooterTrackCss).toContain(`.homepage-location-status,
   .homepage-location-progress {
     bottom: var(--homepage-footer-track-bottom);
     height: var(--homepage-footer-track-height);
     min-height: var(--homepage-footer-track-height);
+  }`);
+});
+
+Deno.test("desktop footer track keeps long hints on one clipped line above 1100px", () => {
+  expect(desktopFooterTrackCss).toContain(`.control-status {
+    flex-wrap: nowrap;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .control-hint {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }`);
+});
+
+Deno.test("compact desktop footer removes empty hint space and bounds location controls", () => {
+  expect(homepageCss).toContain(`@media (min-width: 1100.01px) and (max-width: 1375px) {
+  .homepage-page:has(.homepage-location-status) .control-hint[data-active="false"]:empty,
+  .homepage-page:has(.homepage-location-progress) .control-hint[data-active="false"]:empty {
+    display: none;
+  }
+
+  .homepage-page:has(.homepage-location-status) .control-hint,
+  .homepage-page:has(.homepage-location-progress) .control-hint {
+    width: min(15rem, 100%);
+    flex-shrink: 1;
+  }
+
+  .project-command-bar {
+    min-width: min(100%, 20rem);
+  }
+
+  .homepage-location-status {
+    width: min(15rem, calc(100vw - 2rem));
+    max-width: min(15rem, calc(100vw - 2rem));
+  }
+
+  .homepage-location-status:not(.is-error) > span {
+    display: none;
   }`);
 });
 
