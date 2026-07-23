@@ -1240,9 +1240,12 @@ textarea {
 
 .proxy-footer-back {
   flex: 0 0 auto;
+  min-height: 32px;
   border-left: 0;
   border-right: 1px solid var(--border);
   color: var(--text-secondary);
+  line-height: 1;
+  padding-inline: 0.5rem;
   font-size: 0.92rem;
 }
 
@@ -2403,6 +2406,10 @@ textarea {
     min-height: 44px;
   }
 
+  .proxy-footer-back {
+    min-height: 44px;
+  }
+
   .homepage-footer-dock__action .ctrl-btn {
     min-width: 5.8rem;
     min-height: 44px;
@@ -2468,7 +2475,6 @@ textarea {
   }
 
   .message-compose-back,
-  .proxy-footer-back,
   .proxy-footer-input {
     min-height: 44px;
   }
