@@ -1128,31 +1128,16 @@ function Homepage() {
               title="中燃WMS二维码生成器"
               lede="Tampermonkey 脚本，在 WMS 物料详情页自动提取信息并生成可拖拽悬浮二维码，供仓储人员手机扫描。"
             >
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "1rem",
-                  alignItems: "flex-start",
-                }}
-              >
+              <div className="chinagas-install-actions">
                 <a
+                  className="chinagas-install-link"
                   href="https://greasyfork.org/zh-CN/scripts/550879"
                   target="_blank"
                   rel="noopener noreferrer"
-                  style={{
-                    display: "inline-block",
-                    padding: "0.75rem 1.5rem",
-                    background: "var(--accent)",
-                    color: "#fff",
-                    borderRadius: "var(--radius)",
-                    textDecoration: "none",
-                    fontWeight: 600,
-                  }}
                 >
                   前往 Greasy Fork 安装
                 </a>
-                <p style={{ color: "var(--muted)", fontSize: "0.85rem", margin: 0 }}>
+                <p className="chinagas-install-note">
                   脚本已停止更新，功能完整，永久可用。
                 </p>
               </div>

@@ -1,4 +1,7 @@
-import { useState } from "react";
+/** @jsxRuntime classic */
+/** @jsx h */
+
+import { createElement as h, type MouseEvent, useState } from "react";
 
 import type { HomepageProjectCard } from "../../homepage-projects.ts";
 
@@ -26,7 +29,8 @@ export function ProjectCard(props: {
         className="project-card-trigger"
         disabled={!props.onOpen}
         type="button"
-        onClick={(event) => props.onOpen?.(event.currentTarget)}
+        onClick={(event: MouseEvent<HTMLButtonElement>) =>
+          props.onOpen?.(event.currentTarget)}
       >
         <span className="project-card-copy">
           <span className="pc-name">{props.project.name}</span>

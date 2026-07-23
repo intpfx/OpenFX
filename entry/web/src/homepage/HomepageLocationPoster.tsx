@@ -125,6 +125,7 @@ export function HomepageLocationPosterView(
       >
         <span className="footer-eyebrow homepage-location-label">BACKGROUND</span>
         <strong>{getFailureTitle(props.failure)}</strong>
+        <span>请在浏览器的网站设置中重新允许定位。</span>
         <button type="button" onClick={props.onDismiss}>关闭</button>
       </section>
     )

@@ -3,6 +3,9 @@ import { expect } from "@std/expect";
 const css = await Deno.readTextFile(
   new URL("../src/styles.css", import.meta.url),
 );
+const app = await Deno.readTextFile(
+  new URL("../src/App.tsx", import.meta.url),
+);
 
 function cssRule(selector: string) {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -23,6 +26,7 @@ Deno.test("homepage declares complete light and dark semantic tokens", () => {
       "--surface-raised",
       "--text-primary",
       "--text-secondary",
+      "--text-on-accent",
       "--accent",
       "--border",
       "--grid-line",
@@ -34,6 +38,18 @@ Deno.test("homepage declares complete light and dark semantic tokens", () => {
   ) {
     expect(css.match(new RegExp(`${token}:`, "g"))?.length).toBeGreaterThanOrEqual(2);
   }
+});
+
+Deno.test("owned panel JSX uses semantic text tokens instead of inline color bypasses", () => {
+  expect(app).not.toMatch(/color:\s*["']#[0-9a-f]{3,8}["']/i);
+  expect(app).not.toContain("var(--muted)");
+  expect(app).toContain('className="chinagas-install-link"');
+  expect(app).toContain('className="chinagas-install-note"');
+
+  const linkRule = cssRule(".chinagas-install-link");
+  const noteRule = cssRule(".chinagas-install-note");
+  expect(linkRule).toContain("color: var(--text-on-accent)");
+  expect(noteRule).toContain("color: var(--text-secondary)");
 });
 
 Deno.test("theme controls browser color scheme and poster treatment", () => {

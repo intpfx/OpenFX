@@ -855,6 +855,10 @@ textarea {
   opacity: 1;
 }
 
+.pc-source-field[data-preview-state="error"] .pc-runtime-layer {
+  display: none;
+}
+
 .project-card:hover .pc-source-field[data-preview-state="loaded"] .pc-runtime-layer,
 .project-card-trigger:focus-visible .pc-source-field[data-preview-state="loaded"] .pc-runtime-layer {
   clip-path: inset(0);
@@ -2807,6 +2811,34 @@ textarea {
 .domain-panel-section code {
   color: var(--accent);
   font-size: 0.72rem;
+}
+
+.chinagas-install-actions {
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.chinagas-install-link {
+  display: inline-block;
+  border-radius: var(--radius);
+  background: var(--accent);
+  padding: 0.75rem 1.5rem;
+  color: var(--text-on-accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.chinagas-install-link:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+.chinagas-install-note {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
 }
 
 .map-poster-tool-section,

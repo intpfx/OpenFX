@@ -4,7 +4,7 @@
     "build": "deno run --config deno.json --lock ../../deno.lock --frozen -A tools/build-with-metadata.ts",
     "preview": "deno task build && deno run --unstable-kv -A .output/server/index.ts",
     "local-pairing": "deno run --unstable-kv -A tools/local-pairing-server.ts",
-    "test": "deno test --allow-env --allow-read=src/console/console.css,src/styles.css,deno.json,tools/local-pairing-server.ts,public/homepage-previews,public/map-poster/tokyo-japanese-ink.webp,../../deno.json,index.html,public/theme-bootstrap.js tests"
+    "test": "deno test --allow-env --allow-read=src/App.tsx,src/console/console.css,src/styles.css,deno.json,tools/local-pairing-server.ts,public/homepage-previews,public/map-poster/tokyo-japanese-ink.webp,../../deno.json,index.html,public/theme-bootstrap.js tests"
   },
   "imports": {
     "@std/expect": "jsr:@std/expect@^1.0.17",

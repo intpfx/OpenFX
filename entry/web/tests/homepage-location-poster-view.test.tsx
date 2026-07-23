@@ -103,6 +103,7 @@ Deno.test("location poster denied view is concise and has no retry", () => {
 
   expect(html).toContain("BACKGROUND");
   expect(html).toContain("定位权限未开启");
+  expect(html).toContain("请在浏览器的网站设置中重新允许定位。");
   expect(html).toContain("关闭");
   expect(html).not.toContain("重试");
 });
