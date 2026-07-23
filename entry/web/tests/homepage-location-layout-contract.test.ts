@@ -37,6 +37,7 @@ Deno.test("desktop footer is an editorial two-baseline rail", () => {
 Deno.test("desktop Proxy index stays within the editorial second baseline", () => {
   expect(cssRule(".proxy-footer-form")).toContain("min-height: 32px");
   expect(cssRule(".proxy-footer-back")).toContain("min-height: 32px");
+  expect(cssRule(".proxy-footer-back")).toContain("padding: 0 0.5rem");
   expect(cssRule(".proxy-footer-input")).toContain("min-height: 32px");
   expect(cssRule(".proxy-footer-input:focus")).toContain(
     "box-shadow: inset 0 -1px 0 var(--accent)",
