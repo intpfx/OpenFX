@@ -92,3 +92,25 @@ Additional state checks:
 
 No demo mode, route, API, persistence field, dependency, server/domain behavior,
 push, merge, or deployment was added.
+
+## Review fix — mobile attribution touch targets
+
+The review follow-up extends the mobile touch-target contract to all three OSM
+link placements: the Dock ready/rendering attribution, the permission-gate
+attribution, and the suspended-poster attribution.
+
+- RED: the updated layout contract failed only
+  `mobile dock controls and attribution links retain a 44px touch target`
+  (5 passed, 1 failed) because the link selectors did not receive a 44px
+  minimum height.
+- GREEN: all attribution links are now inline-flex 44px targets. The Dock and
+  gate keep their compact text rendering, while the suspended attribution
+  draws its original compact pill on a centered pseudo-element inside the
+  larger hit box.
+- The Dock attribution retains its 6rem mobile width cap and no horizontal
+  padding was added, so the 390px overflow fix and one-attribution semantics
+  are unchanged.
+- Targeted footer/location suite: 16 passed, 0 failed.
+- Full web suite: 181 passed, 0 failed, 1 ignored.
+- `deno fmt --check` for the two touched source/test files and
+  `git diff --check`: passed.

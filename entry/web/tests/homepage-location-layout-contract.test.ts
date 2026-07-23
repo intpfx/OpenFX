@@ -57,10 +57,13 @@ Deno.test("mobile dock remains one fixed shell with two internal rows", () => {
   expect(mobileCss).toContain("grid-row: 2;");
 });
 
-Deno.test("mobile dock controls retain a 44px touch target", () => {
+Deno.test("mobile dock controls and attribution links retain a 44px touch target", () => {
   expect(homepageCss).toContain(`@media (max-width: 900px)`);
   expect(homepageCss).toContain(`.homepage-footer-dock button,
-  .homepage-footer-dock input {
+  .homepage-footer-dock input,
+  .homepage-location-attribution,
+  .homepage-location-gate-attribution,
+  .homepage-poster-attribution {
     min-height: 44px;
   }`);
 });

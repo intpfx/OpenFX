@@ -2407,8 +2407,17 @@ textarea {
   }
 
   .homepage-footer-dock button,
-  .homepage-footer-dock input {
+  .homepage-footer-dock input,
+  .homepage-location-attribution,
+  .homepage-location-gate-attribution,
+  .homepage-poster-attribution {
     min-height: 44px;
+  }
+
+  .homepage-location-attribution,
+  .homepage-poster-attribution {
+    display: inline-flex;
+    align-items: center;
   }
 
   .homepage-location-gate {
@@ -2446,8 +2455,28 @@ textarea {
   }
 
   .homepage-poster-attribution {
-    bottom: calc(max(0.72rem, env(safe-area-inset-bottom)) + 7.2rem);
+    bottom: calc(max(0.72rem, env(safe-area-inset-bottom)) + 6.4rem);
+    justify-content: center;
+    background: transparent;
+    box-shadow: none;
+    isolation: isolate;
+    padding-block: 0;
     font-size: 0.5rem;
+  }
+
+  .homepage-poster-attribution::before {
+    position: absolute;
+    z-index: -1;
+    top: 50%;
+    right: 0;
+    left: 0;
+    height: 1.35rem;
+    border-radius: 999px;
+    background: oklch(0.99 0.003 250 / 0.82);
+    box-shadow: 0 4px 12px oklch(0.25 0.035 250 / 0.1);
+    content: "";
+    pointer-events: none;
+    transform: translateY(-50%);
   }
 
   .homepage-location-attribution {
