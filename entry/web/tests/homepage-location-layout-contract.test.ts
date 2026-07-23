@@ -58,10 +58,40 @@ Deno.test("mobile location states collapse the empty hint and clear the two-row 
 });
 
 Deno.test("desktop location status reserves space between footer controls", () => {
-  expect(homepageCss).toContain(`@media (min-width: 1100.02px) {
-  .homepage-page:has(.homepage-location-status) .control-hint,
+  expect(homepageCss).toContain(
+    `.homepage-page:has(.homepage-location-status) .control-hint,
   .homepage-page:has(.homepage-location-progress) .control-hint {
     width: min(18rem, 100%);
+  }`,
+  );
+});
+
+Deno.test("desktop footer centers its version, location status, and command bar on one track", () => {
+  expect(homepageCss).toContain(`.homepage-page {
+    --homepage-footer-track-bottom: max(1.4rem, env(safe-area-inset-bottom));
+    --homepage-footer-track-height: 42px;
+    padding-bottom: var(--homepage-footer-track-bottom);
+  }
+
+  .control-cluster,
+  .control-status,
+  .build-version,
+  .project-command-bar {
+    min-height: var(--homepage-footer-track-height);
+  }
+`);
+
+  expect(homepageCss).toContain(`.control-status,
+  .build-version,
+  .project-command-bar {
+    height: var(--homepage-footer-track-height);
+  }`);
+
+  expect(homepageCss).toContain(`.homepage-location-status,
+  .homepage-location-progress {
+    bottom: var(--homepage-footer-track-bottom);
+    height: var(--homepage-footer-track-height);
+    min-height: var(--homepage-footer-track-height);
   }`);
 });
 

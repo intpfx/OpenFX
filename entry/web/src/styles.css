@@ -337,6 +337,36 @@ textarea {
 }
 
 @media (min-width: 1100.02px) {
+  .homepage-page {
+    --homepage-footer-track-bottom: max(1.4rem, env(safe-area-inset-bottom));
+    --homepage-footer-track-height: 42px;
+    padding-bottom: var(--homepage-footer-track-bottom);
+  }
+
+  .control-cluster,
+  .control-status,
+  .build-version,
+  .project-command-bar {
+    min-height: var(--homepage-footer-track-height);
+  }
+
+  .control-cluster {
+    padding-top: 0;
+  }
+
+  .control-status,
+  .build-version,
+  .project-command-bar {
+    height: var(--homepage-footer-track-height);
+  }
+
+  .homepage-location-status,
+  .homepage-location-progress {
+    bottom: var(--homepage-footer-track-bottom);
+    height: var(--homepage-footer-track-height);
+    min-height: var(--homepage-footer-track-height);
+  }
+
   .homepage-page:has(.homepage-location-status) .control-hint,
   .homepage-page:has(.homepage-location-progress) .control-hint {
     width: min(18rem, 100%);
