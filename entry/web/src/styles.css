@@ -1,12 +1,59 @@
-:root {
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
   --bg: oklch(0.985 0.002 250);
   --surface: oklch(0.97 0.003 250);
+  --surface-raised: oklch(0.995 0.002 250);
+  --surface-muted: oklch(0.955 0.008 250);
+  --surface-code: oklch(0.18 0.01 260);
   --dock-mobile-background: oklch(0.985 0.004 250 / 0.94);
   --text-primary: oklch(0.15 0.002 260);
   --text-secondary: oklch(0.45 0.005 260);
+  --text-on-accent: oklch(1 0 0);
+  --text-code: oklch(0.96 0.01 250);
   --accent: oklch(0.55 0.2 250);
   --accent-glow: oklch(0.65 0.15 250);
+  --accent-subtle: oklch(0.55 0.2 250 / 0.08);
   --border: oklch(0.88 0.005 260);
+  --grid-line: oklch(0.88 0.005 260 / 0.3);
+  --shadow-color: oklch(0.25 0.035 250 / 0.1);
+  --focus-ring: oklch(0.55 0.2 250 / 0.5);
+  --poster-overlay-start: oklch(0.985 0.002 250 / 0.14);
+  --poster-overlay-end: oklch(0.985 0.002 250);
+  --status-success: oklch(0.42 0.12 150);
+  --status-success-border: oklch(0.8 0.08 150);
+  --status-danger: oklch(0.54 0.16 25);
+  --status-danger-strong: oklch(0.56 0.2 28);
+  --status-danger-border: oklch(0.82 0.08 25);
+  --radius: 2px;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: oklch(0.19 0.012 250);
+  --surface: oklch(0.23 0.014 250);
+  --surface-raised: oklch(0.27 0.014 250);
+  --surface-muted: oklch(0.21 0.014 250);
+  --surface-code: oklch(0.15 0.012 250);
+  --dock-mobile-background: oklch(0.2 0.014 250 / 0.94);
+  --text-primary: oklch(0.91 0.006 250);
+  --text-secondary: oklch(0.68 0.012 250);
+  --text-on-accent: oklch(0.16 0.012 250);
+  --text-code: oklch(0.9 0.01 250);
+  --accent: oklch(0.72 0.16 250);
+  --accent-glow: oklch(0.77 0.13 250);
+  --accent-subtle: oklch(0.72 0.16 250 / 0.14);
+  --border: oklch(0.36 0.015 250);
+  --grid-line: oklch(0.36 0.015 250 / 0.34);
+  --shadow-color: oklch(0.05 0.01 250 / 0.36);
+  --focus-ring: oklch(0.72 0.16 250 / 0.65);
+  --poster-overlay-start: oklch(0.19 0.012 250 / 0.4);
+  --poster-overlay-end: oklch(0.19 0.012 250);
+  --status-success: oklch(0.78 0.11 150);
+  --status-success-border: oklch(0.58 0.09 150);
+  --status-danger: oklch(0.78 0.12 28);
+  --status-danger-strong: oklch(0.8 0.14 28);
+  --status-danger-border: oklch(0.58 0.1 28);
   --radius: 2px;
 }
 
@@ -25,12 +72,12 @@ body {
   min-height: 100vh;
   background-color: var(--bg);
   background-image:
-    linear-gradient(oklch(0.88 0.005 260 / 0.3) 1px, transparent 1px),
-    linear-gradient(90deg, oklch(0.88 0.005 260 / 0.3) 1px, transparent 1px);
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
   background-size: 80px 80px;
   background-position: -1px -1px;
   color: var(--text-primary);
-  color-scheme: light;
+  transition: background-color 0.18s ease, color 0.18s ease;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   line-height: 1.5;
 }
@@ -98,20 +145,19 @@ textarea {
   z-index: 2;
   background: linear-gradient(
     to bottom,
-    oklch(0.985 0.002 250 / 0.14) 0%,
-    oklch(0.985 0.002 250 / 0.16) 68%,
-    oklch(0.985 0.002 250 / 0.34) 76%,
-    oklch(0.985 0.002 250 / 0.78) 84%,
-    var(--bg) 90%,
-    var(--bg) 100%
+    var(--poster-overlay-start) 0%,
+    color-mix(in oklch, var(--poster-overlay-start) 70%, var(--bg)) 68%,
+    color-mix(in oklch, var(--bg) 78%, transparent) 84%,
+    var(--poster-overlay-end) 100%
   );
+  transition: background 0.18s ease;
 }
 
 .homepage-poster-background::after {
   z-index: 3;
   background-image:
-    linear-gradient(oklch(0.74 0.008 250 / 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, oklch(0.74 0.008 250 / 0.035) 1px, transparent 1px);
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
   background-position: -1px -1px;
   background-size: 80px 80px;
 }
@@ -141,11 +187,21 @@ textarea {
     transparent 76%
   );
   opacity: 0;
-  transition: opacity 0.48s ease;
+  transition: opacity 0.48s ease, filter 0.18s ease, mix-blend-mode 0.18s ease;
 }
 
 .homepage-poster-background[data-ready="true"] img {
   opacity: 0.96;
+}
+
+:root[data-theme="dark"] .homepage-poster-background img {
+  filter: brightness(0.43) contrast(1.34) saturate(0.48);
+  mix-blend-mode: screen;
+  opacity: 0.52;
+}
+
+:root[data-theme="dark"] .homepage-poster-background[data-ready="true"] img {
+  opacity: 0.52;
 }
 
 .homepage-location-gate {
@@ -158,15 +214,17 @@ textarea {
   height: 58px;
   align-items: center;
   gap: 0.6rem;
-  border: 1px solid oklch(0.55 0.2 250 / 0.42);
+  border: 1px solid color-mix(in oklch, var(--accent) 42%, var(--border));
   border-radius: 999px;
-  background: oklch(0.99 0.003 250 / 0.97);
+  background: color-mix(in oklch, var(--surface-raised) 97%, transparent);
   box-shadow:
-    0 18px 60px oklch(0.25 0.06 250 / 0.24),
-    0 0 0 5px oklch(0.55 0.2 250 / 0.09);
+    0 18px 60px var(--shadow-color),
+    0 0 0 5px var(--accent-subtle);
   padding: 6px 8px 6px 20px;
   backdrop-filter: blur(18px);
   transform: translateX(-50%);
+  transition: background-color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s
+    ease, color 0.18s ease;
 }
 
 .homepage-location-copy {
@@ -216,7 +274,7 @@ textarea {
   min-width: 150px;
   border: 1px solid var(--accent);
   background: var(--accent);
-  color: white;
+  color: var(--text-on-accent);
   padding-inline: 1rem;
   font-size: 0.7rem;
   font-weight: 700;
@@ -239,7 +297,7 @@ textarea {
 .homepage-location-primary:focus-visible,
 .homepage-location-dismiss:focus-visible,
 .homepage-location-status button:focus-visible {
-  outline: 2px solid oklch(0.55 0.2 250 / 0.5);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -292,13 +350,13 @@ textarea {
   color: var(--text-secondary);
   font: inherit;
   font-size: 0.54rem;
-  text-decoration-color: oklch(0.55 0.08 250 / 0.5);
+  text-decoration-color: var(--focus-ring);
   text-underline-offset: 0.16em;
   white-space: nowrap;
 }
 
 .homepage-location-attribution:focus-visible {
-  outline: 2px solid oklch(0.55 0.2 250 / 0.5);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -309,19 +367,19 @@ textarea {
   left: 50%;
   color: var(--text-secondary);
   border-radius: 999px;
-  background: oklch(0.99 0.003 250 / 0.82);
-  box-shadow: 0 4px 12px oklch(0.25 0.035 250 / 0.1);
+  background: color-mix(in oklch, var(--surface-raised) 82%, transparent);
+  box-shadow: 0 4px 12px var(--shadow-color);
   padding: 0.25rem 0.45rem;
   font: inherit;
   font-size: 0.56rem;
-  text-decoration-color: oklch(0.55 0.08 250 / 0.5);
+  text-decoration-color: var(--focus-ring);
   text-underline-offset: 0.16em;
   transform: translateX(-50%);
   white-space: nowrap;
 }
 
 .homepage-poster-attribution:focus-visible {
-  outline: 2px solid oklch(0.55 0.2 250 / 0.5);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -335,7 +393,7 @@ textarea {
   min-height: 32px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: oklch(1 0 0 / 0.7);
+  background: color-mix(in oklch, var(--surface-raised) 70%, transparent);
   color: var(--text-secondary);
   cursor: pointer;
   padding-inline: 0.65rem;
@@ -389,7 +447,7 @@ textarea {
   line-height: 1.08;
   min-block-size: 1.08em;
   overflow: visible;
-  transition: color 0.2s;
+  transition: color 0.18s ease;
   user-select: none;
 }
 
@@ -412,13 +470,13 @@ textarea {
   width: 0.075em;
   height: 0.72em;
   background: var(--accent);
-  box-shadow: 0 0 0.18em oklch(0.55 0.2 250 / 0.26);
+  box-shadow: 0 0 0.18em var(--accent-subtle);
   content: "";
   animation: brand-caret-blink 0.72s steps(2, end) infinite;
 }
 
 .brand-word:hover {
-  color: oklch(0.12 0.002 260);
+  color: var(--text-primary);
 }
 
 .brand-word:focus {
@@ -426,9 +484,9 @@ textarea {
 }
 
 .brand-word:focus-visible .brand-text {
-  outline: 2px solid oklch(0.55 0.2 250 / 0.32);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 0.08em;
-  text-shadow: 0 0 0.14em oklch(0.55 0.2 250 / 0.16);
+  text-shadow: 0 0 0.14em var(--accent-subtle);
 }
 
 .brand-word:active {
@@ -484,25 +542,25 @@ textarea {
   width: clamp(8rem, 16vw, 13rem);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: oklch(0.985 0.004 250 / 0.82);
+  background: color-mix(in oklch, var(--surface-raised) 82%, transparent);
   color: var(--text-primary);
   padding: 0.42rem 0.55rem;
   font-family: ui-monospace, "SFMono-Regular", SFMono-Regular, Menlo, monospace;
   font-size: 0.72rem;
   outline: none;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition: border-color 0.18s, box-shadow 0.18s, background-color 0.18s, color 0.18s;
 }
 
 .project-search-input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px oklch(0.55 0.2 250 / 0.08);
+  box-shadow: 0 0 0 2px var(--accent-subtle);
 }
 
 .project-stage {
   position: relative;
   min-height: 0;
   overflow: hidden;
-  border-block: 1px solid oklch(0.88 0.005 260 / 0.72);
+  border-block: 1px solid var(--border);
 }
 
 .project-stage-scroll {
@@ -513,7 +571,7 @@ textarea {
   overflow: auto;
   overscroll-behavior: contain;
   padding: 0.95rem 0.3rem 2rem;
-  scrollbar-color: oklch(0.55 0.2 250 / 0.55) transparent;
+  scrollbar-color: var(--accent) transparent;
   scrollbar-width: thin;
 }
 
@@ -527,7 +585,7 @@ textarea {
 
 .project-stage-scroll::-webkit-scrollbar-thumb {
   border-radius: 999px;
-  background: oklch(0.55 0.2 250 / 0.5);
+  background: var(--accent);
 }
 
 .project-stage-fade {
@@ -541,12 +599,12 @@ textarea {
 
 .project-stage-fade-top {
   top: 0;
-  background: linear-gradient(var(--bg), oklch(0.985 0.002 250 / 0));
+  background: linear-gradient(var(--bg), transparent);
 }
 
 .project-stage-fade-bottom {
   bottom: 0;
-  background: linear-gradient(oklch(0.985 0.002 250 / 0), var(--bg));
+  background: linear-gradient(transparent, var(--bg));
 }
 
 .project-empty-state {
@@ -587,15 +645,17 @@ textarea {
   border-radius: var(--radius);
   background: var(--surface);
   transition:
-    border-color 0.3s,
+    border-color 0.18s,
     transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 0.3s;
+    box-shadow 0.18s,
+    background-color 0.18s,
+    color 0.18s;
 }
 
 .project-card:hover,
 .project-card:focus-within {
   border-color: var(--accent);
-  box-shadow: 0 6px 24px oklch(0 0 0 / 0.07);
+  box-shadow: 0 6px 24px var(--shadow-color);
   transform: rotate(-0.2deg) translateY(-2px);
 }
 
@@ -760,9 +820,9 @@ textarea {
   overflow: hidden;
   border-left: 1px solid var(--border);
   background:
-    linear-gradient(oklch(0.88 0.005 260 / 0.3) 1px, transparent 1px),
-    linear-gradient(90deg, oklch(0.88 0.005 260 / 0.3) 1px, transparent 1px),
-    oklch(0.955 0.008 250);
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px),
+    var(--surface-muted);
   background-size: 18px 18px;
 }
 
@@ -785,7 +845,7 @@ textarea {
 .pc-runtime-layer {
   z-index: 1;
   overflow: hidden;
-  background: oklch(0.18 0.01 260);
+  background: var(--surface-code);
   clip-path: inset(0 0 0 100%);
   opacity: 0;
   transition: clip-path 320ms cubic-bezier(0.16, 1, 0.3, 1), opacity 80ms linear;
@@ -813,7 +873,7 @@ textarea {
   z-index: 1;
   align-self: flex-start;
   border: 1px solid currentColor;
-  background: oklch(0.985 0.002 250 / 0.86);
+  background: color-mix(in oklch, var(--surface-raised) 86%, transparent);
   color: var(--accent);
   padding: 0.12rem 0.32rem;
   font-family: ui-monospace, "SFMono-Regular", SFMono-Regular, Menlo, monospace;
@@ -824,8 +884,8 @@ textarea {
 }
 
 .pc-runtime-layer .pc-field-label {
-  background: oklch(0.12 0.01 260 / 0.82);
-  color: oklch(0.92 0.08 245);
+  background: color-mix(in oklch, var(--surface-code) 82%, transparent);
+  color: var(--text-code);
 }
 
 .pc-field-path {
@@ -859,12 +919,13 @@ textarea {
   font-weight: 600;
   text-decoration: none;
   text-transform: uppercase;
-  transition: background-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+  transition: background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease,
+    transform 0.18s ease;
 }
 
 .pc-links a:hover {
   background: var(--accent);
-  color: var(--surface);
+  color: var(--text-on-accent);
   transform: translateY(-1px);
 }
 
@@ -898,6 +959,7 @@ textarea {
   align-items: stretch;
   border-bottom: 1px solid var(--border);
   background: transparent;
+  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
 }
 
 .homepage-footer-dock__meta {
@@ -983,7 +1045,7 @@ textarea {
 }
 
 .project-command-bar.message-compose-active {
-  box-shadow: inset 0 -1px 0 oklch(0.55 0.2 250 / 0.78);
+  box-shadow: inset 0 -1px 0 var(--accent);
 }
 
 .message-compose-back {
@@ -1001,7 +1063,7 @@ textarea {
 
 .message-compose-back:hover,
 .message-compose-back:focus-visible {
-  background: oklch(0.97 0.01 250 / 0.82);
+  background: var(--accent-subtle);
   color: var(--accent);
   outline: none;
 }
@@ -1166,7 +1228,7 @@ textarea {
 
 .ctrl-btn:hover {
   color: var(--accent);
-  background: oklch(0.55 0.2 250 / 0.055);
+  background: var(--accent-subtle);
 }
 
 .ctrl-btn.primary::before {
@@ -1297,7 +1359,7 @@ textarea {
 .info-card {
   border: 1px solid var(--border);
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.72);
+  background: color-mix(in oklch, var(--surface-raised) 72%, transparent);
   padding: 1.25rem;
   backdrop-filter: blur(12px);
 }
@@ -1358,7 +1420,7 @@ textarea {
   align-items: center;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: rgba(255, 255, 255, 0.72);
+  background: color-mix(in oklch, var(--surface-raised) 72%, transparent);
   padding: 0.45rem 0.7rem;
 }
 
@@ -1397,11 +1459,11 @@ textarea {
   background:
     linear-gradient(
     180deg,
-    oklch(0.99 0.002 250 / 0.96),
-    oklch(0.965 0.004 250 / 0.94)
+    color-mix(in oklch, var(--surface-raised) 96%, transparent),
+    color-mix(in oklch, var(--surface) 94%, transparent)
   ),
     var(--surface);
-  box-shadow: 0 20px 48px oklch(0 0 0 / 0.05);
+  box-shadow: 0 20px 48px var(--shadow-color);
 }
 
 .admin-hero-copy {
@@ -1419,7 +1481,7 @@ textarea {
   width: 12rem;
   height: 12rem;
   border-radius: 50%;
-  background: radial-gradient(circle, oklch(0.78 0.08 245 / 0.3), transparent 70%);
+  background: radial-gradient(circle, var(--accent-subtle), transparent 70%);
   pointer-events: none;
 }
 
@@ -1445,9 +1507,9 @@ textarea {
   align-items: center;
   min-height: 1.9rem;
   padding: 0.35rem 0.65rem;
-  border: 1px solid oklch(0.87 0.01 250);
+  border: 1px solid var(--border);
   border-radius: 999px;
-  background: oklch(0.985 0.004 250 / 0.95);
+  background: color-mix(in oklch, var(--surface-raised) 95%, transparent);
   color: var(--text-secondary);
   font-size: 0.72rem;
   letter-spacing: 0.04em;
@@ -1548,21 +1610,21 @@ textarea {
   padding: 0.4rem 0.7rem;
   border: 1px solid var(--border);
   border-radius: 999px;
-  background: oklch(0.99 0.004 250);
+  background: var(--surface-raised);
   font-size: 0.74rem;
   text-align: center;
 }
 
 .admin-status-badge.tone-success,
 .admin-status-pill.success {
-  border-color: oklch(0.8 0.08 150);
-  color: oklch(0.42 0.12 150);
+  border-color: var(--status-success-border);
+  color: var(--status-success);
 }
 
 .admin-status-badge.tone-error,
 .admin-status-pill.error {
-  border-color: oklch(0.82 0.08 25);
-  color: oklch(0.54 0.16 25);
+  border-color: var(--status-danger-border);
+  color: var(--status-danger);
 }
 
 .admin-auth-row,
@@ -1587,7 +1649,7 @@ textarea {
   padding: 0.8rem 0.9rem;
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: oklch(0.985 0.004 250 / 0.9);
+  background: color-mix(in oklch, var(--surface-raised) 90%, transparent);
 }
 
 .admin-primary-action,
@@ -1598,7 +1660,7 @@ textarea {
   min-height: 2.6rem;
   padding: 0.55rem 1rem;
   cursor: pointer;
-  transition: border-color 0.2s, color 0.2s, background 0.2s, transform 0.2s;
+  transition: border-color 0.18s, color 0.18s, background-color 0.18s, transform 0.2s;
 }
 
 .admin-primary-action,
@@ -1616,7 +1678,7 @@ textarea {
 }
 
 .admin-danger-action {
-  color: oklch(0.56 0.15 25);
+  color: var(--status-danger);
 }
 
 .admin-form,
@@ -1641,7 +1703,7 @@ textarea {
   padding: 0.9rem 1rem;
   border: 1px dashed var(--border);
   border-radius: 12px;
-  background: oklch(0.99 0.003 250 / 0.86);
+  background: color-mix(in oklch, var(--surface-raised) 86%, transparent);
 }
 
 .admin-inline-note p {
@@ -1659,7 +1721,7 @@ textarea {
   padding: 0.85rem;
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: oklch(0.99 0.003 250 / 0.7);
+  background: color-mix(in oklch, var(--surface-raised) 70%, transparent);
 }
 
 .admin-project-picker-head {
@@ -1675,7 +1737,7 @@ textarea {
   min-height: 1.9rem;
   padding: 0.25rem 0.65rem;
   border-radius: 999px;
-  background: oklch(0.95 0.01 250);
+  background: var(--surface-muted);
   color: var(--text-secondary);
   font-size: 0.74rem;
 }
@@ -1695,15 +1757,15 @@ textarea {
   padding: 0.62rem 0.7rem;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: oklch(0.995 0.002 250 / 0.96);
+  background: color-mix(in oklch, var(--surface-raised) 96%, transparent);
   cursor: pointer;
-  transition: border-color 0.2s, transform 0.2s, background 0.2s;
+  transition: border-color 0.18s, transform 0.2s, background-color 0.18s;
 }
 
 .admin-project-option:hover,
 .admin-project-option.selected {
   border-color: var(--accent);
-  background: oklch(0.98 0.012 250 / 0.98);
+  background: var(--accent-subtle);
   transform: translateY(-1px);
 }
 
@@ -1798,7 +1860,7 @@ textarea {
   padding: 1rem;
   border: 1px solid var(--border);
   border-radius: 14px;
-  background: oklch(0.99 0.003 250 / 0.94);
+  background: color-mix(in oklch, var(--surface-raised) 94%, transparent);
 }
 
 .admin-rule-card-head {
@@ -1831,7 +1893,7 @@ textarea {
   padding: 1.2rem;
   border: 1px dashed var(--border);
   border-radius: 14px;
-  background: oklch(0.985 0.003 250 / 0.8);
+  background: color-mix(in oklch, var(--surface-raised) 80%, transparent);
 }
 
 .admin-kv-console-panel {
@@ -1924,7 +1986,7 @@ textarea {
   min-width: 0;
   border: 1px solid var(--border);
   border-radius: 999px;
-  background: oklch(0.995 0.002 250);
+  background: var(--surface-raised);
   padding: 0.6rem 0.8rem;
 }
 
@@ -1951,7 +2013,7 @@ textarea {
   resize: vertical;
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: oklch(0.995 0.002 250);
+  background: var(--surface-raised);
   color: var(--text-primary);
   padding: 0.75rem;
   font-family: ui-monospace, "SFMono-Regular", SFMono-Regular, Menlo, monospace;
@@ -2014,7 +2076,7 @@ textarea {
   width: 100%;
   border: 1px solid var(--border);
   border-radius: 7px;
-  background: oklch(0.995 0.002 250 / 0.8);
+  background: color-mix(in oklch, var(--surface-raised) 80%, transparent);
   text-align: left;
   padding: 0.55rem 0.65rem;
   cursor: pointer;
@@ -2024,7 +2086,7 @@ textarea {
 .admin-kv-key-row:hover,
 .admin-kv-key-row.active {
   border-color: var(--accent);
-  background: oklch(0.97 0.012 250);
+  background: var(--accent-subtle);
   transform: translateY(-1px);
 }
 
@@ -2053,7 +2115,7 @@ textarea {
   min-height: 1.8rem;
   border: 1px solid var(--border);
   border-radius: 999px;
-  background: oklch(0.985 0.004 250 / 0.95);
+  background: color-mix(in oklch, var(--surface-raised) 95%, transparent);
   padding: 0.25rem 0.6rem;
   color: var(--text-secondary);
   font-family: ui-monospace, "SFMono-Regular", SFMono-Regular, Menlo, monospace;
@@ -2074,8 +2136,8 @@ textarea {
   resize: vertical;
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: oklch(0.18 0.01 260);
-  color: oklch(0.96 0.01 250);
+  background: var(--surface-code);
+  color: var(--text-code);
   padding: 1rem;
   font-family: ui-monospace, "SFMono-Regular", SFMono-Regular, Menlo, monospace;
   font-size: 0.76rem;
@@ -2104,8 +2166,8 @@ textarea {
   overflow: hidden;
   border: 1px solid var(--accent);
   border-radius: var(--radius);
-  background: oklch(0.99 0.003 250 / 0.96);
-  box-shadow: 0 14px 40px oklch(0 0 0 / 0.07);
+  background: color-mix(in oklch, var(--surface-raised) 96%, transparent);
+  box-shadow: 0 14px 40px var(--shadow-color);
 }
 
 .data-access-form input {
@@ -2130,7 +2192,7 @@ textarea {
   margin: 0;
   border-top: 1px solid var(--border);
   padding: 0.55rem 0.75rem;
-  color: oklch(0.54 0.16 25);
+  color: var(--status-danger);
   font-size: 0.74rem;
 }
 
@@ -2139,7 +2201,7 @@ textarea {
   gap: 0.85rem;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: oklch(0.99 0.003 250 / 0.94);
+  background: color-mix(in oklch, var(--surface-raised) 94%, transparent);
   padding: 1rem;
 }
 
@@ -2167,7 +2229,7 @@ textarea {
   min-width: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: oklch(0.995 0.002 250 / 0.92);
+  background: color-mix(in oklch, var(--surface-raised) 92%, transparent);
   padding: 0.9rem;
 }
 
@@ -2197,8 +2259,8 @@ textarea {
   margin: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: oklch(0.18 0.01 260);
-  color: oklch(0.96 0.01 250);
+  background: var(--surface-code);
+  color: var(--text-code);
   padding: 0.75rem;
   font-family: ui-monospace, "SFMono-Regular", SFMono-Regular, Menlo, monospace;
   font-size: 0.68rem;
@@ -2227,8 +2289,8 @@ textarea {
   overflow-x: auto;
   border-radius: 12px;
   border: 1px solid var(--border);
-  background: oklch(0.18 0.01 260);
-  color: oklch(0.96 0.01 250);
+  background: var(--surface-code);
+  color: var(--text-code);
   padding: 1rem;
 }
 
@@ -2545,8 +2607,8 @@ textarea {
     left: 0;
     height: 1.35rem;
     border-radius: 999px;
-    background: oklch(0.99 0.003 250 / 0.82);
-    box-shadow: 0 4px 12px oklch(0.25 0.035 250 / 0.1);
+    background: color-mix(in oklch, var(--surface-raised) 82%, transparent);
+    box-shadow: 0 4px 12px var(--shadow-color);
     content: "";
     pointer-events: none;
     transform: translateY(-50%);
@@ -2631,6 +2693,7 @@ textarea {
   border-radius: var(--radius);
   background: var(--surface);
   padding: 1.25rem;
+  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
 }
 
 .domain-panel[data-panel-id="ipv6-sync-suite"] {
@@ -2716,7 +2779,9 @@ textarea {
   gap: 0.75rem;
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  background: var(--surface-raised);
   padding: 1rem;
+  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
 }
 
 .domain-panel-section h2 {
@@ -2751,7 +2816,8 @@ textarea {
 
 .map-poster-tool-section {
   background:
-    linear-gradient(180deg, oklch(1 0 0 / 0.72), transparent 34%),
+    linear-gradient(180deg, color-mix(in oklch, var(--surface-raised) 72%, transparent),
+    transparent 34%),
     var(--surface);
 }
 
@@ -2800,7 +2866,7 @@ textarea {
 
 .map-poster-state.error,
 .map-poster-download-status {
-  color: oklch(0.56 0.2 28);
+  color: var(--status-danger-strong);
 }
 
 .map-poster-origin-note {
@@ -2808,7 +2874,7 @@ textarea {
   gap: 0.55rem;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: oklch(0.985 0.004 250 / 0.74);
+  background: color-mix(in oklch, var(--surface-raised) 74%, transparent);
   padding: 0.72rem;
 }
 
@@ -2903,13 +2969,14 @@ textarea {
   place-items: center;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: oklch(0.99 0.002 250 / 0.9);
+  background: color-mix(in oklch, var(--surface-raised) 90%, transparent);
   color: var(--text-primary);
   cursor: pointer;
   font: inherit;
   font-size: 1rem;
   font-weight: 700;
   line-height: 1;
+  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
 }
 
 .map-poster-map-controls button:hover,
@@ -2926,7 +2993,8 @@ textarea {
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: linear-gradient(135deg, oklch(0.93 0.015 190), oklch(0.98 0.004 250));
+  background: linear-gradient(135deg, color-mix(in oklch, var(--accent) 12%,
+    var(--surface)), var(--surface-raised));
   cursor: crosshair;
   touch-action: none;
   user-select: none;
@@ -2937,7 +3005,7 @@ textarea {
 }
 
 .map-poster-picker-map:focus-visible {
-  box-shadow: 0 0 0 3px oklch(0.55 0.2 250 / 0.12);
+  box-shadow: 0 0 0 3px var(--accent-subtle);
   outline: none;
 }
 
@@ -2958,7 +3026,8 @@ textarea {
   height: 1.15rem;
   border: 2px solid var(--accent);
   border-radius: 999px;
-  box-shadow: 0 0 0 3px oklch(1 0 0 / 0.72), 0 0.3rem 0.8rem oklch(0.2 0.04 250 / 0.22);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--surface-raised) 72%, transparent), 0
+    0.3rem 0.8rem var(--shadow-color);
   transform: translate(-50%, -50%);
 }
 
@@ -2989,9 +3058,9 @@ textarea {
   position: absolute;
   right: 0.45rem;
   bottom: 0.38rem;
-  border: 1px solid oklch(0.82 0.01 250 / 0.7);
+  border: 1px solid var(--border);
   border-radius: 4px;
-  background: oklch(1 0 0 / 0.82);
+  background: color-mix(in oklch, var(--surface-raised) 82%, transparent);
   color: var(--text-secondary);
   font-size: 0.58rem;
   line-height: 1;
@@ -3025,17 +3094,19 @@ textarea {
   min-width: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: oklch(0.99 0.002 250 / 0.92);
+  background: color-mix(in oklch, var(--surface-raised) 92%, transparent);
   color: var(--text-primary);
   font: inherit;
   font-size: 0.78rem;
   padding: 0.58rem 0.62rem;
+  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease,
+    box-shadow 0.18s ease;
 }
 
 .map-poster-field input:focus,
 .map-poster-field select:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px oklch(0.55 0.2 250 / 0.1);
+  box-shadow: 0 0 0 3px var(--accent-subtle);
   outline: none;
 }
 
@@ -3069,7 +3140,7 @@ textarea {
 
 .map-poster-primary {
   background: var(--accent);
-  color: white;
+  color: var(--text-on-accent);
 }
 
 .map-poster-secondary {
@@ -3103,13 +3174,14 @@ textarea {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background:
-    linear-gradient(45deg, oklch(0.96 0.004 250) 25%, transparent 25%),
-    linear-gradient(-45deg, oklch(0.96 0.004 250) 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, oklch(0.96 0.004 250) 75%),
-    linear-gradient(-45deg, transparent 75%, oklch(0.96 0.004 250) 75%);
-  background-color: oklch(0.985 0.002 250);
+    linear-gradient(45deg, var(--surface-muted) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--surface-muted) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--surface-muted) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--surface-muted) 75%);
+  background-color: var(--surface-raised);
   background-position: 0 0, 0 0.5rem, 0.5rem -0.5rem, -0.5rem 0;
   background-size: 1rem 1rem;
+  transition: background-color 0.18s ease, border-color 0.18s ease;
 }
 
 .map-poster-live-frame[data-loading="true"] .map-poster-live-image {
@@ -3129,7 +3201,7 @@ textarea {
   inset: auto 1rem 1rem auto;
   border: 1px solid var(--border);
   border-radius: 999px;
-  background: oklch(1 0 0 / 0.86);
+  background: color-mix(in oklch, var(--surface-raised) 86%, transparent);
   color: var(--accent);
   font-size: 0.72rem;
   padding: 0.38rem 0.62rem;
@@ -3170,7 +3242,7 @@ textarea {
   border-radius: var(--radius);
   margin-top: auto;
   background: var(--accent);
-  color: white;
+  color: var(--text-on-accent);
   font-size: 0.8rem;
   font-weight: 700;
   padding: 0.72rem 1rem;
@@ -3242,7 +3314,7 @@ textarea {
 }
 
 .downip-live-error {
-  color: oklch(0.54 0.16 25);
+  color: var(--status-danger);
 }
 
 /* 加载状态 */
@@ -3253,7 +3325,7 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #666;
+  color: var(--text-secondary);
   font-size: 1rem;
 }
 
@@ -3385,5 +3457,19 @@ textarea {
 
   .project-card.has-preview .pc-source-inline {
     display: block;
+  }
+
+  body,
+  .homepage-poster-background::before,
+  .homepage-location-gate,
+  .project-card,
+  .domain-panel,
+  .domain-panel-section,
+  .homepage-footer-dock,
+  .map-poster-map-controls button,
+  .map-poster-field input,
+  .map-poster-field select,
+  .map-poster-live-frame {
+    transition-duration: 0s !important;
   }
 }
