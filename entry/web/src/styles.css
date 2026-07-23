@@ -2384,7 +2384,7 @@ textarea {
     transform: none !important;
   }
 
-  .homepage-footer-dock {
+  .homepage-page .homepage-footer-dock {
     position: fixed;
     right: 1rem;
     bottom: max(0.72rem, env(safe-area-inset-bottom));

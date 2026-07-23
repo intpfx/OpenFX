@@ -109,6 +109,18 @@ Nominatim。生产部署必须显式配置两者并确保服务容量与使用�
 
 `prefers-reduced-motion: reduce` 会关闭背景淡入、授权胶囊位移和等待脉冲。
 
+### Editorial Index 与主题
+
+- Dock 使用 `meta`、`index`、`action`
+  三个插槽；桌面为两条文字基线，移动端为同一固定外壳内两行。
+- 主题模式为 `auto`、`light`、`dark`；单一文字按钮按 AUTO → LIGHT → DARK → AUTO 循环。
+- 仅手动模式写入 `localStorage["openfx-theme"]`；AUTO 删除该键并实时跟随系统。
+- `theme-bootstrap.js` 必须在 React 入口前设置 `<html data-theme>` 和浏览器
+  `theme-color`，避免暗色首屏闪白。
+- 主题覆盖 OpenFX 首页与自有详情面板，不覆盖 Console 或第三方 iframe。
+- 定位授权胶囊、inert/live-region 边界、唯一 OSM 归属和真实设备定位流程不得因主题或 Dock
+  改造而改变。
+
 ## 部署目标
 
 默认部署目标是 Deno Deploy，由 Nitro 输出服务端入口并由 VitePlus 构建 SPA 客户端。

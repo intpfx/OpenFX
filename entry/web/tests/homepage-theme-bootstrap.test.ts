@@ -29,7 +29,7 @@ function runBootstrap(options: {
   };
   const matchMedia = () => ({ matches: options.systemDark });
   const execute = new Function(
-    "window",
+    "globalThis",
     "document",
     "localStorage",
     "matchMedia",

@@ -12,19 +12,15 @@
 
   const mode = stored === "light" || stored === "dark" ? stored : "auto";
   const systemDark = matchMedia("(prefers-color-scheme: dark)").matches;
-  const effectiveTheme = mode === "auto"
-    ? (systemDark ? "dark" : "light")
-    : mode;
+  const effectiveTheme = mode === "auto" ? (systemDark ? "dark" : "light") : mode;
 
   document.documentElement.dataset.theme = effectiveTheme;
   const themeColor = document.querySelector('meta[name="theme-color"]');
   if (themeColor) {
-    themeColor.content = effectiveTheme === "dark"
-      ? darkThemeColor
-      : lightThemeColor;
+    themeColor.content = effectiveTheme === "dark" ? darkThemeColor : lightThemeColor;
   }
 
-  window.__OPENFX_THEME_BOOTSTRAP__ = Object.freeze({
+  globalThis.__OPENFX_THEME_BOOTSTRAP__ = Object.freeze({
     mode,
     effectiveTheme,
   });

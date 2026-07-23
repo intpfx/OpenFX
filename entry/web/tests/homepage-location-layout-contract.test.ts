@@ -68,7 +68,7 @@ Deno.test("mobile dock remains one fixed shell with two internal rows", () => {
   const mobileEnd = homepageCss.indexOf("\n}", mobileStart);
   const mobileCss = homepageCss.slice(mobileStart, mobileEnd + 2);
 
-  expect(mobileCss).toContain(`.homepage-footer-dock {
+  expect(mobileCss).toContain(`.homepage-page .homepage-footer-dock {
     position: fixed;`);
   expect(mobileCss).toContain("grid-template-columns: minmax(0, 1fr) auto;");
   expect(mobileCss).toContain("grid-template-rows: 44px 44px;");
