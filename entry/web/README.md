@@ -64,12 +64,16 @@ Transition，并保持所有卡片完整不透明。图片必须延迟加载、�
 
 ### 首页设备定位海报背景
 
-首页底部由 `HomepageFooterDock` 统一拥有一个外层容器：左区承载临时状态与构建版本，中区由
-`HomepageLocationPoster` 的 render callback 提供定位状态，右区承载项目计数、搜索、留言、
-返回或 Proxy 控件。900px 以上是参与页面 footer grid row 的三栏单轨，900px
-及以下是在安全区
-上方固定的同一容器内两行布局；第一行显示构建与定位状态，第二行保留完整命令条，交互控件高度
-不小于 44px。普通定位状态不能自行固定定位或绘制独立外框。
+首页底部由单一 `HomepageFooterDock` 管理 `meta`、`index`、`action` 三个插槽。
+
+- `meta`：承载临时状态、构建版本、主题控件，以及 `HomepageLocationPoster` 通过 render
+  callback 注入的定位状态。
+- `index`：承载项目计数、搜索、留言、返回或 Proxy 控件。
+- `action`：承载当前场景的主操作。
+
+桌面 Dock 使用两列和两条文字基线，`action` 位于第二列并跨越两行；900px
+及以下仍是同一外壳，但固定在安全区上方并使用两行布局，交互控件高度不小于 44px。普通定位
+状态不能自行固定定位或绘制独立外框。
 
 首页在浏览器需要定位授权时仍显示独立的底部聚焦胶囊。胶囊之外的品牌、项目浏览器和统一
 Dock 会暂时模糊并设置为
@@ -111,8 +115,7 @@ Nominatim。生产部署必须显式配置两者并确保服务容量与使用�
 
 ### Editorial Index 与主题
 
-- Dock 使用 `meta`、`index`、`action`
-  三个插槽；桌面为两条文字基线，移动端为同一固定外壳内两行。
+- Dock 的插槽与断点布局遵循上一节约定；主题按钮位于 `meta` 插槽。
 - 主题模式为 `auto`、`light`、`dark`；单一文字按钮按 AUTO → LIGHT → DARK → AUTO 循环。
 - 仅手动模式写入 `localStorage["openfx-theme"]`；AUTO 删除该键并实时跟随系统。
 - `theme-bootstrap.js` 必须在 React 入口前设置 `<html data-theme>` 和浏览器
