@@ -34,6 +34,7 @@ import {
 } from "./homepage/experience.ts";
 import { HomepageFooterDock } from "./homepage/HomepageFooterDock.tsx";
 import { HomepageLocationPoster } from "./homepage/HomepageLocationPoster.tsx";
+import { BuildVersion, createBuildVersion } from "./homepage/BuildVersion.tsx";
 import { ProjectCard } from "./homepage/ProjectCard.tsx";
 
 type UnlockRule = {
@@ -70,11 +71,6 @@ type HomepageMessage = {
   createdAt: string;
 };
 
-type BuildVersionInfo = {
-  label: string;
-  dateTime?: string;
-};
-
 const hiddenProjects = listHiddenHomepageProjects();
 const BUILD_VERSION = createBuildVersion({
   hash: import.meta.env.VITE_OPENFX_BUILD_HASH,
@@ -82,62 +78,6 @@ const BUILD_VERSION = createBuildVersion({
 });
 
 const BRAND_LOCK_PADDING_PX = 4;
-
-function getEnvValue(value: string | undefined) {
-  return value?.trim() ?? "";
-}
-
-function formatUtcBuildTime(value: string) {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.valueOf())) {
-    return { label: value };
-  }
-
-  const pad = (part: number) => part.toString().padStart(2, "0");
-  const label = [
-    date.getUTCFullYear(),
-    pad(date.getUTCMonth() + 1),
-    pad(date.getUTCDate()),
-  ].join("-") + ` ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())} UTC`;
-
-  return {
-    dateTime: date.toISOString(),
-    label,
-  };
-}
-
-function createBuildVersion(env: { hash?: string; time?: string }): BuildVersionInfo {
-  const buildTime = getEnvValue(env.time);
-  const buildHash = getEnvValue(env.hash);
-
-  if (!buildTime || !buildHash) {
-    return { label: "local build" };
-  }
-
-  const formattedTime = formatUtcBuildTime(buildTime);
-
-  return {
-    dateTime: formattedTime.dateTime,
-    label: `${formattedTime.label} + ${buildHash}`,
-  };
-}
-
-function BuildVersion() {
-  const versionText = (
-    <>
-      <span>版本</span> {BUILD_VERSION.dateTime
-        ? <time dateTime={BUILD_VERSION.dateTime}>{BUILD_VERSION.label}</time>
-        : <span>{BUILD_VERSION.label}</span>}
-    </>
-  );
-
-  return (
-    <p className="build-version" title="Web 构建版本">
-      {versionText}
-    </p>
-  );
-}
 
 function getDefaultAdminKey() {
   return globalThis.location?.hostname === "localhost" ? "TEST" : "";
@@ -1206,7 +1146,7 @@ function Homepage() {
                   ref={statusHintRef}
                   aria-live="polite"
                 />
-                <BuildVersion />
+                <BuildVersion info={BUILD_VERSION} />
               </div>
             }
             middle={locationStatus}
