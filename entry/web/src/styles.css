@@ -3135,7 +3135,12 @@ textarea {
   font-size: 0.78rem;
   font-weight: 700;
   padding: 0.68rem 0.9rem;
-  transition: opacity 0.18s ease, transform 0.18s ease, background-color 0.18s ease;
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease,
+    opacity 0.18s ease,
+    transform 0.18s ease;
 }
 
 .map-poster-primary {
@@ -3461,14 +3466,27 @@ textarea {
 
   body,
   .homepage-poster-background::before,
+  .homepage-poster-background img,
   .homepage-location-gate,
+  .brand-word,
+  .project-search-input,
   .project-card,
+  .pc-links a,
+  .homepage-footer-dock,
+  .message-compose-back,
+  .homepage-theme-control,
+  .ctrl-btn,
+  .admin-primary-action,
+  .admin-danger-action,
+  .admin-project-option,
+  .admin-kv-key-row,
   .domain-panel,
   .domain-panel-section,
-  .homepage-footer-dock,
   .map-poster-map-controls button,
   .map-poster-field input,
   .map-poster-field select,
+  .map-poster-primary,
+  .map-poster-secondary,
   .map-poster-live-frame {
     transition-duration: 0s !important;
   }
