@@ -3,16 +3,66 @@
 
 import { createElement as h, type MouseEvent, useState } from "react";
 
-import type { HomepageProjectCard } from "../../homepage-projects.ts";
+import type {
+  HomepageProjectCard,
+  HomepageProjectPreview,
+} from "../../homepage-projects.ts";
+import "./jsx.ts";
 
-type PreviewState = "loading" | "loaded" | "error";
+export type ProjectPreviewState = "loading" | "loaded" | "error";
+
+type ProjectPreviewStateUpdater = (
+  current: ProjectPreviewState,
+) => ProjectPreviewState;
+
+export function createProjectPreviewEventHandlers(
+  setPreviewState: (update: ProjectPreviewStateUpdater) => void,
+) {
+  return {
+    onError: () => setPreviewState(() => "error"),
+    onLoad: () => setPreviewState(() => "loaded"),
+  };
+}
+
+export function ProjectCardPreview(props: {
+  preview: HomepageProjectPreview;
+  previewState: ProjectPreviewState;
+  sourcePath: string;
+  onError: () => void;
+  onLoad: () => void;
+}) {
+  return (
+    <span
+      className="pc-source-field"
+      data-preview-state={props.previewState}
+    >
+      <span className="pc-source-layer" aria-hidden="true">
+        <span className="pc-field-label">SOURCE</span>
+        <span className="pc-field-path">{props.sourcePath}</span>
+      </span>
+      <span className="pc-runtime-layer">
+        <img
+          alt={props.preview.alt}
+          decoding="async"
+          loading="lazy"
+          src={props.preview.src}
+          style={{ objectPosition: props.preview.position ?? "center" }}
+          onError={props.onError}
+          onLoad={props.onLoad}
+        />
+        <span className="pc-field-label" aria-hidden="true">RUNTIME</span>
+      </span>
+    </span>
+  );
+}
 
 export function ProjectCard(props: {
   project: HomepageProjectCard;
   revealed: boolean;
   onOpen?: (trigger: HTMLButtonElement) => void;
 }) {
-  const [previewState, setPreviewState] = useState<PreviewState>("loading");
+  const [previewState, setPreviewState] = useState<ProjectPreviewState>("loading");
+  const previewEventHandlers = createProjectPreviewEventHandlers(setPreviewState);
   const classes = [
     "project-card",
     props.project.variant,
@@ -47,27 +97,12 @@ export function ProjectCard(props: {
 
         {props.project.preview
           ? (
-            <span
-              className="pc-source-field"
-              data-preview-state={previewState}
-            >
-              <span className="pc-source-layer" aria-hidden="true">
-                <span className="pc-field-label">SOURCE</span>
-                <span className="pc-field-path">{props.project.sourcePath}</span>
-              </span>
-              <span className="pc-runtime-layer">
-                <img
-                  alt={props.project.preview.alt}
-                  decoding="async"
-                  loading="lazy"
-                  src={props.project.preview.src}
-                  style={{ objectPosition: props.project.preview.position ?? "center" }}
-                  onError={() => setPreviewState("error")}
-                  onLoad={() => setPreviewState("loaded")}
-                />
-                <span className="pc-field-label" aria-hidden="true">RUNTIME</span>
-              </span>
-            </span>
+            <ProjectCardPreview
+              preview={props.project.preview}
+              previewState={previewState}
+              sourcePath={props.project.sourcePath}
+              {...previewEventHandlers}
+            />
           )
           : null}
       </button>

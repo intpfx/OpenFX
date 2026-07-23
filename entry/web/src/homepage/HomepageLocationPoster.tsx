@@ -21,14 +21,7 @@ import {
   type HomepageLocationPosterState,
   shouldFocusLocationPoster,
 } from "./location-poster.ts";
-
-declare global {
-  namespace JSX {
-    interface IntrinsicElements {
-      [elementName: string]: Record<string, unknown>;
-    }
-  }
-}
+import "./jsx.ts";
 
 type HomepageLocationPosterViewProps = {
   state: HomepageLocationPosterState;

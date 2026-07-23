@@ -6,7 +6,12 @@ import { renderToStaticMarkup } from "npm:react-dom@^19.1.0/server";
 import { createElement as h } from "react";
 
 import type { HomepageProjectCard } from "../homepage-projects.ts";
-import { ProjectCard } from "../src/homepage/ProjectCard.tsx";
+import {
+  createProjectPreviewEventHandlers,
+  ProjectCard,
+  ProjectCardPreview,
+  type ProjectPreviewState,
+} from "../src/homepage/ProjectCard.tsx";
 
 const css = await Deno.readTextFile(
   new URL("../src/styles.css", import.meta.url),
@@ -41,7 +46,34 @@ Deno.test("project card keeps an accessible lazy runtime preview behind its sour
   expect(html).toContain('class="pc-runtime-layer"');
 });
 
-Deno.test("project card preview exposes runtime only after load and returns to source on an image error", () => {
+Deno.test("project card preview handlers render load and error state transitions", () => {
+  let previewState: ProjectPreviewState = "loading";
+  const handlers = createProjectPreviewEventHandlers((update) => {
+    previewState = update(previewState);
+  });
+  const renderPreview = () =>
+    renderToStaticMarkup(
+      <ProjectCardPreview
+        preview={PROJECT.preview!}
+        previewState={previewState}
+        sourcePath={PROJECT.sourcePath}
+        {...handlers}
+      />,
+    );
+
+  expect(renderPreview()).toContain('data-preview-state="loading"');
+
+  handlers.onLoad();
+  expect(previewState).toBe("loaded");
+  expect(renderPreview()).toContain('data-preview-state="loaded"');
+
+  handlers.onError();
+  expect(previewState).toBe("error");
+  const errorHtml = renderPreview();
+  expect(errorHtml).toContain('data-preview-state="error"');
+  expect(errorHtml).toContain('class="pc-source-layer"');
+  expect(errorHtml).toContain("domains/preview-project/");
+
   expect(css).toContain(
     '.pc-source-field[data-preview-state="loaded"] .pc-runtime-layer {\n  opacity: 1;',
   );
