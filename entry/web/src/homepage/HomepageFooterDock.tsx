@@ -4,9 +4,9 @@
 import { createElement as h, type ReactNode } from "react";
 
 type HomepageFooterDockProps = {
-  left: ReactNode;
-  middle: ReactNode;
-  right: ReactNode;
+  meta: ReactNode;
+  index: ReactNode;
+  action: ReactNode;
   inert?: boolean;
   ariaHidden?: boolean;
 };
@@ -19,9 +19,9 @@ export function HomepageFooterDock(props: HomepageFooterDockProps) {
       className="homepage-footer-dock"
       inert={props.inert ? true : undefined}
     >
-      <div className="homepage-footer-dock__left">{props.left}</div>
-      <div className="homepage-footer-dock__middle">{props.middle}</div>
-      <div className="homepage-footer-dock__right">{props.right}</div>
+      <div className="homepage-footer-dock__meta">{props.meta}</div>
+      <div className="homepage-footer-dock__index">{props.index}</div>
+      <div className="homepage-footer-dock__action">{props.action}</div>
     </footer>
   );
 }

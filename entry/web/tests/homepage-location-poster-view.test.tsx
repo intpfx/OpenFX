@@ -10,7 +10,7 @@ import { HomepageLocationPosterView } from "../src/homepage/HomepageLocationPost
 
 const noop = () => {};
 const inDock = (status: ReactNode) => (
-  <HomepageFooterDock left={null} middle={status} right={null} />
+  <HomepageFooterDock meta={status} index={null} action={null} />
 );
 
 Deno.test("location poster permission view is an accessible focused dialog", () => {
@@ -50,18 +50,19 @@ Deno.test("location poster ready view renders city controls inside the dock", ()
     />,
   );
 
-  expect(html).toContain("背景 · Shanghai");
-  expect(html).toContain("Map Poster");
-  expect(html).toContain("重新定位");
+  expect(html).toContain("BACKGROUND");
+  expect(html).toContain("Shanghai");
+  expect(html).toContain("© OSM");
+  expect(html).toContain('aria-label="重新定位"');
   expect(html).toContain('src="blob:openfx-poster"');
-  expect(html).toContain("© OpenStreetMap contributors");
+  expect(html).not.toContain("Map Poster");
   expect(html).toContain('href="https://www.openstreetmap.org/copyright"');
   expect(html).toContain('target="_blank"');
   expect(html).toContain("homepage-location-attribution");
   expect(html).not.toContain("homepage-poster-attribution");
-  const dockMiddle = html.indexOf('class="homepage-footer-dock__middle"');
+  const dockMeta = html.indexOf('class="homepage-footer-dock__meta"');
   const readyStatus = html.indexOf('class="homepage-location-status"');
-  expect(dockMiddle).toBeLessThan(readyStatus);
+  expect(dockMeta).toBeLessThan(readyStatus);
 });
 
 Deno.test("location poster failure never invents a city label", () => {
@@ -85,7 +86,7 @@ Deno.test("location poster failure never invents a city label", () => {
   expect(html).not.toContain('src="blob:stale-poster"');
 });
 
-Deno.test("location poster denied view directs users to site settings without retry", () => {
+Deno.test("location poster denied view is concise and has no retry", () => {
   const html = renderToStaticMarkup(
     <HomepageLocationPosterView
       failure="denied"
@@ -100,7 +101,8 @@ Deno.test("location poster denied view directs users to site settings without re
     />,
   );
 
-  expect(html).toContain("请在浏览器的网站设置中重新开启定位权限。");
+  expect(html).toContain("BACKGROUND");
+  expect(html).toContain("定位权限未开启");
   expect(html).toContain("关闭");
   expect(html).not.toContain("重试");
 });

@@ -10,9 +10,9 @@ import { HomepageFooterDock } from "../src/homepage/HomepageFooterDock.tsx";
 Deno.test("homepage footer dock is one semantic shell with three ordered slots", () => {
   const html = renderToStaticMarkup(
     <HomepageFooterDock
-      left={<span data-test-slot="left">build</span>}
-      middle={<span data-test-location="ready">Shanghai</span>}
-      right={<button type="button">MESSAGE</button>}
+      meta={<span data-test-meta>BUILD · AUTO · 绵阳市</span>}
+      index={<input aria-label="搜索项目" />}
+      action={<button type="button">MESSAGE</button>}
     />,
   );
 
@@ -20,35 +20,38 @@ Deno.test("homepage footer dock is one semantic shell with three ordered slots",
   expect(html).toContain(
     '<footer aria-label="首页控制栏" class="homepage-footer-dock">',
   );
-  expect(html).toContain('class="homepage-footer-dock__left"');
-  expect(html).toContain('class="homepage-footer-dock__middle"');
-  expect(html).toContain('class="homepage-footer-dock__right"');
+  expect(html).toContain('class="homepage-footer-dock__meta"');
+  expect(html).toContain('class="homepage-footer-dock__index"');
+  expect(html).toContain('class="homepage-footer-dock__action"');
+  expect(html).not.toContain("homepage-footer-dock__left");
+  expect(html).not.toContain("homepage-footer-dock__middle");
+  expect(html).not.toContain("homepage-footer-dock__right");
 
-  const left = html.indexOf('data-test-slot="left"');
-  const middle = html.indexOf('data-test-location="ready"');
-  const right = html.indexOf(">MESSAGE</button>");
-  expect(left).toBeGreaterThan(-1);
-  expect(left).toBeLessThan(middle);
-  expect(middle).toBeLessThan(right);
+  const meta = html.indexOf("data-test-meta");
+  const index = html.indexOf('aria-label="搜索项目"');
+  const action = html.indexOf(">MESSAGE</button>");
+  expect(meta).toBeGreaterThan(-1);
+  expect(meta).toBeLessThan(index);
+  expect(index).toBeLessThan(action);
 });
 
-Deno.test("location content is structurally inside the dock middle slot", () => {
+Deno.test("location content is structurally inside the dock meta slot", () => {
   const html = renderToStaticMarkup(
     <HomepageFooterDock
-      left={null}
-      middle={
+      meta={
         <section aria-label="城市背景状态" className="homepage-location-status">
           背景 · Shanghai
         </section>
       }
-      right={null}
+      index={null}
+      action={null}
     />,
   );
 
-  const middleStart = html.indexOf('class="homepage-footer-dock__middle"');
+  const metaStart = html.indexOf('class="homepage-footer-dock__meta"');
   const location = html.indexOf('class="homepage-location-status"');
-  const middleEnd = html.indexOf("</div>", location);
+  const metaEnd = html.indexOf("</div>", location);
 
-  expect(middleStart).toBeLessThan(location);
-  expect(middleEnd).toBeGreaterThan(location);
+  expect(metaStart).toBeLessThan(location);
+  expect(metaEnd).toBeGreaterThan(location);
 });

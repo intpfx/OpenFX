@@ -88,18 +88,34 @@ export function HomepageLocationPosterView(
         aria-label="城市背景状态"
         className="homepage-location-status"
       >
-        <strong>{cityLabel}</strong>
-        <span>Map Poster</span>
-        {dockAttribution}
-        <button type="button" onClick={props.onRetry}>重新定位</button>
+        <span className="footer-eyebrow homepage-location-label">BACKGROUND</span>
+        <strong>{props.place?.city ?? "已按当前位置生成"}</strong>
+        <a
+          aria-label="© OpenStreetMap contributors"
+          className="homepage-location-attribution"
+          href="https://www.openstreetmap.org/copyright"
+          rel="noreferrer"
+          target="_blank"
+        >
+          © OSM
+        </a>
+        <button
+          aria-label="重新定位"
+          title="重新定位"
+          type="button"
+          onClick={props.onRetry}
+        >
+          <span aria-hidden="true">↻</span>
+        </button>
       </section>
     )
     : props.state === "rendering"
     ? (
-      <div className="homepage-location-progress">
-        <p>正在生成城市背景</p>
+      <section className="homepage-location-status">
+        <span className="footer-eyebrow homepage-location-label">BACKGROUND</span>
+        <strong>正在生成城市背景</strong>
         {dockAttribution}
-      </div>
+      </section>
     )
     : props.state === "denied"
     ? (
@@ -107,8 +123,8 @@ export function HomepageLocationPosterView(
         aria-label="城市背景定位权限未开启"
         className="homepage-location-status is-error"
       >
+        <span className="footer-eyebrow homepage-location-label">BACKGROUND</span>
         <strong>{getFailureTitle(props.failure)}</strong>
-        <span>请在浏览器的网站设置中重新开启定位权限。</span>
         <button type="button" onClick={props.onDismiss}>关闭</button>
       </section>
     )
@@ -118,6 +134,7 @@ export function HomepageLocationPosterView(
         aria-label="城市背景不可用"
         className="homepage-location-status is-error"
       >
+        <span className="footer-eyebrow homepage-location-label">BACKGROUND</span>
         <strong>{getFailureTitle(props.failure)}</strong>
         <button type="button" onClick={props.onRetry}>重试</button>
         <button type="button" onClick={props.onDismiss}>关闭</button>
