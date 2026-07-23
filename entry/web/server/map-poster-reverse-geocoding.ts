@@ -27,9 +27,11 @@ type NominatimDependencies = {
   maxQueuedRequests?: number;
 };
 
-type CacheEntry = {
+type NominatimResult = Coord | MapPosterResolvedPlace | null;
+
+type SearchCacheEntry = {
   expiresAt: number;
-  value: Coord | MapPosterResolvedPlace | null;
+  value: Coord | null;
 };
 
 const REVERSE_CITY_KEYS = [
@@ -112,8 +114,8 @@ export function resolveReverseGeocodeEndpoint(environment: NominatimEnvironment)
 }
 
 function reverseGeocodeKey(center: Coord) {
-  // About one kilometre: enough to deduplicate a city-background revisit without
-  // retaining a device's full-precision location in an in-memory cache.
+  // About one kilometre: enough to deduplicate concurrent background requests without
+  // retaining a device's full-precision location while the request is in flight.
   return `reverse:${center.lat.toFixed(2)}:${center.lon.toFixed(2)}`;
 }
 
@@ -145,40 +147,40 @@ export function createNominatimService(dependencies: NominatimDependencies = {})
   const cacheTtlMs = dependencies.cacheTtlMs ?? CACHE_TTL_MS;
   const maxCacheEntries = dependencies.maxCacheEntries ?? MAX_CACHE_ENTRIES;
   const maxQueuedRequests = dependencies.maxQueuedRequests ?? MAX_QUEUED_REQUESTS;
-  const cache = new Map<string, CacheEntry>();
-  const pending = new Map<string, Promise<CacheEntry["value"] | undefined>>();
+  const searchCache = new Map<string, SearchCacheEntry>();
+  const pending = new Map<string, Promise<NominatimResult | undefined>>();
   let queue = Promise.resolve<unknown>(undefined);
   let nextRequestAt = 0;
 
   const pruneExpiredCache = () => {
     const currentTime = now();
-    for (const [key, entry] of cache) {
-      if (entry.expiresAt <= currentTime) cache.delete(key);
+    for (const [key, entry] of searchCache) {
+      if (entry.expiresAt <= currentTime) searchCache.delete(key);
     }
   };
 
   const readCached = (key: string) => {
     pruneExpiredCache();
-    const entry = cache.get(key);
+    const entry = searchCache.get(key);
     if (!entry) return undefined;
     // Map insertion order is our LRU order; a read promotes the entry.
-    cache.delete(key);
-    cache.set(key, entry);
+    searchCache.delete(key);
+    searchCache.set(key, entry);
     return entry.value;
   };
 
-  const cacheValue = (key: string, value: CacheEntry["value"]) => {
+  const cacheValue = (key: string, value: SearchCacheEntry["value"]) => {
     pruneExpiredCache();
-    cache.delete(key);
-    cache.set(key, { value, expiresAt: now() + cacheTtlMs });
-    while (cache.size > maxCacheEntries) {
-      const oldest = cache.keys().next().value;
+    searchCache.delete(key);
+    searchCache.set(key, { value, expiresAt: now() + cacheTtlMs });
+    while (searchCache.size > maxCacheEntries) {
+      const oldest = searchCache.keys().next().value;
       if (!oldest) break;
-      cache.delete(oldest);
+      searchCache.delete(oldest);
     }
   };
 
-  const request = async <T extends CacheEntry["value"]>(
+  const request = async <T extends NominatimResult>(
     endpoint: URL,
     parameters: Record<string, string>,
     parse: (response: Response) => Promise<T | undefined>,
@@ -205,7 +207,7 @@ export function createNominatimService(dependencies: NominatimDependencies = {})
     }
   };
 
-  const enqueue = <T extends CacheEntry["value"]>(
+  const enqueue = <T extends NominatimResult>(
     key: string,
     endpoint: URL | undefined,
     parameters: Record<string, string>,
@@ -226,9 +228,6 @@ export function createNominatimService(dependencies: NominatimDependencies = {})
   return {
     async reverse(center: Coord): Promise<MapPosterResolvedPlace | undefined> {
       const key = reverseGeocodeKey(center);
-      const cached = readCached(key);
-      if (cached !== undefined) return cached as MapPosterResolvedPlace | undefined;
-
       const result = await enqueue(
         key,
         reverseEndpoint,
@@ -241,7 +240,6 @@ export function createNominatimService(dependencies: NominatimDependencies = {})
         },
         async (response) => resolveReverseAddress(await response.json()),
       );
-      if (result !== undefined) cacheValue(key, result);
       return result as MapPosterResolvedPlace | undefined;
     },
     async search(city: string, country: string): Promise<Coord | null | undefined> {

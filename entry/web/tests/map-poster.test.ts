@@ -242,7 +242,7 @@ Deno.test("map poster Nominatim endpoints use local defaults and both fail close
     .toBeUndefined();
 });
 
-Deno.test("map poster Nominatim broker spaces aggregate search and reverse calls and shares rounded reverse work", async () => {
+Deno.test("map poster Nominatim broker spaces aggregate calls and deduplicates concurrent reverse work", async () => {
   let now = 0;
   const callTimes: number[] = [];
   let fetchCalls = 0;
@@ -284,8 +284,43 @@ Deno.test("map poster Nominatim broker spaces aggregate search and reverse calls
 
   expect(fetchCalls).toBe(3);
   expect(callTimes).toEqual([0, 1_000, 2_000]);
-  await broker.reverse({ lat: 31.23041, lon: 121.47372 });
-  expect(fetchCalls).toBe(3);
+});
+
+Deno.test("map poster Nominatim broker does not cache completed reverse results", async () => {
+  let now = 0;
+  const callTimes: number[] = [];
+  let fetchCalls = 0;
+  const broker = createNominatimService({
+    reverseEndpoint: new URL("https://geo.openfx.example/reverse"),
+    now: () => now,
+    sleep: (milliseconds) => {
+      now += milliseconds;
+      return Promise.resolve();
+    },
+    fetcher: () => {
+      fetchCalls += 1;
+      callTimes.push(now);
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            address: {
+              city: fetchCalls === 1 ? "Shanghai" : "Beijing",
+              country: "China",
+            },
+          }),
+          { headers: { "content-type": "application/json" } },
+        ),
+      );
+    },
+  });
+
+  await expect(broker.reverse({ lat: 31.2304, lon: 121.4737 })).resolves
+    .toEqual({ city: "Shanghai", country: "China" });
+  await expect(broker.reverse({ lat: 31.2304, lon: 121.4737 })).resolves
+    .toEqual({ city: "Beijing", country: "China" });
+
+  expect(fetchCalls).toBe(2);
+  expect(callTimes).toEqual([0, 1_000]);
 });
 
 Deno.test("map poster Nominatim broker prunes TTL entries, evicts LRU entries, and drops queue overflow", async () => {
