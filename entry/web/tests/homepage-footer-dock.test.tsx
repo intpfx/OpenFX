@@ -7,7 +7,7 @@ import { createElement as h } from "react";
 
 import { HomepageFooterDock } from "../src/homepage/HomepageFooterDock.tsx";
 
-Deno.test("homepage footer dock is one semantic shell with three ordered slots", () => {
+Deno.test("homepage footer dock keeps editorial meta, index, and action slots ordered", () => {
   const html = renderToStaticMarkup(
     <HomepageFooterDock
       meta={<span data-test-meta>BUILD · AUTO · 绵阳市</span>}
@@ -33,6 +33,13 @@ Deno.test("homepage footer dock is one semantic shell with three ordered slots",
   expect(meta).toBeGreaterThan(-1);
   expect(meta).toBeLessThan(index);
   expect(index).toBeLessThan(action);
+
+  expect(html.indexOf("homepage-footer-dock__meta")).toBeLessThan(
+    html.indexOf("homepage-footer-dock__index"),
+  );
+  expect(html.indexOf("homepage-footer-dock__index")).toBeLessThan(
+    html.indexOf("homepage-footer-dock__action"),
+  );
 });
 
 Deno.test("location content is structurally inside the dock meta slot", () => {

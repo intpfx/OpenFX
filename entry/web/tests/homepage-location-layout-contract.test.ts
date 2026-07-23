@@ -13,20 +13,25 @@ function cssRule(selector: string) {
   return match?.[1] ?? "";
 }
 
-Deno.test("desktop footer is one structural three-column rail", () => {
+Deno.test("desktop footer is an editorial two-baseline rail", () => {
   const dock = cssRule(".homepage-footer-dock");
 
   expect(dock).toContain("display: grid");
-  expect(dock).toContain("grid-template-columns:");
+  expect(dock).toContain("grid-template-columns: minmax(0, 1fr) auto");
+  expect(dock).toContain("grid-template-rows:");
   expect(dock).toContain("grid-column: 1 / -1");
   expect(dock).toContain("grid-row: 3");
-  expect(dock).toContain("border: 1px solid");
-  expect(dock).toContain("background:");
-  expect(dock).toContain("box-shadow:");
+  expect(dock).toContain("border-bottom:");
+  expect(dock).toContain("background: transparent");
+  expect(dock).not.toContain("border: 1px solid");
+  expect(dock).not.toContain("border-radius:");
+  expect(dock).not.toContain("backdrop-filter:");
+  expect(dock).not.toContain("box-shadow:");
   expect(dock).not.toContain("position: fixed");
 
-  expect(cssRule(".homepage-footer-dock__middle")).toContain("min-width: 0");
-  expect(cssRule(".homepage-footer-dock__right")).toContain("min-width: 0");
+  expect(cssRule(".homepage-footer-dock__meta")).toContain("grid-row: 1");
+  expect(cssRule(".homepage-footer-dock__index")).toContain("grid-row: 2");
+  expect(cssRule(".homepage-footer-dock__action")).toContain("grid-row: 1 / 3");
 });
 
 Deno.test("normal location status and progress participate in dock layout", () => {
@@ -49,12 +54,18 @@ Deno.test("mobile dock remains one fixed shell with two internal rows", () => {
 
   expect(mobileCss).toContain(`.homepage-footer-dock {
     position: fixed;`);
-  expect(mobileCss).toContain(
-    "grid-template-columns: minmax(7rem, 0.75fr) minmax(0, 1.25fr);",
-  );
-  expect(mobileCss).toContain(`.homepage-footer-dock__right {
-    grid-column: 1 / -1;`);
-  expect(mobileCss).toContain("grid-row: 2;");
+  expect(mobileCss).toContain("grid-template-columns: minmax(0, 1fr) auto;");
+  expect(mobileCss).toContain("grid-template-rows: 44px 44px;");
+  expect(mobileCss).toContain("min-height: 88px;");
+  expect(mobileCss).toContain("background: var(--dock-mobile-background);");
+  expect(mobileCss).toContain(`.homepage-footer-dock__action {
+    min-width: 5.8rem;`);
+  expect(mobileCss).toContain(`.homepage-theme-control-label,
+  .homepage-theme-control-separator,
+  .build-version .footer-eyebrow,
+  .homepage-location-label {
+    display: none;`);
+  expect(homepageCss).toContain(".homepage-theme-control-value");
 });
 
 Deno.test("mobile dock controls and attribution links retain a 44px touch target", () => {
