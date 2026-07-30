@@ -16,7 +16,8 @@ Mac 节点，以及运行时无关的 `domains/e` Agent/审批内核。Web 控�
 - Perry 0.5.1220 的生产桌面完全不创建 `Canvas`，继续规避已确认的原生 IOAccelerator
   风险。主窗口使用原生 `ScrollView`、`ZStack` 和 `ImageFile` 呈现全类型文件封面墙；
   节点状态变化不会重建文件墙。CPU、内存等遥测在服务启动时采集一次，之后由窗口激活、
-  手动刷新或配对检查触发。持久化的 `reduceMotion` 控制文件详情层和媒体查看层的短时透明度过渡，
+  手动刷新或配对检查触发。持久化的 `reduceMotion`
+  控制文件详情层和媒体查看层的短时透明度过渡，
   不会启用连续帧核心。只有原生内存门禁通过后才能重新启用动态核心；Canvas 渲染器只作为
   未来能力保留。
 - 主窗口使用 Perry `titlebarStyle: "overlay"`：AppKit 保留原生交通灯和标准窗口行为，
