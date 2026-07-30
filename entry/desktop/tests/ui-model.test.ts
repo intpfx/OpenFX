@@ -492,8 +492,11 @@ Deno.test("control panel presentation formats paired telemetry without undefined
   assertEquals(presentation.processStatus, "321 个");
   assertEquals(presentation.relayStatus, "已启用");
   assertEquals(presentation.lastReportStatus, "1 秒前");
-  assertEquals(presentation.motionStatus, "静态核心（Perry 稳定模式）");
-  assertEquals(presentation.motionControlAvailable, false);
+  assertEquals(
+    presentation.motionStatus,
+    "界面动态已减少 · 静态核心（Perry 稳定模式）",
+  );
+  assertEquals(presentation.motionControlAvailable, true);
   assertEquals(presentation.reduceMotion, true);
   assertEquals(presentation.launchMode, "menuBarOnly");
   assertEquals(presentation.launchControlAvailable, false);

@@ -56,6 +56,15 @@ export function serializeDesktopAppSmokeMarker(
   });
 }
 
+export function deriveDesktopAppSmokeLibraryDirectory(
+  run: DesktopAppSmokeRun | null,
+  requestedDirectory: string,
+  productionDirectory: string,
+): string {
+  const requested = requestedDirectory.trim();
+  return run && requested ? requested : productionDirectory;
+}
+
 function isSmokeToken(value: string): boolean {
   if (value.length !== 32) return false;
   for (let index = 0; index < value.length; index += 1) {

@@ -18,7 +18,6 @@ import {
   toggleSetState,
   VStack,
   type Widget,
-  widgetSetBackgroundColor,
   widgetSetEdgeInsets,
   widgetSetHidden,
   widgetSetWidth,
@@ -125,9 +124,11 @@ export const createControlPanelPresentation = (
     launchMode: input.windowPolicy.mode,
     launchStatus: input.windowPolicy.status,
     launchControlAvailable: input.windowPolicy.controlAvailable,
-    reduceMotion: input.motionPolicy.reduceMotion,
-    motionStatus: input.motionPolicy.status,
-    motionControlAvailable: input.motionPolicy.controlAvailable,
+    reduceMotion: preferences.reduceMotion,
+    motionStatus: `${
+      preferences.reduceMotion ? "界面动态已减少" : "界面动态已开启"
+    } · ${input.motionPolicy.status}`,
+    motionControlAvailable: true,
   };
 };
 
@@ -155,13 +156,6 @@ export const createControlPanel = (
   let serverUrl = initial.serverUrl;
   let pairingCode = "";
   let nodeName = initial.nodeName;
-  let pairingGuideVisible = !initial.paired;
-
-  const nodeLabel = label(initial.nodeName, 22, true);
-  const connectionLabel = label(initial.connectionStatus, 12, false);
-  const protocolLabel = label(initial.protocolStatus, 12, false);
-  const serviceLabel = label(initial.serviceStatus, 12, false);
-  textSetWraps(serviceLabel, 344);
 
   const serverField = TextField("HTTPS 控制台地址", (value: string) => {
     serverUrl = value;
@@ -177,7 +171,7 @@ export const createControlPanel = (
 
   const networkLabel = label(initial.networkStatus, 12, false);
   const pairingLabel = label(initial.pairingStatus, 12, false);
-  textSetWraps(pairingLabel, 344);
+  textSetWraps(pairingLabel, 444);
   const pairButton = Button("配对", () => {
     actions.pair({
       serverUrl: serverUrl.trim(),
@@ -187,46 +181,22 @@ export const createControlPanel = (
   });
 
   const guide = VStack(10, [
-    sectionTitle("1 · 环境检查"),
+    sectionTitle("节点配对"),
+    caption("连接 Web 控制台后，节点凭据只保存到 macOS 钥匙串。"),
+    Divider(),
+    sectionTitle("1 · 网络检查"),
     networkLabel,
-    sectionTitle("2 · HTTPS 与配对码"),
+    sectionTitle("2 · 控制台与配对码"),
     serverField,
     codeField,
     nameField,
-    sectionTitle("3 · 钥匙串确认"),
-    caption("确认后，节点凭据仅保存到 macOS 钥匙串。"),
+    sectionTitle("3 · 确认"),
     pairingLabel,
     pairButton,
   ]);
   stackSetAlignment(guide, 7);
 
-  const cpuLabel = metric("CPU", initial.cpuStatus);
-  const memoryLabel = metric("内存", initial.memoryStatus);
-  const processLabel = metric("进程", initial.processStatus);
-  const publicIpv6Label = metric("公网 IPv6", initial.networkStatus);
-  const relayLabel = metric("Relay", initial.relayStatus);
-  const agentLabel = metric("Agent", initial.agentStatus);
-  const lastReportLabel = metric("上次上报", initial.lastReportStatus);
-  const dashboard = VStack(10, [
-    cpuLabel,
-    memoryLabel,
-    processLabel,
-    publicIpv6Label,
-    relayLabel,
-    agentLabel,
-    lastReportLabel,
-    HStack(8, [
-      Button("立即采样", actions.sample),
-      Button("重新配对", () => {
-        pairingGuideVisible = true;
-        updateVisibility(guide, dashboard, pairingGuideVisible);
-      }),
-    ]),
-    Button("打开 OpenFX 控制台", actions.openConsole),
-  ]);
-  stackSetAlignment(dashboard, 7);
-
-  const reduceMotionToggle = Toggle("减少动态效果", (enabled: boolean) => {
+  const reduceMotionToggle = Toggle("减少界面动态效果", (enabled: boolean) => {
     actions.setReduceMotion(enabled);
   });
   const motionStatusLabel = caption(initial.motionStatus);
@@ -238,25 +208,22 @@ export const createControlPanel = (
   toggleSetState(menuBarToggle, initial.launchMode === "menuBarOnly" ? 1 : 0);
 
   const body = VStack(12, [
-    HStack(8, [nodeLabel, Spacer(), connectionLabel]),
-    protocolLabel,
-    serviceLabel,
-    Divider(),
     guide,
-    dashboard,
     Spacer(),
     Divider(),
+    HStack(8, [
+      Button("立即采样", actions.sample),
+      Button("打开 Web 控制台", actions.openConsole),
+    ]),
     reduceMotionToggle,
     motionStatusLabel,
     menuBarToggle,
     launchStatusLabel,
   ]);
-  widgetSetWidth(body, 400);
-  widgetSetEdgeInsets(body, 20, 20, 16, 20);
-  widgetSetBackgroundColor(body, 0.025, 0.045, 0.075, 0.86);
+  widgetSetWidth(body, 492);
+  widgetSetEdgeInsets(body, 0, 0, 0, 0);
   stackSetAlignment(body, 7);
   stackSetDetachesHidden(body, 1);
-  updateVisibility(guide, dashboard, pairingGuideVisible);
   updateMotionControlVisibility(
     reduceMotionToggle,
     motionStatusLabel,
@@ -271,19 +238,8 @@ export const createControlPanel = (
   return {
     body,
     update(presentation) {
-      textSetString(nodeLabel, presentation.nodeName);
-      textSetString(connectionLabel, presentation.connectionStatus);
-      textSetString(protocolLabel, presentation.protocolStatus);
-      textSetString(serviceLabel, presentation.serviceStatus);
       textSetString(pairingLabel, presentation.pairingStatus);
       textSetString(networkLabel, presentation.networkStatus);
-      textSetString(cpuLabel, `CPU  ${presentation.cpuStatus}`);
-      textSetString(memoryLabel, `内存  ${presentation.memoryStatus}`);
-      textSetString(processLabel, `进程  ${presentation.processStatus}`);
-      textSetString(publicIpv6Label, `公网 IPv6  ${presentation.networkStatus}`);
-      textSetString(relayLabel, `Relay  ${presentation.relayStatus}`);
-      textSetString(agentLabel, `Agent  ${presentation.agentStatus}`);
-      textSetString(lastReportLabel, `上次上报  ${presentation.lastReportStatus}`);
       buttonSetTitle(pairButton, presentation.paired ? "更新配对" : "配对");
       toggleSetState(reduceMotionToggle, presentation.reduceMotion ? 1 : 0);
       textSetString(motionStatusLabel, presentation.motionStatus);
@@ -302,17 +258,9 @@ export const createControlPanel = (
         launchStatusLabel,
         presentation.launchControlAvailable,
       );
-      if (!presentation.paired) pairingGuideVisible = true;
-      updateVisibility(guide, dashboard, pairingGuideVisible);
     },
-    showPairingGuide() {
-      pairingGuideVisible = true;
-      updateVisibility(guide, dashboard, pairingGuideVisible);
-    },
-    showDashboard() {
-      pairingGuideVisible = false;
-      updateVisibility(guide, dashboard, pairingGuideVisible);
-    },
+    showPairingGuide() {},
+    showDashboard() {},
     setPairingDefaults(nextServerUrl, nextNodeName) {
       serverUrl = nextServerUrl;
       nodeName = nextNodeName;
@@ -344,15 +292,6 @@ const updateLaunchControlVisibility = (
   widgetSetHidden(status, controlAvailable ? 1 : 0);
 };
 
-const updateVisibility = (
-  guide: Widget,
-  dashboard: Widget,
-  showGuide: boolean,
-): void => {
-  widgetSetHidden(guide, showGuide ? 0 : 1);
-  widgetSetHidden(dashboard, showGuide ? 1 : 0);
-};
-
 const label = (value: string, size: number, strong: boolean): Widget => {
   const widget = Text(value);
   textSetFontSize(widget, size);
@@ -378,12 +317,6 @@ const formatBytes = (value: number): string => {
 const caption = (value: string): Widget => {
   const widget = label(value, 11, false);
   textSetColor(widget, 0.58, 0.68, 0.78, 1);
-  textSetWraps(widget, 344);
-  return widget;
-};
-
-const metric = (name: string, value: string): Widget => {
-  const widget = label(`${name}  ${value}`, 13, false);
   textSetWraps(widget, 344);
   return widget;
 };

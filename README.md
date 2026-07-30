@@ -21,7 +21,7 @@ domains/          独立领域模块
   proxy/          HTTP 中继
   wanone/         编程生涯第一个项目
 entry/            入口应用
-  desktop/        Perry 原生 OpenFX Node（监控、Relay、Agent）
+  desktop/        Perry 原生 OpenFX Node（文件管理、监控、Relay、Agent）
   web/            VitePlus + React + Nitro Web 应用与 OpenFX 控制台
 ```
 

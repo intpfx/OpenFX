@@ -28,7 +28,8 @@ Deno.test("desktop entry keeps native tray and runtime boundaries in both launch
   assert(source.includes('trayCreate("")'));
   assertEquals(source.includes("TRAY_ICON_PATH"), false);
   assert(source.includes('"perryShowMainWindow:"'));
-  assertEquals(/\bWindow\(/.test(main), false);
+  assertEquals(main.match(/\bApp\(/g)?.length, 1);
+  assert(main.includes("createNodeSettingsWindow("));
   assert(source.includes('from "node:http"'));
   assert(source.includes('from "node:https"'));
   assert(source.includes('from "node:crypto"'));
@@ -152,7 +153,7 @@ Deno.test("pinned Perry HTTP pump reaps parked requests without full handle chur
   );
 });
 
-Deno.test("native main-window visibility owns renderer lifecycle", async () => {
+Deno.test("native main-window visibility preserves the file browser and service lifecycle", async () => {
   const main = await Deno.readTextFile(MAIN_URL);
   const stub = await Deno.readTextFile(
     new URL("../src/perry-ui-stub.ts", import.meta.url),
@@ -174,14 +175,14 @@ Deno.test("native main-window visibility owns renderer lifecycle", async () => {
   );
   assert(
     visibilityHook.includes("lifecycle.mainWindowShown();") &&
-      visibilityHook.includes("lifecycle.mainWindowClosed();") &&
-      visibilityHook.includes("coreRenderer?.setWindowVisible(visible);"),
-    "native visibility must update both service-preserving lifecycle state and rendering",
+      visibilityHook.includes("lifecycle.mainWindowClosed();"),
+    "native visibility must update the service-preserving lifecycle state",
   );
   assertEquals(visibilityHook.includes("lifecycle.terminate()"), false);
-  assertEquals(activateHook.includes("coreRenderer?.stop()"), false);
-  assertEquals(activateHook.includes("coreRenderer?.start()"), false);
-  assertEquals(activateHook.includes("setWindowVisible"), false);
+  assertEquals(main.includes("coreRenderer"), false);
+  assertEquals(main.includes("createCoreCanvasRenderer"), false);
+  assertEquals(main.includes("createFileBrowser("), true);
+  assertEquals(activateHook.includes("fileBrowser ="), false);
   assert(stub.includes("onMainWindowVisibilityChanged"));
 
   for (
@@ -338,7 +339,7 @@ Deno.test("pinned Perry runtime build includes the patched macOS UI archive", as
   assert(patch.includes("std::env::current_exe()"));
 });
 
-Deno.test("pinned Perry App config wires vibrancy, minimum size, and close-to-hide", async () => {
+Deno.test("pinned Perry App config wires immersive titlebar, vibrancy, minimum size, and close-to-hide", async () => {
   const build = await Deno.readTextFile(BUILD_RUNTIME_URL);
   const smoke = await Deno.readTextFile(APP_SMOKE_URL);
   const patch = await Deno.readTextFile(PERRY_PATCH_URL);
@@ -353,6 +354,23 @@ Deno.test("pinned Perry App config wires vibrancy, minimum size, and close-to-hi
     patch.includes('"perry_ui_app_set_vibrancy".to_string()') &&
       patch.includes('"perry_ui_app_set_min_size".to_string()'),
     "the recognized properties must call Perry's existing native AppKit FFI",
+  );
+  assert(
+    patch.includes('"perry_ui_app_set_titlebar_style".to_string()') &&
+      patch.includes("app_set_titlebar_style") &&
+      patch.includes("FullSizeContentView") &&
+      patch.includes("setTitleVisibility") &&
+      patch.includes("setTitlebarAppearsTransparent") &&
+      patch.includes("setTitlebarSeparatorStyle"),
+    "the pinned Perry patch must preserve native traffic lights over immersive content",
+  );
+  assert(
+    patch.includes("setAutomaticallyAdjustsContentInsets: false"),
+    "scrolling file content must not reserve a second titlebar-sized inset under the native traffic lights",
+  );
+  assert(
+    patch.includes("setFocusRingType: 1u64"),
+    "borderless native icon buttons must not paint a focus background",
   );
   assert(
     patch.includes("setReleasedWhenClosed: false"),
@@ -378,6 +396,50 @@ Deno.test("pinned Perry App config wires vibrancy, minimum size, and close-to-hi
   );
 });
 
+Deno.test("pinned Perry exposes an AVPlayerView-backed in-app video widget", async () => {
+  const patch = await Deno.readTextFile(PERRY_PATCH_URL);
+  const stub = await Deno.readTextFile(
+    new URL("../src/perry-ui-stub.ts", import.meta.url),
+  );
+
+  assert(patch.includes('method: "VideoFile"'));
+  assert(patch.includes('runtime: "perry_ui_video_create_file"'));
+  assert(patch.includes("AVPlayerView"));
+  assert(patch.includes("setControlsStyle: 2i64"));
+  assert(patch.includes("perry_ui_video_set_playing"));
+  assert(stub.includes("export const VideoFile"));
+  assert(stub.includes("export const videoSetPlaying"));
+});
+
+Deno.test("file wall opens image and video tiles in a Photos-style in-app viewer", async () => {
+  const browser = await Deno.readTextFile(
+    new URL("../src/ui/file-browser.ts", import.meta.url),
+  );
+  const patch = await Deno.readTextFile(PERRY_PATCH_URL);
+  const stub = await Deno.readTextFile(
+    new URL("../src/perry-ui-stub.ts", import.meta.url),
+  );
+
+  assert(browser.includes("fileOpenPresentation(item.kind)"));
+  assert(browser.includes("showMediaPreview(item)"));
+  assert(browser.includes("VideoFile(item.path)"));
+  assert(browser.includes("imageSetScaling(image, 3)"));
+  assert(browser.includes("const mediaContentHost = VStack(0, [])"));
+  assert(browser.includes("videoSetPlaying(activeVideo, 0)"));
+  assert(browser.includes('"返回文件墙"'));
+  assert(
+    browser.includes(
+      "widgetSetOverlayFrame(mediaPreview, 0, 0, VIEW_WIDTH, VIEW_HEIGHT)",
+    ),
+  );
+  assert(browser.includes("showDetail(item)"));
+
+  assert(patch.includes('method: "imageSetScaling"'));
+  assert(patch.includes('runtime: "perry_ui_image_set_scaling"'));
+  assert(patch.includes("setImageScaling: scaling"));
+  assert(stub.includes("export const imageSetScaling"));
+});
+
 Deno.test("desktop entry assembles the immersive regular-or-menu-bar native app", async () => {
   const source = await readTypeScriptTree(SRC_URL);
   const main = await Deno.readTextFile(MAIN_URL);
@@ -389,20 +451,18 @@ Deno.test("desktop entry assembles the immersive regular-or-menu-bar native app"
     "activation policy must be selected synchronously from the effective Perry window policy",
   );
   assertEquals(main.includes('appSetActivationPolicy("accessory")'), false);
-  assert(main.includes("createCoreCanvasRenderer("));
-  assert(
-    main.includes(
-      'initialWindowVisible: currentWindowPolicy().mode !== "menuBarOnly"',
-    ),
-    "menu-bar-only cold start must keep Canvas hidden before native visibility",
-  );
+  assert(main.includes("createManagedFileLibrary("));
+  assert(main.includes("createFileThumbnailResolver("));
+  assert(main.includes("createFileBrowser("));
   assert(main.includes("createControlPanel("));
   assert(main.includes("createNodeTray("));
-  assert(main.includes("width: 960"));
+  assert(main.includes("body: fileBrowser.body"));
+  assert(main.includes("width: 820"));
   assert(main.includes("height: 640"));
-  assert(main.includes("minWidth: 880"));
-  assert(main.includes("minHeight: 580"));
+  assert(main.includes("minWidth: 820"));
+  assert(main.includes("minHeight: 640"));
   assert(main.includes('vibrancy: "underWindowBackground"'));
+  assert(main.includes('titlebarStyle: "overlay"'));
   assert(
     main.includes(
       "onActivate(() => {\n  void sampleAndRefreshPresentation();\n});",
@@ -411,36 +471,47 @@ Deno.test("desktop entry assembles the immersive regular-or-menu-bar native app"
   );
   assert(source.includes("textSetString("));
   assertEquals(source.includes("WebView("), false);
+  assertEquals(main.includes("createCoreCanvasRenderer("), false);
   for (
     const label of [
-      "1 · 环境检查",
-      "2 · HTTPS 与配对码",
-      "3 · 钥匙串确认",
-      "CPU",
-      "内存",
-      "进程",
-      "公网 IPv6",
+      "节点配对",
+      "1 · 网络检查",
+      "2 · 控制台与配对码",
+      "3 · 确认",
       "Relay",
       "Agent",
       "上次上报",
       "立即采样",
-      "重新配对",
-      "显示 OpenFX Node",
-      "节点状态",
-      "打开 OpenFX 控制台",
+      "显示文件管理器",
+      "节点配对与设置…",
+      "打开 Web 控制台",
+      "导入文件",
+      "用默认应用打开",
+      "在 Finder 中选择",
+      "图像",
+      "视频",
+      "音频",
+      "文档",
+      "压缩包",
+      "代码",
       "退出",
     ]
   ) assert(source.includes(label), `missing desktop label: ${label}`);
   assert(source.includes('trayCreate("")'));
   assert(
     source.includes(
-      'menuAddStandardAction(\n    menu,\n    "节点状态",\n    "perryShowMainWindow:",',
+      'menuAddStandardAction(\n      menu,\n      "显示文件管理器",\n      "perryShowMainWindow:",',
     ),
-    "node status must use the native show-window selector",
+    "the file manager must use the native show-window selector",
   );
+  assert(source.includes("presentation.connectionStatus"));
+  assert(source.includes("presentation.serviceStatus"));
+  assert(source.includes("presentation.networkStatus"));
+  assert(source.includes("presentation.lastReportStatus"));
+  assert(source.includes('Window("OpenFX Node 设置",'));
 });
 
-Deno.test("production desktop forces the Perry stable static core while retaining the preference surface", async () => {
+Deno.test("production desktop keeps the continuous Perry core disabled while using native file-browser widgets", async () => {
   const main = await Deno.readTextFile(MAIN_URL);
   const policy = await Deno.readTextFile(
     new URL("../src/core/core-motion-policy.ts", import.meta.url),
@@ -451,19 +522,98 @@ Deno.test("production desktop forces the Perry stable static core while retainin
   const stableCore = await Deno.readTextFile(
     new URL("../src/ui/stable-core.ts", import.meta.url),
   );
+  const fileBrowser = await Deno.readTextFile(
+    new URL("../src/ui/file-browser.ts", import.meta.url),
+  );
+  const fileWallLayout = await Deno.readTextFile(
+    new URL("../src/ui/file-wall-layout.ts", import.meta.url),
+  );
+  const nodeSettingsWindow = await Deno.readTextFile(
+    new URL("../src/ui/node-settings-window.ts", import.meta.url),
+  );
 
   assert(policy.includes("PERRY_ANIMATED_CORE_AVAILABLE = false"));
   assert(policy.includes("PERRY_VISIBLE_MAIN_WINDOW_AVAILABLE = false"));
-  assert(main.includes("reduceMotion: currentMotionPolicy().reduceMotion"));
   assert(main.includes("motionPolicy: currentMotionPolicy()"));
   assert(main.includes("windowPolicy: currentWindowPolicy()"));
   assert(main.includes('currentWindowPolicy().mode === "menuBarOnly"'));
-  assert(main.includes('currentMotionPolicy().mode === "animated"'));
-  assert(main.includes("coreRenderer?.canvas ?? createStableCorePanel()"));
+  assert(main.includes("createFileBrowser("));
+  assert(main.includes("fileThumbnails"));
+  assertEquals(main.includes("createStableCorePanel"), false);
+  assertEquals(main.includes("coreRenderer"), false);
   assert(stableCore.includes('Text("FX")'));
   assert(stableCore.includes("VStack("));
   assertEquals(stableCore.includes("Canvas("), false);
   assertEquals(stableCore.includes("onFrame("), false);
+  assert(fileBrowser.includes("ScrollView()"));
+  assert(fileBrowser.includes("ImageFile("));
+  assert(fileBrowser.includes("widgetAnimateOpacity("));
+  assert(fileBrowser.includes("fileWallLayout(snapshot.items.length)"));
+  assert(
+    fileBrowser.includes(
+      "fileWallBackgroundAlpha(snapshot.items.length)",
+    ),
+  );
+  assert(fileBrowser.includes("applyFileWallBackground(root, backgroundAlpha)"));
+  assert(fileBrowser.includes("applyFileWallBackground(wall, backgroundAlpha)"));
+  assert(fileBrowser.includes("applyFileWallBackground(row, backgroundAlpha)"));
+  assert(fileBrowser.includes("const wall = VStack(rowGap, [])"));
+  assert(
+    fileBrowser.includes(
+      "rowLayout.fillsWidth ? tiles : [...tiles, Spacer()]",
+    ),
+  );
+  assert(fileBrowser.includes("HStack(rowLayout.gap, rowChildren)"));
+  assertEquals(fileWallLayout.includes("ROW_WIDTH_PATTERNS"), false);
+  assertEquals(fileWallLayout.includes(".slice("), false);
+  assert(fileBrowser.includes("openFileDialog("));
+  assert(fileBrowser.includes("导入文件"));
+  assert(fileBrowser.includes('"square.and.arrow.down"'));
+  assert(fileBrowser.includes('"arrow.clockwise"'));
+  assert(fileBrowser.includes('"folder"'));
+  assert(fileBrowser.includes('"导入文件"'));
+  assert(fileBrowser.includes('"刷新文件库"'));
+  assert(fileBrowser.includes('"打开文件库"'));
+  assert(fileBrowser.includes('buttonSetTitle(button, "")'));
+  assert(fileBrowser.includes("widgetSetTooltip(button, accessibilityLabel)"));
+  assert(
+    fileBrowser.includes(
+      "return iconButton(symbol, accessibilityLabel, action)",
+    ),
+  );
+  assertEquals(
+    fileBrowser.includes(
+      "widgetSetBackgroundColor(button, 0.035, 0.035, 0.04, 0.78)",
+    ),
+    false,
+  );
+  assertEquals(fileBrowser.includes("setCornerRadius(button, 17)"), false);
+  assertEquals(
+    fileBrowser.includes(
+      "widgetSetShadow(button, 0, 0, 0, 0.26, 10, 0, 4)",
+    ),
+    false,
+  );
+  assert(fileBrowser.includes("options.library.openLibraryDirectory()"));
+  assertEquals(fileBrowser.includes("pathLabel"), false);
+  assertEquals(fileBrowser.includes("countLabel"), false);
+  assertEquals(fileBrowser.includes("OpenFX Node 文件库"), false);
+  assertEquals(fileBrowser.includes("gearshape"), false);
+  assertEquals(fileBrowser.includes("globe"), false);
+  assertEquals(fileBrowser.includes("settingsBody"), false);
+  assertEquals(fileBrowser.includes("showSettings"), false);
+  assertEquals(fileBrowser.includes("widgetSetOverlayFrame(label"), false);
+  assert(
+    nodeSettingsWindow.indexOf('Window("OpenFX Node 设置",') >
+      nodeSettingsWindow.indexOf("show() {"),
+    "the optional node settings window must be created only from its menu action",
+  );
+  assertEquals(fileBrowser.includes("openFolderDialog("), false);
+  assertEquals(fileBrowser.includes(".back()"), false);
+  assertEquals(fileBrowser.includes(".home()"), false);
+  assertEquals(fileBrowser.includes(".browse("), false);
+  assertEquals(fileBrowser.includes("Canvas("), false);
+  assertEquals(fileBrowser.includes("onFrame("), false);
   assert(controlPanel.includes("motionControlAvailable: boolean"));
   assert(controlPanel.includes("updateMotionControlVisibility("));
   assert(controlPanel.includes("widgetSetHidden(toggle, controlAvailable ? 0 : 1)"));
@@ -594,7 +744,7 @@ Deno.test("real desktop app smoke launches the bundle, checks IPv6 health, and c
   assert(smoke.includes("http://[::1]:24531/v1/health"));
   assert(smoke.includes("PERRY_UI_TEST_MODE"));
   assert(smoke.includes("PERRY_UI_SCREENSHOT_PATH"));
-  assert(smoke.includes('"PERRY_UI_TEST_EXIT_AFTER_MS=12000"'));
+  assert(smoke.includes('"PERRY_UI_TEST_EXIT_AFTER_MS=9000"'));
   assert(smoke.includes("MEMORY_TEST_EXIT_AFTER_MS"));
   assert(smoke.includes("MEMORY_WARMUP_MS +"));
   assert(smoke.includes("MEMORY_SAMPLE_INTERVAL_MS * MEMORY_SAMPLE_COUNT"));
@@ -603,13 +753,16 @@ Deno.test("real desktop app smoke launches the bundle, checks IPv6 health, and c
       "PERRY_UI_TEST_EXIT_AFTER_MS=${MEMORY_TEST_EXIT_AFTER_MS}",
     ),
   );
-  assert(smoke.includes("APP_EXIT_DEADLINE_MS = 13_000"));
+  assert(smoke.includes("APP_EXIT_DEADLINE_MS = 15_000"));
   assert(smoke.includes("collectBoundedChild"));
   assert(smoke.includes("Perry UI app clean-exit timed out"));
   assert(smoke.includes("openfx-ui-only-link"));
   assert(smoke.includes("OpenFX UI-only link gate"));
   assert(smoke.includes("assertPng"));
   assert(smoke.includes("if (!memoryMode) {\n    await assertPng(screenshot);"));
+  assert(smoke.includes("const width = readPngUint32(bytes, 16)"));
+  assert(smoke.includes("width >= 64 && height >= 64"));
+  assertEquals(smoke.includes("bytes.length > 1_024"), false);
   assertEquals(
     smoke.includes("Contents/Resources/openfx-tray-template.png"),
     false,

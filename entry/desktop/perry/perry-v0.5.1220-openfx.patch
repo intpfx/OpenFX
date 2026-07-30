@@ -5,29 +5,40 @@ index 4d38c85..40b7243 100644
 @@ -426,0 +427 @@ pub(crate) const API_MANIFEST_PART_4: &[ApiEntry] = &[
 +    method("perry/ui", "onMainWindowVisibilityChanged", false, None),
 diff --git a/crates/perry-codegen/src/lower_call/native/native_ui_appshell_branch.rs b/crates/perry-codegen/src/lower_call/native/native_ui_appshell_branch.rs
-index 20d38ae..d2ae31e 100644
+index 20d38ae..b93cdbf 100644
 --- a/crates/perry-codegen/src/lower_call/native/native_ui_appshell_branch.rs
 +++ b/crates/perry-codegen/src/lower_call/native/native_ui_appshell_branch.rs
-@@ -241,0 +242,3 @@
+@@ -241,0 +242,4 @@
 +        let mut vibrancy_ptr: Option<String> = None;
++        let mut titlebar_style_ptr: Option<String> = None;
 +        let mut min_width_d: Option<String> = None;
 +        let mut min_height_d: Option<String> = None;
-@@ -254,0 +258,6 @@
+@@ -254,0 +259,6 @@
 +                "minWidth" => {
 +                    min_width_d = Some(lower_expr(ctx, val)?);
 +                }
 +                "minHeight" => {
 +                    min_height_d = Some(lower_expr(ctx, val)?);
 +                }
-@@ -264,0 +274,5 @@
+@@ -264,0 +275,10 @@
 +                "vibrancy" => {
 +                    let v = lower_expr(ctx, val)?;
 +                    let blk = ctx.block();
 +                    vibrancy_ptr = Some(unbox_to_i64(blk, &v));
 +                }
-@@ -292,0 +307,10 @@
++                "titlebarStyle" => {
++                    let v = lower_expr(ctx, val)?;
++                    let blk = ctx.block();
++                    titlebar_style_ptr = Some(unbox_to_i64(blk, &v));
++                }
+@@ -292,0 +313,15 @@
 +        ctx.pending_declares.push((
 +            "perry_ui_app_set_vibrancy".to_string(),
++            crate::types::VOID,
++            vec![I64, I64],
++        ));
++        ctx.pending_declares.push((
++            "perry_ui_app_set_titlebar_style".to_string(),
 +            crate::types::VOID,
 +            vec![I64, I64],
 +        ));
@@ -36,11 +47,17 @@ index 20d38ae..d2ae31e 100644
 +            crate::types::VOID,
 +            vec![I64, DOUBLE, DOUBLE],
 +        ));
-@@ -317,0 +342,16 @@
+@@ -317,0 +353,22 @@
 +        if let Some(vibrancy) = vibrancy_ptr {
 +            blk.call_void(
 +                "perry_ui_app_set_vibrancy",
 +                &[(I64, &app_handle), (I64, &vibrancy)],
++            );
++        }
++        if let Some(titlebar_style) = titlebar_style_ptr {
++            blk.call_void(
++                "perry_ui_app_set_titlebar_style",
++                &[(I64, &app_handle), (I64, &titlebar_style)],
 +            );
 +        }
 +        if let (Some(min_width), Some(min_height)) = (min_width_d, min_height_d) {
@@ -657,7 +674,7 @@ index 613024e..b4fc422 100644
 +
 +unsafe fn js_stdlib_init_dispatch_inner() {
 diff --git a/crates/perry-ui-macos/src/app.rs b/crates/perry-ui-macos/src/app.rs
-index 72255ab..667439c 100644
+index 72255ab..9907115 100644
 --- a/crates/perry-ui-macos/src/app.rs
 +++ b/crates/perry-ui-macos/src/app.rs
 @@ -30,0 +31 @@ thread_local! {
@@ -674,9 +691,34 @@ index 72255ab..667439c 100644
 +                let _: () = msg_send![&*entry.window, setDelegate: &*delegate];
 +            }
 +        });
-@@ -1228,0 +1238 @@ extern "C" {
+@@ -995,0 +1005,24 @@ pub fn app_set_vibrancy(app_handle: i64, value_ptr: *const u8) {
++/// Extend content beneath a transparent title area while preserving the native
++/// traffic-light controls and normal window behavior.
++pub fn app_set_titlebar_style(app_handle: i64, value_ptr: *const u8) {
++    if str_from_header(value_ptr) != "overlay" {
++        return;
++    }
++    APPS.with(|a| {
++        let apps = a.borrow();
++        let idx = (app_handle - 1) as usize;
++        if idx < apps.len() {
++            let window = &apps[idx].window;
++            unsafe {
++                let style_mask: usize = msg_send![window, styleMask];
++                let full_size = NSWindowStyleMask::FullSizeContentView.0 as usize;
++                let _: () = msg_send![window, setStyleMask: style_mask | full_size];
++                let _: () = msg_send![window, setTitleVisibility: 1i64];
++                let _: () = msg_send![window, setTitlebarAppearsTransparent: true];
++                let _: () = msg_send![window, setTitlebarSeparatorStyle: 0i64];
++                let _: () = msg_send![window, setMovableByWindowBackground: true];
++            }
++        }
++    });
++}
++
+@@ -1228,0 +1262 @@ extern "C" {
 +    fn js_cancel_all_frames();
-@@ -1287,0 +1298,9 @@ define_class!(
+@@ -1287,0 +1322,9 @@ define_class!(
 +                    // Native services keep running after the main window is hidden.
 +                    // Always drain stdlib work and microtasks; only visual frame
 +                    // callbacks are allowed to pause with a hidden window.
@@ -686,7 +728,7 @@ index 72255ab..667439c 100644
 +                    js_drive_registered_pending(0);
 +                    js_run_stdlib_pump();
 +                    js_promise_run_microtasks();
-@@ -1291,5 +1310,3 @@ define_class!(
+@@ -1291,5 +1334,3 @@ define_class!(
 -                    js_frame_pump_default();
 -                    js_promise_run_microtasks();
 -                    // Process deferred promise resolutions from perry-stdlib tokio workers.
@@ -695,7 +737,7 @@ index 72255ab..667439c 100644
 +                    if main_window_is_visible() {
 +                        js_frame_pump_default();
 +                    }
-@@ -1306,0 +1324,8 @@ define_class!(
+@@ -1306,0 +1348,8 @@ define_class!(
 +fn main_window_is_visible() -> bool {
 +    APPS.with(|apps| {
 +        apps.borrow()
@@ -704,10 +746,10 @@ index 72255ab..667439c 100644
 +    })
 +}
 +
-@@ -1355,0 +1381,2 @@ define_class!(
+@@ -1355,0 +1405,2 @@ define_class!(
 +                invoke_main_window_visibility_changed_callback(true);
 +                invoke_activate_callback();
-@@ -1368,0 +1396,12 @@ define_class!(
+@@ -1368,0 +1420,12 @@ define_class!(
 +            invoke_main_window_visibility_changed_callback(true);
 +            invoke_activate_callback();
 +        }
@@ -720,7 +762,7 @@ index 72255ab..667439c 100644
 +            unsafe {
 +                js_cancel_all_frames();
 +            }
-@@ -1492,0 +1532,20 @@ fn invoke_activate_callback() {
+@@ -1492,0 +1556,20 @@ fn invoke_activate_callback() {
 +fn invoke_main_window_visibility_changed_callback(visible: bool) {
 +    const TAG_TRUE: u64 = 0x7FFC_0000_0000_0004;
 +    const TAG_FALSE: u64 = 0x7FFC_0000_0000_0003;
@@ -741,12 +783,39 @@ index 72255ab..667439c 100644
 +    }
 +}
 +
-@@ -1559,0 +1619,7 @@ pub fn register_on_activate(callback: f64) {
+@@ -1559,0 +1643,7 @@ pub fn register_on_activate(callback: f64) {
 +/// Register a main-window visibility callback.
 +pub fn register_on_main_window_visibility_changed(callback: f64) {
 +    ON_MAIN_WINDOW_VISIBILITY_CHANGED_CALLBACK.with(|cb| {
 +        *cb.borrow_mut() = Some(callback);
 +    });
++}
++
+diff --git a/crates/perry-ui-macos/src/widgets/scrollview.rs b/crates/perry-ui-macos/src/widgets/scrollview.rs
+--- a/crates/perry-ui-macos/src/widgets/scrollview.rs
++++ b/crates/perry-ui-macos/src/widgets/scrollview.rs
+@@ -72,6 +72,10 @@ pub fn create() -> i64 {
+     // Disable autoresizing mask so Auto Layout constraints work when inside ZStack or other
+     // constraint-based containers. Without this, the autoresizing mask conflicts with explicit
+     // constraints, causing the scroll view to have zero size.
+     unsafe {
++        // A full-size content window must let the document extend behind the
++        // title area instead of adding AppKit's default titlebar-sized inset.
++        let _: () = msg_send![&*scroll, setAutomaticallyAdjustsContentInsets: false];
++
+         let _: () = msg_send![&*scroll, setTranslatesAutoresizingMaskIntoConstraints: false];
+     }
+     let view: Retained<NSView> = unsafe { Retained::cast_unchecked(scroll) };
+diff --git a/crates/perry-ui-macos/src/lib_ffi/core_widgets.rs b/crates/perry-ui-macos/src/lib_ffi/core_widgets.rs
+index 55667c6..f531247 100644
+--- a/crates/perry-ui-macos/src/lib_ffi/core_widgets.rs
++++ b/crates/perry-ui-macos/src/lib_ffi/core_widgets.rs
+@@ -60,0 +61,7 @@ pub extern "C" fn perry_ui_app_set_vibrancy(app_handle: i64, value_ptr: i64) {
++/// Set the titlebar presentation. "overlay" keeps traffic lights while
++/// extending content beneath a transparent title area.
++#[no_mangle]
++pub extern "C" fn perry_ui_app_set_titlebar_style(app_handle: i64, value_ptr: i64) {
++    app::app_set_titlebar_style(app_handle, value_ptr as *const u8);
 +}
 +
 diff --git a/crates/perry-ui-macos/src/lib_ffi/dialogs_lifecycle.rs b/crates/perry-ui-macos/src/lib_ffi/dialogs_lifecycle.rs
@@ -862,14 +931,16 @@ index 2f52976..b77185d 100644
 +                let resolved_path = resolve_resource_path(path);
 +                let ns_path = NSString::from_str(&resolved_path.to_string_lossy());
 diff --git a/types/perry/ui/index.d.ts b/types/perry/ui/index.d.ts
-index 955f0d3..d91d638 100644
+index 955f0d3..c51ee01 100644
 --- a/types/perry/ui/index.d.ts
 +++ b/types/perry/ui/index.d.ts
-@@ -221,0 +222,3 @@ export function App(config: {
+@@ -221,0 +222,5 @@ export function App(config: {
 +    minWidth?: number;
 +    minHeight?: number;
 +    vibrancy?: string;
-@@ -1828,0 +1832,10 @@ export function onActivate(callback: () => void): void;
++    /** Extend app content behind a transparent macOS title area. */
++    titlebarStyle?: "standard" | "overlay";
+@@ -1828,0 +1834,10 @@ export function onActivate(callback: () => void): void;
 +/**
 + * Register a callback for native main-window visibility changes. The callback
 + * receives `true` after the initial show or a reopen and `false` before the
@@ -1019,4 +1090,266 @@ index 0000000..5326336
 +        *out = value;
 +    }
 +    1
++}
+diff --git a/crates/perry-ui-macos/src/widgets/button.rs b/crates/perry-ui-macos/src/widgets/button.rs
+index 4c94fa2..fe9a866 100644
+--- a/crates/perry-ui-macos/src/widgets/button.rs
++++ b/crates/perry-ui-macos/src/widgets/button.rs
+@@ -124,6 +124,9 @@ pub fn set_bordered(handle: i64, bordered: bool) {
+             if !bordered {
+                 // Set plain bezel style to avoid visual artifacts
+                 let _: () = msg_send![btn, setBezelStyle: 0i64]; // NSBezelStyleRounded = 0, avoids shadow
++                // NSFocusRingTypeNone = 1. Borderless icon buttons must remain
++                // visually transparent when AppKit makes one the first responder.
++                let _: () = msg_send![btn, setFocusRingType: 1u64];
+                                                                  // Re-apply attributed title (setBordered resets it)
+                 if !attr_title.is_null() {
+                     let _: () = msg_send![btn, setAttributedTitle: attr_title];
+diff --git a/crates/perry-api-manifest/src/entries/part_4.rs b/crates/perry-api-manifest/src/entries/part_4.rs
+index 4d38c85..e1e6b70 100644
+--- a/crates/perry-api-manifest/src/entries/part_4.rs
++++ b/crates/perry-api-manifest/src/entries/part_4.rs
+@@ -332,6 +332,9 @@ pub(crate) const API_MANIFEST_PART_4: &[ApiEntry] = &[
+     method("perry/ui", "Picker", false, None),
+     method("perry/ui", "ImageFile", false, None),
+     method("perry/ui", "ImageSymbol", false, None),
++    method("perry/ui", "VideoFile", false, None),
++    method("perry/ui", "videoSetPlaying", false, None),
++    method("perry/ui", "imageSetScaling", false, None),
+     method("perry/ui", "loadImage", false, None),
+     method("perry/ui", "Image", false, None),
+     method("perry/ui", "LazyVStack", false, None),
+diff --git a/crates/perry-dispatch/src/ui_table/part_a.rs b/crates/perry-dispatch/src/ui_table/part_a.rs
+index dcec918..32f583b 100644
+--- a/crates/perry-dispatch/src/ui_table/part_a.rs
++++ b/crates/perry-dispatch/src/ui_table/part_a.rs
+@@ -576,6 +576,18 @@ pub(crate) const PERRY_UI_TABLE_PART_A: &[MethodRow] = &[
+         args: &[ArgKind::Str],
+         ret: ReturnKind::Widget,
+     },
++    MethodRow {
++        method: "VideoFile",
++        runtime: "perry_ui_video_create_file",
++        args: &[ArgKind::Str],
++        ret: ReturnKind::Widget,
++    },
++    MethodRow {
++        method: "videoSetPlaying",
++        runtime: "perry_ui_video_set_playing",
++        args: &[ArgKind::Widget, ArgKind::F64],
++        ret: ReturnKind::Void,
++    },
+     // ---- Canvas image assets (issue #2022) ----
+     MethodRow {
+         method: "loadImage",
+@@ -597,6 +609,12 @@ pub(crate) const PERRY_UI_TABLE_PART_A: &[MethodRow] = &[
+         args: &[ArgKind::Widget, ArgKind::F64, ArgKind::F64],
+         ret: ReturnKind::Void,
+     },
++    MethodRow {
++        method: "imageSetScaling",
++        runtime: "perry_ui_image_set_scaling",
++        args: &[ArgKind::Widget, ArgKind::F64],
++        ret: ReturnKind::Void,
++    },
+     MethodRow {
+         method: "imageSetTint",
+         runtime: "perry_ui_image_set_tint",
+diff --git a/crates/perry-ui-macos/src/lib_ffi/advanced_widgets.rs b/crates/perry-ui-macos/src/lib_ffi/advanced_widgets.rs
+index 29ec11c..673c1d7 100644
+--- a/crates/perry-ui-macos/src/lib_ffi/advanced_widgets.rs
++++ b/crates/perry-ui-macos/src/lib_ffi/advanced_widgets.rs
+@@ -47,11 +47,29 @@ pub extern "C" fn perry_ui_image_set_size(handle: i64, width: f64, height: f64) {
+     widgets::image::set_size(handle, width, height);
+ }
+-
++
++/// Set the scaling mode of an Image widget.
++#[no_mangle]
++pub extern "C" fn perry_ui_image_set_scaling(handle: i64, scaling: f64) {
++    widgets::image::set_scaling(handle, scaling as i64);
++}
++
+ /// Set the tint color of an Image widget.
+ #[no_mangle]
+ pub extern "C" fn perry_ui_image_set_tint(handle: i64, r: f64, g: f64, b: f64, a: f64) {
+     widgets::image::set_tint(handle, r, g, b, a);
+ }
+-
++
++/// Create an AVPlayerView for a local video file. Returns widget handle.
++#[no_mangle]
++pub extern "C" fn perry_ui_video_create_file(path_ptr: i64) -> i64 {
++    widgets::video::create_file(path_ptr as *const u8)
++}
++
++/// Start or pause an AVPlayerView-backed video.
++#[no_mangle]
++pub extern "C" fn perry_ui_video_set_playing(handle: i64, playing: f64) {
++    widgets::video::set_playing(handle, playing != 0.0);
++}
++
+ /// Create a QR code image view. Returns widget handle.
+ #[no_mangle]
+ pub extern "C" fn perry_ui_qrcode_create(data_ptr: i64, size: f64) -> i64 {
+diff --git a/crates/perry-ui-macos/src/widgets/mod.rs b/crates/perry-ui-macos/src/widgets/mod.rs
+index 4da3a9a..64395fc 100644
+--- a/crates/perry-ui-macos/src/widgets/mod.rs
++++ b/crates/perry-ui-macos/src/widgets/mod.rs
+@@ -40,6 +40,7 @@ pub mod toast;
+ pub mod toggle;
+ pub mod toolbar;
+ pub mod tree_view;
++pub mod video;
+ pub mod vstack;
+ pub mod webview;
+ pub mod zstack;
+diff --git a/crates/perry/src/commands/compile/link/build_and_run.rs b/crates/perry/src/commands/compile/link/build_and_run.rs
+index 9d03b39..1855b6d 100644
+--- a/crates/perry/src/commands/compile/link/build_and_run.rs
++++ b/crates/perry/src/commands/compile/link/build_and_run.rs
+@@ -1181,6 +1181,7 @@ pub(crate) fn build_and_run_link(
+                     cmd.arg("-framework").arg("CoreGraphics");
+                     cmd.arg("-framework").arg("QuartzCore");
+                     cmd.arg("-framework").arg("AVFoundation");
++                    cmd.arg("-framework").arg("AVKit");
+                     cmd.arg("-framework").arg("Metal");
+                     cmd.arg("-framework").arg("IOKit");
+                     cmd.arg("-framework").arg("DiskArbitration"); // needed by CoreGraphics
+diff --git a/types/perry/ui/index.d.ts b/types/perry/ui/index.d.ts
+index 955f0d3..7ef1fe7 100644
+--- a/types/perry/ui/index.d.ts
++++ b/types/perry/ui/index.d.ts
+@@ -603,6 +603,15 @@ export function ImageFile(path: string): Widget;
+ /** Image from a system symbol name (SF Symbols). */
+ export function ImageSymbol(name: string): Widget;
+-
++
++/** Native AVPlayerView for a local video file. */
++export function VideoFile(path: string): Widget;
++
++/** Start or pause a native local-video widget. */
++export function videoSetPlaying(video: Widget, playing: number): void;
++
++/** Set AppKit image scaling mode. Use 3 for proportional fit. */
++export function imageSetScaling(image: Widget, scaling: number): void;
++
+ /**
+  * Image fetched from a remote URL (or `data:` URI). The widget appears
+  * immediately as an empty box; the bytes are fetched on a background
+diff --git a/crates/perry-ui-macos/src/widgets/image.rs b/crates/perry-ui-macos/src/widgets/image.rs
+index b0b7724..930ec8c 100644
+--- a/crates/perry-ui-macos/src/widgets/image.rs
++++ b/crates/perry-ui-macos/src/widgets/image.rs
+@@ -304,6 +304,21 @@ pub fn set_size(handle: i64, width: f64, height: f64) {
+     }
+ }
+-
++
++/// Set the NSImageView scaling mode.
++///
++/// AppKit value 3 is `NSImageScaleProportionallyUpOrDown`, used by
++/// full-window media viewers to fit the complete image without distortion.
++pub fn set_scaling(handle: i64, scaling: i64) {
++    if let Some(view) = super::get_widget(handle) {
++        if !is_image_view(&view) {
++            return;
++        }
++        unsafe {
++            let _: () = msg_send![&*view, setImageScaling: scaling];
++        }
++    }
++}
++
+ /// Set the content tint color of an image widget (for SF Symbols).
+ pub fn set_tint(handle: i64, r: f64, g: f64, b: f64, a: f64) {
+     if let Some(view) = super::get_widget(handle) {
+diff --git a/crates/perry-ui-macos/src/widgets/video.rs b/crates/perry-ui-macos/src/widgets/video.rs
+new file mode 100644
+index 0000000..086deca
+--- /dev/null
++++ b/crates/perry-ui-macos/src/widgets/video.rs
+@@ -0,0 +1,83 @@
++//! Native video playback backed by AVPlayerView.
++
++use objc2::msg_send;
++use objc2::rc::Retained;
++use objc2::runtime::{AnyClass, AnyObject};
++use objc2_app_kit::NSView;
++use objc2_foundation::NSString;
++
++use super::image::str_from_header;
++
++pub fn create_file(path_ptr: *const u8) -> i64 {
++    let path = str_from_header(path_ptr);
++    if path.is_empty() {
++        return 0;
++    }
++
++    unsafe {
++        let Some(url_class) = AnyClass::get(c"NSURL") else {
++            return 0;
++        };
++        let Some(player_class) = AnyClass::get(c"AVPlayer") else {
++            return 0;
++        };
++        let Some(player_view_class) = AnyClass::get(c"AVPlayerView") else {
++            return 0;
++        };
++
++        let ns_path = NSString::from_str(path);
++        let url: *mut AnyObject = msg_send![url_class, fileURLWithPath: &*ns_path];
++        if url.is_null() {
++            return 0;
++        }
++        let player: *mut AnyObject = msg_send![player_class, playerWithURL: url];
++        if player.is_null() {
++            return 0;
++        }
++
++        let allocated: *mut AnyObject = msg_send![player_view_class, alloc];
++        let frame = objc2_core_foundation::CGRect::new(
++            objc2_core_foundation::CGPoint::new(0.0, 0.0),
++            objc2_core_foundation::CGSize::new(640.0, 360.0),
++        );
++        let raw: *mut AnyObject = msg_send![allocated, initWithFrame: frame];
++        let view: Retained<AnyObject> = match Retained::from_raw(raw) {
++            Some(view) => view,
++            None => return 0,
++        };
++
++        let _: () = msg_send![&*view, setPlayer: player];
++        // AVPlayerViewControlsStyleFloating = 2, matching Photos on macOS.
++        let _: () = msg_send![&*view, setControlsStyle: 2i64];
++        let _: () = msg_send![&*view, setShowsFullScreenToggleButton: false];
++        let _: () = msg_send![&*view, setAllowsPictureInPicturePlayback: true];
++
++        let nsview: Retained<NSView> = Retained::cast_unchecked(view);
++        super::register_widget(nsview)
++    }
++}
++
++pub fn set_playing(handle: i64, playing: bool) {
++    let Some(view) = super::get_widget(handle) else {
++        return;
++    };
++
++    unsafe {
++        let Some(player_view_class) = AnyClass::get(c"AVPlayerView") else {
++            return;
++        };
++        let is_player_view: bool = msg_send![&*view, isKindOfClass: player_view_class];
++        if !is_player_view {
++            return;
++        }
++        let player: *mut AnyObject = msg_send![&*view, player];
++        if player.is_null() {
++            return;
++        }
++        if playing {
++            let _: () = msg_send![player, play];
++        } else {
++            let _: () = msg_send![player, pause];
++        }
++    }
 +}

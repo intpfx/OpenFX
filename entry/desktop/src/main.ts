@@ -1,7 +1,6 @@
 import {
   App,
   appSetActivationPolicy,
-  HStack,
   onActivate,
   onMainWindowVisibilityChanged,
   onTerminate,
@@ -9,13 +8,14 @@ import {
 } from "perry/ui";
 import { exit } from "node:process";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { writeFileSync } from "node:fs";
 
 import { decodeBase64Url } from "../../../domains/_shared/openfx-node/encoding.ts";
 import { SafetyActionGate } from "../../../domains/e/src/core/safety-action-gate.ts";
 import { createAgentToolRuntime } from "./core/agent-runtime.ts";
 import {
+  deriveDesktopAppSmokeLibraryDirectory,
   deriveDesktopAppSmokeRun,
   type DesktopAppSmokeStatus,
   serializeDesktopAppSmokeMarker,
@@ -41,6 +41,10 @@ import { createMacSystemAdapter } from "./native/mac-system.ts";
 import { createNodeEventReporter } from "./native/node-event-reporter.ts";
 import { createNodeCryptoAdapter } from "./native/node-crypto.ts";
 import { type RunningNodeServer, startNodeServer } from "./native/node-server.ts";
+import {
+  createFileThumbnailResolver,
+  createManagedFileLibrary,
+} from "./native/file-library.ts";
 import { createOmlxClient } from "./native/omlx-client.ts";
 import {
   createDesktopPreferenceStore,
@@ -63,14 +67,9 @@ import {
   createControlPanelPresentation,
   type PairingFormInput,
 } from "./ui/control-panel.ts";
-import {
-  type CoreCanvasMetrics,
-  type CoreCanvasRenderer,
-  createCoreCanvasRenderer,
-} from "./ui/core-canvas.ts";
-import type { CoreNodeState } from "./ui/core-frame.ts";
-import { createStableCorePanel } from "./ui/stable-core.ts";
-import { createNodeTray } from "./ui/tray.ts";
+import { createFileBrowser, type FileBrowserController } from "./ui/file-browser.ts";
+import { createNodeSettingsWindow } from "./ui/node-settings-window.ts";
+import { createNodeTray, type NodeTrayController } from "./ui/tray.ts";
 
 const desktopAppSmokeRun = deriveDesktopAppSmokeRun({
   testMode: process.env.PERRY_UI_TEST_MODE === "1",
@@ -114,13 +113,40 @@ const systemCollector = createObservedSystemCollector(
   macSystem,
   createPublicIpv6Observer(requestJson),
 );
+const productionFileLibraryDirectory = join(
+  homedir(),
+  "Library",
+  "Application Support",
+  "OpenFX Node",
+  "Files",
+);
+const fileLibraryDirectory = resolve(
+  deriveDesktopAppSmokeLibraryDirectory(
+    desktopAppSmokeRun,
+    process.env.OPENFX_APP_SMOKE_LIBRARY_DIRECTORY ?? "",
+    productionFileLibraryDirectory,
+  ),
+);
+const fileLibrary = createManagedFileLibrary({
+  libraryDirectory: fileLibraryDirectory,
+});
+const fileThumbnails = createFileThumbnailResolver({
+  cacheDirectory: join(
+    homedir(),
+    "Library",
+    "Caches",
+    "OpenFX Node",
+    "Thumbnails",
+  ),
+});
 
 const startupPreferences = readDesktopPreferencesSync();
 let pairing: RestoredPairing | null = null;
 let nodeServer: RunningNodeServer | null = null;
 let pairingInProgress = false;
 let controlPanel: ControlPanelController | null = null;
-let coreRenderer: CoreCanvasRenderer | null = null;
+let fileBrowser: FileBrowserController | null = null;
+let nodeTray: NodeTrayController | null = null;
 
 const preferences = State<DesktopPreferences>(startupPreferences);
 const serviceStatus = State("正在启动 OpenFX Node…");
@@ -246,7 +272,7 @@ const pairWithControlPlane = async (input: PairingFormInput): Promise<void> => {
       pairing.preferences.nodeName,
     );
     controlPanel?.clearPairingCode();
-    controlPanel?.showDashboard();
+    fileBrowser?.showLibrary();
   } catch (error) {
     const userMessage = describeDesktopError(error);
     serviceStatus.set(`配对失败：${userMessage}`);
@@ -272,7 +298,7 @@ const bootstrap = async (): Promise<void> => {
         pairing.preferences.serverUrl,
         pairing.preferences.nodeName,
       );
-      controlPanel?.showDashboard();
+      fileBrowser?.showLibrary();
     } else {
       const saved = preferenceStore.current();
       controlPanel?.setPairingDefaults(saved.serverUrl, saved.nodeName);
@@ -307,16 +333,6 @@ const lifecycle = createDesktopLifecycleController({
   },
 });
 
-coreRenderer = currentMotionPolicy().mode === "animated"
-  ? createCoreCanvasRenderer({
-    width: 560,
-    height: 640,
-    initialMetrics: createCoreMetrics(),
-    initialWindowVisible: currentWindowPolicy().mode !== "menuBarOnly",
-  })
-  : null;
-const coreWidget = coreRenderer?.canvas ?? createStableCorePanel();
-
 controlPanel = createControlPanel(currentPresentation(), {
   pair(input) {
     void pairWithControlPlane(input);
@@ -335,15 +351,25 @@ controlPanel = createControlPanel(currentPresentation(), {
   },
 });
 
-createNodeTray({
+const nodeSettingsWindow = createNodeSettingsWindow(controlPanel.body);
+
+fileBrowser = createFileBrowser({
+  library: fileLibrary,
+  thumbnails: fileThumbnails,
+  reduceMotion: startupPreferences.reduceMotion,
+});
+
+nodeTray = createNodeTray(currentPresentation(), {
   sample() {
     void sampleAndRefreshPresentation();
+  },
+  openSettings() {
+    nodeSettingsWindow.show();
   },
   openConsole() {
     void openControlPlaneConsole();
   },
   quit() {
-    coreRenderer?.stop();
     void lifecycle.terminate().finally(() => exit(0));
   },
 });
@@ -355,30 +381,28 @@ onActivate(() => {
 onMainWindowVisibilityChanged((visible) => {
   if (visible) lifecycle.mainWindowShown();
   else lifecycle.mainWindowClosed();
-  coreRenderer?.setWindowVisible(visible);
 });
 
 onTerminate(() => {
   writeDesktopAppSmokeMarker("clean-exit");
-  coreRenderer?.stop();
   void lifecycle.terminate();
 });
 
 appSetActivationPolicy(
   currentWindowPolicy().mode === "menuBarOnly" ? "accessory" : "regular",
 );
-coreRenderer?.start();
 setTimeout(() => {
   void lifecycle.start();
 }, 1);
 App({
   title: "OpenFX Node",
-  width: 960,
+  width: 820,
   height: 640,
-  minWidth: 880,
-  minHeight: 580,
+  minWidth: 820,
+  minHeight: 640,
   vibrancy: "underWindowBackground",
-  body: HStack(0, [coreWidget, controlPanel.body]),
+  titlebarStyle: "overlay",
+  body: fileBrowser.body,
 });
 
 function currentPresentation() {
@@ -397,19 +421,6 @@ function currentPresentation() {
   });
 }
 
-function createCoreMetrics(): CoreCanvasMetrics {
-  const overview = systemMonitor.overview();
-  const memoryUsagePercent = overview && overview.memoryTotalBytes > 0
-    ? (overview.memoryUsedBytes / overview.memoryTotalBytes) * 100
-    : 0;
-  return {
-    state: currentCoreState(),
-    cpuUsagePercent: overview?.cpuUsagePercent ?? 0,
-    memoryUsagePercent,
-    reduceMotion: currentMotionPolicy().reduceMotion,
-  };
-}
-
 function currentMotionPolicy() {
   return deriveCoreMotionPolicy(
     preferences.value.reduceMotion,
@@ -422,14 +433,6 @@ function currentWindowPolicy() {
     preferences.value.launchMode,
     PERRY_VISIBLE_MAIN_WINDOW_AVAILABLE,
   );
-}
-
-function currentCoreState(): CoreNodeState {
-  if (serviceStatus.value.includes("失败")) return "fault";
-  if (serviceStatus.value.includes("正在启动")) return "startup";
-  if (pairing === null) return "unpaired";
-  if (reporter.status().errorMessage) return "degraded";
-  return "online";
 }
 
 function applyAuthoritativePairing(
@@ -449,8 +452,10 @@ function applyAuthoritativePairing(
 }
 
 function refreshPresentation(): void {
-  controlPanel?.update(currentPresentation());
-  coreRenderer?.update(createCoreMetrics());
+  const presentation = currentPresentation();
+  controlPanel?.update(presentation);
+  nodeTray?.update(presentation);
+  fileBrowser?.setReduceMotion(preferences.value.reduceMotion);
 }
 
 async function sampleAndRefreshPresentation(): Promise<void> {

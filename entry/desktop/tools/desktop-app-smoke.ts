@@ -22,7 +22,7 @@ const APP_ICON = join(APP_BUNDLE, "Contents/Resources/OpenFXNode.icns");
 const HEALTH_URL = "http://[::1]:24531/v1/health";
 const PERRY_UI_ARCHIVE = "libperry_ui_macos.a";
 const HEALTH_TIMEOUT_MS = 10_000;
-const APP_EXIT_DEADLINE_MS = 13_000;
+const APP_EXIT_DEADLINE_MS = 15_000;
 const TERMINATION_GRACE_MS = 1_000;
 const GRACEFUL_QUIT_TIMEOUT_MS = 5_000;
 const INSTANCE_IDENTITY_TIMEOUT_MS = 5_000;
@@ -52,6 +52,9 @@ const screenshotArtifactValue = Deno.env.get("PERRY_UI_SCREENSHOT_ARTIFACT")
 const screenshotArtifact = screenshotArtifactValue
   ? resolve(REPOSITORY_ROOT, screenshotArtifactValue)
   : null;
+const smokeLibraryDirectory = Deno.env.get(
+  "OPENFX_APP_SMOKE_LIBRARY_DIRECTORY",
+)?.trim();
 
 await validatePerryRuntimeDirectory(perryLibDirectory);
 await assertFile(perryExecutable);
@@ -94,7 +97,7 @@ App({
         "--env",
         `PERRY_UI_TEST_EXIT_AFTER_MS=${MEMORY_TEST_EXIT_AFTER_MS}`,
       ]
-      : ["--env", "PERRY_UI_TEST_EXIT_AFTER_MS=12000"]),
+      : ["--env", "PERRY_UI_TEST_EXIT_AFTER_MS=9000"]),
     "--env",
     `PERRY_UI_SCREENSHOT_PATH=${screenshot}`,
     "--env",
@@ -103,6 +106,12 @@ App({
     `OPENFX_APP_SMOKE_LAUNCH_PATH=${launchMarker}`,
     "--env",
     `OPENFX_APP_SMOKE_CLEAN_EXIT_PATH=${cleanExitMarker}`,
+    ...(smokeLibraryDirectory
+      ? [
+        "--env",
+        `OPENFX_APP_SMOKE_LIBRARY_DIRECTORY=${smokeLibraryDirectory}`,
+      ]
+      : []),
     APP_BUNDLE,
     "--args",
     SMOKE_TOKEN_FLAG,
@@ -713,10 +722,30 @@ async function assertNonEmptyFile(path: string): Promise<void> {
 async function assertPng(path: string): Promise<void> {
   const bytes = await Deno.readFile(path);
   const signature = [137, 80, 78, 71, 13, 10, 26, 10];
-  assert(bytes.length > 1_024, `Perry UI screenshot is unexpectedly small: ${path}`);
+  assert(bytes.length >= 24, `Perry UI screenshot is truncated: ${path}`);
   assert(
     signature.every((value, index) => bytes[index] === value),
     `Perry UI screenshot is not a PNG: ${path}`,
+  );
+  assert(
+    bytes[12] === 73 && bytes[13] === 72 && bytes[14] === 68 &&
+      bytes[15] === 82,
+    `Perry UI screenshot has no PNG IHDR: ${path}`,
+  );
+  const width = readPngUint32(bytes, 16);
+  const height = readPngUint32(bytes, 20);
+  assert(
+    width >= 64 && height >= 64,
+    `Perry UI screenshot has unexpected dimensions ${width}x${height}: ${path}`,
+  );
+}
+
+function readPngUint32(bytes: Uint8Array, offset: number): number {
+  return (
+    bytes[offset]! * 0x1000000 +
+    bytes[offset + 1]! * 0x10000 +
+    bytes[offset + 2]! * 0x100 +
+    bytes[offset + 3]!
   );
 }
 

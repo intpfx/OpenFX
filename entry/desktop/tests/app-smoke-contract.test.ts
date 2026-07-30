@@ -18,6 +18,17 @@ interface SmokeContractModule {
     launchMarkerPath: string;
     cleanExitMarkerPath: string;
   } | null;
+  deriveDesktopAppSmokeLibraryDirectory(
+    run: {
+      token: string;
+      pid: number;
+      executable: string;
+      launchMarkerPath: string;
+      cleanExitMarkerPath: string;
+    } | null,
+    requestedDirectory: string,
+    productionDirectory: string,
+  ): string;
   serializeDesktopAppSmokeMarker(
     run: {
       token: string;
@@ -81,6 +92,42 @@ Deno.test("desktop smoke markers bind status to token pid and executable", async
     executable: "/app/OpenFX Node",
     status: "clean-exit",
   });
+});
+
+Deno.test("desktop smoke can isolate visual fixtures without redirecting production storage", async () => {
+  const contract = await loadContract();
+  const run = contract.deriveDesktopAppSmokeRun({
+    testMode: true,
+    token: VALID_TOKEN,
+    argv: ["/app/OpenFX Node", "--openfx-smoke-token", VALID_TOKEN],
+    launchMarkerPath: "/tmp/openfx-launch.json",
+    cleanExitMarkerPath: "/tmp/openfx-clean.json",
+    pid: 42,
+    executable: "/app/OpenFX Node",
+  });
+  assert(run);
+  const production = "/Users/test/Library/Application Support/OpenFX Node/Files";
+
+  assertEquals(
+    contract.deriveDesktopAppSmokeLibraryDirectory(
+      run,
+      "/tmp/design-fixture",
+      production,
+    ),
+    "/tmp/design-fixture",
+  );
+  assertEquals(
+    contract.deriveDesktopAppSmokeLibraryDirectory(
+      null,
+      "/tmp/design-fixture",
+      production,
+    ),
+    production,
+  );
+  assertEquals(
+    contract.deriveDesktopAppSmokeLibraryDirectory(run, "   ", production),
+    production,
+  );
 });
 
 async function loadContract(): Promise<SmokeContractModule> {

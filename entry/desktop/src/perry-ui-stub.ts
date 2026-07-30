@@ -19,7 +19,7 @@ export interface Canvas {
   stroke(): void;
 }
 
-export interface PerryWindow {
+export interface Window {
   setBody(body: Widget): void;
   show(): void;
   hide(): void;
@@ -89,16 +89,40 @@ export const VStack = (spacing: number, children: unknown[]) => ({
   axis: "vertical",
 });
 
+export const ZStack = () => ({
+  children: [] as Widget[],
+  axis: "depth",
+});
+
+export const ScrollView = () => ({
+  child: null as Widget | null,
+  type: "scroll-view",
+});
+
+export const ImageFile = (path: string): Widget => ({ path, type: "image" });
+
+export const ImageSymbol = (name: string): Widget => ({ name, type: "symbol" });
+
+export const VideoFile = (path: string): Widget => ({ path, type: "video" });
+
 export const Section = (title: string) => ({
   title,
   children: [] as Widget[],
 });
 
 export const widgetAddChild = (
-  section: { children: Widget[] },
+  section: Widget,
   child: Widget,
 ): void => {
-  section.children.push(child);
+  const parent = section as { children?: Widget[] };
+  if (!parent.children) parent.children = [];
+  parent.children.push(child);
+};
+export const widgetClearChildren = (
+  section: Widget,
+): void => {
+  const parent = section as { children?: Widget[] };
+  if (parent.children) parent.children.splice(0, parent.children.length);
 };
 export const widgetSetWidth = (_widget: Widget, _width: number): void => {};
 export const widgetSetHeight = (_widget: Widget, _height: number): void => {};
@@ -117,6 +141,7 @@ export const widgetSetEdgeInsets = (
   _bottom: number,
   _right: number,
 ): void => {};
+export const widgetSetTooltip = (_widget: Widget, _text: string): void => {};
 export const stackSetAlignment = (_widget: Widget, _alignment: number): void => {};
 export const stackSetDetachesHidden = (_widget: Widget, _detach: number): void => {};
 export const textSetString = (_widget: Widget, _text: string): void => {};
@@ -141,6 +166,123 @@ export const textSetTextAlignment = (
 export const textfieldSetString = (_widget: Widget, _text: string): void => {};
 export const buttonSetTitle = (_widget: Widget, _title: string): void => {};
 export const buttonSetBordered = (_widget: Widget, _bordered: number): void => {};
+export const buttonSetImage = (_widget: Widget, _symbolName: string): void => {};
+export const buttonSetImagePosition = (
+  _widget: Widget,
+  _position: number,
+): void => {};
+export const buttonSetTextColor = (
+  _widget: Widget,
+  _r: number,
+  _g: number,
+  _b: number,
+  _a: number,
+): void => {};
+export const imageSetSize = (
+  _widget: Widget,
+  _width: number,
+  _height: number,
+): void => {};
+export const imageSetScaling = (
+  _widget: Widget,
+  _scaling: number,
+): void => {};
+export const imageSetTint = (
+  _widget: Widget,
+  _r: number,
+  _g: number,
+  _b: number,
+  _a: number,
+): void => {};
+export const videoSetPlaying = (
+  _widget: Widget,
+  _playing: number,
+): void => {};
+export const scrollviewSetChild = (
+  scrollView: Widget,
+  child: Widget,
+): void => {
+  (scrollView as { child?: Widget | null }).child = child;
+};
+export const widgetAddOverlay = (
+  parent: Widget,
+  overlay: Widget,
+): void => {
+  const container = parent as { overlays?: Widget[] };
+  if (!container.overlays) container.overlays = [];
+  container.overlays.push(overlay);
+};
+export const widgetSetOverlayFrame = (
+  _widget: Widget,
+  _x: number,
+  _y: number,
+  _width: number,
+  _height: number,
+): void => {};
+export const widgetSetOnClick = (
+  _widget: Widget,
+  _callback: () => void,
+): void => {};
+export const widgetSetOnDoubleClick = (
+  _widget: Widget,
+  _callback: () => void,
+): void => {};
+export const widgetSetOnHover = (
+  _widget: Widget,
+  _callback: (isHovering: boolean) => void,
+): void => {};
+export const widgetSetOpacity = (
+  _widget: Widget,
+  _opacity: number,
+): void => {};
+export const widgetAnimateOpacity = (
+  _widget: Widget,
+  _target: number,
+  _durationSeconds: number,
+): void => {};
+export const widgetSetBackgroundGradient = (
+  _widget: Widget,
+  _r1: number,
+  _g1: number,
+  _b1: number,
+  _a1: number,
+  _r2: number,
+  _g2: number,
+  _b2: number,
+  _a2: number,
+  _angle: number,
+): void => {};
+export const widgetSetBorderColor = (
+  _widget: Widget,
+  _r: number,
+  _g: number,
+  _b: number,
+  _a: number,
+): void => {};
+export const widgetSetBorderWidth = (
+  _widget: Widget,
+  _width: number,
+): void => {};
+export const widgetSetShadow = (
+  _widget: Widget,
+  _r: number,
+  _g: number,
+  _b: number,
+  _a: number,
+  _blur: number,
+  _offsetX: number,
+  _offsetY: number,
+): void => {};
+export const setCornerRadius = (
+  _widget: Widget,
+  _radius: number,
+): void => {};
+export const openFolderDialog = (
+  _callback: (path: string) => void,
+): void => {};
+export const openFileDialog = (
+  _callback: (path: string) => void,
+): void => {};
 
 export const clipboardWrite = (_text: string): void => {
   // Deno/LSP stub only.
@@ -160,6 +302,7 @@ export const App = (_config: {
   minWidth?: number;
   minHeight?: number;
   vibrancy?: string;
+  titlebarStyle?: "standard" | "overlay";
   body: unknown;
 }): void => {
   // Deno/LSP stub only. Real builds are handled by Perry.
@@ -169,7 +312,7 @@ export const Window = (
   _title: string,
   _width: number,
   _height: number,
-): PerryWindow => ({
+): Window => ({
   setBody() {},
   show() {},
   hide() {},
@@ -197,6 +340,7 @@ export const menuAddItem = (
   _callback: () => void,
 ): void => {};
 export const menuAddSeparator = (_menu: Widget): void => {};
+export const menuClear = (_menu: Widget): void => {};
 export const menuAddStandardAction = (
   _menu: Widget,
   _label: string,
