@@ -896,7 +896,7 @@ function initializeCommunityMap() {
         routeRoot.style.setProperty("--scene-content-accent", content.accent);
         routeRoot.style.setProperty(
           "--scene-content-art-image",
-          `url("/imgs/community-map-${content.artId}-v1.webp")`,
+          `url("./imgs/community-map-${content.artId}-v1.webp")`,
         );
         routeRoot.style.setProperty(
           "--scene-empty-title",

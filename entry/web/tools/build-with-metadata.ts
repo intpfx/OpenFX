@@ -1,4 +1,5 @@
 import { assertSafeDenoBundle } from "./verify-deno-entry.ts";
+import { prepareHlcDisplayApp } from "../../../domains/hlc/tools/build-display-app.ts";
 
 type BuildMetadataEnv = {
   DENO_DEPLOY_BUILD_ID?: string;
@@ -109,6 +110,9 @@ async function main() {
   };
 
   console.log(`[openfx:web] build metadata ${metadata.time} + ${metadata.hash}`);
+
+  console.log("[openfx:web] HLC display assets");
+  await prepareHlcDisplayApp();
 
   await runStep(
     "client build",

@@ -21,15 +21,21 @@ Deno.test("homepage project cards all have detail panels", () => {
   expect(projectCardIds.filter((id) => !detailPanelIds.has(id))).toEqual([]);
 });
 
-Deno.test("HLC is indexed as a standalone domain", () => {
+Deno.test("HLC opens a same-origin read-only showcase", async () => {
   const hlcCard = homepageCards.find((card) => card.id === "hlc");
+  const appSource = await Deno.readTextFile(
+    new URL("../src/App.tsx", import.meta.url),
+  );
 
   expect(hlcCard).toBeDefined();
   expect(hlcCard?.name).toBe("HLC · 圣灯社区");
   expect(hlcCard?.sourcePath).toContain("domains/hlc/");
-  expect(hlcCard?.sourcePath).toContain("standalone Deno domain");
+  expect(hlcCard?.sourcePath).toContain("same-origin read-only showcase");
   expect(hlcCard?.preview).toBeUndefined();
   expect(PROJECT_DETAIL_PANEL_IDS).toContain("hlc");
+  expect(appSource).toContain('src="/hlc/"');
+  expect(appSource).toContain('title="HLC · 圣灯社区只读展示"');
+  expect(appSource).toContain('sandbox="allow-scripts allow-same-origin"');
 });
 
 Deno.test("homepage data panel is opened from the OpenFX logo", () => {

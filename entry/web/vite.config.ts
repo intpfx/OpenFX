@@ -29,6 +29,7 @@ export default defineConfig({
       "/costing-assistant": nitroDevOrigin,
       "/finlyzer": nitroDevOrigin,
       "/gasmap": nitroDevOrigin,
+      "/hlc": nitroDevOrigin,
       "/how-much": nitroDevOrigin,
       "/wanone": nitroDevOrigin,
     },

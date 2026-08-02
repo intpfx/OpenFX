@@ -1,0 +1,75 @@
+html[data-hlc-runtime="display-only"] .hlc-display-badge {
+  position: fixed;
+  z-index: 32;
+  right: clamp(16px, 3vw, 42px);
+  bottom: clamp(16px, 3vw, 36px);
+  max-width: min(360px, calc(100vw - 32px));
+  margin: 0;
+  padding: 10px 16px;
+  border: 1px solid rgb(33 42 34 / 38%);
+  border-radius: 999px;
+  color: #f7f1df;
+  background: rgb(31 39 32 / 82%);
+  box-shadow: 0 8px 22px rgb(18 25 20 / 18%);
+  font: 600 13px/1.4 system-ui, sans-serif;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+  backdrop-filter: blur(10px);
+}
+
+html[data-hlc-runtime="display-only"] .scene-account-access,
+html[data-hlc-runtime="display-only"] #scene_account_panel,
+html[data-hlc-runtime="display-only"] #scene_boundary_editor,
+html[data-hlc-runtime="display-only"] #chat_box,
+html[data-hlc-runtime="display-only"] #toolhouse_request > form,
+html[data-hlc-runtime="display-only"] #signup_request > form,
+html[data-hlc-runtime="display-only"] #zyh_link {
+  display: none !important;
+}
+
+html[data-hlc-runtime="display-only"] #live_qrcode img,
+html[data-hlc-runtime="display-only"] #staff_img {
+  display: none !important;
+}
+
+html[data-hlc-runtime="display-only"] .hlc-display-copy {
+  display: grid;
+  gap: 14px;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: clamp(24px, 5vw, 64px);
+  border: 1px solid rgb(46 56 45 / 20%);
+  border-radius: 8px;
+  color: #263028;
+  background: rgb(248 243 226 / 90%);
+  box-shadow: 0 18px 42px rgb(27 35 29 / 12%);
+}
+
+html[data-hlc-runtime="display-only"] .hlc-display-copy span {
+  color: #a04735;
+  font: 700 12px/1.4 system-ui, sans-serif;
+  letter-spacing: 0.14em;
+}
+
+html[data-hlc-runtime="display-only"] .hlc-display-copy h3,
+html[data-hlc-runtime="display-only"] .hlc-display-copy p {
+  margin: 0;
+}
+
+html[data-hlc-runtime="display-only"] .hlc-display-copy h3 {
+  font-size: clamp(28px, 4vw, 48px);
+  font-weight: 600;
+}
+
+html[data-hlc-runtime="display-only"] .hlc-display-copy p {
+  font: 400 clamp(16px, 2vw, 20px)/1.8 system-ui, sans-serif;
+}
+
+@media (max-width: 720px) {
+  html[data-hlc-runtime="display-only"] .hlc-display-badge {
+    right: 12px;
+    bottom: 12px;
+    padding: 8px 12px;
+    font-size: 11px;
+  }
+}

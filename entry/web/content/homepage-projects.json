@@ -152,7 +152,7 @@
           "name": "HLC · 圣灯社区",
           "description": "面向圣灯社区的手绘互动地图与治理 PWA，以真实地理骨架连接七个社区场所和四角色内容流程。",
           "tech": ["Deno", "PWA", "EditorJS", "Deno KV"],
-          "sourcePath": "domains/hlc/ · standalone Deno domain"
+          "sourcePath": "domains/hlc/ · same-origin read-only showcase"
         },
         {
           "id": "wanone-memorial",

@@ -23,6 +23,7 @@ apps/web/.vite/
 apps/web/node_modules/
 entry/web/_fresh/
 entry/web/.client-dist/
+entry/web/.hlc-public/
 entry/web/.nitro/
 entry/web/.output/
 entry/web/.vite/

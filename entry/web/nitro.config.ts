@@ -17,6 +17,9 @@ const gasmapPublicDir = fileURLToPath(
 const finlyzerPublicDir = fileURLToPath(
   new URL("../../domains/finlyzer/public", import.meta.url),
 );
+const hlcPreparedPublicDir = fileURLToPath(
+  new URL("./.hlc-public", import.meta.url),
+);
 const costingAssistantPublicDir = fileURLToPath(
   new URL("../../domains/costing-assistant/public", import.meta.url),
 );
@@ -58,6 +61,11 @@ export default defineNitroConfig({
     },
     {
       dir: finlyzerPublicDir,
+      maxAge: 60 * 60 * 24 * 30,
+    },
+    {
+      dir: hlcPreparedPublicDir,
+      baseURL: "/hlc",
       maxAge: 60 * 60 * 24 * 30,
     },
     {

@@ -30,8 +30,19 @@ deno task --config entry/web/deno.json preview
 不要只在 JSON
 里新增卡片。没有详情内容的卡片会让首页项目浏览器出现断点，后续维护时应优先补齐说明面板、嵌入页面或外部安装/访问入口。
 
-HLC 卡片打开项目说明面板，但不会把 `domains/hlc/` 嵌入 OpenFX Web。HLC 继续使用独立的
-Deno KV、账户会话与启动入口；首页只索引互动地图、社区内容治理能力和源码位置。
+HLC 卡片打开同源的 `/hlc/` 只读展示应用。构建准备步骤只把地图所需的静态 HTML、CSS、
+JavaScript、地理数据与抽象艺术资产复制到 Nitro 公共目录，不发布 legacy
+认证模型、内容工作流 或 `divertor.js`。展示入口不会加载 `index.js` 或
+`main.js`，因此不会连接 Deno KV，也不提供
+账户会话、Cookie、登录、注册或数据提交。首页详情面板使用不允许表单和弹窗的 iframe
+sandbox，进一步收紧展示边界。
+
+修改 `domains/hlc/source/index.html` 后，需要重新生成只读入口：
+
+```bash
+cd domains/hlc
+deno run --no-config --allow-read --allow-write tools/build-display-app.ts
+```
 
 外部 GitHub 仓库也可以作为项目卡片展示，但需要在 `sourcePath` 中标注 public / private
 边界，通过 `links` 提供仓库入口，并在详情面板中说明来源、内容范围和 OpenFX

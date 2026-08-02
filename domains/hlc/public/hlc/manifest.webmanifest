@@ -1,0 +1,17 @@
+{
+  "name": "圣灯社区 · OpenFX 只读展示",
+  "short_name": "圣灯社区",
+  "description": "圣灯社区互动地图只读展示",
+  "start_url": "/hlc/",
+  "scope": "/hlc/",
+  "display": "standalone",
+  "background_color": "#d8dfc8",
+  "theme_color": "#d8dfc8",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

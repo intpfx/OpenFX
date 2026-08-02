@@ -130,16 +130,19 @@ domains/hlc/
 ├── handle.ts              # esbuild 打包 source/divertor.js -> main.js
 ├── index.js               # Deno 服务、API、KV、文件存储、PWA 资源
 ├── main.js                # 已打包浏览器端脚本
+├── public/hlc/            # OpenFX `/hlc/` 展示壳样式、入口与图标
 ├── tests/
 │   ├── community-access-model.test.js
 │   ├── community-art-model.test.js
 │   ├── community-auth-model.test.js
 │   ├── community-content-workflow.test.js
+│   ├── community-display-runtime.test.js
 │   ├── community-map-model.test.js
 │   ├── community-focus-model.test.js
 │   ├── community-world-data.test.js
 │   └── community-world-model.test.js
 ├── tools/
+│   ├── build-display-app.ts # 从原页面生成无账户/数据入口的展示版 HTML
 │   ├── build-shengdeng-focus-data.ts # 将审定 GeoJSON 转为前端数据模块
 │   └── build-yongchang-scene.ts # 从 OSM/Overpass 快照生成离线场景数据
 └── source/
@@ -152,6 +155,7 @@ domains/hlc/
     ├── community-access-model.js # 四角色默认拒绝权限矩阵
     ├── community-auth-model.js # 密码凭据与 HttpOnly 会话 Cookie
     ├── community-content-workflow.js # 草稿、审核、发布、归档与审计模型
+    ├── community-display-runtime.js # `/hlc/` 静态文案与只读交互运行时
     ├── data/
     │   ├── shengdeng-focus.geojson # 用户圈定的初版工作范围
     │   ├── shengdeng-focus-area.js # 前端运行时范围模块
@@ -172,7 +176,7 @@ domains/hlc/
 
 ## 运行
 
-HLC 仍是独立 Deno 项目，当前未接入 OpenFX 的 Deno workspace。
+HLC 的 legacy 完整服务仍是独立 Deno 项目，当前未接入 OpenFX 的 Deno workspace。
 
 ```bash
 cd domains/hlc
@@ -184,6 +188,31 @@ deno run --no-config -A --unstable-kv index.js
 ```text
 http://localhost:8000/
 ```
+
+### OpenFX 同源只读展示
+
+OpenFX Web 通过 Nitro `publicAssets` 在同源 `/hlc/` 提供地图展示版，首页 HLC
+卡片直接嵌入该地址。准备脚本只复制地图模块、地理数据和抽象艺术资产到忽略版本控制的
+`entry/web/.hlc-public/`，不会发布认证模型、内容工作流或
+`divertor.js`。展示版也不加载 `index.js`、`main.js`、Deno KV、账户会话或
+Cookie；登录、注册、聊天发送、报名和其他 数据提交入口均被移除或禁用。
+
+修改原页面结构后重新生成展示入口：
+
+```bash
+cd domains/hlc
+deno run --no-config --allow-read --allow-write tools/build-display-app.ts
+```
+
+随后运行 OpenFX Web：
+
+```bash
+deno task --config entry/web/deno.json dev
+```
+
+开发入口为 `http://localhost:5501/hlc/`，Nitro 直达入口为
+`http://localhost:3000/hlc/`。展示版不替代 legacy
+服务，只承载首页浏览与地图内容体验。
 
 重新打包浏览器脚本：
 
@@ -223,7 +252,8 @@ deno run --no-config -A tools/build-shengdeng-focus-data.ts \
 
 ## 安全风险
 
-HLC 作为 legacy domain 保留，运行公网服务前需要先处理以下问题：
+HLC 的 legacy 完整服务若要运行在公网，仍需要先处理以下问题；OpenFX `/hlc/`
+展示入口不 启动该服务，也不暴露这些 API：
 
 - `/fetchUrl` 可请求任意远端 URL，存在 SSRF 风险。
 - 上传文件没有尺寸、类型和配额限制。
@@ -249,9 +279,11 @@ deno run -A --unstable-kv index.js
 
 ## 迁移边界
 
-本次迁移只做源码归档和价值标注：
+HLC 保留 legacy 服务源码，同时把视觉与静态内容外壳接入 OpenFX Web：
 
 - 保留原 Deno 单服务、静态 HTML/CSS 和打包后的 `main.js`。
 - 不迁入旧项目的 `.git`、`.files`、`.DS_Store`、`node_modules` 或本地缓存。
-- 不把 HLC 立即改造成 OpenFX Web 源码的一部分。
+- OpenFX 只通过 `/hlc/` 托管独立的只读展示入口；不导入 legacy
+  服务端、数据库、认证或写入流程。
 - OpenFX 根级 Deno 校验排除 `domains/hlc/`，避免误处理遗留 JavaScript 项目。
+- 根级测试会单独验证展示入口、静态运行时和 Nitro/Vite 路由契约。
