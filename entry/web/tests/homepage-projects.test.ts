@@ -16,9 +16,20 @@ Deno.test("homepage project cards all have detail panels", () => {
   const projectCardIds = homepageCards.map((card) => card.id);
   const detailPanelIds = new Set<string>(PROJECT_DETAIL_PANEL_IDS);
 
-  expect(projectCardIds).toHaveLength(13);
+  expect(projectCardIds).toHaveLength(14);
   expect(new Set(projectCardIds).size).toBe(projectCardIds.length);
   expect(projectCardIds.filter((id) => !detailPanelIds.has(id))).toEqual([]);
+});
+
+Deno.test("HLC is indexed as a standalone domain", () => {
+  const hlcCard = homepageCards.find((card) => card.id === "hlc");
+
+  expect(hlcCard).toBeDefined();
+  expect(hlcCard?.name).toBe("HLC · 圣灯社区");
+  expect(hlcCard?.sourcePath).toContain("domains/hlc/");
+  expect(hlcCard?.sourcePath).toContain("standalone Deno domain");
+  expect(hlcCard?.preview).toBeUndefined();
+  expect(PROJECT_DETAIL_PANEL_IDS).toContain("hlc");
 });
 
 Deno.test("homepage data panel is opened from the OpenFX logo", () => {

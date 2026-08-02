@@ -1032,6 +1032,7 @@ function Homepage() {
 
         {/* 面板叠加层 */}
         {activePanel === "how-much-this" ? <HowMuchPanel /> : null}
+        {activePanel === "hlc" ? <HlcPanel /> : null}
         {activePanel === "ipv6-sync-suite"
           ? <DownipPanel accessKey={currentAccessKey} />
           : null}
@@ -2280,6 +2281,43 @@ function MapPosterPanel() {
       lede="在地图上选择中心点，再调整主题、画幅和地图范围，直接生成可预览、可下载的 OpenStreetMap 城市海报。"
     >
       <MapPosterPanelContent />
+    </PanelShell>
+  );
+}
+
+function HlcPanel() {
+  return (
+    <PanelShell
+      panelId="hlc"
+      eyebrow="standalone community domain"
+      title="HLC · 圣灯社区"
+      lede="面向圣灯社区展示、居民参与和基层内容治理的独立 PWA，以永昌镇真实地理骨架组织手绘互动地图与七个社区场所。"
+    >
+      <article className="domain-panel-section">
+        <h2>互动地图</h2>
+        <ul>
+          <li>以 WGS84 坐标和永昌镇老城区离线地理数据校准地图关系。</li>
+          <li>全景、圣灯片区和七个场所使用分级加载的抽象手绘艺术层。</li>
+          <li>建筑、常驻标签和场所列表提供一致的地图探索入口。</li>
+        </ul>
+      </article>
+      <article className="domain-panel-section">
+        <h2>社区内容治理</h2>
+        <ul>
+          <li>普通访客读取公开内容，注册居民提交并查看自己的服务记录。</li>
+          <li>社区工作者维护草稿与资源，管理员负责审核、发布、账户和审计。</li>
+          <li>内容通过草稿、审核、发布与归档状态流进入公开页面。</li>
+        </ul>
+      </article>
+      <article className="domain-panel-section">
+        <h2>运行边界</h2>
+        <p>
+          源码位于{" "}
+          <code>domains/hlc/</code>，继续作为使用独立 Deno KV 与会话的 standalone domain
+          运行。OpenFX Web 这里只提供项目索引，不嵌入
+          CMS、不代理账户状态，也不共享存储。
+        </p>
+      </article>
     </PanelShell>
   );
 }
