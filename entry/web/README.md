@@ -37,6 +37,10 @@ JavaScript、地理数据与抽象艺术资产复制到 Nitro 公共目录，不
 账户会话、Cookie、登录、注册或数据提交。首页详情面板使用不允许表单和弹窗的 iframe
 sandbox，进一步收紧展示边界。
 
+部署版只复制 `community-map*.webp`，并把 HTML 中的 PNG fallback 改写为相同 WebP；源目录
+可以继续保留 PNG 作为本地创作资产。所有 HLC 展示图合计不得超过 8 MiB，生成步骤会在超出
+预算时直接失败，避免 Nitro 内联静态资源把 Deno Deploy 服务端入口再次撑大。
+
 修改 `domains/hlc/source/index.html` 后，需要重新生成只读入口：
 
 ```bash

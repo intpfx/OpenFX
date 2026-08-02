@@ -22,6 +22,20 @@ const HLC_DISPLAY_DATA_FILES = Object.freeze([
   "yongchang-scene-data.js",
 ]);
 
+export const HLC_DISPLAY_IMAGE_BUDGET_BYTES = 8 * 1024 * 1024;
+
+export function isHlcDisplayImageFile(filename: string): boolean {
+  return filename.startsWith("community-map") && filename.endsWith(".webp");
+}
+
+export function assertHlcDisplayImageBudget(imageBytes: number): void {
+  if (imageBytes > HLC_DISPLAY_IMAGE_BUDGET_BYTES) {
+    throw new Error(
+      `HLC display images exceed 8 MiB: ${imageBytes} bytes`,
+    );
+  }
+}
+
 export function createHlcDisplayHtml(source: string): string {
   const withoutAccount = source
     .replace(
@@ -45,6 +59,10 @@ export function createHlcDisplayHtml(source: string): string {
     .replace(
       'href="style.css"',
       'href="./style.css">\n    <link rel="stylesheet" href="./display.css"',
+    )
+    .replaceAll(
+      /(src|data-src)="\/imgs\/(community-map[^"]*)\.png"/g,
+      '$1="/imgs/$2.webp"',
     )
     .replaceAll('src="/imgs/', 'src="./imgs/')
     .replaceAll('srcset="/imgs/', 'srcset="./imgs/')
@@ -95,11 +113,23 @@ async function copyRuntimeFiles() {
   }
 
   const sourceImagesUrl = new URL("imgs/", sourceRootUrl);
+  const displayImages: string[] = [];
+  let displayImageBytes = 0;
+
   for await (const entry of Deno.readDir(sourceImagesUrl)) {
-    if (!entry.isFile || !entry.name.startsWith("community-map")) continue;
+    if (!entry.isFile || !isHlcDisplayImageFile(entry.name)) continue;
+
+    displayImages.push(entry.name);
+    displayImageBytes += (await Deno.stat(new URL(entry.name, sourceImagesUrl)))
+      .size;
+  }
+
+  assertHlcDisplayImageBudget(displayImageBytes);
+
+  for (const filename of displayImages) {
     await copyFile(
-      new URL(entry.name, sourceImagesUrl),
-      new URL(`imgs/${entry.name}`, outputRootUrl),
+      new URL(filename, sourceImagesUrl),
+      new URL(`imgs/${filename}`, outputRootUrl),
     );
   }
 }
