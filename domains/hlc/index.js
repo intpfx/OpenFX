@@ -1,13 +1,140 @@
 import { f0 } from "npm:file0";
 import { Image } from "https://deno.land/x/imagescript@1.3.0/mod.ts";
-import { createCanvas, loadImage } from "https://deno.land/x/canvas@v1.4.2/mod.ts";
+import {
+  createCanvas,
+  loadImage,
+} from "https://deno.land/x/canvas@v1.4.2/mod.ts";
+
+import {
+  ACTIONS,
+  can,
+  CONTENT_STATUSES,
+  ROLES,
+} from "./source/community-access-model.js";
+import {
+  clearSessionCookie,
+  createPasswordCredential,
+  createSelfRegisteredResident,
+  createSessionCookie,
+  createSessionSecret,
+  digestSessionSecret,
+  normalizeUsername,
+  readSessionSecret,
+  verifyPassword,
+} from "./source/community-auth-model.js";
+import {
+  createAuditEntry,
+  createDraftRecord,
+  getContentStorageKey,
+  transitionContentRecord,
+} from "./source/community-content-workflow.js";
 
 import style from "./source/style.css" with { type: "text" };
 
 const isDD = Deno.env.get("DENO_REGION") ? true : false;
-const dbPATH = isDD ? undefined : ".files/kv.db";
+const dbPATH = isDD ? undefined : Deno.env.get("HLC_KV_PATH") || ".files/kv.db";
 let isArrearage = false;
-const ADMIN_KEY = Deno.env.get("ADMIN_KEY") || 'sdsq';
+const SESSION_MAX_AGE = 60 * 60 * 12;
+const BOOTSTRAP_ADMIN_USERNAME = Deno.env.get("HLC_ADMIN_USERNAME") || "admin";
+const BOOTSTRAP_ADMIN_PASSWORD = Deno.env.get("HLC_ADMIN_PASSWORD") ||
+  Deno.env.get("ADMIN_KEY");
+
+function json(data, status = 200, extraHeaders = {}) {
+  const headers = new Headers(extraHeaders);
+  headers.set("Content-Type", "application/json;charset=UTF-8");
+  return new Response(JSON.stringify(data), { status, headers });
+}
+
+function publicIdentity() {
+  return Object.freeze({
+    id: null,
+    username: null,
+    displayName: "普通访客",
+    role: ROLES.VISITOR,
+  });
+}
+
+function safeIdentity(account) {
+  if (!account) return publicIdentity();
+  return Object.freeze({
+    id: account.id,
+    username: account.username,
+    displayName: account.displayName,
+    role: account.role,
+    status: account.status,
+  });
+}
+
+function isSecureRequest(request) {
+  return new URL(request.url).protocol === "https:";
+}
+
+async function getRequestIdentity(request, db) {
+  const secret = readSessionSecret(request.headers);
+  if (!secret) return publicIdentity();
+  const digest = await digestSessionSecret(secret);
+  const session = (await db.get(["sessions", digest])).value;
+  if (!session?.username) return publicIdentity();
+  const account = (await db.get(["accounts", session.username])).value;
+  if (!account || account.status !== "active") return publicIdentity();
+  return safeIdentity(account);
+}
+
+async function authorize(request, db, action, context = {}) {
+  const actor = await getRequestIdentity(request, db);
+  if (!actor.id) {
+    return { response: json({ success: 0, msg: "请先登录社区账户" }, 401) };
+  }
+  if (!can(actor.role, action, { ...context, actorId: actor.id })) {
+    return {
+      response: json({ success: 0, msg: "当前账户没有此操作权限" }, 403),
+    };
+  }
+  return { actor };
+}
+
+async function authorizeRequest(request, action, context = {}) {
+  const db = await Deno.openKv(dbPATH);
+  try {
+    return await authorize(request, db, action, context);
+  } finally {
+    db.close();
+  }
+}
+
+async function writeAudit(db, entry) {
+  await db.set(["audit", entry.time, entry.id], entry);
+}
+
+async function ensureBootstrapAdmin() {
+  if (!BOOTSTRAP_ADMIN_PASSWORD) {
+    console.warn(
+      "HLC 未配置引导管理员。请设置 HLC_ADMIN_PASSWORD 后重启以创建首个管理员账户。",
+    );
+    return;
+  }
+  const username = normalizeUsername(BOOTSTRAP_ADMIN_USERNAME);
+  const db = await Deno.openKv(dbPATH);
+  try {
+    const existing = await db.get(["accounts", username]);
+    if (existing.value) return;
+    const now = Date.now();
+    const account = {
+      id: crypto.randomUUID(),
+      username,
+      displayName: "社区管理员",
+      role: ROLES.ADMIN,
+      status: "active",
+      credential: await createPasswordCredential(BOOTSTRAP_ADMIN_PASSWORD),
+      createdAt: now,
+      updatedAt: now,
+    };
+    await db.set(["accounts", username], account);
+    console.log(`HLC 已创建引导管理员账户：${username}`);
+  } finally {
+    db.close();
+  }
+}
 
 function manifest(currentOrigin) {
   return {
@@ -38,7 +165,7 @@ function manifest(currentOrigin) {
     "orientation": "any",
     "display": "fullscreen",
   };
-};
+}
 async function icon(format = "svg") {
   const source = /*html*/ `
     <svg width="1024px" height="1024px" version="1.1" viewBox="0 0 1482 1482" xmlns="http://www.w3.org/2000/svg" xml:space="preserve">
@@ -50,8 +177,8 @@ async function icon(format = "svg") {
         c-14.1,80.8-65,150.4-148,168.4c-161.4,37.6-344.2-9.9-368.1-197.1c-1.5-4.1-5-2.7-8.2-2.3c-87.3,10.5-175.6,29.9-261.9,47.9
         c-12.6,1.4-108.7,29.2-79.1,14.2C298.4,843.8,498.8,807.2,693.3,793.4z M568,858.4c-3.8,0.3-10.1,0.8-9.1,5.9
         c36.2,136.9,283.5,151.8,341.4,25.4c2.9-5.9,1.9-11.4-5.7-11.9C787,867.6,676.2,854.4,568,858.4z"/>
-    </svg>`.replace(/^\s*[\r\n]/gm, "").replace(/\s+/g, ' ');
-  if (format === "svg") { return source }
+    </svg>`.replace(/^\s*[\r\n]/gm, "").replace(/\s+/g, " ");
+  if (format === "svg") return source;
   const svg = Image.renderSVG(source);
   const bitmap = await svg.encode(0);
   const width = 1024;
@@ -65,11 +192,13 @@ async function icon(format = "svg") {
   const buffer = canvas.toBuffer(`image/${format}`);
   const blob = new Blob([buffer], { type: `image/${format}` });
   return blob;
-};
+}
 async function hash(binaryData) {
   const hash = await crypto.subtle.digest("SHA-256", binaryData);
-  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
-};
+  return Array.from(new Uint8Array(hash)).map((b) =>
+    b.toString(16).padStart(2, "0")
+  ).join("");
+}
 function inspectEnv() {
   if (!isDD) {
     try {
@@ -91,7 +220,7 @@ function inspectEnv() {
       }
     }
   }
-};
+}
 function getFiles(endsWith) {
   try {
     const files = Deno.readDirSync("./.files");
@@ -105,7 +234,7 @@ function getFiles(endsWith) {
   } catch (_error) {
     return [];
   }
-};
+}
 function setFile(filename, data = null) {
   const isWindows = Deno.build.os === "windows";
   const folderName = ".files";
@@ -124,12 +253,12 @@ function setFile(filename, data = null) {
     if (error.name === "AlreadyExists") {
       try {
         Deno.statSync(filePath);
-        if (data) { return filename }
+        if (data) return filename;
         Deno.removeSync(filePath);
         return null;
       } catch (error) {
         if (error.name === "NotFound") {
-          if (!data) { return null }
+          if (!data) return null;
           data = new Uint8Array(data.map((byte) => byte ^ 0xFF));
           Deno.writeFileSync(filePath, data);
           return filename;
@@ -143,7 +272,7 @@ function setFile(filename, data = null) {
       return null;
     }
   }
-};
+}
 function obType(arg) {
   let type = Object.prototype.toString.call(arg);
   type = type.substring(8, type.length - 1);
@@ -152,7 +281,7 @@ function obType(arg) {
   } else {
     return arg.constructor ? arg.constructor.name : "Object";
   }
-};
+}
 async function encoder(data, recursion = false) {
   try {
     const output = {};
@@ -173,7 +302,9 @@ async function encoder(data, recursion = false) {
             break;
           }
           case "ArrayBuffer": {
-            output[`${dataType}[${key}]`] = Array.from(new Uint8Array(data[key]));
+            output[`${dataType}[${key}]`] = Array.from(
+              new Uint8Array(data[key]),
+            );
             break;
           }
           case "Deno.KvU64":
@@ -183,14 +314,19 @@ async function encoder(data, recursion = false) {
           }
           case "BigInt64Array":
           case "BigUint64Array": {
-            output[`${dataType}[${key}]`] = Array.from(data[key], (value) => Number(value));
+            output[`${dataType}[${key}]`] = Array.from(
+              data[key],
+              (value) => Number(value),
+            );
             break;
           }
           case "Blob": {
             const reader = new FileReader();
             const promise = new Promise((resolve) => {
               reader.onload = (event) => {
-                output[`${dataType}[${key}]`] = Array.from(new Uint8Array(event.target.result));
+                output[`${dataType}[${key}]`] = Array.from(
+                  new Uint8Array(event.target.result),
+                );
                 resolve();
               };
             });
@@ -243,11 +379,13 @@ async function encoder(data, recursion = false) {
       }
     }
     await Promise.all(promises);
-    return recursion ? output : new TextEncoder().encode(JSON.stringify(output));
+    return recursion
+      ? output
+      : new TextEncoder().encode(JSON.stringify(output));
   } catch (error) {
     console.error(error);
   }
-};
+}
 async function deliver(data, recursion = false) {
   try {
     if (data instanceof Blob) data = await data.arrayBuffer();
@@ -284,7 +422,9 @@ async function deliver(data, recursion = false) {
         case "BigUint64Array": {
           // input[key]是一个数组，需要将数组中的每个元素转换为BigInt
           // 然后再转换为BigInt64Array或BigUint64Array
-          newValue = new globalThis[dataType](input[key].map((value) => BigInt(value)));
+          newValue = new globalThis[dataType](
+            input[key].map((value) => BigInt(value)),
+          );
           break;
         }
         case "Blob": {
@@ -337,8 +477,18 @@ async function deliver(data, recursion = false) {
   } catch (error) {
     console.error(error);
   }
-};
-function unitConversion(item) { return item < 1024 ? "B" : item < 1024 * 1024 ? "KB" : item < 1024 * 1024 * 1024 ? "MB" : item < 1024 * 1024 * 1024 * 1024 ? "GB" : "TB" };
+}
+function unitConversion(item) {
+  return item < 1024
+    ? "B"
+    : item < 1024 * 1024
+    ? "KB"
+    : item < 1024 * 1024 * 1024
+    ? "MB"
+    : item < 1024 * 1024 * 1024 * 1024
+    ? "GB"
+    : "TB";
+}
 async function calculateUsedDataStorage() {
   const db = await Deno.openKv(dbPATH);
   const entries = db.list({ prefix: [] });
@@ -360,13 +510,16 @@ async function calculateUsedDataStorage() {
   }
   usedDataStorage *= factor;
   const unit = unitConversion(usedDataStorage);
-  return `${(usedDataStorage / (1024 ** ["B", "KB", "MB", "GB", "TB"].indexOf(unit))).toFixed(2)} ${unit}`;
-};
+  return `${
+    (usedDataStorage / (1024 ** ["B", "KB", "MB", "GB", "TB"].indexOf(unit)))
+      .toFixed(2)
+  } ${unit}`;
+}
 async function calculateUsedFileStorage() {
   let usedFileStorage = 0;
   let factor = 1;
   if (isDD) {
-    const { files } = await f0.list({ endsWith: '.hlc' });
+    const { files } = await f0.list({ endsWith: ".hlc" });
     for (const file of files) {
       usedFileStorage += file.size;
     }
@@ -394,8 +547,11 @@ async function calculateUsedFileStorage() {
   }
   usedFileStorage *= factor;
   const unit = unitConversion(usedFileStorage);
-  return `${(usedFileStorage / (1024 ** ["B", "KB", "MB", "GB", "TB"].indexOf(unit))).toFixed(2)} ${unit}`;
-};
+  return `${
+    (usedFileStorage / (1024 ** ["B", "KB", "MB", "GB", "TB"].indexOf(unit)))
+      .toFixed(2)
+  } ${unit}`;
+}
 async function makeZero() {
   const db = await Deno.openKv(dbPATH);
   const entries = db.list({ prefix: [] });
@@ -404,9 +560,10 @@ async function makeZero() {
   }
   db.close();
   console.log("数据库已归零");
-};
+}
 inspectEnv();
-Deno.serve(async (request) => {
+await ensureBootstrapAdmin();
+Deno.serve({ port: Number(Deno.env.get("PORT")) || 8000 }, async (request) => {
   const url = new URL(request.url);
   const pathArray = url.pathname.split("/");
   switch (pathArray[1]) {
@@ -464,13 +621,79 @@ Deno.serve(async (request) => {
     case "imgs": {
       switch (pathArray[2]) {
         case "bg.jpg": {
-          const headers = new Headers({ "Content-Type": "image/jpeg;charset=UTF-8" });
+          const headers = new Headers({
+            "Content-Type": "image/jpeg;charset=UTF-8",
+          });
           const body = Deno.readFileSync("./source/imgs/bg.jpg");
           return new Response(body, { status: 200, headers });
         }
         case "live_qrcode.png": {
-          const headers = new Headers({ "Content-Type": "image/png;charset=UTF-8" });
+          const headers = new Headers({
+            "Content-Type": "image/png;charset=UTF-8",
+          });
           const body = Deno.readFileSync("./source/imgs/live_qrcode.png");
+          return new Response(body, { status: 200, headers });
+        }
+        case "community-map.png": {
+          const headers = new Headers({
+            "Content-Type": "image/png",
+            "Cache-Control": "public, max-age=86400",
+          });
+          const body = Deno.readFileSync("./source/imgs/community-map.png");
+          return new Response(body, { status: 200, headers });
+        }
+        case "community-map.webp": {
+          const headers = new Headers({
+            "Content-Type": "image/webp",
+            "Cache-Control": "public, max-age=86400",
+          });
+          const body = Deno.readFileSync("./source/imgs/community-map.webp");
+          return new Response(body, { status: 200, headers });
+        }
+        case "community-map-detail-v1.png": {
+          const headers = new Headers({
+            "Content-Type": "image/png",
+            "Cache-Control": "public, max-age=86400",
+          });
+          const body = Deno.readFileSync(
+            "./source/imgs/community-map-detail-v1.png",
+          );
+          return new Response(body, { status: 200, headers });
+        }
+        case "community-map-detail-v1.webp": {
+          const headers = new Headers({
+            "Content-Type": "image/webp",
+            "Cache-Control": "public, max-age=86400",
+          });
+          const body = Deno.readFileSync(
+            "./source/imgs/community-map-detail-v1.webp",
+          );
+          return new Response(body, { status: 200, headers });
+        }
+        case "community-map-service-center-v1.png":
+        case "community-map-service-center-v1.webp":
+        case "community-map-public-square-v1.png":
+        case "community-map-public-square-v1.webp":
+        case "community-map-learning-room-v1.png":
+        case "community-map-learning-room-v1.webp":
+        case "community-map-tool-house-v1.png":
+        case "community-map-tool-house-v1.webp":
+        case "community-map-tea-courtyard-v1.png":
+        case "community-map-tea-courtyard-v1.webp":
+        case "community-map-skills-workshop-v1.png":
+        case "community-map-skills-workshop-v1.webp":
+        case "community-map-riverside-volunteers-v1.png":
+        case "community-map-riverside-volunteers-v1.webp": {
+          const filename = pathArray[2];
+          const headers = new Headers({
+            "Content-Type": filename.endsWith(".webp")
+              ? "image/webp"
+              : "image/png",
+            "Cache-Control": "public, max-age=86400",
+          });
+          const body = Deno.readFileSync(
+            `./source/imgs/${filename}`,
+          );
           return new Response(body, { status: 200, headers });
         }
       }
@@ -483,33 +706,41 @@ Deno.serve(async (request) => {
       return new Response(body, { status: 200, headers });
     }
     case "manifest.webmanifest": {
-      const headers = new Headers({ "Content-Type": "application/manifest+json;charset=UTF-8" });
+      const headers = new Headers({
+        "Content-Type": "application/manifest+json;charset=UTF-8",
+      });
       const body = JSON.stringify(manifest(url.origin));
       return new Response(body, { status: 200, headers });
     }
     case "icon.ico": {
-      const headers = new Headers({ "Content-Type": "image/x-icon;charset=UTF-8" });
+      const headers = new Headers({
+        "Content-Type": "image/x-icon;charset=UTF-8",
+      });
       const body = await icon("ico");
       return new Response(body, { status: 200, headers });
     }
     case "icon.png": {
-      const headers = new Headers({ "Content-Type": "image/png;charset=UTF-8" });
+      const headers = new Headers({
+        "Content-Type": "image/png;charset=UTF-8",
+      });
       const body = await icon("png");
       return new Response(body, { status: 200, headers });
     }
     case "icon.svg": {
-      const headers = new Headers({ "Content-Type": "image/svg+xml;charset=UTF-8" });
+      const headers = new Headers({
+        "Content-Type": "image/svg+xml;charset=UTF-8",
+      });
       const body = await icon();
       return new Response(body, { status: 200, headers });
     }
     case "usedStorage": {
-      const { key } = await request.json();
-      if (key !== ADMIN_KEY) return new Response(JSON.stringify({ "success": 0, "msg": "密钥错误" }), { status: 401 });
+      const access = await authorizeRequest(request, ACTIONS.MANAGE_ASSETS);
+      if (access.response) return access.response;
       const headers = new Headers();
       headers.set("Content-Type", "application/json;charset=UTF-8");
       const body = JSON.stringify({
         "usedDataStorage": await calculateUsedDataStorage(),
-        "usedFileStorage": await calculateUsedFileStorage()
+        "usedFileStorage": await calculateUsedFileStorage(),
       });
       return new Response(body, { status: 200, headers });
     }
@@ -517,6 +748,9 @@ Deno.serve(async (request) => {
       const headers = new Headers();
       headers.set("Content-Type", "application/octet-stream");
       const filename = pathArray[2];
+      if (!/^[a-f0-9]{64}\.hlc$/.test(filename || "")) {
+        return new Response(null, { status: 404 });
+      }
       const flie = Deno.readFileSync(`./.files/${filename}`);
       const body = new Uint8Array(flie.map((byte) => byte ^ 0xFF));
       return new Response(body, { status: 200, headers });
@@ -538,10 +772,10 @@ Deno.serve(async (request) => {
                 type: "header",
                 data: {
                   text: "请开始编辑内容",
-                }
-              }
-            ]
-          }
+                },
+              },
+            ],
+          };
         }
         const body = JSON.stringify(result.value);
         return new Response(body, { status: 200, headers });
@@ -569,10 +803,10 @@ Deno.serve(async (request) => {
                 type: "header",
                 data: {
                   text: "请开始编辑内容",
-                }
-              }
-            ]
-          }
+                },
+              },
+            ],
+          };
         }
         const body = JSON.stringify(result.value);
         return new Response(body, { status: 200, headers });
@@ -600,10 +834,10 @@ Deno.serve(async (request) => {
                 type: "header",
                 data: {
                   text: "请开始编辑内容",
-                }
-              }
-            ]
-          }
+                },
+              },
+            ],
+          };
         }
         const body = JSON.stringify(result.value);
         return new Response(body, { status: 200, headers });
@@ -631,10 +865,10 @@ Deno.serve(async (request) => {
                 type: "header",
                 data: {
                   text: "请开始编辑内容",
-                }
-              }
-            ]
-          }
+                },
+              },
+            ],
+          };
         }
         const body = JSON.stringify(result.value);
         return new Response(body, { status: 200, headers });
@@ -662,10 +896,10 @@ Deno.serve(async (request) => {
                 type: "header",
                 data: {
                   text: "请开始编辑内容",
-                }
-              }
-            ]
-          }
+                },
+              },
+            ],
+          };
         }
         const body = JSON.stringify(result.value);
         return new Response(body, { status: 200, headers });
@@ -699,9 +933,9 @@ Deno.serve(async (request) => {
     case "set_staff": {
       let db;
       try {
+        const access = await authorizeRequest(request, ACTIONS.MANAGE_ASSETS);
+        if (access.response) return access.response;
         const formData = await request.formData();
-        const key = formData.get("key");
-        if (key !== ADMIN_KEY) return new Response(JSON.stringify({ "success": 0, "msg": "密钥错误" }), { status: 401 });
         const img = formData.get("img");
         const imgData = new Uint8Array(await img.arrayBuffer());
         const filename = `${await hash(imgData)}.hlc`;
@@ -733,7 +967,11 @@ Deno.serve(async (request) => {
         } else {
           const name = formData.get("name");
           const detail = formData.get("detail");
-          const data = { name, detail, img: `/files/${setFile(filename, imgData)}` };
+          const data = {
+            name,
+            detail,
+            img: `/files/${setFile(filename, imgData)}`,
+          };
           db = await Deno.openKv(dbPATH);
           await db.set(["staff", name], data);
           const headers = new Headers();
@@ -751,8 +989,9 @@ Deno.serve(async (request) => {
     case "delete_staff": {
       let db;
       try {
-        const { key, name } = await request.json();
-        if (key !== ADMIN_KEY) return new Response(JSON.stringify({ "success": 0, "msg": "密钥错误" }), { status: 401 });
+        const access = await authorizeRequest(request, ACTIONS.MANAGE_ASSETS);
+        if (access.response) return access.response;
+        const { name } = await request.json();
         db = await Deno.openKv(dbPATH);
         await db.delete(["staff", name]);
         const headers = new Headers();
@@ -775,14 +1014,26 @@ Deno.serve(async (request) => {
         const article_list = [];
         if (request.body) {
           const { count, nextCursor = null } = await request.json();
-          if (nextCursor === 'done') { return new Response(JSON.stringify({ article_list, nextCursor }), { status: 200, headers }) }
-          const entries = nextCursor ?
-            db.list({ prefix: ["news"] }, { limit: count, reverse: true, cursor: nextCursor }) :
-            db.list({ prefix: ["news"] }, { limit: count, reverse: true });
+          if (nextCursor === "done") {
+            return new Response(JSON.stringify({ article_list, nextCursor }), {
+              status: 200,
+              headers,
+            });
+          }
+          const entries = nextCursor
+            ? db.list({ prefix: ["news"] }, {
+              limit: count,
+              reverse: true,
+              cursor: nextCursor,
+            })
+            : db.list({ prefix: ["news"] }, { limit: count, reverse: true });
           for await (const entry of entries) {
             article_list.push(entry.value);
           }
-          const body = JSON.stringify({ article_list, nextCursor: entries.cursor === '' ? 'done' : entries.cursor });
+          const body = JSON.stringify({
+            article_list,
+            nextCursor: entries.cursor === "" ? "done" : entries.cursor,
+          });
           return new Response(body, { status: 200, headers });
         } else {
           const entries = db.list({ prefix: ["news"] });
@@ -801,6 +1052,8 @@ Deno.serve(async (request) => {
     }
     case "uploadFile": {
       try {
+        const access = await authorizeRequest(request, ACTIONS.MANAGE_ASSETS);
+        if (access.response) return access.response;
         const formData = await request.formData();
         const file = formData.get("image");
         const fileData = new Uint8Array(await file.arrayBuffer());
@@ -814,7 +1067,7 @@ Deno.serve(async (request) => {
               "success": 1,
               "file": {
                 "url": metadata.publicUrl,
-              }
+              },
             });
             return new Response(body, { status: 200, headers });
           } else {
@@ -824,7 +1077,7 @@ Deno.serve(async (request) => {
               "success": 1,
               "file": {
                 "url": f0_url,
-              }
+              },
             });
             return new Response(body, { status: 200, headers });
           }
@@ -833,7 +1086,7 @@ Deno.serve(async (request) => {
             "success": 1,
             "file": {
               "url": `/files/${setFile(name, fileData)}`,
-            }
+            },
           });
           return new Response(body, { status: 200, headers });
         }
@@ -844,6 +1097,8 @@ Deno.serve(async (request) => {
     }
     case "fetchUrl": {
       try {
+        const access = await authorizeRequest(request, ACTIONS.MANAGE_ASSETS);
+        if (access.response) return access.response;
         const { url } = await request.json();
         const response = await fetch(url);
         const fileData = new Uint8Array(await response.arrayBuffer());
@@ -857,7 +1112,7 @@ Deno.serve(async (request) => {
               "success": 1,
               "file": {
                 "url": metadata.publicUrl,
-              }
+              },
             });
             return new Response(body, { status: 200, headers });
           } else {
@@ -867,7 +1122,7 @@ Deno.serve(async (request) => {
               "success": 1,
               "file": {
                 "url": f0_url,
-              }
+              },
             });
             return new Response(body, { status: 200, headers });
           }
@@ -876,7 +1131,7 @@ Deno.serve(async (request) => {
             "success": 1,
             "file": {
               "url": `/files/${setFile(name, fileData)}`,
-            }
+            },
           });
           return new Response(body, { status: 200, headers });
         }
@@ -888,17 +1143,36 @@ Deno.serve(async (request) => {
     case "delete_article": {
       let db;
       try {
-        const { key, createTime, id } = await request.json();
-        if (key !== ADMIN_KEY) return new Response(JSON.stringify({ "success": 0, "msg": "密钥错误" }), { status: 401 });
         db = await Deno.openKv(dbPATH);
-        await db.delete(["news", createTime, id]);
-        const headers = new Headers();
-        headers.set("Content-Type", "application/json");
-        const body = JSON.stringify({ "success": 1 });
-        return new Response(body, { status: 200 });
+        const access = await authorize(request, db, ACTIONS.EDIT_CONTENT);
+        if (access.response) return access.response;
+        const { id } = await request.json();
+        const result = await db.get(["content_workflow", id]);
+        const record = result.value;
+        if (!record) return json({ success: 0, msg: "未找到草稿" }, 404);
+        if (record.status === CONTENT_STATUSES.PUBLISHED) {
+          return json({ success: 0, msg: "已发布内容请先归档" }, 409);
+        }
+        if (
+          access.actor.role !== ROLES.ADMIN &&
+          record.authorId !== access.actor.id
+        ) {
+          return json({ success: 0, msg: "只能删除自己维护的草稿" }, 403);
+        }
+        await db.delete(["content_workflow", id]);
+        await writeAudit(
+          db,
+          createAuditEntry({
+            actor: access.actor,
+            action: "content.delete-draft",
+            targetId: id,
+            now: Date.now(),
+          }),
+        );
+        return json({ success: 1 });
       } catch (error) {
         console.error(error);
-        return new Response(JSON.stringify({ "success": 0 }), { status: 500 });
+        return json({ success: 0, msg: "删除失败" }, 500);
       } finally {
         db?.close();
       }
@@ -906,86 +1180,408 @@ Deno.serve(async (request) => {
     case "save_article": {
       let db;
       try {
-        const { key, data } = await request.json();
-        if (key !== ADMIN_KEY) return new Response(JSON.stringify({ "success": 0, "msg": "密钥错误" }), { status: 401 });
         db = await Deno.openKv(dbPATH);
-        let result;
-        if (data.name) {
-          switch (data.name) {
-            case "intro": {
-              await db.set(["intro"], data);
-              result = await db.get(["intro"]);
-              break;
-            }
-            case "example": {
-              await db.set(["example"], data);
-              result = await db.get(["example"]);
-              break;
-            }
-            case "study": {
-              await db.set(["study"], data);
-              result = await db.get(["study"]);
-              break;
-            }
-            case "participation": {
-              await db.set(["participation"], data);
-              result = await db.get(["participation"]);
-              break;
-            }
-            case "support": {
-              await db.set(["support"], data);
-              result = await db.get(["support"]);
-              break;
-            }
-          }
-        } else {
-          if (!data.id) { data.id = crypto.randomUUID() }
-          await db.set(["news", data.createTime, data.id], data);
-          result = await db.get(["news", data.createTime, data.id]);
+        const access = await authorize(request, db, ACTIONS.EDIT_CONTENT);
+        if (access.response) return access.response;
+        const { data } = await request.json();
+        const id = data?.name ? `special:${data.name}` : data?.id;
+        const existing = id
+          ? (await db.get(["content_workflow", id])).value
+          : null;
+        if (
+          existing && access.actor.role !== ROLES.ADMIN &&
+          existing.authorId !== access.actor.id
+        ) {
+          return json({ success: 0, msg: "只能编辑自己维护的草稿" }, 403);
         }
-        const headers = new Headers();
-        headers.set("Content-Type", "application/json");
-        const body = JSON.stringify({ "success": 1, "data": result.value });
-        return new Response(body, { status: 200 });
+        const now = Date.now();
+        const record = createDraftRecord({
+          data,
+          actor: access.actor,
+          existing,
+          now,
+          id,
+        });
+        await db.set(["content_workflow", record.id], record);
+        await writeAudit(
+          db,
+          createAuditEntry({
+            actor: access.actor,
+            action: "content.save-draft",
+            targetId: record.id,
+            now,
+            detail: { revision: record.revision },
+          }),
+        );
+        return json({
+          success: 1,
+          data: {
+            ...record.data,
+            _workflow: {
+              id: record.id,
+              status: record.status,
+              revision: record.revision,
+              authorId: record.authorId,
+            },
+          },
+        });
       } catch (error) {
         console.error(error);
-        return new Response(JSON.stringify({ "success": 0 }), { status: 500 });
+        return json({ success: 0, msg: error.message || "草稿保存失败" }, 500);
+      } finally {
+        db?.close();
+      }
+    }
+    case "managed_content": {
+      let db;
+      try {
+        db = await Deno.openKv(dbPATH);
+        const access = await authorize(request, db, ACTIONS.EDIT_CONTENT);
+        if (access.response) return access.response;
+        const items = [];
+        for await (
+          const entry of db.list({ prefix: ["content_workflow"] })
+        ) {
+          const record = entry.value;
+          if (
+            access.actor.role === ROLES.ADMIN ||
+            record.authorId === access.actor.id
+          ) {
+            items.push({
+              ...record.data,
+              _workflow: {
+                id: record.id,
+                status: record.status,
+                revision: record.revision,
+                authorId: record.authorId,
+              },
+            });
+          }
+        }
+        return json({ success: 1, items });
+      } finally {
+        db?.close();
+      }
+    }
+    case "submit_article":
+    case "publish_article":
+    case "archive_article": {
+      let db;
+      try {
+        db = await Deno.openKv(dbPATH);
+        const targetStatus = pathArray[1] === "submit_article"
+          ? CONTENT_STATUSES.REVIEW
+          : pathArray[1] === "publish_article"
+          ? CONTENT_STATUSES.PUBLISHED
+          : CONTENT_STATUSES.ARCHIVED;
+        const action = targetStatus === CONTENT_STATUSES.PUBLISHED ||
+            targetStatus === CONTENT_STATUSES.ARCHIVED
+          ? ACTIONS.PUBLISH_CONTENT
+          : ACTIONS.SUBMIT_REVIEW;
+        const access = await authorize(request, db, action);
+        if (access.response) return access.response;
+        const { id } = await request.json();
+        const currentEntry = await db.get(["content_workflow", id]);
+        const current = currentEntry.value;
+        if (!current) return json({ success: 0, msg: "未找到内容草稿" }, 404);
+        const now = Date.now();
+        const record = transitionContentRecord({
+          record: current,
+          actor: access.actor,
+          to: targetStatus,
+          now,
+        });
+        const audit = createAuditEntry({
+          actor: access.actor,
+          action: `content.${targetStatus}`,
+          targetId: record.id,
+          now,
+          detail: { revision: record.revision },
+        });
+        const atomic = db.atomic()
+          .check(currentEntry)
+          .set(["content_workflow", id], record)
+          .set(["audit", audit.time, audit.id], audit);
+        const publicKey = getContentStorageKey(record.data, record.id);
+        if (targetStatus === CONTENT_STATUSES.PUBLISHED) {
+          atomic.set(publicKey, record.data);
+        } else if (targetStatus === CONTENT_STATUSES.ARCHIVED) {
+          atomic.delete(publicKey);
+        }
+        const committed = await atomic.commit();
+        if (!committed.ok) {
+          return json(
+            { success: 0, msg: "内容已被其他人更新，请刷新后重试" },
+            409,
+          );
+        }
+        return json({ success: 1, workflow: record });
+      } catch (error) {
+        console.error(error);
+        return json({ success: 0, msg: error.message || "状态更新失败" }, 409);
+      } finally {
+        db?.close();
+      }
+    }
+    case "register": {
+      let db;
+      try {
+        if (request.method !== "POST") {
+          return json({ success: 0, msg: "不支持的请求方法" }, 405);
+        }
+        const input = await request.json();
+        const username = normalizeUsername(input.username);
+        db = await Deno.openKv(dbPATH);
+        const accountEntry = await db.get(["accounts", username]);
+        if (accountEntry.value) {
+          return json({ success: 0, msg: "该账号已被注册" }, 409);
+        }
+        const account = await createSelfRegisteredResident({
+          ...input,
+          username,
+        });
+        const secret = createSessionSecret();
+        const digest = await digestSessionSecret(secret);
+        const now = Date.now();
+        const audit = createAuditEntry({
+          actor: safeIdentity(account),
+          action: "account.self-register",
+          targetId: account.id,
+          now,
+          detail: { username: account.username, role: account.role },
+        });
+        const committed = await db.atomic()
+          .check(accountEntry)
+          .set(["accounts", username], account)
+          .set(
+            ["sessions", digest],
+            { username, createdAt: now, lastSeenAt: now },
+            { expireIn: SESSION_MAX_AGE * 1000 },
+          )
+          .set(["audit", audit.time, audit.id], audit)
+          .commit();
+        if (!committed.ok) {
+          return json({ success: 0, msg: "该账号已被注册" }, 409);
+        }
+        return json(
+          { success: 1, identity: safeIdentity(account) },
+          201,
+          {
+            "Set-Cookie": createSessionCookie(secret, {
+              secure: isSecureRequest(request),
+              maxAge: SESSION_MAX_AGE,
+            }),
+          },
+        );
+      } catch (error) {
+        if (error instanceof TypeError || error instanceof SyntaxError) {
+          return json({ success: 0, msg: error.message }, 400);
+        }
+        console.error(error);
+        return json({ success: 0, msg: "注册暂时不可用" }, 500);
       } finally {
         db?.close();
       }
     }
     case "login": {
-      const { admin_key } = await request.json();
-      switch (admin_key) {
-        case ADMIN_KEY: {
-          return new Response(JSON.stringify({ "success": 1 }), { status: 200 });
+      let db;
+      try {
+        if (request.method !== "POST") {
+          return json({ success: 0, msg: "不支持的请求方法" }, 405);
         }
-        case "makeZero": {
-          await makeZero();
-          return new Response(JSON.stringify({ "success": 2, "msg": "数据库已归零" }), { status: 200 });
+        const { username: rawUsername, password } = await request.json();
+        let username;
+        try {
+          username = normalizeUsername(rawUsername);
+        } catch (_error) {
+          return json({ success: 0, msg: "账号或密码错误" }, 401);
         }
-        case "makeArrearage": {
-          isArrearage = true;
-          return new Response(JSON.stringify({ "success": 3, "msg": "已进入欠费状态" }), { status: 200 });
+        db = await Deno.openKv(dbPATH);
+        const account = (await db.get(["accounts", username])).value;
+        if (
+          !account || account.status !== "active" ||
+          !(await verifyPassword(password, account.credential))
+        ) {
+          return json({ success: 0, msg: "账号或密码错误" }, 401);
         }
-        case "makeBackup": {
-          return new Response(JSON.stringify({ "success": 4, "msg": "进入备份模式" }), { status: 200 });
+        const secret = createSessionSecret();
+        const digest = await digestSessionSecret(secret);
+        const now = Date.now();
+        await db.set(
+          ["sessions", digest],
+          { username, createdAt: now, lastSeenAt: now },
+          { expireIn: SESSION_MAX_AGE * 1000 },
+        );
+        await writeAudit(
+          db,
+          createAuditEntry({
+            actor: safeIdentity(account),
+            action: "session.login",
+            targetId: account.id,
+            now,
+          }),
+        );
+        return json(
+          { success: 1, identity: safeIdentity(account) },
+          200,
+          {
+            "Set-Cookie": createSessionCookie(secret, {
+              secure: isSecureRequest(request),
+              maxAge: SESSION_MAX_AGE,
+            }),
+          },
+        );
+      } catch (error) {
+        console.error(error);
+        return json({ success: 0, msg: "登录暂时不可用" }, 500);
+      } finally {
+        db?.close();
+      }
+    }
+    case "session": {
+      let db;
+      try {
+        db = await Deno.openKv(dbPATH);
+        const identity = await getRequestIdentity(request, db);
+        return json({ success: 1, identity });
+      } finally {
+        db?.close();
+      }
+    }
+    case "logout": {
+      let db;
+      try {
+        db = await Deno.openKv(dbPATH);
+        const secret = readSessionSecret(request.headers);
+        if (secret) {
+          await db.delete(["sessions", await digestSessionSecret(secret)]);
         }
-        default: {
-          return new Response(JSON.stringify({ "success": 0, "msg": "密钥错误" }), { status: 401 });
+        return json(
+          { success: 1 },
+          200,
+          {
+            "Set-Cookie": clearSessionCookie({
+              secure: isSecureRequest(request),
+            }),
+          },
+        );
+      } finally {
+        db?.close();
+      }
+    }
+    case "accounts": {
+      let db;
+      try {
+        db = await Deno.openKv(dbPATH);
+        const access = await authorize(
+          request,
+          db,
+          ACTIONS.MANAGE_ACCOUNTS,
+        );
+        if (access.response) return access.response;
+        if (request.method === "GET") {
+          const accounts = [];
+          for await (const entry of db.list({ prefix: ["accounts"] })) {
+            accounts.push(safeIdentity(entry.value));
+          }
+          return json({ success: 1, accounts });
         }
+        if (request.method !== "POST") {
+          return json({ success: 0, msg: "不支持的请求方法" }, 405);
+        }
+        const input = await request.json();
+        const username = normalizeUsername(input.username);
+        if (![ROLES.RESIDENT, ROLES.WORKER, ROLES.ADMIN].includes(input.role)) {
+          return json({ success: 0, msg: "角色无效" }, 400);
+        }
+        const current = (await db.get(["accounts", username])).value;
+        if (!current && !input.password) {
+          return json({ success: 0, msg: "新账户必须设置初始密码" }, 400);
+        }
+        if (
+          current?.id === access.actor.id &&
+          (input.role !== ROLES.ADMIN || input.status === "disabled")
+        ) {
+          return json({ success: 0, msg: "不能停用或降级当前管理员账户" }, 409);
+        }
+        const now = Date.now();
+        const account = {
+          id: current?.id ?? crypto.randomUUID(),
+          username,
+          displayName: String(input.displayName || username).trim(),
+          role: input.role,
+          status: input.status === "disabled" ? "disabled" : "active",
+          credential: input.password
+            ? await createPasswordCredential(input.password)
+            : current.credential,
+          createdAt: current?.createdAt ?? now,
+          updatedAt: now,
+        };
+        await db.set(["accounts", username], account);
+        await writeAudit(
+          db,
+          createAuditEntry({
+            actor: access.actor,
+            action: current ? "account.update" : "account.create",
+            targetId: account.id,
+            now,
+            detail: { username, role: account.role, status: account.status },
+          }),
+        );
+        return json({ success: 1, account: safeIdentity(account) });
+      } catch (error) {
+        console.error(error);
+        return json({ success: 0, msg: error.message || "账户保存失败" }, 400);
+      } finally {
+        db?.close();
+      }
+    }
+    case "audit_list": {
+      let db;
+      try {
+        db = await Deno.openKv(dbPATH);
+        const access = await authorize(
+          request,
+          db,
+          ACTIONS.MANAGE_ACCOUNTS,
+        );
+        if (access.response) return access.response;
+        const entries = [];
+        const count = Math.min(
+          100,
+          Math.max(1, Number(url.searchParams.get("count")) || 30),
+        );
+        for await (
+          const entry of db.list({ prefix: ["audit"] }, {
+            reverse: true,
+            limit: count,
+          })
+        ) entries.push(entry.value);
+        return json({ success: 1, entries });
+      } finally {
+        db?.close();
       }
     }
     case "makeNormal": {
-      isArrearage = false;
-      return new Response(JSON.stringify({ "success": 1, "msg": "已进入正常状态" }), { status: 200 });
+      let db;
+      try {
+        db = await Deno.openKv(dbPATH);
+        const access = await authorize(request, db, ACTIONS.MANAGE_CONFIG);
+        if (access.response) return access.response;
+        isArrearage = false;
+        return json({ success: 1, msg: "已进入正常状态" });
+      } finally {
+        db?.close();
+      }
     }
     case "discuss": {
       let db;
       try {
-        const { key = null, data } = await request.json();
-        if (key && key !== ADMIN_KEY) return new Response(JSON.stringify({ "success": 0, "msg": "密钥错误" }), { status: 401 });
-        if (!data.id) { data.id = crypto.randomUUID() }
+        const access = await authorizeRequest(request, ACTIONS.SUBMIT_RESIDENT);
+        if (access.response) return access.response;
+        const { data } = await request.json();
+        if (!data.id) data.id = crypto.randomUUID();
+        data.ownerId ??= access.actor.id;
         db = await Deno.openKv(dbPATH);
         await db.set(["discuss", data.time, data.id], data);
         const headers = new Headers();
@@ -1003,8 +1599,9 @@ Deno.serve(async (request) => {
     case "delete_discuss": {
       let db;
       try {
-        const { key, time, id } = await request.json();
-        if (key !== ADMIN_KEY) return new Response(JSON.stringify({ "success": 0, "msg": "密钥错误" }), { status: 401 });
+        const access = await authorizeRequest(request, ACTIONS.MODERATE);
+        if (access.response) return access.response;
+        const { time, id } = await request.json();
         db = await Deno.openKv(dbPATH);
         await db.delete(["discuss", time, id]);
         const headers = new Headers();
@@ -1027,14 +1624,26 @@ Deno.serve(async (request) => {
         const discuss_list = [];
         if (request.body) {
           const { count, nextCursor = null } = await request.json();
-          if (nextCursor === 'done') { return new Response(JSON.stringify({ discuss_list, nextCursor }), { status: 200, headers }) }
-          const entries = nextCursor ?
-            db.list({ prefix: ["discuss"] }, { limit: count, reverse: true, cursor: nextCursor }) :
-            db.list({ prefix: ["discuss"] }, { limit: count, reverse: true });
+          if (nextCursor === "done") {
+            return new Response(JSON.stringify({ discuss_list, nextCursor }), {
+              status: 200,
+              headers,
+            });
+          }
+          const entries = nextCursor
+            ? db.list({ prefix: ["discuss"] }, {
+              limit: count,
+              reverse: true,
+              cursor: nextCursor,
+            })
+            : db.list({ prefix: ["discuss"] }, { limit: count, reverse: true });
           for await (const entry of entries) {
             discuss_list.push(entry.value);
           }
-          const body = JSON.stringify({ discuss_list, nextCursor: entries.cursor === '' ? 'done' : entries.cursor });
+          const body = JSON.stringify({
+            discuss_list,
+            nextCursor: entries.cursor === "" ? "done" : entries.cursor,
+          });
           return new Response(body, { status: 200, headers });
         } else {
           const entries = db.list({ prefix: ["discuss"] });
@@ -1053,19 +1662,27 @@ Deno.serve(async (request) => {
     }
     case "img_list": {
       try {
-        const { key } = await request.json();
-        if (key !== ADMIN_KEY) return new Response(JSON.stringify({ "success": 0, "msg": "密钥错误" }), { status: 401 });
+        const access = await authorizeRequest(request, ACTIONS.MANAGE_ASSETS);
+        if (access.response) return access.response;
         const headers = new Headers();
         headers.set("Content-Type", "application/json");
         if (isDD) {
-          const { files, _cursor, _hasMore } = await f0.list({ endsWith: '.hlc' });
+          const { files, _cursor, _hasMore } = await f0.list({
+            endsWith: ".hlc",
+          });
           // 获取files的name和publicUrl属性
-          const output = files.map(({ name, publicUrl }) => ({ name, publicUrl }));
+          const output = files.map(({ name, publicUrl }) => ({
+            name,
+            publicUrl,
+          }));
           const body = JSON.stringify(output);
           return new Response(body, { status: 200, headers });
         } else {
-          const files = getFiles('.hlc');
-          const output = files.map(name => ({ name, publicUrl: `/files/${name}` }));
+          const files = getFiles(".hlc");
+          const output = files.map((name) => ({
+            name,
+            publicUrl: `/files/${name}`,
+          }));
           const body = JSON.stringify(output);
           return new Response(body, { status: 200, headers });
         }
@@ -1076,8 +1693,9 @@ Deno.serve(async (request) => {
     }
     case "delete_img": {
       try {
-        const { key, imgArray } = await request.json();
-        if (key !== ADMIN_KEY) return new Response(JSON.stringify({ "success": 0, "msg": "密钥错误" }), { status: 401 });
+        const access = await authorizeRequest(request, ACTIONS.MANAGE_ASSETS);
+        if (access.response) return access.response;
+        const { imgArray } = await request.json();
         if (isDD) {
           for (const name of imgArray) {
             await f0.unpublish(name);
@@ -1117,8 +1735,9 @@ Deno.serve(async (request) => {
     case "set_org": {
       let db;
       try {
-        const { key, name, tel, detail } = await request.json();
-        if (key !== ADMIN_KEY) return new Response(JSON.stringify({ "success": 0, "msg": "密钥错误" }), { status: 401 });
+        const access = await authorizeRequest(request, ACTIONS.EDIT_CONTENT);
+        if (access.response) return access.response;
+        const { name, tel, detail } = await request.json();
         db = await Deno.openKv(dbPATH);
         const result = await db.get(["org", name]);
         if (result.value) {
@@ -1144,8 +1763,9 @@ Deno.serve(async (request) => {
     case "delete_org": {
       let db;
       try {
-        const { key, name } = await request.json();
-        if (key !== ADMIN_KEY) return new Response(JSON.stringify({ "success": 0, "msg": "密钥错误" }), { status: 401 });
+        const access = await authorizeRequest(request, ACTIONS.EDIT_CONTENT);
+        if (access.response) return access.response;
+        const { name } = await request.json();
         db = await Deno.openKv(dbPATH);
         await db.delete(["org", name]);
         const headers = new Headers();
@@ -1162,6 +1782,8 @@ Deno.serve(async (request) => {
     case "like_org": {
       let db;
       try {
+        const access = await authorizeRequest(request, ACTIONS.SUBMIT_RESIDENT);
+        if (access.response) return access.response;
         const { name } = await request.json();
         db = await Deno.openKv(dbPATH);
         const result = await db.get(["org", name]);
@@ -1182,6 +1804,8 @@ Deno.serve(async (request) => {
     case "unlike_org": {
       let db;
       try {
+        const access = await authorizeRequest(request, ACTIONS.SUBMIT_RESIDENT);
+        if (access.response) return access.response;
         const { name } = await request.json();
         db = await Deno.openKv(dbPATH);
         const result = await db.get(["org", name]);
@@ -1222,8 +1846,9 @@ Deno.serve(async (request) => {
     case "set_tool": {
       let db;
       try {
-        const { key, name } = await request.json();
-        if (key !== ADMIN_KEY) return new Response(JSON.stringify({ "success": 0, "msg": "密钥错误" }), { status: 401 });
+        const access = await authorizeRequest(request, ACTIONS.MANAGE_ASSETS);
+        if (access.response) return access.response;
+        const { name } = await request.json();
         db = await Deno.openKv(dbPATH);
         const uuid = crypto.randomUUID();
         const data = { uuid, name };
@@ -1242,8 +1867,9 @@ Deno.serve(async (request) => {
     case "delete_tool": {
       let db;
       try {
-        const { key, uuid } = await request.json();
-        if (key !== ADMIN_KEY) return new Response(JSON.stringify({ "success": 0, "msg": "密钥错误" }), { status: 401 });
+        const access = await authorizeRequest(request, ACTIONS.MANAGE_ASSETS);
+        if (access.response) return access.response;
+        const { uuid } = await request.json();
         db = await Deno.openKv(dbPATH);
         await db.delete(["tool", uuid]);
         const headers = new Headers();
@@ -1280,9 +1906,9 @@ Deno.serve(async (request) => {
     case "set_award": {
       let db;
       try {
+        const access = await authorizeRequest(request, ACTIONS.MANAGE_ASSETS);
+        if (access.response) return access.response;
         const formData = await request.formData();
-        const key = formData.get("key");
-        if (key !== ADMIN_KEY) return new Response(JSON.stringify({ "success": 0, "msg": "密钥错误" }), { status: 401 });
         const name = formData.get("name");
         const points = formData.get("points");
         const img = formData.get("img");
@@ -1310,7 +1936,11 @@ Deno.serve(async (request) => {
             return new Response(body, { status: 200 });
           }
         } else {
-          const data = { name, points, img: `/files/${setFile(filename, fileData)}` };
+          const data = {
+            name,
+            points,
+            img: `/files/${setFile(filename, fileData)}`,
+          };
           db = await Deno.openKv(dbPATH);
           await db.set(["award", name], data);
           const headers = new Headers();
@@ -1328,8 +1958,9 @@ Deno.serve(async (request) => {
     case "delete_award": {
       let db;
       try {
-        const { key, name } = await request.json();
-        if (key !== ADMIN_KEY) return new Response(JSON.stringify({ "success": 0, "msg": "密钥错误" }), { status: 401 });
+        const access = await authorizeRequest(request, ACTIONS.MANAGE_ASSETS);
+        if (access.response) return access.response;
+        const { name } = await request.json();
         db = await Deno.openKv(dbPATH);
         await db.delete(["award", name]);
         const headers = new Headers();
@@ -1366,8 +1997,9 @@ Deno.serve(async (request) => {
     case "set_volunteer": {
       let db;
       try {
-        const { key, name, points = null } = await request.json();
-        if (key !== ADMIN_KEY) return new Response(JSON.stringify({ "success": 0, "msg": "密钥错误" }), { status: 401 });
+        const access = await authorizeRequest(request, ACTIONS.MANAGE_ASSETS);
+        if (access.response) return access.response;
+        const { name, points = null } = await request.json();
         db = await Deno.openKv(dbPATH);
         const result = await db.get(["volunteer", name]);
         if (result.value) {
@@ -1395,8 +2027,9 @@ Deno.serve(async (request) => {
     case "delete_volunteer": {
       let db;
       try {
-        const { key, name } = await request.json();
-        if (key !== ADMIN_KEY) return new Response(JSON.stringify({ "success": 0, "msg": "密钥错误" }), { status: 401 });
+        const access = await authorizeRequest(request, ACTIONS.MANAGE_ASSETS);
+        if (access.response) return access.response;
+        const { name } = await request.json();
         db = await Deno.openKv(dbPATH);
         await db.delete(["volunteer", name]);
         const headers = new Headers();
@@ -1410,11 +2043,28 @@ Deno.serve(async (request) => {
         db?.close();
       }
     }
+    case "my_requests": {
+      let db;
+      try {
+        const access = await authorizeRequest(request, ACTIONS.SUBMIT_RESIDENT);
+        if (access.response) return access.response;
+        db = await Deno.openKv(dbPATH);
+        const requests = [];
+        for await (const entry of db.list({ prefix: ["req"] })) {
+          if (entry.value.ownerId === access.actor.id) {
+            requests.push(entry.value);
+          }
+        }
+        return json({ success: 1, requests });
+      } finally {
+        db?.close();
+      }
+    }
     case "req_list": {
       let db;
       try {
-        const { key } = await request.json();
-        if (key !== ADMIN_KEY) return new Response(JSON.stringify({ "success": 0, "msg": "密钥错误" }), { status: 401 });
+        const access = await authorizeRequest(request, ACTIONS.MODERATE);
+        if (access.response) return access.response;
         const headers = new Headers();
         headers.set("Content-Type", "application/json");
         db = await Deno.openKv(dbPATH);
@@ -1435,9 +2085,30 @@ Deno.serve(async (request) => {
     case "toolhouse_req": {
       let db;
       try {
-        const { uuid = crypto.randomUUID(), select, name, phone, resolved = false } = await request.json();
+        const access = await authorizeRequest(request, ACTIONS.SUBMIT_RESIDENT);
+        if (access.response) return access.response;
+        const {
+          uuid: requestedUuid,
+          select,
+          name,
+          phone,
+          resolved = false,
+        } = await request.json();
+        if (resolved && !can(access.actor.role, ACTIONS.MODERATE)) {
+          return json({ success: 0, msg: "当前账户不能处理社区请求" }, 403);
+        }
         db = await Deno.openKv(dbPATH);
-        const data = { source: "toolhouse", uuid, select, name, phone, resolved };
+        const uuid = resolved ? requestedUuid : crypto.randomUUID();
+        const existing = resolved ? (await db.get(["req", uuid])).value : null;
+        const data = {
+          source: "toolhouse",
+          uuid,
+          select,
+          name,
+          phone,
+          resolved,
+          ownerId: existing?.ownerId ?? access.actor.id,
+        };
         await db.set(["req", uuid], data);
         const headers = new Headers();
         headers.set("Content-Type", "application/json");
@@ -1453,9 +2124,24 @@ Deno.serve(async (request) => {
     case "signup_req": {
       let db;
       try {
-        const { uuid = crypto.randomUUID(), name, phone, resolved = false } = await request.json();
+        const access = await authorizeRequest(request, ACTIONS.SUBMIT_RESIDENT);
+        if (access.response) return access.response;
+        const { uuid: requestedUuid, name, phone, resolved = false } =
+          await request.json();
+        if (resolved && !can(access.actor.role, ACTIONS.MODERATE)) {
+          return json({ success: 0, msg: "当前账户不能处理社区请求" }, 403);
+        }
         db = await Deno.openKv(dbPATH);
-        const data = { source: "signup", uuid, name, phone, resolved };
+        const uuid = resolved ? requestedUuid : crypto.randomUUID();
+        const existing = resolved ? (await db.get(["req", uuid])).value : null;
+        const data = {
+          source: "signup",
+          uuid,
+          name,
+          phone,
+          resolved,
+          ownerId: existing?.ownerId ?? access.actor.id,
+        };
         await db.set(["req", uuid], data);
         const headers = new Headers();
         headers.set("Content-Type", "application/json");
@@ -1471,8 +2157,9 @@ Deno.serve(async (request) => {
     case "delete_req": {
       let db;
       try {
-        const { key, uuid } = await request.json();
-        if (key !== ADMIN_KEY) return new Response(JSON.stringify({ "success": 0, "msg": "密钥错误" }), { status: 401 });
+        const access = await authorizeRequest(request, ACTIONS.MODERATE);
+        if (access.response) return access.response;
+        const { uuid } = await request.json();
         db = await Deno.openKv(dbPATH);
         await db.delete(["req", uuid]);
         const headers = new Headers();
@@ -1487,6 +2174,8 @@ Deno.serve(async (request) => {
       }
     }
     case "socket": {
+      const access = await authorizeRequest(request, ACTIONS.MANAGE_CONFIG);
+      if (access.response) return access.response;
       const { socket, response } = Deno.upgradeWebSocket(request);
       socket.queue = [];
       socket.solver = new Map();
@@ -1495,12 +2184,16 @@ Deno.serve(async (request) => {
           if (socket.readyState !== 1) return;
           if (!message.randomStamp) {
             const randomStamp = Math.random().toString(36).slice(2);
-            socket.queue.push(new Promise((resolve) => { socket.solver.set(randomStamp, resolve); }));
+            socket.queue.push(
+              new Promise((resolve) => {
+                socket.solver.set(randomStamp, resolve);
+              }),
+            );
             message.randomStamp = randomStamp;
-          };
+          }
           socket.send(await encoder(message));
           if (socket.queue) {
-            while (socket.queue.length > 0) { return await socket.queue.shift(); }
+            while (socket.queue.length > 0) return await socket.queue.shift();
           }
         } catch (error) {
           console.error(error);
@@ -1518,21 +2211,21 @@ Deno.serve(async (request) => {
         }
         switch (output.type) {
           case "backup": {
-            if (output.key === ADMIN_KEY) {
-              const files = Deno.readDirSync("./.files");
-              for (const file of files) {
-                const data = Deno.readFileSync(`./.files/${file.name}`);
-                const message = {
-                  type: "file",
-                  name: file.name,
-                  data: data
-                };
-                socket.reply(message);
-              }
-            } else {
+            if (isDD) {
               const message = {
                 type: "error",
-                msg: "密钥错误"
+                msg: "托管环境不支持本地文件备份",
+              };
+              socket.reply(message);
+              break;
+            }
+            const files = Deno.readDirSync("./.files");
+            for (const file of files) {
+              const data = Deno.readFileSync(`./.files/${file.name}`);
+              const message = {
+                type: "file",
+                name: file.name,
+                data: data,
               };
               socket.reply(message);
             }

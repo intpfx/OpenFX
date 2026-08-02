@@ -1,14 +1,15 @@
 ///<reference lib="dom" />
-import EditorJS from 'npm:@editorjs/editorjs';
-import Header from 'npm:@editorjs/header';
-import Checklist from 'npm:@editorjs/checklist';
-import Quote from 'npm:@editorjs/quote';
-import Table from 'npm:@editorjs/table';
-import Warning from 'npm:@editorjs/warning';
-import ImageTool from 'npm:@editorjs/image';
-import Delimiter from 'npm:@editorjs/delimiter';
+import "./community-map.js";
+import EditorJS from "npm:@editorjs/editorjs";
+import Header from "npm:@editorjs/header";
+import Checklist from "npm:@editorjs/checklist";
+import Quote from "npm:@editorjs/quote";
+import Table from "npm:@editorjs/table";
+import Warning from "npm:@editorjs/warning";
+import ImageTool from "npm:@editorjs/image";
+import Delimiter from "npm:@editorjs/delimiter";
 
-const $ = query => document.getElementById(query);
+const $ = (query) => document.getElementById(query);
 
 class Events {
   static fire(type, detail) {
@@ -18,11 +19,299 @@ class Events {
     return globalThis.addEventListener(type, callback, false);
   }
 }
-class AdminPage {
+const ROLE_LABELS = Object.freeze({
+  visitor: "普通访客",
+  resident: "社区居民",
+  worker: "社区工作者",
+  admin: "管理员",
+});
+
+function workflowLabel(status) {
+  return {
+    draft: "草稿",
+    review: "待审核",
+    published: "已发布",
+    archived: "已归档",
+  }[status] || "未建草稿";
+}
+
+function showSceneAccountView(page, options = {}) {
+  const placeList = $("scene_place_list");
+  const navigator = $("scene_navigator");
+  const panel = $("scene_account_panel");
+  const content = $("scene_account_content");
+  if (!placeList || !panel || !content) return;
+
+  placeList.dataset.sceneView = "account";
+  if (navigator) navigator.dataset.mode = "account";
+  $("scene_place_list_eyebrow").textContent = "社区账户";
+  $("scene_place_list_title").textContent = options.title || "账户中心";
+  $("scene_place_list_close").setAttribute("aria-label", "关闭账户面板");
+  panel.hidden = false;
+  panel.inert = false;
+  content.replaceChildren(page);
+  globalThis.requestAnimationFrame(() => {
+    page.querySelector("input, button")?.focus({ preventScroll: true });
+  });
+}
+
+function resetSceneAccountView(options = {}) {
+  const placeList = $("scene_place_list");
+  const navigator = $("scene_navigator");
+  const panel = $("scene_account_panel");
+  const content = $("scene_account_content");
+  if (!placeList || !panel || !content) return;
+
+  delete placeList.dataset.sceneView;
+  if (navigator) navigator.dataset.mode = "places";
+  $("scene_place_list_eyebrow").textContent = "社区导览";
+  $("scene_place_list_title").textContent = "场所一览";
+  $("scene_place_list_close").setAttribute("aria-label", "关闭场所列表");
+  panel.hidden = true;
+  panel.inert = true;
+  content.replaceChildren();
+  if (options.focusTrigger) {
+    communityAccountTrigger?.focus({ preventScroll: true });
+  }
+}
+
+function updateCommunityAccountUi(identity) {
+  const authenticated = Boolean(identity?.id);
+  if (communityAccountStatus) {
+    communityAccountStatus.textContent = authenticated
+      ? `${identity.displayName} · ${ROLE_LABELS[identity.role]}`
+      : ROLE_LABELS.visitor;
+  }
+  if (communityAccountTrigger) {
+    communityAccountTrigger.textContent = authenticated
+      ? "查看账户"
+      : "登录 / 注册";
+  }
+}
+
+function rememberCommunityIdentity(identity) {
+  globalThis.hlcIdentity = identity?.id ? identity : null;
+  const hasCmsAccess = ["worker", "admin"].includes(identity?.role);
+  if (hasCmsAccess) {
+    document.documentElement.style.setProperty("--limited", "1");
+  } else {
+    document.documentElement.style.removeProperty("--limited");
+  }
+  updateCommunityAccountUi(identity);
+}
+
+function showCommunityAccount(identity) {
+  rememberCommunityIdentity(identity);
+  if (identity.role === "resident") {
+    showSceneAccountView(new ResidentAccountPage(identity), {
+      title: "我的账户",
+    });
+  } else if (["worker", "admin"].includes(identity.role)) {
+    display_show(new AdminPage(identity));
+  } else {
+    showSceneAccountView(new LoginPage(), { title: "登录 / 注册" });
+  }
+}
+
+class AccountLoadingPage {
   constructor() {
+    const page = document.createElement("account-login");
+    page.innerHTML = /*html*/ `
+      <section class="account-login-card account-loading-card" aria-live="polite" aria-busy="true">
+        <p>圣灯社区 · 社区账户入口</p>
+        <h2>正在检查登录状态</h2>
+        <p>请稍候…</p>
+      </section>`;
+    return page;
+  }
+}
+
+class LoginPage {
+  constructor(options = {}) {
+    const page = document.createElement("account-login");
+    page.innerHTML = /*html*/ `
+      <section class="account-login-card">
+        <p>圣灯社区 · 社区账户入口</p>
+        <h2 id="account_access_title">登录社区账户</h2>
+        <div class="account-auth-tabs" role="tablist" aria-label="账户入口">
+          <button type="button" role="tab" data-auth-mode="login">登录</button>
+          <button type="button" role="tab" data-auth-mode="register">居民注册</button>
+        </div>
+        <p id="account_login_error" class="account-login-error" role="alert"></p>
+        <form id="account_login_form" class="account-auth-form">
+          <label>账号<input id="account_username" name="username" autocomplete="username" required /></label>
+          <label>密码<input id="account_password" name="password" type="password" autocomplete="current-password" required /></label>
+          <button class="green_button" type="submit">登录</button>
+        </form>
+        <form id="account_register_form" class="account-auth-form" hidden>
+          <label>姓名或社区称呼<input name="displayName" autocomplete="name" minlength="2" maxlength="40" required /></label>
+          <label>登录账号<input name="username" autocomplete="username" minlength="3" maxlength="64" pattern="[A-Za-z0-9][A-Za-z0-9._-]{2,63}" required /></label>
+          <label>设置密码<input name="password" type="password" autocomplete="new-password" minlength="10" maxlength="256" required /></label>
+          <label>确认密码<input name="passwordConfirm" type="password" autocomplete="new-password" minlength="10" maxlength="256" required /></label>
+          <button class="green_button" type="submit">注册并登录</button>
+          <small>自助注册只会创建社区居民账户；工作者和管理员账户由管理员授权。</small>
+        </form>
+      </section>`;
+    const loginForm = page.querySelector("#account_login_form");
+    const registerForm = page.querySelector("#account_register_form");
+    const error = page.querySelector("#account_login_error");
+    const title = page.querySelector("#account_access_title");
+    const modeButtons = [...page.querySelectorAll("[data-auth-mode]")];
+    const selectMode = (mode) => {
+      const isRegister = mode === "register";
+      loginForm.hidden = isRegister;
+      registerForm.hidden = !isRegister;
+      title.textContent = isRegister ? "注册居民账户" : "登录社区账户";
+      error.textContent = "";
+      for (const button of modeButtons) {
+        const selected = button.dataset.authMode === mode;
+        button.setAttribute("aria-selected", String(selected));
+        button.classList.toggle("is-active", selected);
+      }
+    };
+    for (const button of modeButtons) {
+      button.onclick = () => selectMode(button.dataset.authMode);
+    }
+    const submitAccountForm = async (form, path, payload) => {
+      error.textContent = "";
+      const submit = form.querySelector("button[type='submit']");
+      submit.disabled = true;
+      try {
+        const response = await fetch(path, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          error.textContent = result.msg || "操作失败，请检查输入";
+          return;
+        }
+        showCommunityAccount(result.identity);
+      } catch (_error) {
+        error.textContent = "暂时无法连接社区账户服务，请稍后重试";
+      } finally {
+        submit.disabled = false;
+      }
+    };
+    loginForm.onsubmit = async (event) => {
+      event.preventDefault();
+      await submitAccountForm(loginForm, "/login", {
+        username: loginForm.elements.username.value,
+        password: loginForm.elements.password.value,
+      });
+    };
+    registerForm.onsubmit = async (event) => {
+      event.preventDefault();
+      const password = registerForm.elements.password.value;
+      if (password !== registerForm.elements.passwordConfirm.value) {
+        error.textContent = "两次输入的密码不一致";
+        registerForm.elements.passwordConfirm.focus();
+        return;
+      }
+      await submitAccountForm(registerForm, "/register", {
+        displayName: registerForm.elements.displayName.value,
+        username: registerForm.elements.username.value,
+        password,
+      });
+    };
+    selectMode(options.mode === "register" ? "register" : "login");
+    if (options.message) error.textContent = options.message;
+    return page;
+  }
+}
+
+class ResidentAccountPage {
+  constructor(identity) {
+    const page = document.createElement("resident-account-page");
+    page.innerHTML = /*html*/ `
+      <header>
+        <div><p>圣灯社区账户</p><h2 id="resident_account_name"></h2></div>
+        <button id="resident_account_logout" type="button">退出登录</button>
+      </header>
+      <section class="resident-account-summary">
+        <strong>社区居民</strong>
+        <p>你可以提交工具借用、技能报名和社区互动；这里仅显示本账户提交的服务记录。</p>
+      </section>
+      <section class="resident-request-list">
+        <h3>我的服务记录</h3>
+        <div id="resident_requests"><p>正在读取记录…</p></div>
+      </section>`;
+    page.querySelector("#resident_account_name").textContent =
+      identity.displayName;
+    page.querySelector("#resident_account_logout").onclick = async () => {
+      await fetch("/logout", { method: "POST" });
+      rememberCommunityIdentity(null);
+      showSceneAccountView(new LoginPage(), { title: "登录 / 注册" });
+    };
+    const requestList = page.querySelector("#resident_requests");
+    fetch("/my_requests").then(async (response) => {
+      if (!response.ok) throw new Error("request list unavailable");
+      return await response.json();
+    }).then(({ requests }) => {
+      requestList.innerHTML = "";
+      if (requests.length === 0) {
+        const empty = document.createElement("p");
+        empty.textContent = "还没有服务记录。";
+        requestList.appendChild(empty);
+        return;
+      }
+      for (const request of requests) {
+        const item = document.createElement("article");
+        const title = document.createElement("strong");
+        title.textContent = request.source === "toolhouse"
+          ? "共享工具借用"
+          : "社区活动报名";
+        const status = document.createElement("span");
+        status.textContent = request.resolved ? "已处理" : "待处理";
+        const detail = document.createElement("p");
+        detail.textContent = request.select || request.name || "社区服务请求";
+        item.append(title, status, detail);
+        requestList.appendChild(item);
+      }
+    }).catch(() => {
+      requestList.textContent = "暂时无法读取服务记录。";
+    });
+    return page;
+  }
+}
+
+async function openCommunityAccount() {
+  showSceneAccountView(new AccountLoadingPage(), { title: "账户中心" });
+  try {
+    const response = await fetch("/session");
+    if (!response.ok) throw new Error("session unavailable");
+    const { identity } = await response.json();
+    showCommunityAccount(identity);
+  } catch (_error) {
+    rememberCommunityIdentity(null);
+    showSceneAccountView(
+      new LoginPage({
+        message: "暂时无法连接社区账户服务，请稍后重试",
+      }),
+      { title: "登录 / 注册" },
+    );
+  }
+}
+
+globalThis.addEventListener("hlc:account-open", () => {
+  void openCommunityAccount();
+});
+
+globalThis.addEventListener("hlc:account-panel-reset", () => {
+  resetSceneAccountView();
+});
+
+class AdminPage {
+  constructor(identity = globalThis.hlcIdentity) {
     if (globalThis.admin_page) return globalThis.admin_page;
     const page = document.createElement("admin-page");
+    page.identity = identity;
     page.innerHTML = /*html*/ `
+      <header id="admin_identity_bar">
+        <div><strong id="admin_identity_name"></strong><span id="admin_identity_role"></span></div>
+        <button id="account_logout" type="button">退出登录</button>
+      </header>
       <div id="admin_page_nav">
         <button id="doclib" type="button">文章管理</button>
         <button id="imglib" type="button">图库管理</button>
@@ -30,6 +319,7 @@ class AdminPage {
         <button id="orglib" type="button">组织管理</button>
         <button id="tollib" type="button">物资管理</button>
         <button id="reqlib" type="button">请求管理</button>
+        <button id="acclib" type="button">账户与审计</button>
       </div>
       <section id="docmode" class="mode">
         <div id="editor_top">
@@ -39,8 +329,12 @@ class AdminPage {
             <input id="is_meeting" type="checkbox" />
             <div class="checkmark">普通<br/>文章</div>
           </label>
+          <span id="article_workflow_status">未建草稿</span>
           <button id="delete_article" class="red_button" type="button">删除</button>
-          <button id="save_article" class="green_button" type="button">保存</button>
+          <button id="save_article" class="green_button" type="button">保存草稿</button>
+          <button id="submit_article" class="orange_button" type="button">提交审核</button>
+          <button id="publish_article" class="green_button" type="button">发布</button>
+          <button id="archive_article" class="red_button" type="button">归档</button>
         </div>
         <div id="editor"></div>
       </section>
@@ -97,6 +391,34 @@ class AdminPage {
           <button id="refresh_req" class="blue_button" type="button">刷新</button>
         </div>
         <div id="req_list"></div>
+      </section>
+      <section id="accmode" class="hide mode account-mode">
+        <form id="account_editor" class="account-editor">
+          <input id="managed_username" name="username" placeholder="账号（3—64 位）" required />
+          <input id="managed_display_name" name="displayName" placeholder="显示名称" required />
+          <select id="managed_role" name="role">
+            <option value="resident">社区居民</option>
+            <option value="worker">社区工作者</option>
+            <option value="admin">管理员</option>
+          </select>
+          <select id="managed_status" name="status">
+            <option value="active">启用</option>
+            <option value="disabled">停用</option>
+          </select>
+          <input id="managed_password" name="password" type="password" autocomplete="new-password" placeholder="初始密码；更新时可留空" />
+          <button class="green_button" type="submit">保存账户</button>
+          <p id="account_editor_message" role="status"></p>
+        </form>
+        <div class="account-governance-lists">
+          <section>
+            <h3>社区账户</h3>
+            <div id="account_list"></div>
+          </section>
+          <section>
+            <h3>最近审计记录</h3>
+            <ol id="audit_list"></ol>
+          </section>
+        </div>
       </section>`;
     const doclib = page.querySelector("#doclib");
     const imglib = page.querySelector("#imglib");
@@ -104,12 +426,14 @@ class AdminPage {
     const orglib = page.querySelector("#orglib");
     const tollib = page.querySelector("#tollib");
     const reqlib = page.querySelector("#reqlib");
+    const acclib = page.querySelector("#acclib");
     const docmode = page.querySelector("#docmode");
     const imgmode = page.querySelector("#imgmode");
     const stfmode = page.querySelector("#stfmode");
     const orgmode = page.querySelector("#orgmode");
     const tolmode = page.querySelector("#tolmode");
     const reqmode = page.querySelector("#reqmode");
+    const accmode = page.querySelector("#accmode");
     const is_meeting = page.querySelector("#is_meeting");
     const editor = page.querySelector("#editor");
     const refresh_img = page.querySelector("#refresh_img");
@@ -118,44 +442,70 @@ class AdminPage {
     const db_storage = page.querySelector("#db_storage");
     const file_storage = page.querySelector("#file_storage");
     const bed = page.querySelector("#bed");
+    const workflowStatus = page.querySelector("#article_workflow_status");
+    const publishArticle = page.querySelector("#publish_article");
+    const archiveArticle = page.querySelector("#archive_article");
+    const accountLogout = page.querySelector("#account_logout");
+    page.querySelector("#admin_identity_name").textContent =
+      identity?.displayName || "社区账户";
+    page.querySelector("#admin_identity_role").textContent =
+      ROLE_LABELS[identity?.role] || "未识别角色";
+    page.workflowStatus = workflowStatus;
+    page.updateWorkflowStatus = () => {
+      const workflow = page.currentRawData?._workflow;
+      workflowStatus.textContent = workflowLabel(workflow?.status);
+      workflowStatus.dataset.status = workflow?.status || "none";
+    };
+    if (identity?.role !== "admin") {
+      publishArticle.hidden = true;
+      archiveArticle.hidden = true;
+      acclib.hidden = true;
+    }
+    accountLogout.onclick = async () => {
+      await fetch("/logout", { method: "POST" });
+      globalThis.admin_page = null;
+      rememberCommunityIdentity(null);
+      tag_display.classList.add("hide");
+      showSceneAccountView(new LoginPage(), { title: "登录 / 注册" });
+    };
 
     page.editor = new EditorJS({
       holder: editor,
       autofocus: true,
-      placeholder: '从这里开写!',
-      logLevel: 'ERROR',
-      inlineToolbar: ['link', 'bold', 'italic'],
+      placeholder: "从这里开写!",
+      logLevel: "ERROR",
+      inlineToolbar: ["link", "bold", "italic"],
       tools: {
         header: {
           class: Header,
           inlineToolbar: true,
           config: {
-            placeholder: '输入一个标题',
+            placeholder: "输入一个标题",
             levels: [1, 2, 3, 4],
-            defaultLevel: 3
+            defaultLevel: 3,
           },
-          shortcut: 'CMD+SHIFT+H'
+          shortcut: "CMD+SHIFT+H",
         },
         delimiter: {
           class: Delimiter,
-          shortcut: 'CMD+SHIFT+D'
+          shortcut: "CMD+SHIFT+D",
         },
         checklist: {
           class: Checklist,
           inlineToolbar: true,
           config: {
-            placeholder: '输入一个任务',
+            placeholder: "输入一个任务",
           },
-          shortcut: 'CMD+SHIFT+K'
+          shortcut: "CMD+SHIFT+K",
         },
         quote: {
           class: Quote,
           inlineToolbar: true,
           config: {
-            quotePlaceholder: '输入引用',
-            captionPlaceholder: '作者',
+            quotePlaceholder: "输入引用",
+            captionPlaceholder: "作者",
           },
-          shortcut: 'CMD+SHIFT+O'
+          shortcut: "CMD+SHIFT+O",
         },
         table: {
           class: Table,
@@ -164,29 +514,30 @@ class AdminPage {
             rows: 2,
             cols: 3,
           },
-          shortcut: 'CMD+ALT+T'
+          shortcut: "CMD+ALT+T",
         },
         warning: {
           class: Warning,
           inlineToolbar: true,
           config: {
-            titlePlaceholder: '标题',
-            messagePlaceholder: '消息',
+            titlePlaceholder: "标题",
+            messagePlaceholder: "消息",
           },
-          shortcut: 'CMD+SHIFT+W',
+          shortcut: "CMD+SHIFT+W",
         },
         image: {
           class: ImageTool,
           inlineToolbar: true,
           config: {
-            types: "image/jpeg, image/jpg, image/png, image/gif, video/mp4, video/quicktime",
+            types:
+              "image/jpeg, image/jpg, image/png, image/gif, video/mp4, video/quicktime",
             endpoints: {
-              byFile: '/uploadFile',
-              byUrl: '/fetchUrl',
-            }
+              byFile: "/uploadFile",
+              byUrl: "/fetchUrl",
+            },
           },
-          shortcut: 'CMD+SHIFT+I'
-        }
+          shortcut: "CMD+SHIFT+I",
+        },
       },
       i18n: {
         messages: {
@@ -194,19 +545,19 @@ class AdminPage {
             "blockTunes": {
               "toggler": {
                 "Click to tune": "点击调整",
-                "or drag to move": "或拖动移动"
-              }
+                "or drag to move": "或拖动移动",
+              },
             },
             "toolbar": {
               "toolbox": {
-                "Add": "添加"
-              }
+                "Add": "添加",
+              },
             },
             "popover": {
               "Filter": "过滤",
               "Nothing found": "找不到",
               "Convert to": "转换为",
-            }
+            },
           },
           toolNames: {
             "Text": "文本",
@@ -233,19 +584,19 @@ class AdminPage {
             "ImageTool": "图片",
             "ListTool": "列表",
             "Header": "标题",
-            "Raw": "原始"
+            "Raw": "原始",
           },
           tools: {
             "warning": {
               "Title": "标题",
               "Message": "消息",
-              "Button": "按钮"
+              "Button": "按钮",
             },
             "link": {
-              "Add a link": "添加链接"
+              "Add a link": "添加链接",
             },
             "marker": {
-              "Marker": "标记"
+              "Marker": "标记",
             },
             "table": {
               "Add row above": "在上方添加行",
@@ -255,7 +606,7 @@ class AdminPage {
               "Delete row": "删除行",
               "Delete column": "删除列",
               "With headings": "带表头",
-              "Without headings": "不带表头"
+              "Without headings": "不带表头",
             },
             "image": {
               "Select an Image": "选择图片",
@@ -267,21 +618,21 @@ class AdminPage {
               "With background": "带背景",
             },
             "checklist": {
-              "To do": "任务"
+              "To do": "任务",
             },
             "linkTool": {
-              "Enter url": "输入链接"
+              "Enter url": "输入链接",
             },
             "list": {
               "Ordered": "有序",
-              "Bullet": "无序"
+              "Bullet": "无序",
             },
             "header": {
               "Header": "标题",
               "Heading 1": "标题 1",
               "Heading 2": "标题 2",
               "Heading 3": "标题 3",
-              "Heading 4": "标题 4"
+              "Heading 4": "标题 4",
             },
             "quote": {
               "Quote": "引用",
@@ -290,11 +641,11 @@ class AdminPage {
               "Align Center": "居中",
             },
             "delimiter": {
-              "Delimiter": "分隔符"
+              "Delimiter": "分隔符",
             },
             "stub": {
-              "The block can not be displayed correctly.": "块无法正确显示。"
-            }
+              "The block can not be displayed correctly.": "块无法正确显示。",
+            },
           },
           blockTunes: {
             "delete": {
@@ -302,17 +653,17 @@ class AdminPage {
               "Click to delete": "再次点击确认删除",
             },
             "moveUp": {
-              "Move up": "上移"
+              "Move up": "上移",
             },
             "moveDown": {
-              "Move down": "下移"
+              "Move down": "下移",
             },
             "toggler": {
-              "Close": "关闭"
+              "Close": "关闭",
             },
           },
-        }
-      }
+        },
+      },
     });
     page.currentRawData = {
       blocks: [],
@@ -320,10 +671,10 @@ class AdminPage {
       time: 0,
       version: "",
       title: "",
-      isMeeting: is_meeting.checked || false
+      isMeeting: is_meeting.checked || false,
     };
     is_meeting.onchange = () => {
-      page.currentRawData.isMeeting = is_meeting.checked || false
+      page.currentRawData.isMeeting = is_meeting.checked || false;
       if (is_meeting.checked) {
         is_meeting.nextElementSibling.innerHTML = "会议<br/>文章";
       } else {
@@ -337,6 +688,7 @@ class AdminPage {
       orgmode.classList.add("hide");
       tolmode.classList.add("hide");
       reqmode.classList.add("hide");
+      accmode.classList.add("hide");
     };
     async function render_imgs() {
       // 禁用refresh_img按钮
@@ -348,23 +700,26 @@ class AdminPage {
         method: "POST",
         body: JSON.stringify({
           key: dataMap.get("admin_key"),
-        })
+        }),
       });
-      const { usedDataStorage, usedFileStorage } = await storage_response.json();
+      const { usedDataStorage, usedFileStorage } = await storage_response
+        .json();
       db_storage.textContent = `数据库存储：${usedDataStorage} / 1024MB`;
       file_storage.textContent = `文件存储：${usedFileStorage} / 100GB`;
       const response = await fetch("/img_list", {
         method: "POST",
         body: JSON.stringify({
           key: dataMap.get("admin_key"),
-        })
+        }),
       });
       const lists = await response.json();
       for (const list of lists) {
         const img = document.createElement("img");
         img.src = list.publicUrl;
         img.alt = list.name;
-        img.onclick = () => { img.classList.toggle("selected_img") };
+        img.onclick = () => {
+          img.classList.toggle("selected_img");
+        };
         bed.appendChild(img);
       }
       // 启用refresh_img按钮
@@ -381,6 +736,7 @@ class AdminPage {
       orgmode.classList.add("hide");
       tolmode.classList.add("hide");
       reqmode.classList.add("hide");
+      accmode.classList.add("hide");
     };
     refresh_img.onclick = render_imgs;
     select_all_img.onclick = () => {
@@ -391,18 +747,21 @@ class AdminPage {
     };
     delete_img.onclick = async () => {
       const childrenArray = Array.from(bed.children);
-      const selectedArray = childrenArray.filter(child => child.classList.contains("selected_img"));
+      const selectedArray = childrenArray.filter((child) =>
+        child.classList.contains("selected_img")
+      );
       if (selectedArray.length > 0) {
         const response = confirm("是否删除选中的图片？");
         if (response) {
           try {
             mask.classList.remove("hide");
-            const imgArray = selectedArray.map(img => img.alt);
+            const imgArray = selectedArray.map((img) => img.alt);
             const { success } = await (await fetch("/delete_img", {
-              method: "POST", body: JSON.stringify({
+              method: "POST",
+              body: JSON.stringify({
                 key: dataMap.get("admin_key"),
-                imgArray: imgArray
-              })
+                imgArray: imgArray,
+              }),
             })).json();
             if (success) {
               mask.classList.add("hide");
@@ -440,6 +799,7 @@ class AdminPage {
         page.currentArticleTitle.value = selectedOption.raw.title;
         is_meeting.checked = selectedOption.raw.isMeeting;
         await page.editor.render(selectedOption.raw);
+        page.updateWorkflowStatus();
       } else {
         page.currentRawData = {
           blocks: [],
@@ -447,11 +807,12 @@ class AdminPage {
           time: 0,
           version: "",
           title: "",
-          isMeeting: is_meeting.checked || false
+          isMeeting: is_meeting.checked || false,
         };
         page.currentArticleTitle.value = currentValue;
         is_meeting.checked = false;
         await page.editor.clear();
+        page.updateWorkflowStatus();
       }
     };
     stflib.onclick = () => {
@@ -461,6 +822,7 @@ class AdminPage {
       orgmode.classList.add("hide");
       tolmode.classList.add("hide");
       reqmode.classList.add("hide");
+      accmode.classList.add("hide");
     };
     orglib.onclick = () => {
       orgmode.classList.remove("hide");
@@ -469,6 +831,7 @@ class AdminPage {
       stfmode.classList.add("hide");
       tolmode.classList.add("hide");
       reqmode.classList.add("hide");
+      accmode.classList.add("hide");
     };
     tollib.onclick = () => {
       tolmode.classList.remove("hide");
@@ -477,6 +840,7 @@ class AdminPage {
       stfmode.classList.add("hide");
       orgmode.classList.add("hide");
       reqmode.classList.add("hide");
+      accmode.classList.add("hide");
     };
     reqlib.onclick = () => {
       reqmode.classList.remove("hide");
@@ -485,6 +849,93 @@ class AdminPage {
       stfmode.classList.add("hide");
       orgmode.classList.add("hide");
       tolmode.classList.add("hide");
+      accmode.classList.add("hide");
+    };
+
+    const accountEditor = page.querySelector("#account_editor");
+    const accountEditorMessage = page.querySelector("#account_editor_message");
+    const accountList = page.querySelector("#account_list");
+    const auditList = page.querySelector("#audit_list");
+
+    async function refreshAccountGovernance() {
+      const [accountsResponse, auditResponse] = await Promise.all([
+        fetch("/accounts"),
+        fetch("/audit_list?count=30"),
+      ]);
+      if (!accountsResponse.ok || !auditResponse.ok) return;
+      const { accounts } = await accountsResponse.json();
+      const { entries } = await auditResponse.json();
+      accountList.innerHTML = "";
+      for (const account of accounts) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "account-list-item";
+        const name = document.createElement("strong");
+        name.textContent = account.displayName;
+        const detail = document.createElement("span");
+        detail.textContent = `${account.username} · ${
+          ROLE_LABELS[account.role]
+        }`;
+        button.append(name, detail);
+        button.onclick = () => {
+          accountEditor.username.value = account.username;
+          accountEditor.displayName.value = account.displayName;
+          accountEditor.role.value = account.role;
+          accountEditor.status.value = account.status || "active";
+          accountEditor.password.value = "";
+        };
+        accountList.appendChild(button);
+      }
+      auditList.innerHTML = "";
+      for (const entry of entries) {
+        const item = document.createElement("li");
+        const action = document.createElement("strong");
+        action.textContent = entry.action;
+        const detail = document.createElement("span");
+        detail.textContent = `${entry.actorRole} · ${
+          new Date(entry.time).toLocaleString("zh-CN")
+        }`;
+        item.append(action, detail);
+        auditList.appendChild(item);
+      }
+    }
+
+    acclib.onclick = async () => {
+      accmode.classList.remove("hide");
+      docmode.classList.add("hide");
+      imgmode.classList.add("hide");
+      stfmode.classList.add("hide");
+      orgmode.classList.add("hide");
+      tolmode.classList.add("hide");
+      reqmode.classList.add("hide");
+      await refreshAccountGovernance();
+    };
+
+    accountEditor.onsubmit = async (event) => {
+      event.preventDefault();
+      accountEditorMessage.textContent = "";
+      const payload = {
+        username: accountEditor.username.value,
+        displayName: accountEditor.displayName.value,
+        role: accountEditor.role.value,
+        status: accountEditor.status.value,
+      };
+      if (accountEditor.password.value) {
+        payload.password = accountEditor.password.value;
+      }
+      const response = await fetch("/accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const result = await response.json();
+      accountEditorMessage.textContent = response.ok
+        ? "账户已保存"
+        : result.msg || "账户保存失败";
+      if (response.ok) {
+        accountEditor.reset();
+        await refreshAccountGovernance();
+      }
     };
 
     async function opArticleOptionsRefresh() {
@@ -533,8 +984,30 @@ class AdminPage {
         option.value = article.title || "未命名的文章";
         tag_article_options.appendChild(option);
       }
-    };
-    Events.on("article_options_refresh", async () => { await opArticleOptionsRefresh() });
+
+      const managedResponse = await fetch("/managed_content");
+      if (managedResponse.ok) {
+        const { items } = await managedResponse.json();
+        for (const item of items) {
+          const workflowId = item._workflow?.id;
+          const existingOption = Array.from(tag_article_options.children).find(
+            (candidate) =>
+              candidate.raw?.name && candidate.raw.name === item.name ||
+              candidate.raw?.id && candidate.raw.id === item.id,
+          );
+          const option = existingOption || document.createElement("option");
+          option.raw = item;
+          option.value = `${item.title || "未命名的文章"} · ${
+            workflowLabel(item._workflow?.status)
+          }`;
+          option.dataset.workflowId = workflowId || "";
+          if (!existingOption) tag_article_options.appendChild(option);
+        }
+      }
+    }
+    Events.on("article_options_refresh", async () => {
+      await opArticleOptionsRefresh();
+    });
     Events.fire("article_options_refresh");
 
     const stf_selector = page.querySelector("#stf_selector");
@@ -566,7 +1039,7 @@ class AdminPage {
           formData.append("detail", detail);
           const response = await fetch("/set_staff", {
             method: "POST",
-            body: formData
+            body: formData,
           });
           const { success } = await response.json();
           if (success) {
@@ -596,8 +1069,8 @@ class AdminPage {
             method: "POST",
             body: JSON.stringify({
               key: dataMap.get("admin_key"),
-              name: currentStaff.name
-            })
+              name: currentStaff.name,
+            }),
           })).json();
           if (success) {
             staff_name_input.value = "";
@@ -640,8 +1113,10 @@ class AdminPage {
         option.value = staff.name;
         stf_selector.appendChild(option);
       }
-    };
-    Events.on("staff_options_refresh", async () => { await opStaffOptionsRefresh() });
+    }
+    Events.on("staff_options_refresh", async () => {
+      await opStaffOptionsRefresh();
+    });
     Events.fire("staff_options_refresh");
 
     const org_selector = page.querySelector("#org_selector");
@@ -670,8 +1145,8 @@ class AdminPage {
               key: dataMap.get("admin_key"),
               name: name,
               tel: tel,
-              detail: detail
-            })
+              detail: detail,
+            }),
           });
           const { success } = await response.json();
           if (success) {
@@ -701,8 +1176,8 @@ class AdminPage {
             method: "POST",
             body: JSON.stringify({
               key: dataMap.get("admin_key"),
-              name: currentOrg.name
-            })
+              name: currentOrg.name,
+            }),
           })).json();
           if (success) {
             org_name_input.value = "";
@@ -739,8 +1214,10 @@ class AdminPage {
         org_selector.appendChild(option);
       }
       await render_org_list();
-    };
-    Events.on("org_options_refresh", async () => { await opOrgOptionsRefresh() });
+    }
+    Events.on("org_options_refresh", async () => {
+      await opOrgOptionsRefresh();
+    });
     Events.fire("org_options_refresh");
 
     const set_tol = page.querySelector("#set_tol");
@@ -768,7 +1245,7 @@ class AdminPage {
               body: JSON.stringify({
                 key: dataMap.get("admin_key"),
                 name: name,
-              })
+              }),
             })).json();
             if (success) {
               mask.classList.add("hide");
@@ -840,7 +1317,7 @@ class AdminPage {
             formData.append("img", img);
             const { success } = await (await fetch("/set_award", {
               method: "POST",
-              body: formData
+              body: formData,
             })).json();
             if (success) {
               mask.classList.add("hide");
@@ -888,8 +1365,8 @@ class AdminPage {
               method: "POST",
               body: JSON.stringify({
                 key: dataMap.get("admin_key"),
-                name: name
-              })
+                name: name,
+              }),
             })).json();
             if (success) {
               mask.classList.add("hide");
@@ -936,8 +1413,8 @@ class AdminPage {
                 method: "POST",
                 body: JSON.stringify({
                   key: dataMap.get("admin_key"),
-                  uuid: tool.uuid
-                })
+                  uuid: tool.uuid,
+                }),
               })).json();
               if (success) {
                 box.remove();
@@ -958,7 +1435,7 @@ class AdminPage {
         tol_info.appendChild(box);
       }
       await get_tool_list();
-    };
+    }
     async function opAwardRefresh() {
       award_info.innerHTML = "";
       const response = await fetch("/award_list");
@@ -982,8 +1459,8 @@ class AdminPage {
                 method: "POST",
                 body: JSON.stringify({
                   key: dataMap.get("admin_key"),
-                  name: award.name
-                })
+                  name: award.name,
+                }),
               })).json();
               if (success) {
                 box.remove();
@@ -1004,7 +1481,7 @@ class AdminPage {
         box.appendChild(img);
         award_info.appendChild(box);
       }
-    };
+    }
     async function opVolunteerRefresh() {
       volunteer_info.innerHTML = "";
       const response = await fetch("/volunteer_list");
@@ -1040,8 +1517,8 @@ class AdminPage {
               body: JSON.stringify({
                 key: dataMap.get("admin_key"),
                 name: volunteer.name,
-                points: points.textContent
-              })
+                points: points.textContent,
+              }),
             })).json();
             if (success) {
               mask.classList.add("hide");
@@ -1066,8 +1543,8 @@ class AdminPage {
                 method: "POST",
                 body: JSON.stringify({
                   key: dataMap.get("admin_key"),
-                  name: volunteer.name
-                })
+                  name: volunteer.name,
+                }),
               })).json();
               if (success) {
                 box.remove();
@@ -1089,12 +1566,18 @@ class AdminPage {
         box.appendChild(button);
         volunteer_info.appendChild(box);
       }
-    };
-    Events.on("tools_refresh", async () => { await opToolsRefresh() });
+    }
+    Events.on("tools_refresh", async () => {
+      await opToolsRefresh();
+    });
     Events.fire("tools_refresh");
-    Events.on("award_refresh", async () => { await opAwardRefresh() });
+    Events.on("award_refresh", async () => {
+      await opAwardRefresh();
+    });
     Events.fire("award_refresh");
-    Events.on("volunteer_refresh", async () => { await opVolunteerRefresh() });
+    Events.on("volunteer_refresh", async () => {
+      await opVolunteerRefresh();
+    });
     Events.fire("volunteer_refresh");
 
     const refresh_req = page.querySelector("#refresh_req");
@@ -1104,8 +1587,8 @@ class AdminPage {
       const response = await fetch("/req_list", {
         method: "POST",
         body: JSON.stringify({
-          key: dataMap.get("admin_key")
-        })
+          key: dataMap.get("admin_key"),
+        }),
       });
       const listArray = await response.json();
       for (const req of listArray) {
@@ -1113,7 +1596,9 @@ class AdminPage {
         req_list.appendChild(req_ui);
       }
     };
-    Events.on("req_refresh", async () => { await refresh_req.click() });
+    Events.on("req_refresh", async () => {
+      await refresh_req.click();
+    });
     Events.fire("req_refresh");
 
     globalThis.admin_page = page;
@@ -1161,7 +1646,7 @@ class Discuss {
               key: dataMap.get("admin_key"),
               id: id,
               time: time,
-            })
+            }),
           })).json();
           if (success) {
             discuss.remove();
@@ -1207,13 +1692,13 @@ class Reply {
           const discuss_box = reply.parentElement;
           const raw = discuss_box.raw;
           // 从reply数组中删除当前的回复
-          raw.reply = raw.reply.filter(item => item.time !== time);
+          raw.reply = raw.reply.filter((item) => item.time !== time);
           const { success, value } = await (await fetch("/discuss", {
             method: "POST",
             body: JSON.stringify({
               key: dataMap.get("admin_key"),
-              data: raw
-            })
+              data: raw,
+            }),
           })).json();
           if (success) {
             const lastest_discuss = new Discuss(value);
@@ -1248,7 +1733,10 @@ class ArticleEntrance {
     span.textContent = data.title || "未命名的文章";
     const time = document.createElement("span");
     // 从createTime中提取时间 x月x日
-    time.textContent = new Date(data.createTime).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
+    time.textContent = new Date(data.createTime).toLocaleDateString("zh-CN", {
+      month: "numeric",
+      day: "numeric",
+    });
     entrance.appendChild(span);
     entrance.appendChild(time);
     entrance.classList.add("entrance");
@@ -1265,13 +1753,19 @@ class OrgUI {
     org_tel.textContent = data.tel;
     const label = document.createElement("label");
     const org_likes = document.createElement("input");
-    const likes_svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    const likes_svg = document.createElementNS(
+      "http://www.w3.org/2000/svg",
+      "svg",
+    );
     const org_likes_num = document.createElement("span");
     label.classList.add("likes_container");
     org_likes.type = "checkbox";
-    org_likes.checked = localStorage.getItem(data.name) === "true" ? true : false;
+    org_likes.checked = localStorage.getItem(data.name) === "true"
+      ? true
+      : false;
     likes_svg.setAttribute("viewBox", "0 0 32 32");
-    likes_svg.innerHTML = `<path d="M29.845,17.099l-2.489,8.725C26.989,27.105,25.804,28,24.473,28H11c-0.553,0-1-0.448-1-1V13  c0-0.215,0.069-0.425,0.198-0.597l5.392-7.24C16.188,4.414,17.05,4,17.974,4C19.643,4,21,5.357,21,7.026V12h5.002  c1.265,0,2.427,0.579,3.188,1.589C29.954,14.601,30.192,15.88,29.845,17.099z" id="XMLID_254_"></path><path d="M7,12H3c-0.553,0-1,0.448-1,1v14c0,0.552,0.447,1,1,1h4c0.553,0,1-0.448,1-1V13C8,12.448,7.553,12,7,12z   M5,25.5c-0.828,0-1.5-0.672-1.5-1.5c0-0.828,0.672-1.5,1.5-1.5c0.828,0,1.5,0.672,1.5,1.5C6.5,24.828,5.828,25.5,5,25.5z" id="XMLID_256_"></path>`;
+    likes_svg.innerHTML =
+      `<path d="M29.845,17.099l-2.489,8.725C26.989,27.105,25.804,28,24.473,28H11c-0.553,0-1-0.448-1-1V13  c0-0.215,0.069-0.425,0.198-0.597l5.392-7.24C16.188,4.414,17.05,4,17.974,4C19.643,4,21,5.357,21,7.026V12h5.002  c1.265,0,2.427,0.579,3.188,1.589C29.954,14.601,30.192,15.88,29.845,17.099z" id="XMLID_254_"></path><path d="M7,12H3c-0.553,0-1,0.448-1,1v14c0,0.552,0.447,1,1,1h4c0.553,0,1-0.448,1-1V13C8,12.448,7.553,12,7,12z   M5,25.5c-0.828,0-1.5-0.672-1.5-1.5c0-0.828,0.672-1.5,1.5-1.5c0.828,0,1.5,0.672,1.5,1.5C6.5,24.828,5.828,25.5,5,25.5z" id="XMLID_256_"></path>`;
     org_likes_num.textContent = data.likes;
     label.appendChild(org_likes);
     label.appendChild(likes_svg);
@@ -1293,9 +1787,9 @@ class OrgUI {
         const { success } = await (await fetch("/unlike_org", {
           method: "POST",
           headers: {
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
           },
-          body: JSON.stringify({ name: data.name })
+          body: JSON.stringify({ name: data.name }),
         })).json();
         if (success) {
           org_likes_num.textContent = parseInt(org_likes_num.textContent) - 1;
@@ -1307,9 +1801,9 @@ class OrgUI {
         const { success } = await (await fetch("/like_org", {
           method: "POST",
           headers: {
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
           },
-          body: JSON.stringify({ name: data.name })
+          body: JSON.stringify({ name: data.name }),
         })).json();
         if (success) {
           org_likes_num.textContent = parseInt(org_likes_num.textContent) + 1;
@@ -1323,7 +1817,9 @@ class ReqUI {
   constructor(data) {
     const req = document.createElement("req-box");
     req.raw = data;
-    data.resolved ? req.classList.add("resolved") : req.classList.add("unresolved");
+    data.resolved
+      ? req.classList.add("resolved")
+      : req.classList.add("unresolved");
     // 遍历data里除了uuid的所有属性
     for (const key in data) {
       if (key !== "uuid") {
@@ -1335,30 +1831,34 @@ class ReqUI {
     const button_box = document.createElement("div");
     const confirm_button = document.createElement("button");
     confirm_button.textContent = "通过";
-    data.resolved ? confirm_button.disabled = true : confirm_button.disabled = false;
+    data.resolved
+      ? confirm_button.disabled = true
+      : confirm_button.disabled = false;
     confirm_button.onclick = async () => {
       try {
         switch (data.source) {
           case "toolhouse": {
             await fetch("/toolhouse_req", {
-              method: "POST", body: JSON.stringify({
+              method: "POST",
+              body: JSON.stringify({
                 uuid: data.uuid,
                 select: data.select,
                 name: data.name,
                 phone: data.phone,
-                resolved: true
-              })
+                resolved: true,
+              }),
             });
             break;
           }
           case "signup": {
             await fetch("/signup_req", {
-              method: "POST", body: JSON.stringify({
+              method: "POST",
+              body: JSON.stringify({
                 uuid: data.uuid,
                 name: data.name,
                 phone: data.phone,
-                resolved: true
-              })
+                resolved: true,
+              }),
             });
             break;
           }
@@ -1381,8 +1881,8 @@ class ReqUI {
             method: "POST",
             body: JSON.stringify({
               key: dataMap.get("admin_key"),
-              uuid: data.uuid
-            })
+              uuid: data.uuid,
+            }),
           })).json();
           if (success) {
             req.remove();
@@ -1453,17 +1953,19 @@ const points_list = $("points_list");
 
 const tag_display = $("display");
 const mask = $("mask");
+const communityAccountTrigger = $("community_account_trigger");
+const communityAccountStatus = $("community_account_status");
 
 const dataMap = new Proxy(new Map(), {
   get(target, key, receiver) {
     switch (key) {
-      case 'set': {
+      case "set": {
         return (key, value) => {
           target.set(key, value);
           return true;
         };
       }
-      case 'delete': {
+      case "delete": {
         return (key) => {
           target.delete(key);
           return true;
@@ -1482,14 +1984,14 @@ const editor = new EditorJS({
   holder: reader,
   readOnly: true,
   autofocus: false,
-  logLevel: 'ERROR',
+  logLevel: "ERROR",
   tools: {
     header: {
       class: Header,
       config: {
-        placeholder: '输入一个标题',
+        placeholder: "输入一个标题",
         levels: [1, 2, 3, 4],
-        defaultLevel: 3
+        defaultLevel: 3,
       },
     },
     delimiter: {
@@ -1498,14 +2000,14 @@ const editor = new EditorJS({
     checklist: {
       class: Checklist,
       config: {
-        placeholder: '输入一个任务',
+        placeholder: "输入一个任务",
       },
     },
     quote: {
       class: Quote,
       config: {
-        quotePlaceholder: '输入引用',
-        captionPlaceholder: '作者',
+        quotePlaceholder: "输入引用",
+        captionPlaceholder: "作者",
       },
     },
     table: {
@@ -1518,17 +2020,18 @@ const editor = new EditorJS({
     warning: {
       class: Warning,
       config: {
-        titlePlaceholder: '标题',
-        messagePlaceholder: '消息',
+        titlePlaceholder: "标题",
+        messagePlaceholder: "消息",
       },
     },
     image: {
       class: ImageTool,
       config: {
-        types: "image/jpeg, image/jpg, image/png, image/gif, video/mp4, video/quicktime",
+        types:
+          "image/jpeg, image/jpg, image/png, image/gif, video/mp4, video/quicktime",
       },
-    }
-  }
+    },
+  },
 });
 function obType(arg) {
   let type = Object.prototype.toString.call(arg);
@@ -1538,7 +2041,7 @@ function obType(arg) {
   } else {
     return arg.constructor ? arg.constructor.name : "Object";
   }
-};
+}
 async function encoder(data, recursion = false) {
   try {
     const output = {};
@@ -1559,7 +2062,9 @@ async function encoder(data, recursion = false) {
             break;
           }
           case "ArrayBuffer": {
-            output[`${dataType}[${key}]`] = Array.from(new Uint8Array(data[key]));
+            output[`${dataType}[${key}]`] = Array.from(
+              new Uint8Array(data[key]),
+            );
             break;
           }
           case "Deno.KvU64":
@@ -1569,14 +2074,19 @@ async function encoder(data, recursion = false) {
           }
           case "BigInt64Array":
           case "BigUint64Array": {
-            output[`${dataType}[${key}]`] = Array.from(data[key], (value) => Number(value));
+            output[`${dataType}[${key}]`] = Array.from(
+              data[key],
+              (value) => Number(value),
+            );
             break;
           }
           case "Blob": {
             const reader = new FileReader();
             const promise = new Promise((resolve) => {
               reader.onload = (event) => {
-                output[`${dataType}[${key}]`] = Array.from(new Uint8Array(event.target.result));
+                output[`${dataType}[${key}]`] = Array.from(
+                  new Uint8Array(event.target.result),
+                );
                 resolve();
               };
             });
@@ -1629,11 +2139,13 @@ async function encoder(data, recursion = false) {
       }
     }
     await Promise.all(promises);
-    return recursion ? output : new TextEncoder().encode(JSON.stringify(output));
+    return recursion
+      ? output
+      : new TextEncoder().encode(JSON.stringify(output));
   } catch (error) {
     console.error(error);
   }
-};
+}
 async function deliver(data, recursion = false) {
   try {
     if (data instanceof Blob) data = await data.arrayBuffer();
@@ -1670,7 +2182,9 @@ async function deliver(data, recursion = false) {
         case "BigUint64Array": {
           // input[key]是一个数组，需要将数组中的每个元素转换为BigInt
           // 然后再转换为BigInt64Array或BigUint64Array
-          newValue = new globalThis[dataType](input[key].map((value) => BigInt(value)));
+          newValue = new globalThis[dataType](
+            input[key].map((value) => BigInt(value)),
+          );
           break;
         }
         case "Blob": {
@@ -1723,8 +2237,9 @@ async function deliver(data, recursion = false) {
   } catch (error) {
     console.error(error);
   }
-};
+}
 function display_show(el) {
+  tag_display.classList.remove("hide");
   const childrenArray = Array.from(tag_display.children);
   for (const child of childrenArray) {
     if (child.id !== "back") {
@@ -1732,7 +2247,7 @@ function display_show(el) {
     }
   }
   tag_display.appendChild(el);
-};
+}
 async function render_staff_list() {
   const response = await fetch("/staff_list");
   const staff = await response.json();
@@ -1750,11 +2265,11 @@ async function render_staff_list() {
     // 默认点击第一个
     staff_list.firstElementChild.click();
   }
-};
+}
 async function render_list() {
   const response = await fetch("/article_list", {
     method: "POST",
-    body: JSON.stringify({ count: 10 })
+    body: JSON.stringify({ count: 10 }),
   });
   const { article_list, nextCursor } = await response.json();
   tag_list.nextCursor = nextCursor;
@@ -1765,21 +2280,24 @@ async function render_list() {
       tag_list.appendChild(new ArticleEntrance(article));
     }
   }
-};
+}
 async function load_more_list() {
   const response = await fetch("/article_list", {
     method: "POST",
     body: JSON.stringify({
       count: 10,
-      nextCursor: tag_list.nextCursor
-    })
-  })
+      nextCursor: tag_list.nextCursor,
+    }),
+  });
   const { article_list, nextCursor } = await response.json();
   tag_list.nextCursor = nextCursor;
   meeting_list.nextCursor = nextCursor;
   for (const article of article_list) {
     if (article.isMeeting === true) {
-      meeting_list.insertBefore(new ArticleEntrance(article), meeting_list.firstChild);
+      meeting_list.insertBefore(
+        new ArticleEntrance(article),
+        meeting_list.firstChild,
+      );
     } else {
       tag_list.insertBefore(new ArticleEntrance(article), tag_list.firstChild);
     }
@@ -1807,22 +2325,25 @@ async function load_more_list() {
       }
     }
   }
-};
+}
 async function render_discuss() {
-  const response = await fetch("/discuss_list", { method: "POST", body: JSON.stringify({ count: 10 }) });
+  const response = await fetch("/discuss_list", {
+    method: "POST",
+    body: JSON.stringify({ count: 10 }),
+  });
   const { discuss_list, nextCursor } = await response.json();
   chat_zone.nextCursor = nextCursor;
   for (const discuss of discuss_list) {
     chat_zone.appendChild(new Discuss(discuss));
   }
-};
+}
 async function load_more_discuss() {
   const response = await fetch("/discuss_list", {
     method: "POST",
     body: JSON.stringify({
       count: 10,
-      nextCursor: chat_zone.nextCursor
-    })
+      nextCursor: chat_zone.nextCursor,
+    }),
   });
   const { discuss_list, nextCursor } = await response.json();
   chat_zone.nextCursor = nextCursor;
@@ -1839,7 +2360,7 @@ async function load_more_discuss() {
       idArray.push(child.id);
     }
   }
-};
+}
 async function get_tool_list() {
   const response = await fetch("/tool_list");
   const list = await response.json();
@@ -1856,7 +2377,7 @@ async function get_tool_list() {
     option.textContent = tool.name;
     toolhouse_select.appendChild(option);
   }
-};
+}
 async function get_award_list() {
   const response = await fetch("/award_list");
   const list = await response.json();
@@ -1876,7 +2397,7 @@ async function get_award_list() {
     box.appendChild(img);
     award_gallery.appendChild(box);
   }
-};
+}
 async function get_volunteer_list() {
   const response = await fetch("/volunteer_list");
   const list = await response.json();
@@ -1900,7 +2421,7 @@ async function get_volunteer_list() {
   for (const box of box_array) {
     points_list.appendChild(box);
   }
-};
+}
 async function render_org_list() {
   const response = await fetch("/org_list");
   const orgs = await response.json();
@@ -1912,12 +2433,13 @@ async function render_org_list() {
   }
   // 按照点赞数排序
   org_array.sort((a, b) => {
-    return b.lastElementChild.lastElementChild.textContent - a.lastElementChild.lastElementChild.textContent;
+    return b.lastElementChild.lastElementChild.textContent -
+      a.lastElementChild.lastElementChild.textContent;
   });
   for (const org of org_array) {
     org_list.appendChild(org);
   }
-};
+}
 function opLogin() {
   let awake = false;
   let count = 0;
@@ -1934,101 +2456,14 @@ function opLogin() {
     } else {
       count++;
       if (count === 10) {
-        const adminKey = dataMap.get("admin_key");
-        if (adminKey) {
-          const response = await fetch("/login", {
-            method: "POST",
-            body: JSON.stringify({ admin_key: adminKey })
-          });
-          const { success, msg = null } = await response.json();
-          if (success === 1) {
-            display_show(new AdminPage());
-          } else {
-            dataMap.delete("admin_key");
-            alert(msg);
-          }
+        const response = await fetch("/session");
+        const { identity } = await response.json();
+        if (["worker", "admin"].includes(identity.role)) {
+          globalThis.hlcIdentity = identity;
+          document.documentElement.style.setProperty("--limited", "1");
+          display_show(new AdminPage(identity));
         } else {
-          const key = prompt("请输入密钥");
-          if (!key) return;
-          const response = await fetch("/login", {
-            method: "POST",
-            body: JSON.stringify({ admin_key: key })
-          });
-          const { success, msg = null } = await response.json();
-          switch (success) {
-            case 1: {
-              dataMap.set("admin_key", key);
-              document.documentElement.style.setProperty("--limited", "1");
-              display_show(new AdminPage());
-              break;
-            }
-            case 4: {
-              const isSecure = location.origin.startsWith("https");
-              const protocol = isSecure ? "wss" : "ws";
-              const socket = new WebSocket(`${protocol}://${location.host}/socket`);
-              socket.queue = [];
-              socket.solver = new Map();
-              socket.reply = async (message) => {
-                try {
-                  if (socket.readyState !== 1) return;
-                  if (!message.randomStamp) {
-                    const randomStamp = Math.random().toString(36).slice(2);
-                    socket.queue.push(new Promise((resolve) => { socket.solver.set(randomStamp, resolve); }));
-                    message.randomStamp = randomStamp;
-                  }
-                  socket.send(await encoder(message));
-                  while (socket.queue.length > 0) { return await socket.queue.shift(); }
-                } catch (error) {
-                  console.error(error);
-                }
-              };
-              socket.onmessage = async (event) => {
-                const output = await deliver(event.data);
-                if (output.randomStamp && socket.solver.get(output.randomStamp)) {
-                  socket.solver.get(output.randomStamp)();
-                  socket.solver.delete(output.randomStamp);
-                }
-                switch (output.type) {
-                  case "open": {
-                    const key = prompt("请输入管理员密钥");
-                    if (!key) {
-                      socket.close();
-                      break;
-                    }
-                    const message = {
-                      type: "backup",
-                      key: key,
-                      randomStamp: output.randomStamp
-                    }
-                    socket.reply(message);
-                    break;
-                  }
-                  case "file": {
-                    const { name, data } = output;
-                    const blob = new Blob([new Uint8Array(data)], { type: "application/octet-stream" });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement("a");
-                    a.href = url;
-                    a.download = name;
-                    a.click();
-                    break;
-                  }
-                  case "error": {
-                    alert(output.msg);
-                    socket.close();
-                    break;
-                  }
-                }
-              };
-              socket.onclose = () => { };
-              socket.onerror = () => { };
-              break;
-            }
-            default: {
-              alert(msg);
-              break;
-            }
-          }
+          globalThis.dispatchEvent(new Event("hlc:account-request"));
         }
         clearTimeout(currentTimer);
         awake = false;
@@ -2036,7 +2471,7 @@ function opLogin() {
       }
     }
   });
-};
+}
 function opPullDownRefresh(el, callback) {
   let touchStartY = 0;
   let touchMoveY = 0;
@@ -2066,7 +2501,7 @@ function opPullDownRefresh(el, callback) {
         el.style.transform = `translateY(${pullDistance}px)`;
       } else {
         // 重置 transform 属性
-        el.style.transform = 'translateY(0)';
+        el.style.transform = "translateY(0)";
       }
     }
     return { moveY, moveSign };
@@ -2079,7 +2514,7 @@ function opPullDownRefresh(el, callback) {
         el.classList.remove("bounce");
         el.ontransitionend = null;
       };
-      el.style.transform = 'translateY(0)';
+      el.style.transform = "translateY(0)";
       if (moveY - startY > 100 && isFirstChildAtTop()) {
         callback();
       }
@@ -2092,7 +2527,12 @@ function opPullDownRefresh(el, callback) {
     touchMoveSign = true;
   });
   el.addEventListener("touchmove", (event) => {
-    ({ moveY: touchMoveY, moveSign: touchMoveSign } = handleMove(touchStartY, touchMoveY, touchMoveSign, event));
+    ({ moveY: touchMoveY, moveSign: touchMoveSign } = handleMove(
+      touchStartY,
+      touchMoveY,
+      touchMoveSign,
+      event,
+    ));
   });
   el.addEventListener("touchend", () => {
     touchMoveSign = handleEnd(touchStartY, touchMoveY, touchMoveSign);
@@ -2102,12 +2542,17 @@ function opPullDownRefresh(el, callback) {
     mouseMoveSign = true;
   });
   el.addEventListener("mousemove", (event) => {
-    ({ moveY: mouseMoveY, moveSign: mouseMoveSign } = handleMove(mouseDownY, mouseMoveY, mouseMoveSign, event));
+    ({ moveY: mouseMoveY, moveSign: mouseMoveSign } = handleMove(
+      mouseDownY,
+      mouseMoveY,
+      mouseMoveSign,
+      event,
+    ));
   });
   el.addEventListener("mouseup", () => {
     mouseMoveSign = handleEnd(mouseDownY, mouseMoveY, mouseMoveSign);
   });
-};
+}
 function opDisplayChange() {
   const observer = new MutationObserver((mutationsList) => {
     for (const mutation of mutationsList) {
@@ -2121,9 +2566,13 @@ function opDisplayChange() {
     }
   });
   observer.observe(tag_display, { childList: true });
-};
+}
 async function opIdClickEvents(event) {
   switch (event.target.id) {
+    case "scene_account_back": {
+      resetSceneAccountView({ focusTrigger: true });
+      break;
+    }
     case "cover_title": {
       event.target.parentElement.classList.add("hide");
       break;
@@ -2220,13 +2669,14 @@ async function opIdClickEvents(event) {
           // 添加一个回复
           const data = {
             value: chat_input.value,
-            time: Date.now()
+            time: Date.now(),
           };
           chat_page.target.reply.push(data);
           const response = await fetch("/discuss", {
-            method: "POST", body: JSON.stringify({
-              data: chat_page.target
-            })
+            method: "POST",
+            body: JSON.stringify({
+              data: chat_page.target,
+            }),
           });
           const { success, value } = await response.json();
           if (success) {
@@ -2245,9 +2695,12 @@ async function opIdClickEvents(event) {
           const data = {
             value: chat_input.value,
             time: Date.now(),
-            reply: []
+            reply: [],
           };
-          const response = await fetch("/discuss", { method: "POST", body: JSON.stringify({ data: data }) });
+          const response = await fetch("/discuss", {
+            method: "POST",
+            body: JSON.stringify({ data: data }),
+          });
           const { success, value } = await response.json();
           if (success) {
             chat_zone.appendChild(new Discuss(value));
@@ -2272,13 +2725,17 @@ async function opIdClickEvents(event) {
     }
     case "toolhouse_submit": {
       event.preventDefault();
-      if (toolhouse_select.value && toolhouse_input_name.value && toolhouse_input_phone.value) {
+      if (
+        toolhouse_select.value && toolhouse_input_name.value &&
+        toolhouse_input_phone.value
+      ) {
         const response = await fetch("/toolhouse_req", {
-          method: "POST", body: JSON.stringify({
+          method: "POST",
+          body: JSON.stringify({
             select: toolhouse_select.value,
             name: toolhouse_input_name.value,
-            phone: toolhouse_input_phone.value
-          })
+            phone: toolhouse_input_phone.value,
+          }),
         });
         const { success } = await response.json();
         if (success) {
@@ -2295,10 +2752,11 @@ async function opIdClickEvents(event) {
       event.preventDefault();
       if (signup_input_name.value && signup_input_phone.value) {
         const response = await fetch("/signup_req", {
-          method: "POST", body: JSON.stringify({
+          method: "POST",
+          body: JSON.stringify({
             name: signup_input_name.value,
-            phone: signup_input_phone.value
-          })
+            phone: signup_input_phone.value,
+          }),
         });
         const { success } = await response.json();
         if (success) {
@@ -2312,31 +2770,32 @@ async function opIdClickEvents(event) {
       break;
     }
     case "delete_article": {
-      if (globalThis.admin_page.currentRawData.id) {
+      const workflowId = globalThis.admin_page.currentRawData._workflow?.id;
+      if (workflowId) {
         const response = confirm("是否删除该文章？");
         if (response) {
           try {
             mask.classList.remove("hide");
             const { success } = await (await fetch("/delete_article", {
-              method: "POST", body: JSON.stringify({
-                key: dataMap.get("admin_key"),
-                createTime: globalThis.admin_page.currentRawData.createTime,
-                id: globalThis.admin_page.currentRawData.id
-              })
+              method: "POST",
+              body: JSON.stringify({
+                id: workflowId,
+              }),
             })).json();
             if (success) {
-              globalThis.admin_page.article_selector.removeChild(globalThis.admin_page.article_selector.selectedOptions[0]);
-              const childrenArray = Array.from(tag_list.children);
-              for (const child of childrenArray) {
-                if (child.raw && child.raw.id === globalThis.admin_page.currentRawData.id) {
-                  tag_list.removeChild(child);
-                }
-              }
-              globalThis.admin_page.currentRawData = { blocks: [], createTime: 0, time: 0, version: "", title: "" };
+              globalThis.admin_page.currentRawData = {
+                blocks: [],
+                createTime: 0,
+                time: 0,
+                version: "",
+                title: "",
+              };
               globalThis.admin_page.currentArticleTitle.value = "";
               await globalThis.admin_page.editor.clear();
+              globalThis.admin_page.updateWorkflowStatus();
+              Events.fire("article_options_refresh");
               mask.classList.add("hide");
-              alert("删除成功");
+              alert("草稿已删除");
             } else {
               mask.classList.add("hide");
               alert("删除失败");
@@ -2347,10 +2806,7 @@ async function opIdClickEvents(event) {
           }
         }
       } else {
-        globalThis.admin_page.currentRawData = { blocks: [], createTime: 0, time: 0, version: "", title: "" };
-        globalThis.admin_page.currentArticleTitle.value = "";
-        await globalThis.admin_page.editor.clear();
-        alert("删除成功");
+        alert("当前内容尚未形成可删除的草稿");
       }
       break;
     }
@@ -2359,58 +2815,26 @@ async function opIdClickEvents(event) {
         mask.classList.remove("hide");
         const outputData = await globalThis.admin_page.editor.save();
         globalThis.admin_page.currentRawData.blocks = outputData.blocks;
-        globalThis.admin_page.currentRawData.createTime = globalThis.admin_page.currentRawData.createTime === 0 ? Date.now() : globalThis.admin_page.currentRawData.createTime;
+        globalThis.admin_page.currentRawData.createTime =
+          globalThis.admin_page.currentRawData.createTime === 0
+            ? Date.now()
+            : globalThis.admin_page.currentRawData.createTime;
         globalThis.admin_page.currentRawData.time = outputData.time;
         globalThis.admin_page.currentRawData.version = outputData.version;
-        globalThis.admin_page.currentRawData.title = globalThis.admin_page.currentArticleTitle.value;
+        globalThis.admin_page.currentRawData.title =
+          globalThis.admin_page.currentArticleTitle.value;
         const { success, data } = await (await fetch("/save_article", {
-          method: "POST", body: JSON.stringify({
-            key: dataMap.get("admin_key"),
+          method: "POST",
+          body: JSON.stringify({
             data: globalThis.admin_page.currentRawData,
-          })
+          }),
         })).json();
         if (success) {
           globalThis.admin_page.currentRawData = data;
+          globalThis.admin_page.updateWorkflowStatus();
           Events.fire("article_options_refresh");
-
-          if (data.isMeeting === true) {
-            // 通过id判断meeting_list里是否有当前文章
-            const childrenArray = Array.from(meeting_list.children);
-            let has = false;
-            for (const child of childrenArray) {
-              if (child.raw && child.raw.id === data.id) {
-                // 如果有，就替换
-                has = true;
-                const newEntrance = new ArticleEntrance(data);
-                child.replaceWith(newEntrance);
-                break;
-              }
-            }
-            if (!has) {
-              // 如果没有，就插入
-              meeting_list.insertBefore(new ArticleEntrance(data), meeting_list.firstChild);
-            }
-          } else {
-            // 通过id判断tag_list里是否有当前文章
-            const childrenArray = Array.from(tag_list.children);
-            let has = false;
-            for (const child of childrenArray) {
-              if (child.raw && child.raw.id === data.id) {
-                // 如果有，就替换
-                has = true;
-                const newEntrance = new ArticleEntrance(data);
-                child.replaceWith(newEntrance);
-                break;
-              }
-            }
-            if (!has) {
-              // 如果没有，就插入
-              tag_list.insertBefore(new ArticleEntrance(data), tag_list.firstChild);
-            }
-          }
-
           mask.classList.add("hide");
-          alert("保存成功");
+          alert("草稿已保存，公开页面尚未更新");
         } else {
           mask.classList.add("hide");
           alert("保存失败");
@@ -2421,8 +2845,55 @@ async function opIdClickEvents(event) {
       }
       break;
     }
+    case "submit_article":
+    case "publish_article":
+    case "archive_article": {
+      const workflow = globalThis.admin_page.currentRawData._workflow;
+      if (!workflow?.id) {
+        alert("请先保存草稿");
+        break;
+      }
+      const endpoint = `/${event.target.id}`;
+      const verb = event.target.id === "submit_article"
+        ? "提交审核"
+        : event.target.id === "publish_article"
+        ? "发布"
+        : "归档";
+      if (
+        ["publish_article", "archive_article"].includes(event.target.id) &&
+        !confirm(`确认${verb}当前内容？`)
+      ) break;
+      try {
+        mask.classList.remove("hide");
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: workflow.id }),
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          alert(result.msg || `${verb}失败`);
+          break;
+        }
+        globalThis.admin_page.currentRawData._workflow = {
+          id: result.workflow.id,
+          status: result.workflow.status,
+          revision: result.workflow.revision,
+          authorId: result.workflow.authorId,
+        };
+        globalThis.admin_page.updateWorkflowStatus();
+        Events.fire("article_options_refresh");
+        alert(`${verb}成功`);
+      } catch (error) {
+        console.error(`${verb}失败`, error);
+        alert(`${verb}失败`);
+      } finally {
+        mask.classList.add("hide");
+      }
+      break;
+    }
   }
-};
+}
 function opClassClickEvents(event) {
   switch (event.target.className) {
     case "entrance": {
@@ -2436,13 +2907,23 @@ function opClassClickEvents(event) {
       break;
     }
   }
-};
+}
 
 addEventListener("click", opIdClickEvents);
 addEventListener("click", opClassClickEvents);
+globalThis.hlcLegacyContentReady = true;
+globalThis.dispatchEvent(new Event("hlc:legacy-content-ready"));
 
 // 处理登录
 opLogin();
+
+if (communityAccountTrigger) {
+  fetch("/session").then((response) => response.json()).then(({ identity }) => {
+    rememberCommunityIdentity(identity);
+  }).catch(() => {
+    rememberCommunityIdentity(null);
+  });
+}
 
 // 处理文章下拉刷新
 opPullDownRefresh(tag_list, load_more_list);

@@ -1,0 +1,26 @@
+export const SHENGDENG_FOCUS_AREA = Object.freeze({
+  type: "Feature",
+  properties: Object.freeze({
+    name: "圣灯社区高精度展示范围（初版）",
+    boundaryKind: "product-focus-area",
+    administrativeBoundary: false,
+    coordinateSystem: "WGS84",
+    purpose: "限定圣灯社区高精度艺术模型的初版加载范围",
+    draftedBy: "用户圈定初版范围",
+    draftedAt: "2026-08-02T13:08:40+08:00",
+    version: 1,
+    status: "initial-working-scope",
+  }),
+  geometry: Object.freeze({
+    type: "Polygon",
+    coordinates: Object.freeze([
+      Object.freeze([
+        Object.freeze([104.4162562299503, 31.649646683730545]),
+        Object.freeze([104.41940071800288, 31.6490157529815]),
+        Object.freeze([104.41859606786149, 31.64580701945781]),
+        Object.freeze([104.41547275481263, 31.64606840505384]),
+        Object.freeze([104.4162562299503, 31.649646683730545]),
+      ]),
+    ]),
+  }),
+});
