@@ -34,4 +34,4 @@ jobs:
         env:
           VITE_OPENFX_BUILD_HASH: ${{ steps.web-build-meta.outputs.hash }}
           VITE_OPENFX_BUILD_TIME: ${{ steps.web-build-meta.outputs.time }}
-        run: deno task --config entry/web/deno.json build
+        run: deno task --config web/deno.json build

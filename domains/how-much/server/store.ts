@@ -1,6 +1,5 @@
 import type { PriceRecord, ProductEntry } from "../core/types.ts";
-import { getDomainKv } from "../../_shared/kv.ts";
-import type { ScopedKv } from "../../_shared/kv.ts";
+import { getDomainKv, type ScopedKv } from "./kv.ts";
 
 export interface HowMuchStore {
   addRecord(

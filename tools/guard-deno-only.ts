@@ -2,7 +2,7 @@ const rootUrl = new URL("../", import.meta.url);
 
 const configFiles = [
   "deno.json",
-  "entry/web/deno.json",
+  "web/deno.json",
   ".github/workflows/ci.yml",
 ];
 

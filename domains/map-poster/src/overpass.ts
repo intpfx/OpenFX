@@ -1,4 +1,4 @@
-import type { Coord, GeoFeature } from "./types.ts";
+import type { Coord, FetchResult, GeoFeature } from "./types.ts";
 
 const OVERPASS_URL = "https://overpass-api.de/api/interpreter";
 const TIMEOUT = 30;
@@ -100,13 +100,6 @@ function parseResponse(
   }
 
   return { roads, water, parks };
-}
-
-export interface FetchResult {
-  roads: GeoFeature[];
-  water: GeoFeature[];
-  parks: GeoFeature[];
-  bbox: { minLon: number; minLat: number; maxLon: number; maxLat: number };
 }
 
 export async function fetchMapData(

@@ -5,7 +5,7 @@ OpenFX 是一个以 TypeScript 为主的个人项目集合。当前主产品是�
 
 ## 当前产品
 
-`entry/web/` 提供 VitePlus + React 客户端和 Nitro 服务端，部署目标为 Deno
+`web/` 提供 VitePlus + React 客户端和 Nitro 服务端，部署目标为 Deno
 Deploy。首页不是本机文件浏览器，也不是营销页，而是由应用自管理的文件库：
 
 - 用户通过文件选择器、拖放、PWA 文件处理器或系统分享入口显式导入内容；
@@ -56,11 +56,11 @@ stored 和 deflate 条目；未知变体仍作为普通文件安全保存。这�
 原 `domains/LivpExplorer/` 是从 ChronoFrame 导入并改名的独立自托管照片库，使用 Nuxt
 4、Vue、SQLite/Drizzle 和独立 pnpm workspace。它从未成为 Web 首页的运行依赖。
 
-可迁移的本地照片能力已经由 `entry/web/src/file-library/` 和
-`domains/_shared/livp-codec.ts` 接管：同名配对、Motion Photo、Live Photo
-交互、EXIF/GPS、 相册/收藏/派生视图、可恢复处理任务，以及 LIVP 双格式导入和 canonical
-导出均不再依赖 原 Nuxt 应用。迁入实现使用浏览器 File、Worker 和 OPFS 边界，没有复制 Vue
-页面、Drizzle 模型或 SQLite 服务。
+可迁移的本地照片能力已经由 `web/src/file-library/` 和 `domains/_shared/livp-codec.ts`
+接管：同名配对、Motion Photo、Live Photo 交互、EXIF/GPS、
+相册/收藏/派生视图、可恢复处理任务，以及 LIVP 双格式导入和 canonical 导出均不再依赖 原
+Nuxt 应用。迁入实现使用浏览器 File、Worker 和 OPFS 边界，没有复制 Vue 页面、Drizzle
+模型或 SQLite 服务。
 
 分享/reaction、账号体系、SQLite、S3/OpenList、服务端公开 URL、反向地理编码供应商和
 管理后台属于另一个多用户产品，不迁入本地优先文件库。若未来需要同步，应作为可选
@@ -78,15 +78,14 @@ domains/          独立产品、历史项目和共享能力
   BewlyScript/    B 站桌面原站美化 userscript
   e/              运行时无关的 Agent 执行框架
   media-player/   文件库专用最小播放器
-entry/
-  web/            OPFS 文件库与 React + Nitro Web 入口
+web/              OPFS 文件库与 React + Nitro Web 产品
 ```
 
 主要 domain：
 
 | Domain                | 定位                                     | 与 Web 首页的关系        |
 | --------------------- | ---------------------------------------- | ------------------------ |
-| `_shared`             | KV、编解码、二维码、空间索引等共享模块   | 按需被 Web/domain 引用   |
+| `_shared`             | 文件库 LIVP 容器编解码边界               | 被 Web 文件库引用        |
 | `BewlyScript`         | Vue userscript，输出单文件安装包         | 内置 App 与安装入口      |
 | `chinagas-wms-qrcode` | WMS 物料二维码 userscript                | 内置 App 介绍            |
 | `costing-assistant`   | 浏览器本地工程计价助手                   | 动态预览 App             |
@@ -99,8 +98,19 @@ entry/
 | `media-player`        | OPFS 视频读取、Video.js 控件和播放引擎   | 文件能力，不重复作为 App |
 | `wanone`              | 早期静态站点纪念项目                     | 动态预览 App             |
 
-Web 文件库还索引 Smartisax、LiveSystem 和 WanderingPlan 等外部项目；是否公开、
-是否只做介绍以及链接地址，以 `entry/web/content/library-apps.json` 为准。
+Web 文件库还索引 Smartisax、LiveSystem 和 WanderingPlan 等外部项目。App 的公开文案、
+preview 和链接保存在 `web/content/library-apps.json`；ID、详情 renderer 与嵌入策略由
+`web/library-app-catalog.ts` 统一校验。
+
+Web 入口的几个深 Module 分别承担稳定边界：
+
+- `src/file-library/file-library-session.ts` 管理 OPFS 加载、用户 mutation、存储状态、
+  照片/指纹/视频缩略图队列，以及文件处理器和播放器消息；React 首页只订阅 snapshot；
+- `library-app-catalog.ts` 将 App 内容清单和 renderer 能力收成一份可校验 catalog；
+- `publication-targets.ts` 是 Nitro 静态资产、Vite
+  开发代理和构建前准备目标的共同事实源；
+- `domains/map-poster/src/web-service.ts` 管理地图海报输入与生成 use case，
+  `viewport.ts` 管理纯 Web Mercator/瓦片计算，Web 服务层只注入 Nominatim adapter。
 
 ## 开发
 
@@ -115,10 +125,22 @@ deno task check
 - Vite 开发端口：`http://localhost:5501`
 - Nitro 开发端口：`http://localhost:3000`
 - 根 `deno.lock` 管理 Web 与 Deno workspace 依赖。
-- 根目录和 `entry/web/` 只以各自 `deno.json` 为配置源；根 `package.json` 与
+- 根目录和 `web/` 只以各自 `deno.json` 为配置源；根 `package.json` 与
   `package-lock.json` 已移除，并由 `deno task guard:deno-only` 防止回归。
 - Web 客户端通过 Deno 脚本调用 VitePlus Core，不依赖 `vp` 对 `package.json` workspace
   的发现行为。
+
+根 `deno.json` 同时保存 Deno Deploy 的构建与动态运行时配置。本机 Deno 2.9.5 可直接
+上传当前 checkout 并创建预览 revision：
+
+```bash
+deno task web:deploy
+```
+
+命令从仓库根上传源码，在 Deploy 构建环境运行 `deno task web:build`，并以
+`web/.output/server/index.ts` 作为动态入口。根配置固定发布到
+`universes/openfx`；只有明确准备 切换生产流量时才追加 `--prod`。CI 或 Agent 使用
+`DENO_DEPLOY_TOKEN`，并追加 `--json --non-interactive`。
 
 这里的“统一”为根产品工具链收口，不是删除所有 domain 的包清单。下列独立产品仍由其
 上游工具链读取各自的 `package.json` 和锁文件，因此继续保留：
@@ -180,6 +202,8 @@ Map Poster 生产环境需要：
 
 - Perry 桌面端、Proxy、Downip、LivpExplorer 与完整 PlaysVideo domain 已从当前项目移除；
 - PlaysVideo 仍被使用的最小发布引擎已固定在 `domains/media-player/vendor/`；
+- `_shared` 中没有产品调用的历史工具已删除；只服务 `how-much` 的 KV adapter 已回归其
+  domain，`livp-codec.ts` 按文件库事实边界保留；
 - 历史设计稿、重复上游说明和旧清理报告已在文档收口时删除。
 
 ## 协议与来源

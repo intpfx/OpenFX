@@ -4,25 +4,26 @@
   "publish": false,
   "nodeModulesDir": "auto",
   "workspace": [
-    "./entry/web",
+    "./web",
     "./domains/e"
   ],
   "tasks": {
     "fmt": "deno fmt .",
     "lint": "deno lint .",
     "guard:deno-only": "deno run -A ./tools/guard-deno-only.ts",
-    "test": "deno test --allow-env --allow-read=entry/web/src/App.tsx,entry/web/src/file-library/FileLibraryHomepage.tsx,entry/web/src/file-library/file-library.css,entry/web/src/styles.css,entry/web/deno.json,entry/web/nitro.config.ts,entry/web/vite.config.ts,entry/web/public/map-poster/tokyo-japanese-ink.webp,entry/web/public/site.webmanifest,entry/web/public/sw.js,domains/hlc/public/hlc,deno.json,entry/web/index.html,entry/web/public/theme-bootstrap.js domains/e/tests entry/web/tests domains/_shared/tests",
-    "check": "deno fmt --check . && deno lint . && deno task guard:deno-only && deno test --allow-env --allow-read=entry/web/src/App.tsx,entry/web/src/file-library/FileLibraryHomepage.tsx,entry/web/src/file-library/file-library.css,entry/web/src/styles.css,entry/web/deno.json,entry/web/nitro.config.ts,entry/web/vite.config.ts,entry/web/public/map-poster/tokyo-japanese-ink.webp,entry/web/public/site.webmanifest,entry/web/public/sw.js,domains/hlc/public/hlc,deno.json,entry/web/index.html,entry/web/public/theme-bootstrap.js domains/e/tests entry/web/tests domains/_shared/tests",
-    "web:dev": "deno task --config entry/web/deno.json dev",
-    "web:build": "deno task --config entry/web/deno.json build",
-    "web:preview": "deno task --config entry/web/deno.json preview"
+    "test": "deno test --allow-env --allow-read=web/src/App.tsx,web/src/file-library/FileLibraryHomepage.tsx,web/src/file-library/file-library.css,web/src/styles.css,web/deno.json,web/nitro.config.ts,web/vite.config.ts,web/public/map-poster/tokyo-japanese-ink.webp,web/public/site.webmanifest,web/public/sw.js,domains/hlc/public/hlc,deno.json,web/index.html,web/public/theme-bootstrap.js domains/e/tests web/tests",
+    "check": "deno fmt --check . && deno lint . && deno task guard:deno-only && deno test --allow-env --allow-read=web/src/App.tsx,web/src/file-library/FileLibraryHomepage.tsx,web/src/file-library/file-library.css,web/src/styles.css,web/deno.json,web/nitro.config.ts,web/vite.config.ts,web/public/map-poster/tokyo-japanese-ink.webp,web/public/site.webmanifest,web/public/sw.js,domains/hlc/public/hlc,deno.json,web/index.html,web/public/theme-bootstrap.js domains/e/tests web/tests",
+    "web:dev": "deno task --config web/deno.json dev",
+    "web:build": "deno task --config web/deno.json build",
+    "web:preview": "deno task --config web/deno.json preview",
+    "web:deploy": "deno deploy ."
   },
   "fmt": {
     "lineWidth": 88,
     "semiColons": true,
     "singleQuote": false,
     "exclude": [
-      "entry/web/public/pdq/"
+      "web/public/pdq/"
     ]
   },
   "lint": {
@@ -37,19 +38,14 @@
     "exclude": [
       "domains/wanone/",
       "domains/chinagas-wms-qrcode/",
-      "entry/web/public/bewlyscript/",
-      "entry/web/src/",
-      "domains/_shared/opfs-finder.ts",
-      "domains/_shared/island-notice.ts",
-      "domains/_shared/idb-engine.ts",
-      "domains/_shared/ffmpeg-pipeline.ts",
-      "domains/_shared/opfs-engine.ts",
+      "web/public/bewlyscript/",
+      "web/src/",
       "domains/costing-assistant/",
       "domains/finlyzer/",
       "domains/hlc/",
       "domains/BewlyScript/",
       "domains/media-player/",
-      "entry/web/public/pdq/"
+      "web/public/pdq/"
     ]
   },
   "exclude": [
@@ -57,11 +53,11 @@
     "domains/gasmap",
     "domains/costing-assistant/",
     "domains/finlyzer/",
-    "entry/web/public/bewlyscript/",
+    "web/public/bewlyscript/",
     "domains/hlc/",
     "domains/BewlyScript/",
     "domains/media-player/",
-    "entry/web/public/pdq/",
+    "web/public/pdq/",
     ".sisyphus"
   ],
   "imports": {
@@ -79,6 +75,24 @@
     "react-dom/": "npm:react-dom@^19.1.0/"
   },
   "deploy": {
-    "org": "universes"
+    "org": "universes",
+    "app": "openfx",
+    "build": "deno task web:build",
+    "runtime": {
+      "mode": "dynamic",
+      "entrypoint": "web/.output/server/index.ts",
+      "cwd": "."
+    },
+    "exclude": [
+      ".git/",
+      ".worktrees/",
+      "graphify-out/",
+      "node_modules/",
+      "web/.client-dist/",
+      "web/.hlc-public/",
+      "web/.nitro/",
+      "web/.output/",
+      "web/.vite/"
+    ]
   }
 }

@@ -2,7 +2,7 @@ const sourceHtmlUrl = new URL("../source/index.html", import.meta.url);
 const sourceRootUrl = new URL("../source/", import.meta.url);
 const shellRootUrl = new URL("../public/hlc/", import.meta.url);
 const outputRootUrl = new URL(
-  "../../../entry/web/.hlc-public/",
+  "../../../web/.hlc-public/",
   import.meta.url,
 );
 
@@ -151,5 +151,5 @@ export async function prepareHlcDisplayApp() {
 
 if (import.meta.main) {
   await prepareHlcDisplayApp();
-  console.log("HLC display app prepared at entry/web/.hlc-public");
+  console.log("HLC display app prepared at web/.hlc-public");
 }

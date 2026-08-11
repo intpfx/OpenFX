@@ -13,7 +13,7 @@ import { r } from './utils'
 const buildDir = r('dist/.build/contentScripts')
 const outputFile = r('dist/BewlyScript.user.js')
 const publicOutputFile = r('public/bewlyscript/BewlyScript.user.js')
-const webPublicOutputFile = r('../../entry/web/public/bewlyscript/BewlyScript.user.js')
+const webPublicOutputFile = r('../../web/public/bewlyscript/BewlyScript.user.js')
 
 async function readText(path: string): Promise<string> {
   return await readFile(path, 'utf8')

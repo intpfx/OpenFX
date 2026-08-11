@@ -3,6 +3,11 @@ export interface Coord {
   lon: number;
 }
 
+export interface MapPosterResolvedPlace {
+  city: string;
+  country: string;
+}
+
 export interface Theme {
   name: string;
   description: string;

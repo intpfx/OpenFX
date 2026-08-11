@@ -1,0 +1,103 @@
+import rawConfig from "./content/library-apps.json" with { type: "json" };
+
+export type LibraryAppLivePreview = {
+  src: string;
+  title: string;
+  sandbox?: string;
+};
+
+export type LibraryAppProvenance = {
+  origin: { label: string; href: string };
+  changes: string;
+  differences: string;
+};
+
+export type LibraryAppLink = {
+  label: string;
+  href: string;
+  download?: string;
+};
+
+const LIBRARY_APP_RENDERERS = {
+  "e-agent-framework": { kind: "component", component: "agent-framework" },
+  "how-much-this": { kind: "component", component: "how-much" },
+  hlc: { kind: "embedded", layout: "fill", sandbox: "preview" },
+  "wanone-memorial": { kind: "embedded" },
+  "chinagas-wms-qrcode": { kind: "component", component: "chinagas" },
+  bewlyscript: { kind: "component", component: "bewlyscript" },
+  gasmap: { kind: "embedded" },
+  finlyzer: { kind: "embedded" },
+  "costing-assistant": { kind: "embedded" },
+  "map-poster": { kind: "component", component: "map-poster" },
+  smartisax: { kind: "component", component: "smartisax" },
+  "live-system": { kind: "component", component: "live-system" },
+  "wandering-plan": { kind: "component", component: "wandering-plan" },
+} as const;
+
+export type LibraryAppId = keyof typeof LIBRARY_APP_RENDERERS;
+export type LibraryAppRenderer = typeof LIBRARY_APP_RENDERERS[LibraryAppId];
+
+export type LibraryAppDefinition = {
+  id: LibraryAppId;
+  hidden?: boolean;
+  name: string;
+  description: string;
+  coverDescription?: string;
+  tech: string[];
+  sourcePath: string;
+  preview?: LibraryAppLivePreview;
+  provenance?: LibraryAppProvenance;
+  links?: LibraryAppLink[];
+};
+
+export const LIBRARY_APP_IDS = Object.freeze(
+  Object.keys(LIBRARY_APP_RENDERERS) as LibraryAppId[],
+);
+export const LIBRARY_APP_COUNT = LIBRARY_APP_IDS.length;
+
+export function isLibraryAppId(appId: string): appId is LibraryAppId {
+  return Object.hasOwn(LIBRARY_APP_RENDERERS, appId);
+}
+
+function createCatalog(): LibraryAppDefinition[] {
+  const apps = rawConfig.apps as unknown as Array<
+    Omit<LibraryAppDefinition, "id"> & { id: string }
+  >;
+  const configuredIds = apps.map((app) => app.id);
+  const duplicates = configuredIds.filter((id, index) =>
+    configuredIds.indexOf(id) !== index
+  );
+  const unknown = configuredIds.filter((id) => !isLibraryAppId(id));
+  const missing = LIBRARY_APP_IDS.filter((id) => !configuredIds.includes(id));
+  if (duplicates.length || unknown.length || missing.length) {
+    throw new Error(
+      `OpenFX App catalog 不一致：重复=${duplicates.join(",") || "无"}，` +
+        `未知=${unknown.join(",") || "无"}，缺失=${missing.join(",") || "无"}`,
+    );
+  }
+  for (const app of apps) {
+    if (
+      isLibraryAppId(app.id) &&
+      LIBRARY_APP_RENDERERS[app.id].kind === "embedded" && !app.preview
+    ) {
+      throw new Error(`嵌入式 OpenFX App 缺少同源 preview：${app.id}`);
+    }
+  }
+  return apps as LibraryAppDefinition[];
+}
+
+export const LIBRARY_APPS = Object.freeze(createCatalog());
+
+export function getLibraryApp(appId: LibraryAppId): LibraryAppDefinition {
+  const app = LIBRARY_APPS.find((candidate) => candidate.id === appId);
+  if (!app) throw new Error(`OpenFX App catalog 缺少条目：${appId}`);
+  return app;
+}
+
+export function getLibraryAppRenderer(appId: LibraryAppId): LibraryAppRenderer {
+  return LIBRARY_APP_RENDERERS[appId];
+}
+
+export function listHiddenLibraryApps(): LibraryAppDefinition[] {
+  return LIBRARY_APPS.filter((app) => app.hidden);
+}

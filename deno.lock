@@ -2952,7 +2952,7 @@
           "jsr:@std/assert@^1.0.19"
         ]
       },
-      "entry/web": {
+      "web": {
         "dependencies": [
           "jsr:@std/expect@^1.0.17",
           "npm:@phosphor-icons/react@^2.1.10",

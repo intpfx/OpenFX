@@ -1,5 +1,5 @@
 import type { Coord, Theme } from "./types.ts";
-import type { FetchResult } from "./overpass.ts";
+import type { FetchResult } from "./types.ts";
 
 export interface RenderOptions {
   city: string;

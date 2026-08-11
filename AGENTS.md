@@ -38,7 +38,7 @@ OpenFX 是个人项目集合 monorepo。Agent 应以实际源码、配置、测�
 
 - **Web**：VitePlus + React 客户端，Nitro 服务端，Deno Deploy 生产目标。
 - **Root tooling**：优先 Deno 原生命令与根 `deno.lock`。
-- **Root/Web manifests**：根目录与 `entry/web/` 只使用 `deno.json`；不要恢复根
+- **Root/Web manifests**：根目录与 `web/` 只使用 `deno.json`；不要恢复根
   `package.json`、`package-lock.json` 或把 Web 启动重新绑定到 Node workspace 发现。
 - **Independent domains**：允许保留自身 Bun/pnpm/Nuxt/Electron 工具链，不强行并入根
   workspace。
@@ -49,19 +49,22 @@ OpenFX 是个人项目集合 monorepo。Agent 应以实际源码、配置、测�
 
 关键位置：
 
-- `entry/web/src/App.tsx`
-- `entry/web/src/styles.css`
-- `entry/web/src/file-library/`
-- `entry/web/content/library-apps.json`
-- `entry/web/library-apps.ts`
-- `entry/web/library-app-panels.ts`
-- `entry/web/server/routes/`
-- `entry/web/tests/`
+- `web/src/App.tsx`
+- `web/src/styles.css`
+- `web/src/file-library/`
+- `web/content/library-apps.json`
+- `web/library-app-catalog.ts`
+- `web/publication-targets.ts`
+- `web/server/routes/`
+- `web/tests/`
 
 规则：
 
 - 首页是可直接使用的 OPFS 文件库，不是营销落地页，也不浏览用户本机目录。
-- App 清单、面板 ID、`App.tsx` 渲染分支和测试必须保持一致。
+- App 内容、catalog renderer、`App.tsx` 组件分支和测试必须保持一致；不要恢复平行的 App
+  ID 列表。
+- 文件库加载、mutation、存储估算、后台照片/指纹/缩略图任务和浏览器事件统一通过
+  `file-library-session.ts`；React 页面不重新拼装这些工作流。
 - App 有真实同源页面时才使用动态 preview；否则使用稳定纯色色块和大字号名称。
 - 文件源字节保存在 OPFS；索引迁移不得无故重写源文件。
 - 预览能力失败时应降级为原件下载，不丢弃导入内容。
@@ -84,6 +87,8 @@ OpenFX 是个人项目集合 monorepo。Agent 应以实际源码、配置、测�
 - 修改嵌套路由时检查相对 import；生产 build 比 dev 更严格。
 - 当前公开边界为 `/api/health`、`/api/how-much/*`、
   `/api/map-poster/render`、`/media-player/*` 和 `/hlc/*`。
+- 静态发布目录、缓存、开发代理和构建前准备统一登记在 `publication-targets.ts`；
+  Nitro/Vite/构建脚本只实现各自 adapter。
 
 ## Domain rules
 
@@ -108,7 +113,7 @@ OpenFX 是个人项目集合 monorepo。Agent 应以实际源码、配置、测�
 - `src/contentScripts/mount-app.ts` 是生产/开发共享挂载边界；`src/runtime/` 保存可注入
   浏览器运行时；`src/dev/` 保存 Scenario Lab。
 - 生成 userscript 后同步 `domains/BewlyScript/public/bewlyscript/BewlyScript.user.js` 与
-  `entry/web/public/bewlyscript/BewlyScript.user.js`。
+  `web/public/bewlyscript/BewlyScript.user.js`。
 - 主要验证：在 domain 内运行 `bun run check:userscript`。
 
 ### `domains/media-player`
@@ -121,6 +126,9 @@ OpenFX 是个人项目集合 monorepo。Agent 应以实际源码、配置、测�
 
 - SVG 是 canonical 输出，渲染逻辑保持确定性和可测试。
 - 地图点选坐标是位置事实；city/country 只作标题。
+- 输入校验与生成 use case 保持在 `src/web-service.ts`，Nitro helper 只注入 Nominatim；
+  Web Mercator 与可见瓦片计算保持在纯函数 `src/viewport.ts`。
+- `FetchResult` 等跨 Overpass、renderer、use case 的类型只在 `src/types.ts` 定义。
 - 测试避免网络，使用 fixture、预设或显式坐标。
 - 保留 `originalankur/maptoposter` 来源与 OpenFX 改造说明。
 
@@ -141,6 +149,8 @@ OpenFX 是个人项目集合 monorepo。Agent 应以实际源码、配置、测�
 ## Release and deployment
 
 - 构建元数据使用 `VITE_OPENFX_BUILD_TIME` 和 `VITE_OPENFX_BUILD_HASH`。
+- Deno Deploy CLI 从仓库根执行；根 `deno.json` 保存 `universes/openfx` 的 App、build 和
+  runtime 配置。未经明确要求不运行远端 deploy 命令，生产发布还必须显式使用 `--prod`。
 - 推送或部署前只暂存本任务文件，不能混入用户其他 dirty changes。
 - CI 失败先定位第一个真实失败 gate，再改变代码。
 - 只有用户明确要求时才 push、tag、deploy 或操作远端分支。
@@ -159,14 +169,14 @@ deno task web:build
 ```bash
 VITE_OPENFX_BUILD_TIME=2026-08-10T00:00:00Z \
 VITE_OPENFX_BUILD_HASH=local00 \
-deno task --config entry/web/deno.json build
+deno task --config web/deno.json build
 ```
 
 按范围补充：
 
-- Web/API：更新 `entry/web/tests/` 并运行对应测试。
+- Web/API：更新 `web/tests/` 并运行对应测试。
 - Agent framework：`deno test --allow-env domains/e/tests`。
-- Map Poster：`deno test --allow-env entry/web/tests/map-poster.test.ts`。
+- Map Poster：`deno test --allow-env web/tests/map-poster.test.ts`。
 - Media player：在 domain 内运行 format、lint、typecheck、test 和 build。
 - BewlyScript：`bun run check:userscript`。
 
