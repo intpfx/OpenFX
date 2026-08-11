@@ -5,11 +5,6 @@ import { r } from './scripts/utils'
 import { sharedConfig } from './vite.config'
 
 export default defineConfig(mergeConfig(sharedConfig, {
-  resolve: {
-    alias: {
-      'webextension-polyfill': r('src/userscript/browser-shim.ts'),
-    },
-  },
   plugins: [
     UnoCSS(),
   ],

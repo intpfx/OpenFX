@@ -1,7 +1,9 @@
 {
+  "description": "OpenFX Deno monorepo for VitePlus, React, and Nitro web applications.",
+  "license": "Apache-2.0",
+  "publish": false,
   "nodeModulesDir": "auto",
   "workspace": [
-    "./entry/desktop",
     "./entry/web",
     "./domains/e"
   ],
@@ -9,21 +11,19 @@
     "fmt": "deno fmt .",
     "lint": "deno lint .",
     "guard:deno-only": "deno run -A ./tools/guard-deno-only.ts",
-    "test": "deno test --allow-env --allow-read=entry/web/src/App.tsx,entry/web/src/console/console.css,entry/web/src/styles.css,entry/web/deno.json,entry/web/nitro.config.ts,entry/web/vite.config.ts,entry/web/tools/local-pairing-server.ts,entry/web/public/homepage-previews,entry/web/public/map-poster/tokyo-japanese-ink.webp,domains/hlc/public/hlc,deno.json,entry/web/index.html,entry/web/public/theme-bootstrap.js domains/e/tests domains/downip/tests domains/proxy/tests entry/web/tests domains/_shared/tests && deno test --allow-read --allow-write --allow-net --allow-run=deno entry/desktop/tests",
-    "check": "deno fmt --check . && deno lint . && deno task guard:deno-only && deno test --allow-env --allow-read=entry/web/src/App.tsx,entry/web/src/console/console.css,entry/web/src/styles.css,entry/web/deno.json,entry/web/nitro.config.ts,entry/web/vite.config.ts,entry/web/tools/local-pairing-server.ts,entry/web/public/homepage-previews,entry/web/public/map-poster/tokyo-japanese-ink.webp,domains/hlc/public/hlc,deno.json,entry/web/index.html,entry/web/public/theme-bootstrap.js domains/e/tests domains/downip/tests domains/proxy/tests entry/web/tests domains/_shared/tests && deno test --allow-read --allow-write --allow-net --allow-run=deno entry/desktop/tests",
+    "test": "deno test --allow-env --allow-read=entry/web/src/App.tsx,entry/web/src/file-library/FileLibraryHomepage.tsx,entry/web/src/file-library/file-library.css,entry/web/src/styles.css,entry/web/deno.json,entry/web/nitro.config.ts,entry/web/vite.config.ts,entry/web/public/map-poster/tokyo-japanese-ink.webp,entry/web/public/site.webmanifest,entry/web/public/sw.js,domains/hlc/public/hlc,deno.json,entry/web/index.html,entry/web/public/theme-bootstrap.js domains/e/tests entry/web/tests domains/_shared/tests",
+    "check": "deno fmt --check . && deno lint . && deno task guard:deno-only && deno test --allow-env --allow-read=entry/web/src/App.tsx,entry/web/src/file-library/FileLibraryHomepage.tsx,entry/web/src/file-library/file-library.css,entry/web/src/styles.css,entry/web/deno.json,entry/web/nitro.config.ts,entry/web/vite.config.ts,entry/web/public/map-poster/tokyo-japanese-ink.webp,entry/web/public/site.webmanifest,entry/web/public/sw.js,domains/hlc/public/hlc,deno.json,entry/web/index.html,entry/web/public/theme-bootstrap.js domains/e/tests entry/web/tests domains/_shared/tests",
     "web:dev": "deno task --config entry/web/deno.json dev",
     "web:build": "deno task --config entry/web/deno.json build",
-    "web:preview": "deno task --config entry/web/deno.json preview",
-    "web:local-pairing": "deno task --config entry/web/deno.json local-pairing",
-    "perry:runtime": "deno run -A entry/desktop/tools/build-perry-runtime.ts",
-    "desktop:app": "deno run -A entry/desktop/tools/build-macos-app.ts",
-    "desktop:app-smoke": "deno run -A entry/desktop/tools/desktop-app-smoke.ts",
-    "desktop:memory-smoke": "deno run -A entry/desktop/tools/desktop-app-smoke.ts --memory"
+    "web:preview": "deno task --config entry/web/deno.json preview"
   },
   "fmt": {
     "lineWidth": 88,
     "semiColons": true,
-    "singleQuote": false
+    "singleQuote": false,
+    "exclude": [
+      "entry/web/public/pdq/"
+    ]
   },
   "lint": {
     "rules": {
@@ -48,7 +48,8 @@
       "domains/finlyzer/",
       "domains/hlc/",
       "domains/BewlyScript/",
-      "domains/LivpExplorer/"
+      "domains/media-player/",
+      "entry/web/public/pdq/"
     ]
   },
   "exclude": [
@@ -59,23 +60,23 @@
     "entry/web/public/bewlyscript/",
     "domains/hlc/",
     "domains/BewlyScript/",
-    "domains/LivpExplorer/",
+    "domains/media-player/",
+    "entry/web/public/pdq/",
     ".sisyphus"
   ],
   "imports": {
     "@std/assert": "jsr:@std/assert@^1.0.19",
     "@std/expect": "jsr:@std/expect@^1.0.17",
-    "@chenglou/pretext": "npm:@chenglou/pretext@^0.0.8",
     "@vitejs/plugin-react": "npm:@vitejs/plugin-react@^5.1.4",
-    "animejs": "npm:animejs@^4.4.1",
-    "gsap": "npm:gsap@^3.15.0",
     "h3": "npm:h3@^1.15.11",
     "nitropack": "npm:nitropack@^2.13.4",
+    "nitropack/runtime": "npm:nitropack@^2.13.4/runtime",
     "nitropack/": "npm:nitropack@^2.13.4/",
+    "opfs-tools": "npm:opfs-tools@0.7.4",
+    "pdq-wasm": "npm:pdq-wasm@0.3.9",
     "react": "npm:react@^19.1.0",
     "react-dom": "npm:react-dom@^19.1.0",
-    "react-dom/": "npm:react-dom@^19.1.0/",
-    "vite-plus": "npm:vite-plus@^0.1.21"
+    "react-dom/": "npm:react-dom@^19.1.0/"
   },
   "deploy": {
     "org": "universes"

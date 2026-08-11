@@ -1,3 +1,4 @@
+import { getRuntimeLocationHref } from '~/runtime/location'
 import { openMobileUrlInCurrentPage } from '~/userscript/mobile'
 
 /**
@@ -169,7 +170,7 @@ export function delay(ms: number) {
  * @param url the url to check
  * @returns true if the current page is the home page
  */
-export function isHomePage(url: string = location.href): boolean {
+export function isHomePage(url: string = getRuntimeLocationHref()): boolean {
   try {
     const urlObj = new URL(url)
     const isHttp = urlObj.protocol === 'http:' || urlObj.protocol === 'https:'
@@ -186,7 +187,7 @@ export function isHomePage(url: string = location.href): boolean {
  * @param url the url to check
  * @returns true if the current page is a video or bangumi page
  */
-export function isVideoOrBangumiPage(url: string = location.href): boolean {
+export function isVideoOrBangumiPage(url: string = getRuntimeLocationHref()): boolean {
   if (
     // video page
     /https?:\/\/(?:www\.)?bilibili\.com\/(?:video|list)\/.*/.test(url)
@@ -208,7 +209,7 @@ export function isVideoOrBangumiPage(url: string = location.href): boolean {
  * @param url the url to check
  * @returns true if the current page is the notifications page
  */
-export function isNotificationPage(url: string = location.href): boolean {
+export function isNotificationPage(url: string = getRuntimeLocationHref()): boolean {
   if (
     /https?:\/\/message\.bilibili\.com\.*/.test(url)
   ) {
@@ -222,7 +223,7 @@ export function isNotificationPage(url: string = location.href): boolean {
  * @param url the url to check
  * @returns true if the current page is a search results page
  */
-export function isSearchResultsPage(url: string = location.href): boolean {
+export function isSearchResultsPage(url: string = getRuntimeLocationHref()): boolean {
   // 检查是否是 B站原生搜索结果页
   if (/https?:\/\/search\.bilibili\.com\/.*/.test(url)) {
     return true
@@ -240,7 +241,7 @@ export function isSearchResultsPage(url: string = location.href): boolean {
  * @param url the url to check
  * @returns true if the current page is a user space page
  */
-export function isUserSpacePage(url: string = location.href): boolean {
+export function isUserSpacePage(url: string = getRuntimeLocationHref()): boolean {
   if (
     /https?:\/\/space\.bilibili\.com\.*/.test(url)
   ) {

@@ -1,3 +1,5 @@
+import { getRuntimeLocationHref } from '~/runtime/location'
+
 const MOBILE_NATIVE_MANAGED_ATTR = 'data-bewly-mobile-native-managed'
 const MOBILE_NATIVE_PREVIOUS_ARIA_HIDDEN_ATTR = 'data-bewly-mobile-previous-aria-hidden'
 const MOBILE_NATIVE_INTERACTIVE_OVERLAY_SELECTOR = '.bili-mini-mask, .bili-mini, .geetest_panel, .geetest_panel_ghost, [data-bewly-mobile-video-drawer-host-fallback="true"]'
@@ -208,7 +210,7 @@ function normalizeMobileNavigationUrl(url: string): string {
   return normalizeBilibiliUrlForCurrentSurface(url)
 }
 
-function shouldKeepMobileNavigationInCurrentTab(url: string = location.href): boolean {
+function shouldKeepMobileNavigationInCurrentTab(url: string = getRuntimeLocationHref()): boolean {
   return isMobileUserscriptRuntimePage(url) || hasBewlyMobileLoginIntent(url)
 }
 
@@ -248,14 +250,14 @@ export function isBilibiliLoginUrl(url: string): boolean {
   }
 }
 
-export function getBewlyMobileLoginUrl(currentUrl: string = location.href): string {
+export function getBewlyMobileLoginUrl(currentUrl: string = getRuntimeLocationHref()): string {
   void currentUrl
   const target = new URL(`https://${DESKTOP_BILIBILI_HOST}/`)
   target.searchParams.set(BEWLY_MOBILE_LOGIN_INTENT_PARAM, '1')
   return target.toString()
 }
 
-export function hasBewlyMobileLoginIntent(url: string = location.href): boolean {
+export function hasBewlyMobileLoginIntent(url: string = getRuntimeLocationHref()): boolean {
   try {
     const parsed = typeof location === 'undefined' ? new URL(url) : new URL(url, location.href)
     if (parsed.protocol !== 'https:' || parsed.hostname !== DESKTOP_BILIBILI_HOST)
@@ -587,7 +589,7 @@ html[data-bewly-mobile="true"] .channel-menu .v-switcher__header__after svg {
 }
 `
 
-export function injectMobileNativeHeaderCSS(url: string = location.href): HTMLStyleElement | undefined {
+export function injectMobileNativeHeaderCSS(url: string = getRuntimeLocationHref()): HTMLStyleElement | undefined {
   const style = document.createElement('style')
   style.textContent = MOBILE_NATIVE_HEADER_CSS
   document.documentElement.appendChild(style)
@@ -609,7 +611,7 @@ export function removeMobileNativeHeaderCSS(styleEl: HTMLStyleElement | undefine
   restoreMobileUserscriptViewportMeta()
 }
 
-export function isMobileBilibiliPage(url: string = location.href): boolean {
+export function isMobileBilibiliPage(url: string = getRuntimeLocationHref()): boolean {
   try {
     const parsed = new URL(url)
     return parsed.protocol === 'https:' && parsed.hostname === MOBILE_BILIBILI_HOST
@@ -619,7 +621,7 @@ export function isMobileBilibiliPage(url: string = location.href): boolean {
   }
 }
 
-export function isDesktopBilibiliPage(url: string = location.href): boolean {
+export function isDesktopBilibiliPage(url: string = getRuntimeLocationHref()): boolean {
   try {
     const parsed = new URL(url)
     return parsed.protocol === 'https:' && parsed.hostname === DESKTOP_BILIBILI_HOST
@@ -648,7 +650,7 @@ function classifyCoreBilibiliPath(pathname: string): MobileBilibiliPageKind {
   return 'other'
 }
 
-export function classifyMobileBilibiliPage(url: string = location.href): MobileBilibiliPageKind {
+export function classifyMobileBilibiliPage(url: string = getRuntimeLocationHref()): MobileBilibiliPageKind {
   try {
     const parsed = new URL(url)
     if (parsed.protocol !== 'https:' || parsed.hostname !== MOBILE_BILIBILI_HOST)
@@ -661,7 +663,7 @@ export function classifyMobileBilibiliPage(url: string = location.href): MobileB
   }
 }
 
-export function classifyMobileTakeoverBilibiliPage(url: string = location.href): MobileBilibiliPageKind {
+export function classifyMobileTakeoverBilibiliPage(url: string = getRuntimeLocationHref()): MobileBilibiliPageKind {
   try {
     const parsed = new URL(url)
     if (parsed.protocol !== 'https:')
@@ -676,11 +678,11 @@ export function classifyMobileTakeoverBilibiliPage(url: string = location.href):
   }
 }
 
-export function isMobileBilibiliHomePage(url: string = location.href): boolean {
+export function isMobileBilibiliHomePage(url: string = getRuntimeLocationHref()): boolean {
   return classifyMobileBilibiliPage(url) === 'home'
 }
 
-export function isDesktopBilibiliHomePage(url: string = location.href): boolean {
+export function isDesktopBilibiliHomePage(url: string = getRuntimeLocationHref()): boolean {
   try {
     const parsed = new URL(url)
     if (parsed.protocol !== 'https:')
@@ -696,7 +698,7 @@ export function isDesktopBilibiliHomePage(url: string = location.href): boolean 
   }
 }
 
-export function shouldHideMobileNativeContentForPage(url: string = location.href): boolean {
+export function shouldHideMobileNativeContentForPage(url: string = getRuntimeLocationHref()): boolean {
   if (!isDesktopPortraitUserscriptRuntimePage(url))
     return false
 
@@ -704,7 +706,7 @@ export function shouldHideMobileNativeContentForPage(url: string = location.href
   return mobilePageKind !== 'video' && mobilePageKind !== 'other'
 }
 
-export function isBilibiliVideoDetailPage(url: string = location.href): boolean {
+export function isBilibiliVideoDetailPage(url: string = getRuntimeLocationHref()): boolean {
   try {
     const parsed = new URL(url)
     if (parsed.protocol !== 'https:')
@@ -823,7 +825,7 @@ function hasMobileUserscriptPageMarker(): boolean {
     || Boolean(document.querySelector('[data-bewly-mobile-userscript="true"]'))
 }
 
-export function isDesktopPortraitUserscriptRuntimePage(url: string = location.href): boolean {
+export function isDesktopPortraitUserscriptRuntimePage(url: string = getRuntimeLocationHref()): boolean {
   if (!isDesktopBilibiliPage(url))
     return false
   if (!hasPortraitDeviceOrientation())
@@ -836,19 +838,19 @@ export function isDesktopPortraitUserscriptRuntimePage(url: string = location.hr
   return isUserscriptRuntime() || hasMobileUserscriptPageMarker()
 }
 
-export function isMobileUserscriptRuntimePage(url: string = location.href): boolean {
+export function isMobileUserscriptRuntimePage(url: string = getRuntimeLocationHref()): boolean {
   return isDesktopPortraitUserscriptRuntimePage(url)
 }
 
-export function shouldUseMobileVideoDetailLayout(url: string = location.href): boolean {
+export function shouldUseMobileVideoDetailLayout(url: string = getRuntimeLocationHref()): boolean {
   return isBilibiliVideoDetailPage(url) && isDesktopBilibiliPage(url) && hasPortraitDeviceOrientation()
 }
 
-export function shouldOpenMobileVideoDetailAsDrawer(url: string = location.href): boolean {
+export function shouldOpenMobileVideoDetailAsDrawer(url: string = getRuntimeLocationHref()): boolean {
   return shouldUseMobileVideoDetailLayout(url)
 }
 
-export function getBewlyMobileVideoDrawerHomeUrl(videoUrl: string = location.href, currentUrl: string = location.href): string {
+export function getBewlyMobileVideoDrawerHomeUrl(videoUrl: string = getRuntimeLocationHref(), currentUrl: string = getRuntimeLocationHref()): string {
   const normalizedVideoUrl = normalizeBilibiliUrlForCurrentSurface(videoUrl, currentUrl)
   const homeUrl = new URL('https://www.bilibili.com/', currentUrl)
   homeUrl.searchParams.set('page', 'Home')
@@ -856,7 +858,7 @@ export function getBewlyMobileVideoDrawerHomeUrl(videoUrl: string = location.hre
   return homeUrl.toString()
 }
 
-export function hasBewlyMobileVideoDrawerFrameMarker(url: string = location.href): boolean {
+export function hasBewlyMobileVideoDrawerFrameMarker(url: string = getRuntimeLocationHref()): boolean {
   try {
     return new URL(url, location.href).searchParams.get(BEWLY_MOBILE_VIDEO_DRAWER_FRAME_PARAM) === '1'
   }
@@ -865,13 +867,13 @@ export function hasBewlyMobileVideoDrawerFrameMarker(url: string = location.href
   }
 }
 
-export function markBewlyMobileVideoDrawerFrameUrl(videoUrl: string, currentUrl: string = location.href): string {
+export function markBewlyMobileVideoDrawerFrameUrl(videoUrl: string, currentUrl: string = getRuntimeLocationHref()): string {
   const markedUrl = new URL(normalizeBilibiliUrlForCurrentSurface(videoUrl, currentUrl), currentUrl)
   markedUrl.searchParams.set(BEWLY_MOBILE_VIDEO_DRAWER_FRAME_PARAM, '1')
   return markedUrl.toString()
 }
 
-export function normalizeBilibiliUrlForCurrentSurface(targetUrl: string, currentUrl: string = location.href): string {
+export function normalizeBilibiliUrlForCurrentSurface(targetUrl: string, currentUrl: string = getRuntimeLocationHref()): string {
   try {
     const parsedTarget = new URL(targetUrl, currentUrl)
 
@@ -936,7 +938,7 @@ export function shouldEnableHoverInteractions(
   return !shouldPreferTouchMode(touchScreenOptimization, capabilities, mobileUserscriptPage)
 }
 
-export function getBewlyUserscriptHomeUrl(page?: string, url: string = location.href): string {
+export function getBewlyUserscriptHomeUrl(page?: string, url: string = getRuntimeLocationHref()): string {
   void url
   const host = DESKTOP_BILIBILI_HOST
   const target = new URL(`https://${host}/`)

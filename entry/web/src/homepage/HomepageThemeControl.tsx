@@ -2,6 +2,7 @@
 /** @jsx h */
 
 import { createElement as h, useEffect, useState } from "react";
+import { CircleHalf, Moon, Sun } from "@phosphor-icons/react";
 
 import {
   getHomepageThemeModeLabel,
@@ -13,6 +14,7 @@ import {
   persistHomepageThemeMode,
   resolveHomepageEffectiveTheme,
 } from "./theme.ts";
+import "../jsx.ts";
 
 const THEME_COLORS: Record<HomepageEffectiveTheme, string> = {
   light: "#f8f9fb",
@@ -100,26 +102,41 @@ export function createHomepageThemeControlRuntime(
 }
 
 export function HomepageThemeControlView(props: {
+  compact?: boolean;
   mode: HomepageThemeMode;
   onToggle: () => void;
 }) {
+  const ThemeIcon = props.mode === "dark"
+    ? Moon
+    : props.mode === "light"
+    ? Sun
+    : CircleHalf;
+
   return (
     <button
       aria-label={getHomepageThemeToggleLabel(props.mode)}
-      className="homepage-theme-control"
+      className={`homepage-theme-control${props.compact ? " is-compact" : ""}`}
       type="button"
       onClick={props.onToggle}
     >
-      <span className="footer-eyebrow homepage-theme-control-label">THEME</span>
-      <span aria-hidden="true" className="homepage-theme-control-separator">·</span>
-      <span className="homepage-theme-control-value">
-        {getHomepageThemeModeLabel(props.mode)}
-      </span>
+      {props.compact
+        ? <ThemeIcon aria-hidden="true" size={22} weight="regular" />
+        : (
+          <span className="homepage-theme-control-copy">
+            <span className="footer-eyebrow homepage-theme-control-label">THEME</span>
+            <span aria-hidden="true" className="homepage-theme-control-separator">
+              ·
+            </span>
+            <span className="homepage-theme-control-value">
+              {getHomepageThemeModeLabel(props.mode)}
+            </span>
+          </span>
+        )}
     </button>
   );
 }
 
-export function HomepageThemeControl() {
+export function HomepageThemeControl(props: { compact?: boolean } = {}) {
   const [runtime] = useState(createHomepageThemeControlRuntime);
   const [mode, setMode] = useState<HomepageThemeMode>(
     runtime.getInitialMode,
@@ -140,5 +157,11 @@ export function HomepageThemeControl() {
     runtime.sync(mode, systemDark);
   }, [mode, runtime, systemDark]);
 
-  return <HomepageThemeControlView mode={mode} onToggle={toggle} />;
+  return (
+    <HomepageThemeControlView
+      compact={props.compact}
+      mode={mode}
+      onToggle={toggle}
+    />
+  );
 }

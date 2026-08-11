@@ -2,7 +2,7 @@ import process from "node:process";
 import { fileURLToPath, URL } from "node:url";
 
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite-plus";
+import { defineConfig } from "@voidzero-dev/vite-plus-core";
 
 const rootDir = fileURLToPath(new URL("./", import.meta.url));
 const clientDistDir = fileURLToPath(new URL("./.client-dist", import.meta.url));
@@ -24,13 +24,13 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       "/api": nitroDevOrigin,
-      "/update": nitroDevOrigin,
       "/bewlyscript": nitroDevOrigin,
       "/costing-assistant": nitroDevOrigin,
       "/finlyzer": nitroDevOrigin,
       "/gasmap": nitroDevOrigin,
       "/hlc": nitroDevOrigin,
       "/how-much": nitroDevOrigin,
+      "/media-player": nitroDevOrigin,
       "/wanone": nitroDevOrigin,
     },
   },

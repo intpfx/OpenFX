@@ -1,5 +1,6 @@
 import { assertSafeDenoBundle } from "./verify-deno-entry.ts";
 import { prepareHlcDisplayApp } from "../../../domains/hlc/tools/build-display-app.ts";
+import { prepareMediaPlayerAssets } from "../../../domains/media-player/openfx/build.ts";
 
 type BuildMetadataEnv = {
   DENO_DEPLOY_BUILD_ID?: string;
@@ -114,6 +115,8 @@ async function main() {
   console.log("[openfx:web] HLC display assets");
   await prepareHlcDisplayApp();
 
+  await prepareMediaPlayerAssets();
+
   await runStep(
     "client build",
     [
@@ -121,15 +124,13 @@ async function main() {
       "--config",
       "deno.json",
       "--lock",
-      "deno.lock",
+      "../../deno.lock",
       "--frozen",
       "-A",
-      "npm:vite-plus@0.1.21/vp",
+      "tools/vite.ts",
       "build",
-      "--config",
-      "entry/web/vite.config.ts",
     ],
-    repoRoot,
+    webRoot,
     buildEnv,
   );
 

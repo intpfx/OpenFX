@@ -26,6 +26,9 @@ const costingAssistantPublicDir = fileURLToPath(
 const bewlyScriptPublicDir = fileURLToPath(
   new URL("../../domains/BewlyScript/public", import.meta.url),
 );
+const mediaPlayerPublicDir = fileURLToPath(
+  new URL("../../domains/media-player/.openfx-public", import.meta.url),
+);
 const nitroDevPort = Number(process.env.OPENFX_NITRO_DEV_PORT ?? "3000");
 const denoDeployEntry = process.env.NITRO_PRESET === "deno_deploy" ||
     process.env.NITRO_PRESET === "deno-deploy"
@@ -75,6 +78,19 @@ export default defineNitroConfig({
     {
       dir: bewlyScriptPublicDir,
       maxAge: 0,
+    },
+    {
+      dir: mediaPlayerPublicDir,
+      baseURL: "/media-player",
+      fallthrough: true,
+      maxAge: 0,
+    },
+  ],
+  serverAssets: [
+    {
+      baseName: "media-player",
+      dir: mediaPlayerPublicDir,
+      pattern: "**/*.html",
     },
   ],
   alias: {

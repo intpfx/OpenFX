@@ -1,14 +1,5 @@
 const rootUrl = new URL("../", import.meta.url);
 
-const allowedPackageJsonKeys = new Set([
-  "name",
-  "private",
-  "version",
-  "description",
-  "license",
-  "type",
-]);
-
 const configFiles = [
   "deno.json",
   "entry/web/deno.json",
@@ -17,10 +8,6 @@ const configFiles = [
 
 async function readText(relativePath: string) {
   return await Deno.readTextFile(new URL(relativePath, rootUrl));
-}
-
-async function readJson(relativePath: string) {
-  return JSON.parse(await readText(relativePath)) as Record<string, unknown>;
 }
 
 async function pathExists(relativePath: string) {
@@ -42,16 +29,15 @@ if (await pathExists("pnpm-lock.yaml")) {
   failures.push("pnpm-lock.yaml must not exist in the repository.");
 }
 
-const packageJson = await readJson("package.json");
-const extraPackageJsonKeys = Object.keys(packageJson).filter((key) =>
-  !allowedPackageJsonKeys.has(key)
-);
-
-if (extraPackageJsonKeys.length > 0) {
+if (await pathExists("package.json")) {
   failures.push(
-    `package.json must stay metadata-only. Unexpected keys: ${
-      extraPackageJsonKeys.join(", ")
-    }`,
+    "Root package.json must not exist; use deno.json as the source of truth.",
+  );
+}
+
+if (await pathExists("package-lock.json")) {
+  failures.push(
+    "Root package-lock.json must not exist; use deno.lock as the only root lockfile.",
   );
 }
 

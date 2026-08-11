@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import browser from '../userscript/browser-shim'
+import { installUserscriptFetch } from '../userscript/request'
 
 const originalLocalStorageDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
 
@@ -83,5 +84,23 @@ describe('userscript browser shim', () => {
 
   it('keeps runtime URLs unchanged when extension resources are not bundled', () => {
     expect(browser.runtime.getURL('/dist/contentScripts/style.css')).toBe('/dist/contentScripts/style.css')
+  })
+
+  it('preserves an explicitly installed development fetch adapter', () => {
+    const runtimeGlobal = globalThis as {
+      __BEWLYSCRIPT_FETCH__?: typeof fetch
+      __BEWLYSCRIPT_PRESERVE_FETCH_ADAPTER__?: boolean
+    }
+    const originalFetch = runtimeGlobal.__BEWLYSCRIPT_FETCH__
+    const originalPreserveFetchAdapter = runtimeGlobal.__BEWLYSCRIPT_PRESERVE_FETCH_ADAPTER__
+    const developmentFetch = vi.fn() as unknown as typeof fetch
+    runtimeGlobal.__BEWLYSCRIPT_FETCH__ = developmentFetch
+    runtimeGlobal.__BEWLYSCRIPT_PRESERVE_FETCH_ADAPTER__ = true
+
+    installUserscriptFetch()
+
+    expect(runtimeGlobal.__BEWLYSCRIPT_FETCH__).toBe(developmentFetch)
+    runtimeGlobal.__BEWLYSCRIPT_FETCH__ = originalFetch
+    runtimeGlobal.__BEWLYSCRIPT_PRESERVE_FETCH_ADAPTER__ = originalPreserveFetchAdapter
   })
 })

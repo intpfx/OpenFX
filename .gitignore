@@ -4,7 +4,6 @@
 .sisyphus/
 .superpowers/
 .worktrees/
-.perry-cache/
 .env
 .env.*
 !.env.example

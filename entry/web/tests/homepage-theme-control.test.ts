@@ -3,7 +3,6 @@ import { expect } from "@std/expect";
 import {
   createHomepageThemeControlRuntime,
 } from "../src/homepage/HomepageThemeControl.tsx";
-import type {} from "../src/homepage/HomepageLocationPoster.tsx";
 
 type ThemeMediaListener = () => void;
 

@@ -1,64 +1,189 @@
 # OpenFX
 
-TypeScript monorepo — Deno × Perry × VitePlus × React × Nitro
+OpenFX 是一个以 TypeScript 为主的个人项目集合。当前主产品是运行在浏览器中的 OPFS
+文件库；仓库同时保留可独立运行的 domain、历史项目和可复用能力模块。
+
+## 当前产品
+
+`entry/web/` 提供 VitePlus + React 客户端和 Nitro 服务端，部署目标为 Deno
+Deploy。首页不是本机文件浏览器，也不是营销页，而是由应用自管理的文件库：
+
+- 用户通过文件选择器、拖放、PWA 文件处理器或系统分享入口显式导入内容；
+- 原始字节和索引保存在当前 origin 的 `/openfx-file-library/` OPFS
+  空间，不保留本机路径映射；
+- 图片、实况图片、视频、音频、文本和 PDF 可在应用内预览；
+- 链接作为本地条目保存；不支持预览的格式保留原件并提供下载；
+- 视频缩略图、字幕关系、播放位置、观看状态和媒体智能视图由文件库索引维护；
+- 照片在导入落盘后由可取消 Worker 解析 EXIF、位置和 Motion Photo；任务状态持久化，
+  中断后可恢复、失败后可重试；
+- 照片可按拍摄日期、实况、收藏、位置和相册派生查看，不复制原始字节；
+- 13 个内置 App 作为只读虚拟条目合并到同一内容墙，不占用 OPFS 配额。
+
+文件库内容墙使用无间距正方形网格。少量内容只占需要的列，未占用区域保持磨砂背景。
+品牌、数量、搜索、主题、存储状态和新建操作集中在一个悬浮 HUD 中。
+
+### 重复与相似文件
+
+文件库会在导入完成后以可取消的后台任务生成版本化指纹：
+
+- 所有普通文件使用 SHA-256 检测字节完全一致的副本；
+- 图片使用 256 位 PDQ 感知哈希识别缩放、压缩或轻微调整后的相似内容；
+- 视频在 8%–92% 的相对时间位置抽取最多 8 帧，按 PDQ 序列、时长容差和多数帧匹配；
+- 实况图片必须同时满足静态图与动态片段相似；完全重复还要求两部分 SHA-256 均一致；
+- 旧索引升级后会自动补算指纹，单个文件失败不影响其原件、下载和其他分析任务。
+
+“查重”只打开候选审阅视图并标记“完全重复”或“相似”，不会自动删除文件。用户仍需在
+全窗口查看器中逐项确认并使用现有删除操作，避免感知哈希误判造成数据损失。
+
+### 实况图片边界
+
+当前文件库已经实现：
+
+1. 同名图片与 MOV/MP4 的导入配对；
+2. JPEG Motion Photo 的 XMP 检测、尾部 MP4 提取与 OPFS 保存；
+3. OpenFX 旧二进制与 ZIP `.livp` 双格式探测和导入，并以无压缩 UTF-8 ZIP 作为 canonical
+   导出格式；
+4. 静态图与动态片段的全窗口查看，包括桌面悬停、移动端长按、松手复位、静音和 触觉反馈；
+5. JPEG EXIF 的方向、尺寸、拍摄时间、相机、镜头、曝光、评分和 GPS 解析；
+6. 持久化照片分析队列，以及收藏、相册、日期和位置派生视图。
+
+OpenFX 二进制 `.livp` 与 ZIP 容器不是同一格式，因此导入时先探测再解码。ZIP 读取支持
+stored 和 deflate 条目；未知变体仍作为普通文件安全保存。这里的 `.livp` 是 OpenFX
+交换格式，不应对外宣称已经支持 Apple Photos 原生导入、Quick Look 或所有第三方变体。
+
+### LivpExplorer 迁移与退役结论
+
+原 `domains/LivpExplorer/` 是从 ChronoFrame 导入并改名的独立自托管照片库，使用 Nuxt
+4、Vue、SQLite/Drizzle 和独立 pnpm workspace。它从未成为 Web 首页的运行依赖。
+
+可迁移的本地照片能力已经由 `entry/web/src/file-library/` 和
+`domains/_shared/livp-codec.ts` 接管：同名配对、Motion Photo、Live Photo
+交互、EXIF/GPS、 相册/收藏/派生视图、可恢复处理任务，以及 LIVP 双格式导入和 canonical
+导出均不再依赖 原 Nuxt 应用。迁入实现使用浏览器 File、Worker 和 OPFS 边界，没有复制 Vue
+页面、Drizzle 模型或 SQLite 服务。
+
+分享/reaction、账号体系、SQLite、S3/OpenList、服务端公开 URL、反向地理编码供应商和
+管理后台属于另一个多用户产品，不迁入本地优先文件库。若未来需要同步，应作为可选
+适配器重新设计，而不是保留对 LivpExplorer 的依赖。
+
+迁移回归验证完成后，`domains/LivpExplorer/` 上游源码快照已于 2026-08-10 物理删除，
+`deno.json` 中仅用于跳过该独立工具链的两条排除项也已移除。迁入代码的 ChronoFrame MIT
+归属继续固化在根 `NOTICE`，不依赖旧目录存在。
 
 ## 仓库结构
 
 ```text
-domains/          独立领域模块
-  _shared/        跨 domain 共享工具
-  BewlyScript/    BewlyCat userscript 版，聚焦 B 站桌面原站美化
-  costing-assistant/ 工程计价助手
-  downip/         IPv6 映射/重定向
-  e/              Agent 执行框架
-  esn/            Edge Storage Node
-  finlyzer/       本地优先账单分析器
-  gasmap/         燃气工程单线图工具
-  hlc/            圣灯社区 PWA/CMS
-  how-much/       商品比价应用
-  LivpExplorer/   自托管照片库
-  map-poster/     城市地图海报生成器（TypeScript + OSM）
-  proxy/          HTTP 中继
-  wanone/         编程生涯第一个项目
-entry/            入口应用
-  desktop/        Perry 原生 OpenFX Node（文件管理、监控、Relay、Agent）
-  web/            VitePlus + React + Nitro Web 应用与 OpenFX 控制台
+domains/          独立产品、历史项目和共享能力
+  _shared/        运行时边界明确的共享算法与基础设施
+  BewlyScript/    B 站桌面原站美化 userscript
+  e/              运行时无关的 Agent 执行框架
+  media-player/   文件库专用最小播放器
+entry/
+  web/            OPFS 文件库与 React + Nitro Web 入口
 ```
 
-OpenFX 控制台的 Web 控制面、共享协议和 Perry Mac 节点位于 `entry/`。原 Freemac 的遥测、
-IPv6、Relay、Agent 和审计能力已经完成切换，旧 Bun/Elysia Core 与独立 Dashboard 已删除。
-运行边界、Perry 补丁构建和恢复步骤见
-[`docs/openfx-console-architecture.md`](docs/openfx-console-architecture.md)。
+主要 domain：
 
-## 快速开始
+| Domain                | 定位                                     | 与 Web 首页的关系        |
+| --------------------- | ---------------------------------------- | ------------------------ |
+| `_shared`             | KV、编解码、二维码、空间索引等共享模块   | 按需被 Web/domain 引用   |
+| `BewlyScript`         | Vue userscript，输出单文件安装包         | 内置 App 与安装入口      |
+| `chinagas-wms-qrcode` | WMS 物料二维码 userscript                | 内置 App 介绍            |
+| `costing-assistant`   | 浏览器本地工程计价助手                   | 动态预览 App             |
+| `e`                   | Agent core、reference runtime 与前台协议 | 内置 App 介绍            |
+| `finlyzer`            | 本地优先账单分析 Electron 应用           | 动态预览 App             |
+| `gasmap`              | 燃气工程单线图工具                       | 动态预览 App             |
+| `hlc`                 | 圣灯社区 PWA/CMS                         | 只读同源展示 App         |
+| `how-much`            | 商品价格查询与地图报告                   | Web API 与内置 App       |
+| `map-poster`          | OSM 地图海报生成器                       | Web API 与内置 App       |
+| `media-player`        | OPFS 视频读取、Video.js 控件和播放引擎   | 文件能力，不重复作为 App |
+| `wanone`              | 早期静态站点纪念项目                     | 动态预览 App             |
 
-前置依赖：[Deno](https://deno.com/)、[Perry](https://docs.perryts.com/)
+Web 文件库还索引 Smartisax、LiveSystem 和 WanderingPlan 等外部项目；是否公开、
+是否只做介绍以及链接地址，以 `entry/web/content/library-apps.json` 为准。
+
+## 开发
+
+前置依赖为 Deno。根目录常用命令：
 
 ```bash
-deno task web:dev                          # 启动 Web 应用
-deno task web:build                        # 生产构建
-deno task perry:runtime --source /path/to/Perry  # 构建补丁版 Perry 原生库
-export PERRY_LIB_DIR=/path/to/Perry/target/openfx-v0.5.1220/release
-deno task desktop:app                     # 构建并 ad-hoc 签名 arm64 .app
-open "dist/OpenFX Node.app"                # 从正式应用包启动节点
-deno task desktop:app-smoke               # 验证签名、health、截图和退出
-deno task check                            # 校验（fmt + lint + test + guard）
+deno task web:dev
+deno task web:build
+deno task check
 ```
 
-`perry:runtime` 要求 Perry 源码位于固定提交且工作区完全干净；它会在输出目录生成带补丁和
-产物 SHA-256 的 provenance manifest。`desktop:app` 与两个原生 smoke 都会在使用运行库前
-重新校验该 manifest，旧的、缺失的或被改写的运行库不会进入应用包。
+- Vite 开发端口：`http://localhost:5501`
+- Nitro 开发端口：`http://localhost:3000`
+- 根 `deno.lock` 管理 Web 与 Deno workspace 依赖。
+- 根目录和 `entry/web/` 只以各自 `deno.json` 为配置源；根 `package.json` 与
+  `package-lock.json` 已移除，并由 `deno task guard:deno-only` 防止回归。
+- Web 客户端通过 Deno 脚本调用 VitePlus Core，不依赖 `vp` 对 `package.json` workspace
+  的发现行为。
 
-部分 domain 使用独立工具链（如 `domains/BewlyScript/` 用 Bun 构建）。
+这里的“统一”为根产品工具链收口，不是删除所有 domain 的包清单。下列独立产品仍由其
+上游工具链读取各自的 `package.json` 和锁文件，因此继续保留：
 
-## Agent 指南
+独立工具链：
 
-- [AGENTS.md](AGENTS.md) — 仓库全局规范与项目 skill 路由
-- [.agents/skills/openfx-repo/](.agents/skills/openfx-repo/) — 项目级 skill
-  总入口，负责选择任务 skill 与全局约束
-- [.agents/skills/](.agents/skills/) — Web、Nitro、domain 迁移、BewlyScript、Map
-  Poster、发布部署等任务 skill
+| 范围                   | 常用命令                                                                                  |
+| ---------------------- | ----------------------------------------------------------------------------------------- |
+| `domains/BewlyScript`  | `bun install`、`bun run dev`、`bun run check:userscript`                                  |
+| `domains/media-player` | `deno run --no-config -A openfx/build.ts`、`deno run --no-config -A npm:pnpm@9.15.9 test` |
+| `domains/map-poster`   | `bun test`、`bun run typecheck`                                                           |
+| `domains/finlyzer`     | `pnpm dev`、`pnpm dist:win`                                                               |
 
-## 协议
+### Web 服务边界
 
-Apache-2.0
+公开入口包括：
+
+- `GET /api/health`
+- `/api/how-much/*`
+- `POST /api/map-poster/render`
+- `/media-player/*`
+- `/hlc/*`
+
+Map Poster 生产环境需要：
+
+- `OPENFX_MAP_POSTER_NOMINATIM_SEARCH_URL`
+- `OPENFX_MAP_POSTER_NOMINATIM_REVERSE_URL`
+
+生产构建使用有界 Deno 入口：请求体在进入 Nitro 前限制为 64 KiB，并使用运行时真实远端
+地址覆盖外部伪造的转发地址。
+
+### 特殊模块
+
+- `media-player` 只保留 OPFS 读取、字幕、续播、Video.js 10 控件以及 `playsvideo@0.4.7`
+  的直通、解封装、分段和必要音频转码。完整 PlaysVideo domain 已物理删除；固定引擎保存在
+  vendor 包中。
+- HLC Web 展示只复制地图和艺术资产，不发布认证、内容工作流或写入接口。修改
+  `domains/hlc/source/index.html` 后运行：
+
+  ```bash
+  deno run --no-config --allow-read --allow-write domains/hlc/tools/build-display-app.ts
+  ```
+- BewlyScript 只交付 userscript，不恢复 WebExtension popup/options/商店打包。
+  `m.bilibili.com` 只显示请求桌面站提示，不挂载主 Vue App。
+- `domains/e` 的 core 必须保持运行时无关；文件系统、模型、Git、MCP 和副作用通过接口
+  注入，危险动作经过 `SafetyActionGate`。
+
+## 文档约定
+
+项目源码只维护两份 Markdown 文档：
+
+- `README.md`：面向人的产品、架构、运行和迁移说明；
+- `AGENTS.md`：面向开发 Agent 的工作约束与验证规则。
+
+不要新增 domain 级 README、AGENTS、SKILL、历史计划或设计 QA 文档；相关有效信息应归并
+到上述两份文件。LICENSE、NOTICE、代码注释、API 类型和测试不属于此限制。
+
+## 清理记录
+
+- Perry 桌面端、Proxy、Downip、LivpExplorer 与完整 PlaysVideo domain 已从当前项目移除；
+- PlaysVideo 仍被使用的最小发布引擎已固定在 `domains/media-player/vendor/`；
+- 历史设计稿、重复上游说明和旧清理报告已在文档收口时删除。
+
+## 协议与来源
+
+仓库主体使用 Apache-2.0，见 `LICENSE` 与 `NOTICE`。包含独立许可证的 domain
+继续以各自目录中的 LICENSE 为准。主要上游来源包括 BewlyCat/BewlyBewly、
+ChronoFrame、maptoposter 和 playsvideo；保留其源码许可与第三方声明。

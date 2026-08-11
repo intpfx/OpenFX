@@ -1,8 +1,6 @@
 import '~/styles'
 import 'uno.css'
 
-import { createApp } from 'vue'
-
 import { useDark } from '~/composables/useDark'
 import { BEWLY_MOUNTED, IFRAME_DARK_MODE_CHANGE } from '~/constants/globalEvents'
 import { localSettings, settings } from '~/logic'
@@ -37,7 +35,7 @@ import { captureOriginalBilibiliTopBar, ensureOriginalBilibiliTopBarAppended, re
 import { initFavoriteDialogEnhancement } from '~/utils/favoriteDialog'
 import { runWhenIdle } from '~/utils/lazyLoad'
 import { getLocalWallpaper, hasLocalWallpaper, isLocalWallpaperUrl } from '~/utils/localWallpaper'
-import { compareVersions, injectCSS, isElectron, isHomePage, isInIframe, isNotificationPage, isVideoOrBangumiPage } from '~/utils/main'
+import { injectCSS, isElectron, isHomePage, isInIframe, isNotificationPage, isVideoOrBangumiPage } from '~/utils/main'
 import { applyAutoPlayByVideoType, applyDefaultDanmakuState, defaultMode, handleVideoPageNavigation, isCollectionVideo, isPlayerDisplayModeReady, isVideoPage, startAutoExitFullscreenMonitoring, startAutoPlayUserChangeMonitoring, webFullscreen, widescreen } from '~/utils/player'
 import { initRandomPlay, resetRandomPlayInitialization } from '~/utils/randomPlay'
 import { setupShortcutHandlers } from '~/utils/shortcuts'
@@ -48,6 +46,7 @@ import { version } from '../../package.json'
 import { initAudioInterceptor, setupSettingsWatcher } from './audioInterceptor'
 import { setupIframePhotoViewerDetector } from './features/iframePhotoViewerDetector'
 import { createMobileVideoDetailFramePlayerViewState } from './mobileVideoFramePlayerState'
+import { mountBewlyApp } from './mount-app'
 import App from './views/App.vue'
 import { initVolumeNormalizationControl } from './volumeNormalizationControl'
 
@@ -574,6 +573,7 @@ const MOBILE_NATIVE_LOGIN_TRIGGER_SELECTORS = [
 ]
 
 type BewlyScriptWindow = Window & {
+  __BEWLYSCRIPT_DEV_LIGHT_DOM__?: boolean
   __BEWLYSCRIPT_STYLE_CSS__?: string
 }
 
@@ -4208,78 +4208,21 @@ else {
   }
 
   function injectApp() {
-    const bewlyElArr: NodeListOf<Element> = document.querySelectorAll('#bewly')
-    if (bewlyElArr.length > 0) {
-      bewlyElArr.forEach((el: Element) => {
-        const elVersion = el.getAttribute('data-version') || '0.0.0'
-        const elIsDev = el.getAttribute('data-dev') === 'true'
-
-        // Remove bewly element if the version is less than the current version
-        if (compareVersions(elVersion, version) < 0)
-          el.remove()
-        // Only the development mode element remains
-        else if (!elIsDev)
-          el.remove()
-      })
-    }
-
-    // mount component to context window
-    const container = document.createElement('div')
-    container.id = 'bewly'
-    container.setAttribute('data-version', version)
-    container.setAttribute('data-dev', import.meta.env.DEV ? 'true' : 'false')
-    if (isMobileUserscriptPage)
-      container.setAttribute('data-bewly-mobile-userscript', 'true')
-
-    // 立即设置Shadow DOM容器的基准颜色，确保Vue组件能够访问到正确的CSS变量
-    if (settings.value.darkModeBaseColor) {
-      container.style.setProperty('--bew-dark-base-color', settings.value.darkModeBaseColor)
-    }
-
-    const root = document.createElement('div')
-    // Fix #69 https://github.com/hakadao/BewlyBewly/issues/69
-    // https://medium.com/@emilio_martinez/shadow-dom-open-vs-closed-1a8cf286088a - open shadow dom
-    const shadowDOM = container.attachShadow?.({ mode: 'open' }) || container
-    const resetStyleEl = document.createElement('style')
-    resetStyleEl.textContent = isMobileUserscriptPage ? `${RESET_BEWLY_CSS}\n${MOBILE_USERSCRIPT_SHADOW_CSS}` : `${RESET_BEWLY_CSS}`
-    shadowDOM.appendChild(resetStyleEl)
-    shadowDOM.appendChild(root)
-    container.style.opacity = '0'
-    container.style.transition = 'opacity 0.5s'
-
-    const revealContainer = () => {
-    // To prevent abrupt style transitions caused by sudden style changes
-      setTimeout(() => {
-        container.style.opacity = '1'
-      }, 500)
-    }
-
-    if (isUserscriptRuntime()) {
-      const styleEl = document.createElement('style')
-      styleEl.textContent = (window as BewlyScriptWindow).__BEWLYSCRIPT_STYLE_CSS__ ?? ''
-      shadowDOM.insertBefore(styleEl, root)
-      requestAnimationFrame(revealContainer)
-    }
-    else {
-      const styleEl = document.createElement('link')
-      styleEl.setAttribute('rel', 'stylesheet')
-      styleEl.setAttribute('href', browser.runtime.getURL('dist/contentScripts/style.css'))
-      styleEl.onload = revealContainer
-      shadowDOM.insertBefore(styleEl, root)
-    }
-
-    // startShadowDOMStyleInjection()
-
-    // inject svg icons
-    const svgDiv = document.createElement('div')
-    svgDiv.innerHTML = sanitizeInlineSvg(SVG_ICONS)
-    shadowDOM.appendChild(svgDiv)
-
-    document.body.appendChild(container)
-
-    const app = createApp(App)
-    setupApp(app)
-    app.mount(root)
+    const userscriptRuntime = isUserscriptRuntime()
+    mountBewlyApp({
+      component: App,
+      version,
+      setup: setupApp,
+      resetCss: RESET_BEWLY_CSS,
+      mobileShadowCss: MOBILE_USERSCRIPT_SHADOW_CSS,
+      globalStyleCss: userscriptRuntime ? ((window as BewlyScriptWindow).__BEWLYSCRIPT_STYLE_CSS__ ?? '') : undefined,
+      stylesheetUrl: userscriptRuntime ? undefined : browser.runtime.getURL('dist/contentScripts/style.css'),
+      svgIcons: sanitizeInlineSvg(SVG_ICONS),
+      darkModeBaseColor: settings.value.darkModeBaseColor,
+      isMobileUserscriptPage,
+      isDev: import.meta.env.DEV,
+      useShadowDom: !(import.meta.env.DEV && (window as BewlyScriptWindow).__BEWLYSCRIPT_DEV_LIGHT_DOM__),
+    })
   }
 
   // 发送设置更新到网页环境

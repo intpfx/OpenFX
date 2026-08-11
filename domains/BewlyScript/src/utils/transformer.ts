@@ -19,14 +19,15 @@ export interface Transformer {
  * @param trigger
  * @param transformer
  */
-export function createTransformer(trigger: Ref<MaybeElement>, transformer: Transformer) {
+export function createTransformer(trigger: Ref<MaybeElement> | undefined, transformer: Transformer) {
+  const triggerRef = trigger ?? ref<MaybeElement>()
   const target = ref<MaybeElement>()
   const style = ref<CSSProperties>({})
 
-  watch(() => trigger.value, (newVal) => {
+  watch(() => triggerRef.value, (newVal) => {
     if (transformer.notrigger && newVal) {
       try {
-        target.value = unrefElement(trigger)
+        target.value = unrefElement(triggerRef)
       }
       catch (e) {
         console.warn('Failed to unref element in transformer:', e)
@@ -36,7 +37,7 @@ export function createTransformer(trigger: Ref<MaybeElement>, transformer: Trans
 
   function update() {
     // 添加安全检查
-    if (!target.value && !unrefElement(trigger)) {
+    if (!target.value && !unrefElement(triggerRef)) {
       return
     }
 
@@ -60,7 +61,7 @@ export function createTransformer(trigger: Ref<MaybeElement>, transformer: Trans
     // 增加安全检查
     if (target.value && transformer.centerTarget) {
       const el = unrefElement(target.value)
-      const triggerEl = unrefElement(trigger)
+      const triggerEl = unrefElement(triggerRef)
       if (el && triggerEl) {
         const targetRect = el.getBoundingClientRect()
         const triggerRect = triggerEl.getBoundingClientRect()

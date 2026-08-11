@@ -1,0 +1,11 @@
+This module bundles or loads these upstream dependencies through playsvideo 0.4.7:
+
+- playsvideo — MIT — https://github.com/kzahel/playsvideo
+- mediabunny — MPL-2.0 — https://github.com/Vanilagy/mediabunny
+- hls.js — Apache-2.0 — https://github.com/video-dev/hls.js
+- ffmpeg.wasm wrapper — MIT — https://github.com/ffmpegwasm/ffmpeg.wasm
+- ffmpeg-core.wasm — LGPL-2.1-or-later — https://github.com/FFmpeg/FFmpeg
+- Video.js React controls — Apache-2.0 — https://github.com/videojs
+
+The upstream package retains its own license files and notices. The FFmpeg WASM binary
+is loaded as a separate replaceable asset rather than compiled into application code.

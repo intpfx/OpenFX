@@ -1,4 +1,4 @@
-type GmXhrDetails = {
+interface GmXhrDetails {
   method?: string
   url: string
   headers?: Record<string, string>
@@ -10,7 +10,7 @@ type GmXhrDetails = {
   ontimeout: (error: unknown) => void
 }
 
-type GmXhrResponse = {
+interface GmXhrResponse {
   status: number
   statusText?: string
   response?: unknown
@@ -19,7 +19,7 @@ type GmXhrResponse = {
   finalUrl?: string
 }
 
-type GmApi = {
+interface GmApi {
   xmlHttpRequest?: (details: GmXhrDetails) => unknown
 }
 
@@ -49,7 +49,7 @@ function parseResponseHeaders(rawHeaders: string | undefined): Headers {
     return headers
 
   for (const line of rawHeaders.split(/\r?\n/)) {
-    const separator = line.indexOf(":")
+    const separator = line.indexOf(':')
     if (separator <= 0)
       continue
 
@@ -68,11 +68,11 @@ function normalizeBody(body: BodyInit | null | undefined): BodyInit | null | und
 
 function sanitizeFetchHeaders(headers: HeadersInit | undefined): Headers {
   const sanitized = new Headers(headers)
-  sanitized.delete("cookie")
-  sanitized.delete("host")
-  sanitized.delete("origin")
-  sanitized.delete("referer")
-  sanitized.delete("user-agent")
+  sanitized.delete('cookie')
+  sanitized.delete('host')
+  sanitized.delete('origin')
+  sanitized.delete('referer')
+  sanitized.delete('user-agent')
   return sanitized
 }
 
@@ -90,20 +90,20 @@ export async function userscriptFetch(url: string, init: RequestInit = {}): Prom
 
   return await new Promise<Response>((resolve, reject) => {
     gmXhr({
-      method: init.method ?? "GET",
+      method: init.method ?? 'GET',
       url,
       headers: normalizeHeaders(init.headers),
       data: normalizeBody(init.body),
-      anonymous: init.credentials === "omit",
-      responseType: "text",
+      anonymous: init.credentials === 'omit',
+      responseType: 'text',
       onload(response) {
-        const body = typeof response.response === "string"
+        const body = typeof response.response === 'string'
           ? response.response
-          : response.responseText ?? ""
+          : response.responseText ?? ''
 
         resolve(new Response(body, {
           status: response.status || 200,
-          statusText: response.statusText ?? "OK",
+          statusText: response.statusText ?? 'OK',
           headers: parseResponseHeaders(response.responseHeaders),
         }))
       },
@@ -114,6 +114,10 @@ export async function userscriptFetch(url: string, init: RequestInit = {}): Prom
 }
 
 export function installUserscriptFetch(): void {
-  ;(globalThis as { __BEWLYSCRIPT_FETCH__?: typeof userscriptFetch })
-    .__BEWLYSCRIPT_FETCH__ = userscriptFetch
+  const runtimeGlobal = globalThis as {
+    __BEWLYSCRIPT_FETCH__?: typeof userscriptFetch
+    __BEWLYSCRIPT_PRESERVE_FETCH_ADAPTER__?: boolean
+  }
+  if (!runtimeGlobal.__BEWLYSCRIPT_PRESERVE_FETCH_ADAPTER__)
+    runtimeGlobal.__BEWLYSCRIPT_FETCH__ = userscriptFetch
 }

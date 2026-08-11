@@ -1,17 +1,14 @@
 import { defineEventHandler, getRouterParam } from "h3";
 
-import {
-  getDownipStore,
-  handleDownipRedirectRequest,
-} from "../../../../../domains/downip/server/handlers.ts";
+import { handleMediaPlayerRequest } from "../../media-player.ts";
 
 export default defineEventHandler(async (event) => {
-  return await handleDownipRedirectRequest(
-    new Request(`http://openfx.local${event.path}`, { method: event.method }),
-    {
-      key: getRouterParam(event, "key") ?? "",
-      rest: getRouterParam(event, "rest") ?? undefined,
-    },
-    await getDownipStore(),
-  );
+  const key = getRouterParam(event, "key") ?? "";
+  const rest = getRouterParam(event, "rest") ?? "";
+
+  if (key === "media-player") {
+    return await handleMediaPlayerRequest(event.method, rest);
+  }
+
+  return new Response("Not Found", { status: 404 });
 });

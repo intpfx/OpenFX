@@ -1,6 +1,9 @@
 {
   "name": "OpenFX",
   "short_name": "OpenFX",
+  "description": "存储、预览和管理当前浏览器中的文件与 OpenFX App",
+  "start_url": "/",
+  "scope": "/",
   "icons": [
     {
       "src": "/openfx-icon-192.png",
@@ -15,5 +18,25 @@
   ],
   "theme_color": "#f8f9fb",
   "background_color": "#f8f9fb",
-  "display": "standalone"
+  "display": "standalone",
+  "file_handlers": [
+    {
+      "action": "/?source=file-handler",
+      "accept": {
+        "image/*": [".avif", ".gif", ".heic", ".heif", ".jpeg", ".jpg", ".png", ".webp"],
+        "video/*": [".avi", ".m4v", ".mkv", ".mov", ".mp4", ".mpeg", ".webm"],
+        "audio/*": [".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav"],
+        "application/pdf": [".pdf"],
+        "text/plain": [".md", ".srt", ".txt", ".vtt"]
+      }
+    }
+  ],
+  "share_target": {
+    "action": "/share-target",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "files": [{ "name": "files", "accept": ["*/*"] }]
+    }
+  }
 }

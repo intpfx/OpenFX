@@ -6,16 +6,13 @@ import type {
   ProposedAction,
   TurnRecord,
 } from "./types.ts";
-import {
-  APPROVAL_TTL_MS,
-  OPENFX_NODE_ERROR_CODES,
-} from "../../../_shared/openfx-node/constants.ts";
+import { APPROVAL_ERROR_CODES, APPROVAL_TTL_MS } from "./approval-constants.ts";
 import {
   type ApprovalConsumptionStore,
   InMemoryApprovalConsumptionStore,
 } from "./approval-consumption-store.ts";
 
-export { APPROVAL_TTL_MS } from "../../../_shared/openfx-node/constants.ts";
+export { APPROVAL_TTL_MS } from "./approval-constants.ts";
 
 export interface SafetyActionGateContext {
   now: () => number;
@@ -128,7 +125,7 @@ export class SafetyActionGate {
         input.parameterFingerprint !== currentFingerprint)
     ) {
       const error = {
-        code: OPENFX_NODE_ERROR_CODES.approvalFingerprintMismatch,
+        code: APPROVAL_ERROR_CODES.fingerprintMismatch,
         message: "Approved parameters do not match the action being applied.",
       };
       return {
@@ -163,7 +160,7 @@ export class SafetyActionGate {
     });
     if (applicationClaim.status === "already_claimed") {
       const error = {
-        code: OPENFX_NODE_ERROR_CODES.approvalAlreadyApplied,
+        code: APPROVAL_ERROR_CODES.alreadyApplied,
         message: "Approval has already been consumed by an application attempt.",
       };
       return {
@@ -180,7 +177,7 @@ export class SafetyActionGate {
     }
     if (applicationClaim.status === "fingerprint_mismatch") {
       const error = {
-        code: OPENFX_NODE_ERROR_CODES.approvalFingerprintMismatch,
+        code: APPROVAL_ERROR_CODES.fingerprintMismatch,
         message: "Approved parameters do not match the action being applied.",
       };
       return {
@@ -192,7 +189,7 @@ export class SafetyActionGate {
     }
     if (applicationClaim.status === "expired") {
       const error = {
-        code: OPENFX_NODE_ERROR_CODES.approvalExpired,
+        code: APPROVAL_ERROR_CODES.expired,
         message: "Approval expired before the action could be applied.",
       };
       return {
@@ -204,7 +201,7 @@ export class SafetyActionGate {
     }
     if (applicationClaim.status === "not_approved") {
       const error = {
-        code: OPENFX_NODE_ERROR_CODES.approvalNotApproved,
+        code: APPROVAL_ERROR_CODES.notApproved,
         message: "Approval does not have an approved resolution.",
       };
       return {
@@ -221,7 +218,7 @@ export class SafetyActionGate {
     }
     if (applicationClaim.status === "unknown_approval") {
       const error = {
-        code: OPENFX_NODE_ERROR_CODES.approvalNotRegistered,
+        code: APPROVAL_ERROR_CODES.notRegistered,
         message: "Approval is not registered with the consumption store.",
       };
       return {
@@ -288,7 +285,7 @@ export class SafetyActionGate {
     });
     if (resolutionClaim.status === "already_claimed") {
       const error = {
-        code: OPENFX_NODE_ERROR_CODES.approvalAlreadyResolved,
+        code: APPROVAL_ERROR_CODES.alreadyResolved,
         message: "Approval request has already been resolved.",
       };
       throw new ApprovalGateError(
@@ -298,7 +295,7 @@ export class SafetyActionGate {
     }
     if (resolutionClaim.status === "unknown_approval") {
       const error = {
-        code: OPENFX_NODE_ERROR_CODES.approvalNotRegistered,
+        code: APPROVAL_ERROR_CODES.notRegistered,
         message: "Approval is not registered with the consumption store.",
       };
       throw new ApprovalGateError(
@@ -308,7 +305,7 @@ export class SafetyActionGate {
     }
     if (resolutionClaim.status === "expired") {
       const error = {
-        code: OPENFX_NODE_ERROR_CODES.approvalExpired,
+        code: APPROVAL_ERROR_CODES.expired,
         message: "Approval request expired before resolution.",
       };
       throw new ApprovalGateError(
@@ -318,7 +315,7 @@ export class SafetyActionGate {
     }
     if (resolutionClaim.status === "fingerprint_mismatch") {
       const error = {
-        code: OPENFX_NODE_ERROR_CODES.approvalFingerprintMismatch,
+        code: APPROVAL_ERROR_CODES.fingerprintMismatch,
         message: "Approved parameters changed before resolution.",
       };
       throw new ApprovalGateError(

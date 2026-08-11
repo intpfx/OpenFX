@@ -7,10 +7,11 @@ import TopBarSearch from '~/components/TopBar/components/TopBarSearch.vue'
 import type { BewlyAppProvider } from '~/composables/useAppProvider'
 import { DrawerType, UndoForwardState } from '~/composables/useAppProvider'
 import { useDark } from '~/composables/useDark'
-import { BEWLY_MOUNTED, DRAWER_VIDEO_ENTER_PAGE_FULL, DRAWER_VIDEO_EXIT_PAGE_FULL, OVERLAY_SCROLL_BAR_SCROLL, OVERLAY_SCROLL_STATE_CHANGE } from '~/constants/globalEvents'
+import { BEWLY_DEV_OPEN_SETTINGS, BEWLY_MOUNTED, DRAWER_VIDEO_ENTER_PAGE_FULL, DRAWER_VIDEO_EXIT_PAGE_FULL, OVERLAY_SCROLL_BAR_SCROLL, OVERLAY_SCROLL_STATE_CHANGE } from '~/constants/globalEvents'
 import { HomeSubPage } from '~/contentScripts/views/Home/types'
 import { AppPage } from '~/enums/appEnums'
 import { settings } from '~/logic'
+import { getRuntimeLocationHref } from '~/runtime/location'
 import type { DockItem } from '~/stores/mainStore'
 import { useMainStore } from '~/stores/mainStore'
 import { useTopBarStore } from '~/stores/topBarStore'
@@ -23,12 +24,12 @@ import { setupNecessarySettingsWatchers } from './necessarySettingsWatchers'
 
 // Check if current page is festival page
 function isFestivalPage(): boolean {
-  return /https?:\/\/(?:www\.)?bilibili\.com\/festival\/.*/.test(document.URL)
+  return /https?:\/\/(?:www\.)?bilibili\.com\/festival\/.*/.test(getRuntimeLocationHref())
 }
 
 const mainStore = useMainStore()
 const topBarStore = useTopBarStore()
-const currentRouteUrl = ref(window.location.href)
+const currentRouteUrl = ref(getRuntimeLocationHref())
 const initialMobileVideoDrawerIntent = ref<string | null>(getMobileVideoDrawerIntentFromUrl())
 const { width: viewportWidth } = useWindowSize()
 const isMobileUserscriptPage = computed(() => {
@@ -37,7 +38,7 @@ const isMobileUserscriptPage = computed(() => {
   return isMobileUserscriptRuntimePage(currentRouteUrl.value) && !isInIframe()
 })
 
-function getMobileVideoDrawerIntentFromUrl(url: string = window.location.href): string | null {
+function getMobileVideoDrawerIntentFromUrl(url: string = getRuntimeLocationHref()): string | null {
   try {
     return new URL(url).searchParams.get(BEWLY_MOBILE_VIDEO_DRAWER_PARAM)
   }
@@ -46,12 +47,12 @@ function getMobileVideoDrawerIntentFromUrl(url: string = window.location.href): 
   }
 }
 
-function isBewlyHomePage(url: string = window.location.href): boolean {
+function isBewlyHomePage(url: string = getRuntimeLocationHref()): boolean {
   return isHomePage(url) || (isMobileUserscriptPage.value && isMobileBilibiliHomePage(url))
 }
 
 function getBewlyPageUrl(page: AppPage): string {
-  return getBewlyUserscriptHomeUrl(page, window.location.href)
+  return getBewlyUserscriptHomeUrl(page, getRuntimeLocationHref())
 }
 
 // Conditionally use dark mode (skip on festival pages)
@@ -67,10 +68,12 @@ else {
   isDark = ref(false)
 }
 const [showSettings, toggleSettings] = useToggle(false)
+if (import.meta.env.DEV)
+  useEventListener(window, BEWLY_DEV_OPEN_SETTINGS, () => { showSettings.value = true })
 
 // Get the 'page' query parameter from the URL
 function getPageParam(): AppPage | null {
-  const urlParams = new URLSearchParams(window.location.search)
+  const urlParams = new URL(getRuntimeLocationHref()).searchParams
   const result = urlParams.get('page') as AppPage | null
   if (result && Object.values(AppPage).includes(result))
     return result
@@ -78,14 +81,14 @@ function getPageParam(): AppPage | null {
 }
 
 function getCurrentAppPage(): AppPage {
-  const mobileRoutePage = isMobileUserscriptPage.value ? getMobileRouteAppPage(window.location.href) : undefined
+  const mobileRoutePage = isMobileUserscriptPage.value ? getMobileRouteAppPage(currentRouteUrl.value) : undefined
   return mobileRoutePage || getPageParam() || (settings.value.dockItemsConfig.find(e => e.visible === true)?.page || AppPage.Home)
 }
 
 const activatedPage = ref<AppPage>(getCurrentAppPage())
 
 function syncRouteFromUrl() {
-  currentRouteUrl.value = window.location.href
+  currentRouteUrl.value = getRuntimeLocationHref()
   const nextPage = getCurrentAppPage()
   if (nextPage !== activatedPage.value)
     activatedPage.value = nextPage
@@ -104,7 +107,7 @@ async function initializeMobileShellAccountData() {
 useEventListener(window, 'pushstate', syncRouteFromUrl)
 useEventListener(window, 'popstate', syncRouteFromUrl)
 useEventListener(window, 'replacestate', () => {
-  currentRouteUrl.value = window.location.href
+  currentRouteUrl.value = getRuntimeLocationHref()
 })
 
 watch(
@@ -330,7 +333,7 @@ const iframePageURL = computed((): string => {
   if (isMobileUserscriptPage.value)
     return ''
 
-  if (!isHomePage(window.self.location.href) || isInIframe())
+  if (!isHomePage(getRuntimeLocationHref()) || isInIframe())
     return ''
   const currentDockItemConfig = settings.value.dockItemsConfig.find(e => e.page === activatedPage.value)
   if (currentDockItemConfig) {
@@ -644,11 +647,12 @@ function openIframeDrawer(url: string) {
   const isSameOrigin = (origin: URL, destination: URL) =>
     origin.protocol === destination.protocol && origin.host === destination.host && origin.port === destination.port
 
-  const currentUrl = new URL(location.href)
+  const runtimeLocationHref = getRuntimeLocationHref()
+  const currentUrl = new URL(runtimeLocationHref)
   let destination: URL
 
   try {
-    destination = new URL(normalizeBilibiliUrlForCurrentSurface(url), location.href)
+    destination = new URL(normalizeBilibiliUrlForCurrentSurface(url), runtimeLocationHref)
 
     if (!isMobileUserscriptPage.value && !isSameOrigin(currentUrl, destination)) {
       openLinkToNewTab(destination.toString())
@@ -656,7 +660,7 @@ function openIframeDrawer(url: string) {
     }
 
     if (isMobileUserscriptPage.value && isBilibiliVideoDetailPage(destination.toString()))
-      destination = new URL(markBewlyMobileVideoDrawerFrameUrl(destination.toString()), location.href)
+      destination = new URL(markBewlyMobileVideoDrawerFrameUrl(destination.toString()), runtimeLocationHref)
   }
   catch {
     if (!isMobileUserscriptPage.value)
@@ -673,7 +677,7 @@ function openMobileUrlInPage(url: string) {
   const normalizedUrl = normalizeBilibiliUrlForCurrentSurface(url)
 
   try {
-    const destination = new URL(normalizedUrl, location.href)
+    const destination = new URL(normalizedUrl, getRuntimeLocationHref())
 
     if (isBilibiliVideoDetailPage(destination.toString())) {
       openIframeDrawer(destination.toString())
@@ -699,7 +703,7 @@ function consumeMobileVideoDrawerIntent() {
   if (!isMobileUserscriptPage.value)
     return
 
-  const current = new URL(window.location.href)
+  const current = new URL(getRuntimeLocationHref())
   const drawerUrl = current.searchParams.get(BEWLY_MOBILE_VIDEO_DRAWER_PARAM) ?? initialMobileVideoDrawerIntent.value
   if (!drawerUrl)
     return

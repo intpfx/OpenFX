@@ -6,22 +6,9 @@ import {
   readBoundedRequestBody,
   TRUSTED_REMOTE_ADDRESS_HEADER,
 } from "../server/runtime/deno-request.ts";
-import { createDenoServeOptions } from "../server/runtime/deno-serve-options.ts";
 import { assertSafeDenoBundle } from "../tools/verify-deno-entry.ts";
-import {
-  createConsoleControlPlane,
-  createMemoryConsoleStore,
-} from "../server/console/control-plane.ts";
 
 const remoteInfo = (hostname: string) => ({ remoteAddr: { hostname } });
-
-Deno.test("Deno entry binds only the marked local runtime to IPv4 loopback", () => {
-  expect(createDenoServeOptions("/tmp/openfx-local-runtime")).toEqual({
-    hostname: "127.0.0.1",
-  });
-  expect(createDenoServeOptions("   ")).toEqual({});
-  expect(createDenoServeOptions(undefined)).toEqual({});
-});
 
 Deno.test("Deno entry rejects chunked bodies above 64 KiB before localFetch", async () => {
   let localFetchCalls = 0;
@@ -44,7 +31,7 @@ Deno.test("Deno entry rejects chunked bodies above 64 KiB before localFetch", as
   });
 
   const response = await handler(
-    new Request("https://openfx.example/api/node/pair", {
+    new Request("https://openfx.example/api/how-much/upload", {
       method: "POST",
       body,
     }),
@@ -67,51 +54,6 @@ Deno.test("bounded Deno body reader accepts exactly 64 KiB", async () => {
     }),
   );
   expect(result?.byteLength).toBe(64 * 1024);
-});
-
-Deno.test("trusted Deno remote address owns one login rate bucket", async () => {
-  const plane = createConsoleControlPlane({
-    store: createMemoryConsoleStore(),
-    env: { OPENFX_ADMIN_KEY: "correct horse battery staple" },
-  });
-  const seenTrustedAddresses: string[] = [];
-  const seenForwardedAddresses: string[] = [];
-  const seenCloudflareAddresses: Array<string | null> = [];
-  const handler = createDenoRequestHandler({
-    localFetch(path, init) {
-      const headers = new Headers(init.headers);
-      seenTrustedAddresses.push(headers.get(TRUSTED_REMOTE_ADDRESS_HEADER) ?? "");
-      seenForwardedAddresses.push(headers.get("x-forwarded-for") ?? "");
-      seenCloudflareAddresses.push(headers.get("cf-connecting-ip"));
-      return plane.adminSession.create(
-        new Request(`https://openfx.example${path}`, {
-          method: init.method,
-          headers,
-          body: init.body as BodyInit,
-        }),
-      );
-    },
-  });
-
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    const response = await handler(
-      new Request("https://openfx.example/api/admin/session", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-forwarded-for": `198.51.100.${attempt}`,
-          "cf-connecting-ip": `2001:db8::${attempt}`,
-          [TRUSTED_REMOTE_ADDRESS_HEADER]: `192.0.2.${attempt}`,
-        },
-        body: JSON.stringify({ key: "wrong" }),
-      }),
-      remoteInfo("203.0.113.44"),
-    );
-    expect(response.status).toBe(attempt === 4 ? 429 : 401);
-  }
-  expect(new Set(seenTrustedAddresses)).toEqual(new Set(["203.0.113.44"]));
-  expect(new Set(seenForwardedAddresses)).toEqual(new Set(["203.0.113.44"]));
-  expect(new Set(seenCloudflareAddresses)).toEqual(new Set([null]));
 });
 
 Deno.test("Deno entry keeps websocket upgrades on the websocket adapter", async () => {

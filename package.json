@@ -1,8 +1,0 @@
-{
-  "name": "openfx",
-  "private": true,
-  "version": "0.1.0",
-  "description": "OpenFX monorepo for Perry desktop and VitePlus web applications.",
-  "license": "Apache-2.0",
-  "type": "module"
-}

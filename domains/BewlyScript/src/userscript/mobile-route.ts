@@ -1,4 +1,5 @@
 import { AppPage } from '~/enums/appEnums'
+import { getRuntimeLocationHref } from '~/runtime/location'
 
 import { DESKTOP_BILIBILI_HOST } from './mobile'
 
@@ -34,7 +35,7 @@ function isSupportedBilibiliSurface(url: URL): boolean {
     && url.hostname === DESKTOP_BILIBILI_HOST
 }
 
-export function parseMobileRoute(url: string = location.href): MobileRoute {
+export function parseMobileRoute(url: string = getRuntimeLocationHref()): MobileRoute {
   const parsed = parseRouteUrl(url)
   if (!parsed) {
     return { kind: 'unsupported', url }
@@ -88,15 +89,15 @@ export function parseMobileRoute(url: string = location.href): MobileRoute {
   return { kind: 'unsupported', url: parsed.toString() }
 }
 
-export function isCoreMobileRoute(url: string = location.href): boolean {
+export function isCoreMobileRoute(url: string = getRuntimeLocationHref()): boolean {
   const route = parseMobileRoute(url)
   return route.kind !== 'unsupported'
 }
 
-export function getMobileRouteAppPage(url: string = location.href): AppPage | undefined {
+export function getMobileRouteAppPage(url: string = getRuntimeLocationHref()): AppPage | undefined {
   return parseMobileRoute(url).page
 }
 
-export function isMobileVideoRoute(url: string = location.href): boolean {
+export function isMobileVideoRoute(url: string = getRuntimeLocationHref()): boolean {
   return parseMobileRoute(url).kind === 'video'
 }

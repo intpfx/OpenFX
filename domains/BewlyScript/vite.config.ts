@@ -18,6 +18,7 @@ export const sharedConfig: UserConfig = {
       '~/': `${r('src')}/`,
       '~': r('src'),
       'vue-i18n': r('src/utils/vue-i18n.ts'),
+      'webextension-polyfill': r('src/userscript/browser-shim.ts'),
     },
   },
   plugins: [
@@ -46,6 +47,9 @@ export const sharedConfig: UserConfig = {
     }),
 
   ],
+  define: {
+    'process.env.FIREFOX': 'false',
+  },
   optimizeDeps: {
     include: [
       'vue',
@@ -63,5 +67,6 @@ export default {
   test: {
     globals: true,
     environment: 'jsdom',
+    include: ['tests/**/*.spec.ts'],
   },
 }
