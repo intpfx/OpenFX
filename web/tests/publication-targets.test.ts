@@ -1,5 +1,6 @@
 import { expect } from "@std/expect";
 
+import { shouldReusePreparedMediaPlayerAssets } from "../../domains/media-player/openfx/build.ts";
 import {
   createNitroPublicAssets,
   createNitroServerAssets,
@@ -7,6 +8,14 @@ import {
   WEB_DEV_PROXY_PATHS,
   WEB_PUBLICATION_TARGETS,
 } from "../publication-targets.ts";
+
+Deno.test("Deploy reuses the checked-in media-player publication snapshot", () => {
+  expect(shouldReusePreparedMediaPlayerAssets({ DENO_DEPLOY: "true" }, true))
+    .toBe(true);
+  expect(shouldReusePreparedMediaPlayerAssets({ DENO_DEPLOY: "true" }, false))
+    .toBe(false);
+  expect(shouldReusePreparedMediaPlayerAssets({}, true)).toBe(false);
+});
 
 Deno.test("web publication targets drive assets, proxies, and preparations", () => {
   const ids = WEB_PUBLICATION_TARGETS.map((target) => target.id);

@@ -35,3 +35,5 @@ jobs:
           VITE_OPENFX_BUILD_HASH: ${{ steps.web-build-meta.outputs.hash }}
           VITE_OPENFX_BUILD_TIME: ${{ steps.web-build-meta.outputs.time }}
         run: deno task --config web/deno.json build
+      - name: Verify media-player publication snapshot
+        run: git diff --exit-code -- domains/media-player/.openfx-public

@@ -121,6 +121,9 @@ OpenFX 是个人项目集合 monorepo。Agent 应以实际源码、配置、测�
 - 只保留 OPFS 文件/字幕读取、续播、进度回传、Video.js 控件和固定播放引擎。
 - 不恢复媒体目录、Firebase、TMDB、跨设备同步、扩展、落地页或调试页。
 - vendor 引擎来自 `playsvideo@0.4.7`；来源或许可证变化时同步 LICENSE/第三方声明。
+- `.openfx-public/` 是由 domain build 生成并经 CI 差异校验的发布快照；Deno Deploy 构建
+  直接复用，避免在 3 GiB builder 中嵌套运行 pnpm install。修改播放器源码时必须本地
+  重建并提交同步后的快照。
 
 ### `domains/map-poster`
 

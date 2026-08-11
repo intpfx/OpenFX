@@ -142,6 +142,10 @@ deno task web:deploy
 `universes/openfx`；只有明确准备 切换生产流量时才追加 `--prod`。CI 或 Agent 使用
 `DENO_DEPLOY_TOKEN`，并追加 `--json --non-interactive`。
 
+`domains/media-player/.openfx-public/` 保存最小播放器的确定性发布快照。普通开发和 GitHub
+CI 会从 domain 源码重新构建它，CI 同时检查快照无差异；Deno Deploy 直接复用该
+快照，避免在 3 GiB builder 中再次运行独立 pnpm 安装。
+
 这里的“统一”为根产品工具链收口，不是删除所有 domain 的包清单。下列独立产品仍由其
 上游工具链读取各自的 `package.json` 和锁文件，因此继续保留：
 
