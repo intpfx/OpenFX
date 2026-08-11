@@ -1,10 +1,18 @@
 const domainRoot = new URL('../', import.meta.url);
 const openFxPublic = new URL('../.openfx-public/', import.meta.url);
 const pnpmVersion = '9.15.9';
+const pnpmMaxOldSpaceMb = 2048;
 
 async function runPnpm(args: string[], env: Record<string, string> = {}) {
   const command = new Deno.Command(Deno.execPath(), {
-    args: ['run', '--no-config', '-A', `npm:pnpm@${pnpmVersion}`, ...args],
+    args: [
+      'run',
+      `--v8-flags=--max-old-space-size=${pnpmMaxOldSpaceMb}`,
+      '--no-config',
+      '-A',
+      `npm:pnpm@${pnpmVersion}`,
+      ...args,
+    ],
     cwd: domainRoot,
     env: {
       ...Deno.env.toObject(),
@@ -22,7 +30,13 @@ async function runPnpm(args: string[], env: Record<string, string> = {}) {
 
 export async function prepareMediaPlayerAssets() {
   console.log(`[openfx:media-player] install with pnpm ${pnpmVersion}`);
-  await runPnpm(['install', '--frozen-lockfile', '--prefer-offline']);
+  await runPnpm([
+    'install',
+    '--frozen-lockfile',
+    '--prefer-offline',
+    '--network-concurrency=8',
+    '--child-concurrency=2',
+  ]);
 
   console.log('[openfx:media-player] build minimal player');
   await runPnpm(['run', 'build'], {
