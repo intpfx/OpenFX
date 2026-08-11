@@ -79,7 +79,7 @@
     "app": "openfx",
     "build": "deno task web:build",
     "runtime": {
-      "mode": "dynamic",
+      "type": "dynamic",
       "entrypoint": "web/.output/server/index.ts",
       "cwd": "."
     },

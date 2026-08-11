@@ -8,7 +8,7 @@ type RootConfig = {
     app?: string;
     build?: string;
     runtime?: {
-      mode?: string;
+      type?: string;
       entrypoint?: string;
       cwd?: string;
     };
@@ -31,7 +31,7 @@ Deno.test("root config publishes the root-level Web product through Deploy CLI",
     app: "openfx",
     build: "deno task web:build",
     runtime: {
-      mode: "dynamic",
+      type: "dynamic",
       entrypoint: "web/.output/server/index.ts",
       cwd: ".",
     },
