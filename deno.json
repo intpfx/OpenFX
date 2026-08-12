@@ -9,14 +9,20 @@
   ],
   "tasks": {
     "fmt": "deno fmt .",
+    "fmt:check": "deno fmt --check .",
     "lint": "deno lint .",
     "guard:deno-only": "deno run -A ./tools/guard-deno-only.ts",
-    "test": "deno test --allow-env --allow-read=web/src/App.tsx,web/src/file-library/FileLibraryHomepage.tsx,web/src/file-library/file-library.css,web/src/styles.css,web/deno.json,web/nitro.config.ts,web/vite.config.ts,web/public/map-poster/tokyo-japanese-ink.webp,web/public/site.webmanifest,web/public/sw.js,domains/hlc/public/hlc,deno.json,web/index.html,web/public/theme-bootstrap.js domains/e/tests web/tests",
-    "check": "deno fmt --check . && deno lint . && deno task guard:deno-only && deno test --allow-env --allow-read=web/src/App.tsx,web/src/file-library/FileLibraryHomepage.tsx,web/src/file-library/file-library.css,web/src/styles.css,web/deno.json,web/nitro.config.ts,web/vite.config.ts,web/public/map-poster/tokyo-japanese-ink.webp,web/public/site.webmanifest,web/public/sw.js,domains/hlc/public/hlc,deno.json,web/index.html,web/public/theme-bootstrap.js domains/e/tests web/tests",
-    "web:dev": "deno task --config web/deno.json dev",
-    "web:build": "deno task --config web/deno.json build",
-    "web:preview": "deno task --config web/deno.json preview",
-    "web:deploy": "deno deploy ."
+    "test:e": "deno test --allow-env domains/e/tests",
+    "test:web": "deno task --config web/deno.json test",
+    "test": "deno task test:e && deno task test:web",
+    "check": "deno task fmt:check && deno task lint && deno task guard:deno-only && deno task test",
+    "prepare": "deno task --config web/deno.json prepare",
+    "dev": "deno task --config web/deno.json dev",
+    "dev:client": "deno task --config web/deno.json dev:client",
+    "dev:server": "deno task --config web/deno.json dev:server",
+    "build": "deno task --config web/deno.json build",
+    "preview": "deno task --config web/deno.json preview",
+    "deploy": "deno deploy ."
   },
   "fmt": {
     "lineWidth": 88,
@@ -77,7 +83,7 @@
   "deploy": {
     "org": "universes",
     "app": "openfx",
-    "build": "deno task web:build",
+    "build": "deno task build",
     "runtime": {
       "type": "dynamic",
       "entrypoint": "web/.output/server/index.ts",

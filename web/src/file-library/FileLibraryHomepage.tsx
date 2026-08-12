@@ -1,23 +1,25 @@
 import {
   ArrowClockwise,
   ArrowLeft,
+  ArrowsOutSimple,
   ArrowSquareOut,
-  CaretDown,
-  CaretUp,
-  CopySimple,
   DownloadSimple,
   FolderOpen,
   Heart,
+  HeartStraight,
   Info,
   LinkSimple,
+  LinkSimpleHorizontal,
   MagnifyingGlass,
   MapPin,
-  NotePencil,
   PlayCircle,
   Plus,
   SpeakerHigh,
   SpeakerSlash,
+  StackSimple,
+  TextT,
   Trash,
+  TrayArrowDown,
   UploadSimple,
   X,
 } from "@phosphor-icons/react";
@@ -36,7 +38,6 @@ import {
   LIBRARY_APP_COUNT,
   type LibraryAppId,
 } from "../../library-app-catalog.ts";
-import { HomepageThemeControl } from "../homepage/HomepageThemeControl.tsx";
 import {
   filterLibraryItems,
   formatLibraryBytes,
@@ -52,6 +53,11 @@ import {
 } from "./file-library-session.ts";
 import { getLibraryAppTileColor } from "./app-tile.ts";
 import { summarizeFileLibraryHudProgress } from "./hud-state.ts";
+import {
+  type LibraryGridColumns,
+  parseLibraryGridColumns,
+  resolveLibraryGridColumnsFromPinch,
+} from "./grid-density.ts";
 import { makeMediaPlayerUrl } from "./media-player-url.ts";
 import { createVideoThumbnail } from "./video-thumbnail.ts";
 import { type DuplicateGroup, findDuplicateGroups } from "./similarity-core.ts";
@@ -71,43 +77,12 @@ const KIND_LABELS: Record<LibraryItem["kind"], string> = {
 
 type ComposerKind = "text" | "link";
 
-const SMART_VIEW_LABELS: Record<LibrarySmartView, string> = {
-  all: "全部内容",
-  recent: "最近播放",
-  photos: "全部照片",
-  "live-photos": "实况图片",
-  favorites: "收藏",
-  places: "有位置的照片",
-  videos: "全部视频",
-  movies: "电影",
-  shows: "剧集",
-  duplicates: "重复项",
-};
+const LIBRARY_GRID_COLUMNS_KEY = "openfx-library-grid-columns";
 
-const SMART_VIEW_ORDER: readonly LibrarySmartView[] = [
-  "all",
-  "photos",
-  "videos",
-  "live-photos",
-  "duplicates",
-  "recent",
-  "favorites",
-  "places",
-  "movies",
-  "shows",
-];
-
-const SMART_VIEW_SHORT_LABELS: Record<LibrarySmartView, string> = {
-  all: "全部",
-  recent: "最近",
-  photos: "照片",
-  "live-photos": "实况",
-  favorites: "收藏",
-  places: "位置",
-  videos: "视频",
-  movies: "电影",
-  shows: "剧集",
-  duplicates: "重复项",
+type PinchGesture = {
+  initialColumns: LibraryGridColumns;
+  initialDistance: number;
+  pointers: Map<number, { x: number; y: number }>;
 };
 
 function formatMediaTime(seconds: number): string {
@@ -264,7 +239,8 @@ function LibraryCard(props: {
   item: LibraryItem;
   library: OpfsFileLibrary;
   duplicateType?: DuplicateGroup["type"];
-  onOpen: (item: LibraryItem) => void;
+  selected: boolean;
+  onSelect: (item: LibraryItem) => void;
 }) {
   const appPreview = props.item.kind === "app" ? props.item.app?.preview : undefined;
   const showsAppColor = props.item.kind === "app" && !appPreview;
@@ -313,7 +289,9 @@ function LibraryCard(props: {
     <article
       className={`file-library-card is-${props.item.kind}${
         appPreview ? " has-live-app-preview" : ""
-      }${showsAppColor ? " has-color-app-preview" : ""}`}
+      }${showsAppColor ? " has-color-app-preview" : ""}${
+        props.selected ? " is-selected" : ""
+      }`}
       data-library-item={props.item.id}
     >
       <span
@@ -439,11 +417,107 @@ function LibraryCard(props: {
         : null}
       <button
         aria-label={`${props.item.name} ${KIND_LABELS[props.item.kind]}`}
+        aria-pressed={props.selected}
         className="file-library-card-open"
         type="button"
-        onClick={() => props.onOpen(props.item)}
+        onClick={() => props.onSelect(props.item)}
       />
     </article>
+  );
+}
+
+function LibraryHudPreview(props: {
+  item: LibraryItem;
+  library: OpfsFileLibrary;
+}) {
+  const appPreview = props.item.kind === "app" ? props.item.app?.preview : undefined;
+  const showsAppColor = props.item.kind === "app" && !appPreview;
+  const visualRef = props.item.preview ?? props.item.source;
+  const showsVisual = props.item.kind === "image" ||
+    props.item.kind === "live-photo" ||
+    (props.item.kind === "video" && Boolean(props.item.preview));
+  const { url } = useStoredObjectUrl(
+    props.library,
+    showsVisual ? visualRef : undefined,
+  );
+  const [textPreview, setTextPreview] = useState("");
+
+  useEffect(() => {
+    if (props.item.kind !== "text") {
+      setTextPreview("");
+      return;
+    }
+    let active = true;
+    props.library.getStoredFile(props.item.source).then((stored) => stored.text()).then(
+      (text) => {
+        if (active) setTextPreview(text.slice(0, 2_000));
+      },
+    ).catch(() => {
+      if (active) setTextPreview("");
+    });
+    return () => {
+      active = false;
+    };
+  }, [props.item, props.library]);
+
+  return (
+    <div
+      className={`file-library-hud-preview-surface is-${props.item.kind}${
+        appPreview ? " has-live-app-preview" : ""
+      }${showsAppColor ? " has-color-app-preview" : ""}`}
+      style={showsAppColor
+        ? {
+          backgroundColor: getLibraryAppTileColor(
+            props.item.app?.id ?? props.item.id,
+          ),
+        }
+        : undefined}
+    >
+      {appPreview
+        ? (
+          <iframe
+            aria-hidden="true"
+            loading="eager"
+            sandbox={appPreview.sandbox}
+            src={appPreview.src}
+            tabIndex={-1}
+            title={`${appPreview.title} HUD 预览`}
+          />
+        )
+        : null}
+      {showsAppColor
+        ? (
+          <div className="file-library-hud-preview-app-copy">
+            <span>
+              {KIND_LABELS.app}
+              {props.item.app?.tech.length
+                ? ` · ${props.item.app.tech.slice(0, 3).join(" / ")}`
+                : ""}
+            </span>
+            <strong>{props.item.name}</strong>
+            <p>{props.item.app?.description}</p>
+          </div>
+        )
+        : null}
+      {url ? <img alt="" src={url} /> : null}
+      {props.item.kind === "text" ? <pre>{textPreview || "文本内容"}</pre> : null}
+      {props.item.kind === "link" && props.item.url
+        ? (
+          <div className="file-library-hud-preview-link">
+            <LinkSimple aria-hidden="true" size={44} />
+            <span>{new URL(props.item.url).hostname}</span>
+          </div>
+        )
+        : null}
+      {!appPreview && !showsAppColor && !url && props.item.kind !== "text" &&
+          props.item.kind !== "link"
+        ? (
+          <span className="file-library-hud-preview-file">
+            {props.item.source.name.split(".").pop()?.toUpperCase() || "FILE"}
+          </span>
+        )
+        : null}
+    </div>
   );
 }
 
@@ -477,6 +551,17 @@ function LibraryViewer(props: {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
   const [albums, setAlbums] = useState((props.item.albums ?? []).join(", "));
+  const [mediaPlayerSource] = useState(() =>
+    props.item.kind === "video"
+      ? makeMediaPlayerUrl(props.item.source, {
+        itemId: props.item.id,
+        resumePositionSec: props.item.playback?.watchState === "in-progress"
+          ? props.item.playback.positionSec
+          : 0,
+        subtitles: props.item.subtitles,
+      })
+      : ""
+  );
 
   useEffect(() => {
     setAlbums((props.item.albums ?? []).join(", "));
@@ -525,12 +610,6 @@ function LibraryViewer(props: {
       setDeleting(false);
     }
   }
-
-  const playerRef = props.item.kind === "video"
-    ? props.item.source
-    : props.item.kind === "live-photo"
-    ? props.item.motion
-    : undefined;
 
   return (
     <section
@@ -623,17 +702,11 @@ function LibraryViewer(props: {
         {props.item.kind === "image" && image.url
           ? <img alt={props.item.name} src={image.url} />
           : null}
-        {props.item.kind === "video" && playerRef
+        {props.item.kind === "video" && mediaPlayerSource
           ? (
             <iframe
               allow="autoplay; fullscreen"
-              src={makeMediaPlayerUrl(playerRef, {
-                itemId: props.item.id,
-                resumePositionSec: props.item.playback?.watchState === "in-progress"
-                  ? props.item.playback.positionSec
-                  : 0,
-                subtitles: props.item.subtitles,
-              })}
+              src={mediaPlayerSource}
               title={`${props.item.name} · OpenFX Media Player`}
             />
           )
@@ -931,15 +1004,27 @@ export function FileLibraryHomepage(props: {
   const [sessionSnapshot, setSessionSnapshot] = useState(session.getSnapshot);
   const { items, busy, message, storage } = sessionSnapshot;
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [viewerOpen, setViewerOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [smartView, setSmartView] = useState<LibrarySmartView>("all");
-  const [hudExpanded, setHudExpanded] = useState(false);
+  const [gridColumns, setGridColumns] = useState<LibraryGridColumns>(() => {
+    try {
+      return parseLibraryGridColumns(
+        globalThis.localStorage?.getItem(LIBRARY_GRID_COLUMNS_KEY),
+      );
+    } catch {
+      return 3;
+    }
+  });
   const [composer, setComposer] = useState<ComposerKind | null>(null);
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const selected = selectedId
+  const pinchGesture = useRef<PinchGesture | null>(null);
+  const selectedById = selectedId
     ? items.find((item) => item.id === selectedId) ?? null
     : null;
+  const selected = selectedById ?? items.find((item) => item.app?.id === "finlyzer") ??
+    items[0] ?? null;
 
   const visibleItems = useMemo(
     () => filterLibraryItems(searchLibraryItems(items, query), smartView),
@@ -974,6 +1059,17 @@ export function FileLibraryHomepage(props: {
     };
   }, [session]);
 
+  useEffect(() => {
+    try {
+      globalThis.localStorage?.setItem(
+        LIBRARY_GRID_COLUMNS_KEY,
+        String(gridColumns),
+      );
+    } catch {
+      // A blocked preference store must not disable pinch-to-zoom.
+    }
+  }, [gridColumns]);
+
   async function importSelected(files: FileList | readonly File[]) {
     await session.importFiles(files);
     if (inputRef.current) inputRef.current.value = "";
@@ -987,10 +1083,17 @@ export function FileLibraryHomepage(props: {
   }
 
   async function removeItem(item: LibraryItem) {
-    if (await session.removeItem(item.id)) setSelectedId(null);
+    if (await session.removeItem(item.id)) {
+      setSelectedId(null);
+      setViewerOpen(false);
+    }
   }
 
-  async function openDuplicateReview() {
+  async function toggleDuplicateReview() {
+    if (smartView === "duplicates") {
+      setSmartView("all");
+      return;
+    }
     setSmartView("duplicates");
     await session.reviewDuplicates();
   }
@@ -998,6 +1101,48 @@ export function FileLibraryHomepage(props: {
   const storageText = storage
     ? `${formatLibraryBytes(storage.usage)} / ${formatLibraryBytes(storage.quota)}`
     : "OPFS 本地存储";
+
+  function updatePinchPointer(pointerId: number, x: number, y: number) {
+    const gesture = pinchGesture.current;
+    if (!gesture || !gesture.pointers.has(pointerId)) return;
+    gesture.pointers.set(pointerId, { x, y });
+    if (gesture.pointers.size !== 2) return;
+    const [first, second] = [...gesture.pointers.values()];
+    const distance = Math.hypot(first.x - second.x, first.y - second.y);
+    setGridColumns(
+      resolveLibraryGridColumnsFromPinch(
+        gesture.initialColumns,
+        distance / gesture.initialDistance,
+      ),
+    );
+  }
+
+  function addPinchPointer(pointerId: number, x: number, y: number) {
+    if (!pinchGesture.current) {
+      pinchGesture.current = {
+        initialColumns: gridColumns,
+        initialDistance: 0,
+        pointers: new Map(),
+      };
+    }
+    const gesture = pinchGesture.current;
+    gesture.pointers.set(pointerId, { x, y });
+    if (gesture.pointers.size === 2) {
+      const [first, second] = [...gesture.pointers.values()];
+      gesture.initialColumns = gridColumns;
+      gesture.initialDistance = Math.hypot(
+        first.x - second.x,
+        first.y - second.y,
+      );
+    }
+  }
+
+  function removePinchPointer(pointerId: number) {
+    const gesture = pinchGesture.current;
+    if (!gesture) return;
+    gesture.pointers.delete(pointerId);
+    if (gesture.pointers.size === 0) pinchGesture.current = null;
+  }
 
   return (
     <main
@@ -1016,144 +1161,117 @@ export function FileLibraryHomepage(props: {
         void importSelected(event.dataTransfer.files);
       }}
     >
-      {!hudExpanded
-        ? (
-          <button
-            aria-expanded="false"
-            aria-label={`展开文件库控制面板，${hudProgress.label} ${hudProgress.processed}/${hudProgress.total}`}
-            className="file-library-core"
-            style={{
-              "--file-library-core-progress": `${hudProgress.ratio * 360}deg`,
-            } as CSSProperties}
-            type="button"
-            onClick={() => setHudExpanded(true)}
-          >
-            <span aria-hidden="true" className="file-library-core-atmosphere" />
-            <span aria-hidden="true" className="file-library-core-orbit" />
-            <span className="file-library-core-copy">
-              <small>OPENFX LIBRARY</small>
-              <strong>{hudProgress.processed} / {hudProgress.total}</strong>
-              <span>{hudProgress.label}</span>
-              <CaretDown aria-hidden="true" size={12} weight="bold" />
-            </span>
-          </button>
-        )
-        : (
-          <header className="file-library-head file-library-hud is-expanded">
-            <div className="file-library-head-primary">
-              <span className="file-library-brand" aria-label="OpenFX">
-                Open<span>FX</span>
-              </span>
-              <span className="file-library-count">{visibleItems.length} 项</span>
-              <span className="file-library-head-spacer" />
-              <HomepageThemeControl compact />
-              <button
-                aria-expanded="true"
-                aria-label="收起文件库控制面板"
-                className="file-library-collapse"
-                type="button"
-                onClick={() => setHudExpanded(false)}
-              >
-                <CaretUp aria-hidden="true" size={21} />
-              </button>
+      <header className="file-library-head">
+        {selected
+          ? (
+            <div className="file-library-hud-preview">
+              <LibraryHudPreview item={selected} library={library} />
             </div>
+          )
+          : null}
 
-            <label className="file-library-search">
-              <MagnifyingGlass aria-hidden="true" size={21} />
-              <input
-                placeholder="搜索文件"
-                type="search"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Escape") setQuery("");
-                }}
-              />
-            </label>
-
-            <nav aria-label="智能视图" className="file-library-smart-views">
-              {SMART_VIEW_ORDER.map((view) => (
-                <button
-                  aria-label={SMART_VIEW_LABELS[view]}
-                  aria-pressed={smartView === view}
-                  className={smartView === view ? "is-active" : undefined}
-                  key={view}
-                  type="button"
-                  onClick={() => setSmartView(view)}
-                >
-                  {SMART_VIEW_SHORT_LABELS[view]}
-                </button>
-              ))}
-            </nav>
-
-            <nav aria-label="文件库操作" className="file-library-actions">
-              <button
-                aria-label="导入文件"
-                type="button"
-                onClick={() => inputRef.current?.click()}
-              >
-                <UploadSimple aria-hidden="true" size={21} />
-                <span>导入</span>
-              </button>
-              <button
-                aria-label="保存链接"
-                type="button"
-                onClick={() => setComposer("link")}
-              >
-                <LinkSimple aria-hidden="true" size={21} />
-                <span>链接</span>
-              </button>
-              <button
-                aria-label="新建文本"
-                type="button"
-                onClick={() => setComposer("text")}
-              >
-                <NotePencil aria-hidden="true" size={21} />
-                <span>文本</span>
-              </button>
-              <button
-                aria-label="检查重复文件"
-                type="button"
-                onClick={() => void openDuplicateReview()}
-              >
-                <CopySimple aria-hidden="true" size={21} />
-                <span>查重</span>
-              </button>
-            </nav>
-
-            <div className="file-library-analysis" aria-live="polite">
-              <span className="file-library-analysis-copy">
-                <i aria-hidden="true" data-active={hudProgress.active} />
-                <span>
-                  {hudProgress.label} · {hudProgress.processed}/{hudProgress.total}
-                </span>
-              </span>
-              <small title={message}>{message} · {storageText}</small>
-              {storage && !storage.persisted
-                ? (
+        <div className="file-library-searchbar">
+          <label className="file-library-search">
+            <MagnifyingGlass aria-hidden="true" size={21} />
+            <input
+              aria-label={`搜索文件，当前 ${visibleItems.length} 项`}
+              placeholder={`搜索 ${visibleItems.length} 项`}
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") setQuery("");
+              }}
+            />
+          </label>
+          <nav className="file-library-toolbar-actions" aria-label="文件库操作">
+            {selected
+              ? (
+                <>
                   <button
+                    aria-label="打开所选内容"
                     type="button"
-                    onClick={() => void session.persistStorage()}
+                    onClick={() => setViewerOpen(true)}
                   >
-                    保持存储
+                    <ArrowsOutSimple aria-hidden="true" size={22} weight="light" />
                   </button>
-                )
-                : null}
-              <span aria-hidden="true" className="file-library-analysis-track">
-                <span style={{ width: `${hudProgress.ratio * 100}%` }} />
-              </span>
-            </div>
-          </header>
-        )}
+                  <button
+                    aria-label={selected.favorite ? "取消收藏" : "收藏"}
+                    aria-pressed={Boolean(selected.favorite)}
+                    type="button"
+                    onClick={() =>
+                      void session.setFavorite(selected.id, !selected.favorite)}
+                  >
+                    <HeartStraight aria-hidden="true" size={22} weight="light" />
+                  </button>
+                </>
+              )
+              : null}
+            <button
+              aria-label="导入文件"
+              type="button"
+              onClick={() => inputRef.current?.click()}
+            >
+              <TrayArrowDown aria-hidden="true" size={22} weight="light" />
+            </button>
+            <button
+              aria-label="保存链接"
+              type="button"
+              onClick={() => setComposer("link")}
+            >
+              <LinkSimpleHorizontal aria-hidden="true" size={22} weight="light" />
+            </button>
+            <button
+              aria-label="新建文本"
+              type="button"
+              onClick={() => setComposer("text")}
+            >
+              <TextT aria-hidden="true" size={22} weight="light" />
+            </button>
+            <button
+              aria-label={smartView === "duplicates"
+                ? "退出重复项审阅"
+                : "检查重复文件"}
+              aria-pressed={smartView === "duplicates"}
+              type="button"
+              onClick={() => void toggleDuplicateReview()}
+            >
+              <StackSimple aria-hidden="true" size={22} weight="light" />
+            </button>
+          </nav>
+        </div>
+        <span className="sr-only" aria-live="polite">
+          {hudProgress.label}，{hudProgress.processed}/{hudProgress.total}；{message}；
+          {storageText}
+        </span>
+      </header>
 
-      <section aria-label="OpenFX 文件库内容" className="file-library-grid">
+      <section
+        aria-label={`OpenFX 文件库内容，${gridColumns} 列，可双指缩放`}
+        className="file-library-grid"
+        style={{ "--file-library-grid-columns": gridColumns } as CSSProperties}
+        onPointerDown={(event) => {
+          if (event.pointerType !== "mouse") {
+            event.currentTarget.setPointerCapture(event.pointerId);
+            addPinchPointer(event.pointerId, event.clientX, event.clientY);
+          }
+        }}
+        onPointerMove={(event) => {
+          updatePinchPointer(event.pointerId, event.clientX, event.clientY);
+        }}
+        onPointerUp={(event) => removePinchPointer(event.pointerId)}
+        onPointerCancel={(event) => removePinchPointer(event.pointerId)}
+      >
         {visibleItems.map((item) => (
           <LibraryCard
             key={item.id}
             item={item}
             library={library}
             duplicateType={duplicateTypes.get(item.id)}
-            onOpen={(item) => setSelectedId(item.id)}
+            selected={selected?.id === item.id}
+            onSelect={(item) => {
+              setSelectedId(item.id);
+            }}
           />
         ))}
         {items.length === 0 && !busy
@@ -1199,12 +1317,13 @@ export function FileLibraryHomepage(props: {
           </div>
         )
         : null}
-      {selected
+      {selected && viewerOpen
         ? (
           <LibraryViewer
             item={selected}
+            key={selected.id}
             library={library}
-            onClose={() => setSelectedId(null)}
+            onClose={() => setViewerOpen(false)}
             onDelete={removeItem}
             onItemsChange={session.replaceItems}
             renderApp={props.renderApp}

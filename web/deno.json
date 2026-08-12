@@ -3,7 +3,12 @@
   "exports": "./src/main.tsx",
   "publish": false,
   "tasks": {
-    "dev": "deno run --no-config --allow-read=../domains/hlc --allow-write=.hlc-public ../domains/hlc/tools/build-display-app.ts && deno run --no-config -A ../domains/media-player/openfx/build.ts && deno run --config deno.json --lock ../deno.lock --frozen -A npm:concurrently@9.2.1 -k -n web,server -c blue,green \"deno run --config deno.json --lock ../deno.lock --frozen -A tools/vite.ts dev\" \"deno run --config deno.json --lock ../deno.lock --frozen -A npm:nitropack@2.13.4 dev\"",
+    "prepare:hlc": "deno run --no-config --allow-read=../domains/hlc --allow-write=.hlc-public ../domains/hlc/tools/build-display-app.ts",
+    "prepare:media-player": "deno run --no-config -A ../domains/media-player/openfx/build.ts",
+    "prepare": "deno task prepare:hlc && deno task prepare:media-player",
+    "dev:client": "deno run --config deno.json --lock ../deno.lock --frozen -A tools/vite.ts dev",
+    "dev:server": "deno run --config deno.json --lock ../deno.lock --frozen -A npm:nitropack@2.13.4 dev",
+    "dev": "deno task prepare && deno run --config deno.json --lock ../deno.lock --frozen -A npm:concurrently@9.2.1 -k -n client,server -c blue,green \"deno task dev:client\" \"deno task dev:server\"",
     "build": "deno run --config deno.json --lock ../deno.lock --frozen -A tools/build-with-metadata.ts",
     "preview": "deno task build && deno run --unstable-kv -A .output/server/index.ts",
     "test": "deno test --allow-env --allow-read=src/App.tsx,src/file-library/FileLibraryHomepage.tsx,src/file-library/file-library.css,src/styles.css,deno.json,nitro.config.ts,vite.config.ts,public/map-poster/tokyo-japanese-ink.webp,public/site.webmanifest,public/sw.js,../domains/hlc/public/hlc,../deno.json,index.html,public/theme-bootstrap.js tests"

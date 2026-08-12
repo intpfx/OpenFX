@@ -107,6 +107,11 @@ function createStore(initial: LibraryItem[]) {
     retryFingerprintAnalysis() {
       return Promise.resolve(items);
     },
+    setFavorite(id, favorite) {
+      calls.push(`favorite:${id}:${favorite}`);
+      items = items.map((item) => item.id === id ? { ...item, favorite } : item);
+      return Promise.resolve(items);
+    },
     removeItem(id) {
       items = items.filter((item) => item.id !== id);
       return Promise.resolve(items);
@@ -194,5 +199,21 @@ Deno.test("file library session serializes user mutations through busy state", a
   expect(await first).toBe(true);
   expect(session.getSnapshot().busy).toBe(false);
   expect(session.getSnapshot().message).toBe("已导入 1 个文件");
+  session.stop();
+});
+
+Deno.test("file library session owns favorite mutations for every item kind", async () => {
+  const fake = createStore([libraryItem("app", "app")]);
+  const session = createFileLibrarySession({
+    store: fake.store,
+    defaultAppCount: 13,
+    createVideoThumbnail: () => Promise.reject(new Error("unused")),
+  });
+  await session.start();
+
+  expect(await session.setFavorite("app", true)).toBe(true);
+  expect(session.getSnapshot().items[0]?.favorite).toBe(true);
+  expect(session.getSnapshot().message).toBe("已收藏");
+  expect(fake.calls).toContain("favorite:app:true");
   session.stop();
 });

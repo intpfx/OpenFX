@@ -19,8 +19,14 @@ Deploy。首页不是本机文件浏览器，也不是营销页，而是由应�
 - 照片可按拍摄日期、实况、收藏、位置和相册派生查看，不复制原始字节；
 - 13 个内置 App 作为只读虚拟条目合并到同一内容墙，不占用 OPFS 配额。
 
-文件库内容墙使用无间距正方形网格。少量内容只占需要的列，未占用区域保持磨砂背景。
-品牌、数量、搜索、主题、存储状态和新建操作集中在一个悬浮 HUD 中。
+文件库内容墙使用无间距正方形网格。少量内容只占需要的列，未占用区域保持磨砂背景；
+触屏可像照片应用一样双指缩放，在 2–5 列之间切换并保存本机显示偏好。点按内容只会更新
+页面顶部的全宽 HUD 预览，打开、收藏和更多操作通过预览底部的图标执行，只有“打开”才
+进入全窗口查看器；没有动态预览的 App 会在 HUD 中展示 catalog 的名称、技术栈与完整说明。
+搜索与打开、收藏、导入、保存链接、新建文本和查重操作共用一条无边框工具条，不提供额外
+视图筛选；所有操作使用轻量线性图标，悬停只高亮图标线条。当前项目数直接写入搜索占位
+文案；页面不提供手动明暗开关，只实时跟随系统主题。移动端竖屏时 HUD 预览固定在顶部并 占约
+40% 视口高度，工具条与其相接；下方内容矩阵在始终保留顶部圆角的独立容器内滚动。
 
 ### 重复与相似文件
 
@@ -102,6 +108,10 @@ Web 文件库还索引 Smartisax、LiveSystem 和 WanderingPlan 等外部项目�
 preview 和链接保存在 `web/content/library-apps.json`；ID、详情 renderer 与嵌入策略由
 `web/library-app-catalog.ts` 统一校验。
 
+文件库界面在手机竖屏使用固定的顶部 HUD 与下方滚动矩阵；手机横屏和桌面宽屏统一切换为
+左侧固定 HUD、右侧独立滚动矩阵，搜索和操作工具栏固定在 HUD 底部。两种布局都保持内容格
+为正方形，并支持双指缩放调整列数。
+
 Web 入口的几个深 Module 分别承担稳定边界：
 
 - `src/file-library/file-library-session.ts` 管理 OPFS 加载、用户 mutation、存储状态、
@@ -117,13 +127,18 @@ Web 入口的几个深 Module 分别承担稳定边界：
 前置依赖为 Deno。根目录常用命令：
 
 ```bash
-deno task web:dev
-deno task web:build
+deno task dev
+deno task dev:client
+deno task dev:server
+deno task build
 deno task check
 ```
 
-- Vite 开发端口：`http://localhost:5501`
-- Nitro 开发端口：`http://localhost:3000`
+- `dev` 先准备 HLC 与播放器静态资源，再同时启动客户端和服务端；
+- `dev:client` 只启动当前源码的 Vite 客户端：`http://localhost:5501`；
+- `dev:server` 只启动 Nitro API 与静态资源服务：`http://localhost:3000`；
+- 日常开发应进入 5501；3000 主要供 5501 的开发代理使用，不作为前端热更新入口；
+- 并行实例可分别用 `OPENFX_VITE_DEV_PORT` 与 Nitro 标准的 `PORT` 改写端口；
 - 根 `deno.lock` 管理 Web 与 Deno workspace 依赖。
 - 根目录和 `web/` 只以各自 `deno.json` 为配置源；根 `package.json` 与
   `package-lock.json` 已移除，并由 `deno task guard:deno-only` 防止回归。
@@ -134,10 +149,10 @@ deno task check
 上传当前 checkout 并创建预览 revision：
 
 ```bash
-deno task web:deploy
+deno task deploy
 ```
 
-命令从仓库根上传源码，在 Deploy 构建环境运行 `deno task web:build`，并以
+命令从仓库根上传源码，在 Deploy 构建环境运行 `deno task build`，并以
 `web/.output/server/index.ts` 作为动态入口。根配置固定发布到
 `universes/openfx`；只有明确准备 切换生产流量时才追加 `--prod`。CI 或 Agent 使用
 `DENO_DEPLOY_TOKEN`，并追加 `--json --non-interactive`。

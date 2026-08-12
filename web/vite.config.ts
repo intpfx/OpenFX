@@ -7,7 +7,8 @@ import { WEB_DEV_PROXY_PATHS } from "./publication-targets.ts";
 
 const rootDir = fileURLToPath(new URL("./", import.meta.url));
 const clientDistDir = fileURLToPath(new URL("./.client-dist", import.meta.url));
-const nitroDevPort = Number(process.env.OPENFX_NITRO_DEV_PORT ?? "3000");
+const viteDevPort = Number(process.env.OPENFX_VITE_DEV_PORT ?? "5501");
+const nitroDevPort = Number(process.env.PORT ?? "3000");
 const nitroDevOrigin = `http://localhost:${nitroDevPort}`;
 
 export default defineConfig({
@@ -21,7 +22,7 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5501,
+    port: viteDevPort,
     strictPort: true,
     proxy: Object.fromEntries(
       WEB_DEV_PROXY_PATHS.map((path) => [path, nitroDevOrigin]),

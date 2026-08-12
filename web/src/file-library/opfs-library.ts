@@ -23,7 +23,11 @@ import {
   type StoredFileRef,
 } from "./model.ts";
 import { analyzePhotoInWorker } from "./photo-analysis.ts";
-import { isDefaultLibraryApp, withDefaultLibraryApps } from "./default-apps.ts";
+import {
+  isDefaultLibraryApp,
+  setDefaultLibraryAppFavorite,
+  withDefaultLibraryApps,
+} from "./default-apps.ts";
 import { createPendingFileFingerprint } from "./similarity-core.ts";
 import { analyzeFileFingerprintInWorker } from "./similarity-analysis.ts";
 import { createVideoFingerprintFrames } from "./video-thumbnail.ts";
@@ -584,6 +588,21 @@ async function updatePhotoDetails(
   );
 }
 
+async function setFavorite(
+  id: string,
+  favorite: boolean,
+): Promise<LibraryItem[]> {
+  if (id.startsWith("openfx-app:")) {
+    setDefaultLibraryAppFavorite(id, favorite);
+    return withDefaultLibraryApps((await readIndex()).items);
+  }
+  return await mutateItems((items) =>
+    items.map((item) =>
+      item.id === id ? { ...item, favorite, updatedAt: new Date().toISOString() } : item
+    )
+  );
+}
+
 async function exportLivePhoto(item: LibraryItem): Promise<File> {
   if (item.kind !== "live-photo" || !item.motion) {
     throw new Error("此条目不是完整的实况图片");
@@ -657,6 +676,8 @@ export function createOpfsFileLibrary() {
       id: string,
       patch: { favorite?: boolean; albums?: string[]; photo?: LibraryPhotoMetadata },
     ) => withDefaultLibraryApps(await updatePhotoDetails(id, patch)),
+    setFavorite: async (id: string, favorite: boolean) =>
+      withDefaultLibraryApps(await setFavorite(id, favorite)),
     exportLivePhoto,
     removeItem: async (id: string) =>
       withDefaultLibraryApps(await removeStoredItem(id)),

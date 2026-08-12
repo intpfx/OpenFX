@@ -34,6 +34,7 @@ export type FileLibrarySessionStore = Pick<
   | "processPhoto"
   | "processFingerprint"
   | "retryFingerprintAnalysis"
+  | "setFavorite"
   | "removeItem"
   | "estimate"
   | "persist"
@@ -326,6 +327,23 @@ export function createFileLibrarySession(dependencies: SessionDependencies) {
     }
   }
 
+  async function setFavorite(id: string, favorite: boolean): Promise<boolean> {
+    if (!active) return false;
+    const run = generation;
+    try {
+      const items = await dependencies.store.setFavorite(id, favorite);
+      if (!belongsToCurrentRun(run)) return false;
+      replaceItems(items);
+      publish({ message: favorite ? "已收藏" : "已取消收藏" });
+      return true;
+    } catch (error) {
+      if (belongsToCurrentRun(run)) {
+        publish({ message: errorMessage(error, "无法更新收藏状态") });
+      }
+      return false;
+    }
+  }
+
   async function reviewDuplicates(): Promise<void> {
     if (!active) return;
     const run = generation;
@@ -384,6 +402,7 @@ export function createFileLibrarySession(dependencies: SessionDependencies) {
     importFiles,
     createItem,
     removeItem,
+    setFavorite,
     reviewDuplicates,
     recordPlayback,
     persistStorage,

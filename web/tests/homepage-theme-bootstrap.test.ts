@@ -7,18 +7,17 @@ const indexHtml = await Deno.readTextFile(
   new URL("../index.html", import.meta.url),
 );
 
-function runBootstrap(options: {
-  stored?: string | null;
-  systemDark: boolean;
-  storageThrows?: boolean;
-}) {
+function runBootstrap(systemDark: boolean) {
   const htmlDataset: Record<string, string> = {};
   const meta = { content: "#f8f9fb" };
-  const windowObject: Record<string, unknown> = {};
-  const localStorage = {
-    getItem() {
-      if (options.storageThrows) throw new Error("blocked");
-      return options.stored ?? null;
+  const listeners = new Set<() => void>();
+  let matches = systemDark;
+  const media = {
+    get matches() {
+      return matches;
+    },
+    addEventListener(type: "change", listener: () => void) {
+      if (type === "change") listeners.add(listener);
     },
   };
   const documentObject = {
@@ -27,34 +26,41 @@ function runBootstrap(options: {
       return meta;
     },
   };
-  const matchMedia = () => ({ matches: options.systemDark });
+  const matchMedia = () => media;
   const execute = new Function(
-    "globalThis",
     "document",
-    "localStorage",
     "matchMedia",
     source,
   );
-  execute(windowObject, documentObject, localStorage, matchMedia);
-  return { htmlDataset, meta, windowObject };
+  execute(documentObject, matchMedia);
+  return {
+    htmlDataset,
+    meta,
+    setSystemDark(next: boolean) {
+      matches = next;
+      for (const listener of listeners) listener();
+    },
+  };
 }
 
-Deno.test("theme bootstrap applies a manual theme before React", () => {
-  const result = runBootstrap({ stored: "dark", systemDark: false });
-  expect(result.htmlDataset.theme).toBe("dark");
-  expect(result.meta.content).toBe("#171b22");
-  expect(result.windowObject.__OPENFX_THEME_BOOTSTRAP__).toEqual({
-    mode: "dark",
-    effectiveTheme: "dark",
-  });
+Deno.test("theme bootstrap applies the current system theme before React", () => {
+  const dark = runBootstrap(true);
+  expect(dark.htmlDataset.theme).toBe("dark");
+  expect(dark.meta.content).toBe("#171b22");
+
+  const light = runBootstrap(false);
+  expect(light.htmlDataset.theme).toBe("light");
+  expect(light.meta.content).toBe("#f8f9fb");
 });
 
-Deno.test("theme bootstrap follows the system for missing or blocked storage", () => {
-  expect(runBootstrap({ stored: null, systemDark: true }).htmlDataset.theme)
-    .toBe("dark");
-  expect(
-    runBootstrap({ systemDark: false, storageThrows: true }).htmlDataset.theme,
-  ).toBe("light");
+Deno.test("theme bootstrap keeps following system changes without manual storage", () => {
+  const result = runBootstrap(false);
+  result.setSystemDark(true);
+  expect(result.htmlDataset.theme).toBe("dark");
+  expect(result.meta.content).toBe("#171b22");
+
+  expect(source).not.toContain("localStorage");
+  expect(source).not.toContain("openfx-theme");
 });
 
 Deno.test("theme bootstrap loads before the React entry", () => {

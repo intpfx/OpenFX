@@ -164,7 +164,7 @@ OpenFX 是个人项目集合 monorepo。Agent 应以实际源码、配置、测�
 
 ```bash
 deno task check
-deno task web:build
+deno task build
 ```
 
 确定性 Web 构建：

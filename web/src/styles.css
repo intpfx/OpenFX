@@ -92,35 +92,6 @@ input,
 textarea {
   font: inherit;
 }
-.homepage-theme-control {
-  display: inline-flex;
-  min-height: 28px;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 0.28rem;
-  border: 0;
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  padding: 0.2rem 0;
-  font: 650 0.58rem/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
-  letter-spacing: 0.045em;
-  transition: color 0.18s ease;
-}
-
-.homepage-theme-control:hover,
-.homepage-theme-control:focus-visible {
-  color: var(--accent);
-  outline: none;
-}
-
-.homepage-theme-control:focus-visible {
-  box-shadow: inset 0 -1px 0 var(--accent);
-}
-
-.homepage-theme-control-value {
-  color: inherit;
-}
 .app-frame {
   min-height: 100vh;
   padding: 1.2rem;
@@ -841,7 +812,6 @@ textarea {
 
 @media (prefers-reduced-motion: reduce) {
   body,
-  .homepage-theme-control,
   .domain-panel,
   .domain-panel-section,
   .map-poster-map-controls button,

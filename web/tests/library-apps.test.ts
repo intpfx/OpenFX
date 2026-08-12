@@ -19,6 +19,9 @@ Deno.test("the current project entries are built-in file-library Apps", () => {
     Array.from({ length: 13 }, () => "app"),
   );
   expect(DEFAULT_LIBRARY_APPS.map((item) => item.app?.id)).toEqual(appIds);
+  expect(DEFAULT_LIBRARY_APPS.map((item) => item.app?.description)).toEqual(
+    LIBRARY_APPS.map((app) => app.description),
+  );
 });
 
 Deno.test("e is introduced as a runtime-neutral built-in App", async () => {
@@ -45,6 +48,7 @@ Deno.test("built-in Apps use live previews or stable color tiles without covers"
     expect(item.size).toBe(0);
     expect(item.source.type).toBe("application/x-openfx-app");
     expect(item.app).not.toHaveProperty("cover");
+    expect(item.app?.description.length).toBeGreaterThan(0);
   }
 
   expect(
