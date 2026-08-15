@@ -31,12 +31,25 @@ export type SimilarityCandidate = {
   fingerprint?: FileFingerprint;
 };
 
-export type DuplicateGroup = {
+export type SimilarityGroup = {
   id: string;
   type: "exact" | "similar";
   itemIds: string[];
   similarity: number;
 };
+
+export type SimilarityGridEntry<T extends SimilarityCandidate> =
+  | {
+    id: string;
+    kind: "item";
+    items: [T];
+  }
+  | {
+    id: string;
+    kind: "group";
+    group: SimilarityGroup;
+    items: T[];
+  };
 
 export const PDQ_DUPLICATE_DISTANCE = 31;
 export const VIDEO_DUPLICATE_FRAME_RATIO = 0.6;
@@ -191,12 +204,10 @@ function candidateSimilarity(
   return null;
 }
 
-function findVisualGroups(
+export function findSimilarityGroups(
   candidates: readonly SimilarityCandidate[],
-  excludedIds: ReadonlySet<string>,
-): DuplicateGroup[] {
-  const available = candidates.filter((candidate) => !excludedIds.has(candidate.id));
-  const parent = new Map(available.map((candidate) => [candidate.id, candidate.id]));
+): SimilarityGroup[] {
+  const parent = new Map(candidates.map((candidate) => [candidate.id, candidate.id]));
   const edges: Array<{ left: string; right: string; similarity: number }> = [];
 
   const find = (id: string): string => {
@@ -212,47 +223,6 @@ function findVisualGroups(
     if (leftRoot !== rightRoot) parent.set(rightRoot, leftRoot);
   };
 
-  for (let leftIndex = 0; leftIndex < available.length; leftIndex += 1) {
-    for (
-      let rightIndex = leftIndex + 1;
-      rightIndex < available.length;
-      rightIndex += 1
-    ) {
-      const left = available[leftIndex];
-      const right = available[rightIndex];
-      const similarity = candidateSimilarity(left, right);
-      if (similarity === null) continue;
-      edges.push({ left: left.id, right: right.id, similarity });
-      unite(left.id, right.id);
-    }
-  }
-
-  const members = new Map<string, string[]>();
-  for (const candidate of available) {
-    const root = find(candidate.id);
-    members.set(root, [...(members.get(root) ?? []), candidate.id]);
-  }
-
-  return [...members.values()].filter((itemIds) => itemIds.length > 1).map(
-    (itemIds) => {
-      const sortedIds = [...itemIds].sort();
-      const idSet = new Set(sortedIds);
-      const groupEdges = edges.filter((edge) =>
-        idSet.has(edge.left) && idSet.has(edge.right)
-      );
-      return {
-        id: `similar:${sortedIds.join(":")}`,
-        type: "similar" as const,
-        itemIds: sortedIds,
-        similarity: Math.min(...groupEdges.map((edge) => edge.similarity)),
-      };
-    },
-  );
-}
-
-export function findDuplicateGroups(
-  candidates: readonly SimilarityCandidate[],
-): DuplicateGroup[] {
   const exactBuckets = new Map<string, string[]>();
   for (const candidate of candidates) {
     const key = candidate.fingerprint
@@ -261,18 +231,97 @@ export function findDuplicateGroups(
     if (!key) continue;
     exactBuckets.set(key, [...(exactBuckets.get(key) ?? []), candidate.id]);
   }
+  for (const itemIds of exactBuckets.values()) {
+    const [first, ...rest] = itemIds;
+    for (const itemId of rest) unite(first, itemId);
+  }
 
-  const exactGroups = [...exactBuckets.entries()]
-    .filter(([, itemIds]) => itemIds.length > 1)
-    .map(([key, itemIds]) => ({
-      id: `exact:${key}`,
-      type: "exact" as const,
-      itemIds: [...itemIds].sort(),
-      similarity: 1,
-    }));
-  const exactIds = new Set(exactGroups.flatMap((group) => group.itemIds));
-  return [...exactGroups, ...findVisualGroups(candidates, exactIds)].sort((
+  for (let leftIndex = 0; leftIndex < candidates.length; leftIndex += 1) {
+    for (
+      let rightIndex = leftIndex + 1;
+      rightIndex < candidates.length;
+      rightIndex += 1
+    ) {
+      const left = candidates[leftIndex];
+      const right = candidates[rightIndex];
+      const similarity = candidateSimilarity(left, right);
+      if (similarity === null) continue;
+      edges.push({ left: left.id, right: right.id, similarity });
+      unite(left.id, right.id);
+    }
+  }
+
+  const members = new Map<string, string[]>();
+  for (const candidate of candidates) {
+    const root = find(candidate.id);
+    const rootMembers = members.get(root);
+    if (rootMembers) rootMembers.push(candidate.id);
+    else members.set(root, [candidate.id]);
+  }
+
+  const candidateById = new Map(
+    candidates.map((candidate) => [candidate.id, candidate]),
+  );
+  const groups: SimilarityGroup[] = [];
+  for (const itemIds of members.values()) {
+    if (itemIds.length < 2) continue;
+    const sortedIds = [...itemIds].sort();
+    const idSet = new Set(sortedIds);
+    const exactKeys = new Set<string | null>();
+    for (const itemId of sortedIds) {
+      const fingerprint = candidateById.get(itemId)?.fingerprint;
+      exactKeys.add(fingerprint ? exactFingerprintKey(fingerprint) : null);
+    }
+    const exactKey = exactKeys.size === 1 ? [...exactKeys][0] : null;
+    let weakestVisualSimilarity = 1;
+    for (const edge of edges) {
+      if (idSet.has(edge.left) && idSet.has(edge.right)) {
+        weakestVisualSimilarity = Math.min(
+          weakestVisualSimilarity,
+          edge.similarity,
+        );
+      }
+    }
+    groups.push({
+      id: exactKey ? `exact:${exactKey}` : `similar:${sortedIds.join(":")}`,
+      type: exactKey ? "exact" : "similar",
+      itemIds: sortedIds,
+      similarity: exactKey ? 1 : weakestVisualSimilarity,
+    });
+  }
+  return groups.sort((
     left,
     right,
   ) => left.id.localeCompare(right.id));
+}
+
+export function buildSimilarityGridEntries<T extends SimilarityCandidate>(
+  candidates: readonly T[],
+): SimilarityGridEntry<T>[] {
+  const groups = findSimilarityGroups(candidates);
+  const groupByItemId = new Map<string, SimilarityGroup>();
+  for (const group of groups) {
+    for (const itemId of group.itemIds) groupByItemId.set(itemId, group);
+  }
+
+  const emittedGroups = new Set<string>();
+  return candidates.flatMap((candidate): SimilarityGridEntry<T>[] => {
+    const group = groupByItemId.get(candidate.id);
+    if (!group) {
+      return [{
+        id: `item:${candidate.id}`,
+        kind: "item",
+        items: [candidate],
+      }];
+    }
+    if (emittedGroups.has(group.id)) return [];
+    emittedGroups.add(group.id);
+    const groupIds = new Set(group.itemIds);
+    return [{
+      id: `group:${group.id}`,
+      kind: "group",
+      group,
+      items: candidates.filter((item) => groupIds.has(item.id)),
+    }];
+  });
 }

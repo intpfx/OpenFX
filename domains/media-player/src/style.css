@@ -34,6 +34,88 @@ body,
   background: #000;
 }
 
+.media-player-library-chrome {
+  position: absolute;
+  z-index: 12;
+  top: calc(var(--spacing) * 2);
+  left: calc(var(--spacing) * 2);
+  display: grid;
+  gap: calc(var(--spacing) * 2);
+  justify-items: start;
+  color: var(--media-color-primary, oklch(1 0 0));
+  transform-origin: top left;
+  transition-timing-function: var(--media-controls-transition-timing-function);
+  transition-duration: var(--media-controls-transition-duration);
+  transition-property: opacity, scale, translate, filter;
+}
+
+.media-player-library-navigation,
+.media-player-library-actions {
+  position: relative;
+  display: flex;
+  min-height: calc(var(--spacing) * 11);
+  align-items: center;
+  padding: var(--spacing);
+  border-radius: calc(Infinity * 1px);
+}
+
+.media-player-library-navigation {
+  max-width: min(20rem, calc(100vw - 18rem));
+}
+
+.media-player-library-navigation > span {
+  min-width: 0;
+  max-width: 16rem;
+  padding: 0 calc(var(--spacing) * 3) 0 calc(var(--spacing) * 2);
+  overflow: hidden;
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.media-player-library-back-icon {
+  transform: rotate(180deg);
+}
+
+.media-player-library-actions {
+  gap: 1px;
+}
+
+.media-default-skin:has(.media-controls--root:not([data-visible])) .media-player-library-chrome {
+  pointer-events: none;
+  opacity: 0;
+  scale: 0.95;
+  translate: 0 -4px;
+}
+
+@container media-root (width < 32rem) {
+  .media-player-library-navigation {
+    max-width: none;
+  }
+
+  .media-player-library-navigation > span {
+    display: none;
+  }
+}
+
+@media (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .media-default-skin:has(.media-controls--root:not([data-visible])) .media-player-library-chrome {
+    filter: blur(8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .media-player-library-chrome {
+    transition-duration: 50ms;
+  }
+
+  .media-default-skin:has(.media-controls--root:not([data-visible])) .media-player-library-chrome {
+    scale: 1;
+    translate: 0;
+  }
+}
+
 .media-player-controls {
   --media-border-radius: 0px;
   --media-video-border-radius: 0px;
@@ -51,7 +133,7 @@ body,
   object-fit: contain;
 }
 
-.media-player-status,
+.media-player-error,
 .media-player-subtitles {
   position: fixed;
   z-index: 4;
@@ -65,20 +147,17 @@ body,
   backdrop-filter: blur(12px);
 }
 
-.media-player-status {
+.media-player-error {
   left: 50%;
   display: flex;
   max-width: calc(100vw - 2rem);
   align-items: center;
   padding: 0 0.8rem;
   overflow: hidden;
+  color: #ff9f9f;
   text-overflow: ellipsis;
   white-space: nowrap;
   transform: translateX(-50%);
-}
-
-.media-player-status.is-error {
-  color: #ff9f9f;
 }
 
 .media-player-subtitles {

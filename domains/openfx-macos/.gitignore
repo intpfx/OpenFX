@@ -1,0 +1,6 @@
+.openfx-web/
+.perry/
+dist/
+node_modules/
+native/openfx-native-photos/build/
+native/openfx-native-photos/target/

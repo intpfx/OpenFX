@@ -10,6 +10,43 @@ export interface OpenFxLibraryFileRequest extends OpenFxLibraryFileReference {
   subtitles?: OpenFxLibraryFileReference[];
 }
 
+export type OpenFxLibraryFileAction = 'close' | 'edit' | 'download' | 'delete';
+
+export interface OpenFxLibraryFileActionMessage {
+  type: 'openfx:media-player:file-action';
+  itemId: string;
+  action: OpenFxLibraryFileAction;
+}
+
+export interface OpenFxLibraryFileDetailsMessage {
+  type: 'openfx:media-player:file-details';
+  itemId: string;
+  name: string;
+}
+
+export function makeOpenFxLibraryFileActionMessage(
+  itemId: string,
+  action: OpenFxLibraryFileAction,
+): OpenFxLibraryFileActionMessage {
+  return {
+    type: 'openfx:media-player:file-action',
+    itemId,
+    action,
+  };
+}
+
+export function isOpenFxLibraryFileDetailsMessage(
+  value: unknown,
+): value is OpenFxLibraryFileDetailsMessage {
+  if (!value || typeof value !== 'object') return false;
+  const message = value as Partial<OpenFxLibraryFileDetailsMessage>;
+  return (
+    message.type === 'openfx:media-player:file-details' &&
+    typeof message.itemId === 'string' &&
+    typeof message.name === 'string'
+  );
+}
+
 function parseSubtitleReferences(value: string | null): OpenFxLibraryFileReference[] | undefined {
   if (!value) return undefined;
   try {

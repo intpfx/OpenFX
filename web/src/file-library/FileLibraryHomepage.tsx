@@ -1,31 +1,31 @@
 import {
   ArrowClockwise,
   ArrowLeft,
-  ArrowsOutSimple,
   ArrowSquareOut,
+  Check,
   DownloadSimple,
+  FileZip,
+  FilmStrip,
   FolderOpen,
+  GithubLogo,
   Heart,
   HeartStraight,
+  ImagesSquare,
   Info,
   LinkSimple,
-  LinkSimpleHorizontal,
   MagnifyingGlass,
   MapPin,
+  PencilSimple,
   PlayCircle,
-  Plus,
   SpeakerHigh,
   SpeakerSlash,
   StackSimple,
-  TextT,
   Trash,
-  TrayArrowDown,
   UploadSimple,
   X,
 } from "@phosphor-icons/react";
 import {
   type CSSProperties,
-  type FormEvent,
   type ReactNode,
   useEffect,
   useMemo,
@@ -34,39 +34,59 @@ import {
 } from "react";
 
 import {
+  getLibraryApp,
   isLibraryAppId,
+  isLibraryAppOpenable,
   LIBRARY_APP_COUNT,
   type LibraryAppId,
 } from "../../library-app-catalog.ts";
 import {
-  filterLibraryItems,
   formatLibraryBytes,
+  getFileExtension,
   type LibraryItem,
-  type LibrarySmartView,
+  type LibraryItemDetailsPatch,
+  normalizeLibraryItemName,
   searchLibraryItems,
   type StoredFileRef,
 } from "./model.ts";
-import { createOpfsFileLibrary, type OpfsFileLibrary } from "./opfs-library.ts";
+import type { LivePhotoExportFormat } from "./live-photo-export.ts";
+import {
+  createOpfsFileLibrary,
+  type OpfsFileLibrary,
+  type StorageEstimate,
+} from "./opfs-library.ts";
 import {
   connectFileLibrarySessionToBrowser,
   createFileLibrarySession,
 } from "./file-library-session.ts";
+import { createNativePhotoImporter } from "./native-photo-import.ts";
 import { getLibraryAppTileColor } from "./app-tile.ts";
-import { summarizeFileLibraryHudProgress } from "./hud-state.ts";
+import {
+  summarizeFileLibraryHudProgress,
+  summarizeFileLibraryStorageHeatmap,
+  toggleFileLibraryEntrySelection,
+} from "./hud-state.ts";
 import {
   type LibraryGridColumns,
   parseLibraryGridColumns,
   resolveLibraryGridColumnsFromPinch,
 } from "./grid-density.ts";
-import { makeMediaPlayerUrl } from "./media-player-url.ts";
+import {
+  isMediaPlayerFileActionMessage,
+  makeMediaPlayerFileDetailsMessage,
+  makeMediaPlayerUrl,
+} from "./media-player-url.ts";
 import { createVideoThumbnail } from "./video-thumbnail.ts";
-import { type DuplicateGroup, findDuplicateGroups } from "./similarity-core.ts";
+import {
+  buildSimilarityGridEntries,
+  type SimilarityGridEntry,
+} from "./similarity-core.ts";
 import "./file-library.css";
 
 const KIND_LABELS: Record<LibraryItem["kind"], string> = {
   app: "App",
   image: "图片",
-  "live-photo": "实况图片",
+  "live-photo": "实况照片",
   video: "视频",
   audio: "音频",
   pdf: "PDF",
@@ -74,8 +94,6 @@ const KIND_LABELS: Record<LibraryItem["kind"], string> = {
   link: "链接",
   file: "文件",
 };
-
-type ComposerKind = "text" | "link";
 
 const LIBRARY_GRID_COLUMNS_KEY = "openfx-library-grid-columns";
 
@@ -85,6 +103,26 @@ type PinchGesture = {
   pointers: Map<number, { x: number; y: number }>;
 };
 
+type LibraryGridEntry = SimilarityGridEntry<LibraryItem>;
+type LibraryGroupEntry = Extract<LibraryGridEntry, { kind: "group" }>;
+
+function canOpenLibraryItem(item: LibraryItem): boolean {
+  if (item.kind !== "app") return true;
+  return Boolean(
+    item.app &&
+      isLibraryAppId(item.app.id) &&
+      isLibraryAppOpenable(item.app.id),
+  );
+}
+
+function isGitHubHref(href: string): boolean {
+  try {
+    return new URL(href).hostname.toLowerCase() === "github.com";
+  } catch {
+    return false;
+  }
+}
+
 function formatMediaTime(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
   const remaining = Math.floor(seconds % 60);
@@ -93,6 +131,15 @@ function formatMediaTime(seconds: number): string {
 
 function formatPhotoNumber(value: number, digits = 2): string {
   return String(Number(value.toFixed(digits)));
+}
+
+function saveDownload(stored: File): void {
+  const url = URL.createObjectURL(stored);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = stored.name;
+  anchor.click();
+  globalThis.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }
 
 function useStoredObjectUrl(
@@ -238,9 +285,8 @@ function LivePhotoView(props: {
 function LibraryCard(props: {
   item: LibraryItem;
   library: OpfsFileLibrary;
-  duplicateType?: DuplicateGroup["type"];
   selected: boolean;
-  onSelect: (item: LibraryItem) => void;
+  onSelect: () => void;
 }) {
   const appPreview = props.item.kind === "app" ? props.item.app?.preview : undefined;
   const showsAppColor = props.item.kind === "app" && !appPreview;
@@ -361,13 +407,6 @@ function LibraryCard(props: {
             </span>
           )
           : null}
-        {props.item.kind === "live-photo"
-          ? (
-            <span className="file-library-live-badge">
-              <PlayCircle aria-hidden="true" size={15} weight="fill" /> LIVE
-            </span>
-          )
-          : null}
         {props.item.favorite
           ? (
             <span className="file-library-favorite-badge" aria-label="已收藏">
@@ -379,13 +418,6 @@ function LibraryCard(props: {
           ? (
             <span className="file-library-processing-badge" title="照片分析失败">
               !
-            </span>
-          )
-          : null}
-        {props.duplicateType
-          ? (
-            <span className="file-library-duplicate-badge">
-              {props.duplicateType === "exact" ? "完全重复" : "相似"}
             </span>
           )
           : null}
@@ -420,9 +452,170 @@ function LibraryCard(props: {
         aria-pressed={props.selected}
         className="file-library-card-open"
         type="button"
-        onClick={() => props.onSelect(props.item)}
+        onClick={props.onSelect}
       />
     </article>
+  );
+}
+
+function LibraryGroupMemberVisual(props: {
+  defer?: boolean;
+  item: LibraryItem;
+  library: OpfsFileLibrary;
+}) {
+  const visualElementRef = useRef<HTMLSpanElement>(null);
+  const [visualReady, setVisualReady] = useState(!props.defer);
+  const visualRef = props.item.preview ?? props.item.source;
+  const showsVisual = props.item.kind === "image" ||
+    props.item.kind === "live-photo" ||
+    (props.item.kind === "video" && Boolean(props.item.preview));
+  const { url } = useStoredObjectUrl(
+    props.library,
+    showsVisual && visualReady ? visualRef : undefined,
+  );
+  const extension = props.item.source.name.split(".").pop()?.toUpperCase() ||
+    KIND_LABELS[props.item.kind].toUpperCase();
+
+  useEffect(() => {
+    if (!props.defer || visualReady) return;
+    const element = visualElementRef.current;
+    if (!element || typeof IntersectionObserver === "undefined") {
+      setVisualReady(true);
+      return;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      setVisualReady(true);
+      observer.disconnect();
+    }, { rootMargin: "200px" });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [props.defer, visualReady]);
+
+  return (
+    <span
+      aria-hidden="true"
+      className={`file-library-group-member-visual is-${props.item.kind}`}
+      ref={visualElementRef}
+    >
+      {url
+        ? (
+          <img
+            alt=""
+            decoding="async"
+            loading={props.defer ? "lazy" : "eager"}
+            src={url}
+          />
+        )
+        : null}
+      {!url && props.item.kind === "link"
+        ? <LinkSimple aria-hidden="true" size={30} />
+        : null}
+      {!url && props.item.kind !== "link" ? <span>{extension.slice(0, 6)}</span> : null}
+      {props.item.kind === "live-photo"
+        ? <PlayCircle aria-hidden="true" size={14} weight="fill" />
+        : null}
+    </span>
+  );
+}
+
+function LibrarySimilarityCard(props: {
+  entry: LibraryGroupEntry;
+  library: OpfsFileLibrary;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const relationLabel = props.entry.group.type === "exact" ? "完全相同" : "相似内容";
+  const visibleItems = props.entry.items.slice(0, 4);
+
+  return (
+    <article
+      className={`file-library-card file-library-group-card${
+        props.selected ? " is-selected" : ""
+      }`}
+      data-library-group={props.entry.group.id}
+    >
+      <span
+        className={`file-library-group-card-media has-${visibleItems.length}`}
+      >
+        {visibleItems.map((item) => (
+          <LibraryGroupMemberVisual
+            item={item}
+            key={item.id}
+            library={props.library}
+          />
+        ))}
+        {props.entry.items.length > visibleItems.length
+          ? (
+            <span className="file-library-group-card-more" aria-hidden="true">
+              +{props.entry.items.length - visibleItems.length}
+            </span>
+          )
+          : null}
+      </span>
+      <span className="file-library-card-shade" />
+      <span className="file-library-card-copy">
+        <strong>{relationLabel}</strong>
+        <span>{props.entry.items.length} 个文件 · 自动归组</span>
+      </span>
+      <span className="file-library-group-card-count" aria-hidden="true">
+        <StackSimple size={15} weight="fill" />
+        {props.entry.items.length}
+      </span>
+      <button
+        aria-label={`${relationLabel}组，${props.entry.items.length} 个文件`}
+        aria-pressed={props.selected}
+        className="file-library-card-open"
+        type="button"
+        onClick={props.onSelect}
+      />
+    </article>
+  );
+}
+
+function LibrarySimilarityHud(props: {
+  entry: LibraryGroupEntry;
+  library: OpfsFileLibrary;
+  onOpen: (item: LibraryItem) => void;
+}) {
+  const relationLabel = props.entry.group.type === "exact" ? "完全相同" : "相似内容";
+
+  return (
+    <section
+      aria-label={`${relationLabel}组，${props.entry.items.length} 个文件`}
+      className="file-library-group-hud"
+    >
+      <header className="file-library-group-hud-head">
+        <span>
+          <StackSimple aria-hidden="true" size={18} weight="fill" />
+          <strong>{relationLabel}</strong>
+        </span>
+        <small>{props.entry.items.length} 个文件 · 选择一个打开</small>
+      </header>
+      <div className="file-library-group-hud-members">
+        {props.entry.items.map((item) => (
+          <button
+            aria-label={`打开 ${item.name}`}
+            className="file-library-group-hud-member"
+            key={item.id}
+            type="button"
+            onClick={() => props.onOpen(item)}
+          >
+            <LibraryGroupMemberVisual
+              defer
+              item={item}
+              library={props.library}
+            />
+            <span className="file-library-group-hud-member-copy">
+              <strong>{item.name}</strong>
+              <small>
+                {KIND_LABELS[item.kind]} · {formatLibraryBytes(item.size)}
+              </small>
+            </span>
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -430,6 +623,15 @@ function LibraryHudPreview(props: {
   item: LibraryItem;
   library: OpfsFileLibrary;
 }) {
+  const appDefinition = props.item.kind === "app" && props.item.app &&
+      isLibraryAppId(props.item.app.id)
+    ? getLibraryApp(props.item.app.id)
+    : null;
+  const appSummary = appDefinition && !isLibraryAppOpenable(appDefinition.id)
+    ? appDefinition
+    : null;
+  const appSummaryLinks =
+    appSummary?.links?.filter((link) => !isGitHubHref(link.href)) ?? [];
   const appPreview = props.item.kind === "app" ? props.item.app?.preview : undefined;
   const showsAppColor = props.item.kind === "app" && !appPreview;
   const visualRef = props.item.preview ?? props.item.source;
@@ -439,6 +641,14 @@ function LibraryHudPreview(props: {
   const { url } = useStoredObjectUrl(
     props.library,
     showsVisual ? visualRef : undefined,
+  );
+  const { url: motionUrl } = useStoredObjectUrl(
+    props.library,
+    props.item.kind === "video"
+      ? props.item.source
+      : props.item.kind === "live-photo"
+      ? props.item.motion
+      : undefined,
   );
   const [textPreview, setTextPreview] = useState("");
 
@@ -487,19 +697,80 @@ function LibraryHudPreview(props: {
         : null}
       {showsAppColor
         ? (
-          <div className="file-library-hud-preview-app-copy">
+          <div
+            className={`file-library-hud-preview-app-copy${
+              appSummary ? " is-summary" : ""
+            }`}
+          >
             <span>
               {KIND_LABELS.app}
-              {props.item.app?.tech.length
-                ? ` · ${props.item.app.tech.slice(0, 3).join(" / ")}`
+              {(appDefinition?.tech ?? props.item.app?.tech)?.length
+                ? ` · ${
+                  (appDefinition?.tech ?? props.item.app?.tech)?.slice(0, 3).join(" / ")
+                }`
                 : ""}
             </span>
             <strong>{props.item.name}</strong>
-            <p>{props.item.app?.description}</p>
+            <p>{appDefinition?.description ?? props.item.app?.description}</p>
+            {appSummary
+              ? (
+                <div className="file-library-hud-app-summary">
+                  <ul>
+                    {appSummary.highlights?.slice(0, 3).map((highlight) => (
+                      <li key={highlight}>{highlight}</li>
+                    ))}
+                  </ul>
+                  <span className="file-library-hud-app-source">
+                    {appSummary.sourcePath}
+                  </span>
+                  {appSummaryLinks.length
+                    ? (
+                      <nav
+                        aria-label={`${appSummary.name} 入口`}
+                        className="file-library-hud-app-links"
+                      >
+                        {appSummaryLinks.map((link) => {
+                          const external = /^https?:\/\//.test(link.href);
+                          return (
+                            <a
+                              download={link.download}
+                              href={link.href}
+                              key={`${link.label}:${link.href}`}
+                              rel={external ? "noreferrer" : undefined}
+                              target={external ? "_blank" : undefined}
+                            >
+                              {link.download
+                                ? <DownloadSimple aria-hidden="true" size={18} />
+                                : <ArrowSquareOut aria-hidden="true" size={18} />}
+                              {link.label}
+                            </a>
+                          );
+                        })}
+                      </nav>
+                    )
+                    : null}
+                </div>
+              )
+              : null}
           </div>
         )
         : null}
-      {url ? <img alt="" src={url} /> : null}
+      {motionUrl
+        ? (
+          <video
+            aria-label={`${props.item.name} 静音循环预览`}
+            autoPlay
+            loop
+            muted
+            playsInline
+            poster={url || undefined}
+            preload="metadata"
+            src={motionUrl}
+          />
+        )
+        : url
+        ? <img alt="" src={url} />
+        : null}
       {props.item.kind === "text" ? <pre>{textPreview || "文本内容"}</pre> : null}
       {props.item.kind === "link" && props.item.url
         ? (
@@ -521,14 +792,102 @@ function LibraryHudPreview(props: {
   );
 }
 
+function LibraryStorageOverview(props: {
+  storage: StorageEstimate | null;
+  items: readonly LibraryItem[];
+  fileCount: number;
+  query: string;
+  resultCount: number;
+  onQueryChange: (query: string) => void;
+}) {
+  const heatmap = summarizeFileLibraryStorageHeatmap(props.items, props.storage);
+  const summary = heatmap.summary;
+  const availableTile = heatmap.tiles.find((tile) => tile.id === "available");
+  const storageOverlayWidth = Math.max(58, availableTile?.rect.width ?? 100);
+
+  return (
+    <section
+      aria-label="文件库存储空间"
+      className="file-library-storage-overview"
+      style={{
+        "--file-library-storage-overlay-width": `${storageOverlayWidth}%`,
+      } as CSSProperties}
+    >
+      <div
+        aria-label="按文件类型显示的存储空间热力图"
+        className="file-library-storage-heatmap"
+        role="list"
+      >
+        {heatmap.tiles.map((tile) => (
+          <div
+            aria-label={`${tile.label} ${tile.valueLabel}`}
+            className="file-library-storage-tile"
+            data-emphasis={tile.emphasis}
+            data-storage-kind={tile.id}
+            key={tile.id}
+            role="listitem"
+            style={{
+              left: `${tile.rect.x}%`,
+              top: `${tile.rect.y}%`,
+              width: `${tile.rect.width}%`,
+              height: `${tile.rect.height}%`,
+            }}
+          >
+            <span className="file-library-storage-tile-copy">
+              <strong>{tile.label}</strong>
+              <span>{tile.valueLabel}</span>
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <div className="file-library-storage-overview-copy">
+        <span>OPFS · {props.fileCount} 项</span>
+        <strong>{summary?.usageLabel ?? "—"}</strong>
+        <div className="file-library-storage-overview-meta">
+          <p>
+            {summary
+              ? `已使用 · ${props.fileCount} 项`
+              : "正在读取当前浏览器的存储空间"}
+          </p>
+          <p>{summary ? `共 ${summary.quotaLabel}` : "OPFS 本地存储"}</p>
+        </div>
+      </div>
+
+      <div className="file-library-storage-overview-foot">
+        <p className="file-library-storage-persistence">
+          {summary
+            ? summary.persisted ? "持久存储已启用" : "未启用持久存储"
+            : "存储状态将在文件库打开后显示"}
+        </p>
+        <label className="file-library-search file-library-hud-search">
+          <MagnifyingGlass aria-hidden="true" size={21} />
+          <input
+            aria-label={`搜索文件，当前 ${props.resultCount} 项`}
+            placeholder={`搜索 ${props.resultCount} 项`}
+            type="search"
+            value={props.query}
+            onChange={(event) => props.onQueryChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") props.onQueryChange("");
+            }}
+          />
+        </label>
+      </div>
+    </section>
+  );
+}
+
 function LibraryViewer(props: {
   item: LibraryItem;
   library: OpfsFileLibrary;
   onClose: () => void;
   onDelete: (item: LibraryItem) => Promise<void>;
   onItemsChange: (items: LibraryItem[]) => void;
+  onUpdate: (id: string, patch: LibraryItemDetailsPatch) => Promise<boolean>;
   renderApp: (appId: LibraryAppId) => ReactNode;
 }) {
+  const mediaPlayerIframeRef = useRef<HTMLIFrameElement>(null);
   const imageRef = props.item.preview ?? props.item.source;
   const image = useStoredObjectUrl(
     props.library,
@@ -550,6 +909,15 @@ function LibraryViewer(props: {
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
+  const [showEditor, setShowEditor] = useState(false);
+  const [showDownloadOptions, setShowDownloadOptions] = useState(false);
+  const [downloadError, setDownloadError] = useState("");
+  const [downloadingFormat, setDownloadingFormat] = useState<
+    LivePhotoExportFormat | null
+  >(null);
+  const [saving, setSaving] = useState(false);
+  const [editError, setEditError] = useState("");
+  const [nameDraft, setNameDraft] = useState(props.item.name);
   const [albums, setAlbums] = useState((props.item.albums ?? []).join(", "));
   const [mediaPlayerSource] = useState(() =>
     props.item.kind === "video"
@@ -564,16 +932,31 @@ function LibraryViewer(props: {
   );
 
   useEffect(() => {
+    setNameDraft(props.item.name);
     setAlbums((props.item.albums ?? []).join(", "));
-  }, [props.item.id, props.item.albums]);
+    setEditError("");
+  }, [props.item.id, props.item.name, props.item.albums]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") props.onClose();
+      if (event.key !== "Escape") return;
+      if (confirmDelete) {
+        setConfirmDelete(false);
+      } else if (showDownloadOptions) {
+        setShowDownloadOptions(false);
+        setDownloadError("");
+      } else if (showEditor) {
+        setShowEditor(false);
+        setEditError("");
+      } else if (showInfo) {
+        setShowInfo(false);
+      } else {
+        props.onClose();
+      }
     };
     globalThis.addEventListener("keydown", onKeyDown);
     return () => globalThis.removeEventListener("keydown", onKeyDown);
-  }, [props]);
+  }, [confirmDelete, props.onClose, showDownloadOptions, showEditor, showInfo]);
 
   useEffect(() => {
     if (props.item.kind !== "text") return;
@@ -591,15 +974,30 @@ function LibraryViewer(props: {
   }, [props.item, props.library]);
 
   async function download(reference?: StoredFileRef) {
-    const stored = !reference && props.item.kind === "live-photo"
-      ? await props.library.exportLivePhoto(props.item)
-      : await props.library.getStoredFile(reference ?? props.item.source);
-    const url = URL.createObjectURL(stored);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = stored.name;
-    anchor.click();
-    globalThis.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+    const stored = await props.library.getStoredFile(reference ?? props.item.source);
+    saveDownload(stored);
+  }
+
+  async function downloadLivePhoto(format: LivePhotoExportFormat) {
+    if (props.item.kind !== "live-photo") return;
+    setDownloadError("");
+    setDownloadingFormat(format);
+    try {
+      saveDownload(await props.library.exportLivePhoto(props.item, format));
+      setShowDownloadOptions(false);
+    } catch (error) {
+      setDownloadError(error instanceof Error ? error.message : "无法导出实况图片");
+    } finally {
+      setDownloadingFormat(null);
+    }
+  }
+
+  function toggleDownloadOptions() {
+    setShowEditor(false);
+    setShowInfo(false);
+    setConfirmDelete(false);
+    setDownloadError("");
+    setShowDownloadOptions((current) => !current);
   }
 
   async function remove() {
@@ -611,6 +1009,73 @@ function LibraryViewer(props: {
     }
   }
 
+  async function saveEdits() {
+    setEditError("");
+    setSaving(true);
+    try {
+      const name = normalizeLibraryItemName(nameDraft);
+      const saved = await props.onUpdate(props.item.id, {
+        name,
+        albums: props.item.kind === "image" || props.item.kind === "live-photo"
+          ? albums.split(",")
+          : undefined,
+      });
+      if (!saved) throw new Error("无法保存文件信息");
+      setShowEditor(false);
+    } catch (error) {
+      setEditError(error instanceof Error ? error.message : "无法保存文件信息");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function toggleEditor() {
+    setShowInfo(false);
+    setShowDownloadOptions(false);
+    setDownloadError("");
+    setConfirmDelete(false);
+    setNameDraft(props.item.name);
+    setAlbums((props.item.albums ?? []).join(", "));
+    setEditError("");
+    setShowEditor((current) => !current);
+  }
+
+  function syncMediaPlayerFileDetails() {
+    mediaPlayerIframeRef.current?.contentWindow?.postMessage(
+      makeMediaPlayerFileDetailsMessage(props.item.id, props.item.name),
+      location.origin,
+    );
+  }
+
+  useEffect(() => {
+    if (props.item.kind === "video") syncMediaPlayerFileDetails();
+  }, [props.item.id, props.item.kind, props.item.name]);
+
+  useEffect(() => {
+    if (props.item.kind !== "video") return;
+    const onMessage = (event: MessageEvent) => {
+      if (
+        event.origin !== location.origin ||
+        event.source !== mediaPlayerIframeRef.current?.contentWindow ||
+        !isMediaPlayerFileActionMessage(event.data) ||
+        event.data.itemId !== props.item.id
+      ) return;
+
+      if (event.data.action === "close") {
+        props.onClose();
+      } else if (event.data.action === "edit") {
+        toggleEditor();
+      } else if (event.data.action === "download") {
+        void download();
+      } else if (event.data.action === "delete") {
+        setShowEditor(false);
+        setConfirmDelete(true);
+      }
+    };
+    globalThis.addEventListener("message", onMessage);
+    return () => globalThis.removeEventListener("message", onMessage);
+  }, [props.item.id, props.item.kind, props.onClose]);
+
   return (
     <section
       aria-label={`${props.item.name} 预览`}
@@ -618,81 +1083,111 @@ function LibraryViewer(props: {
       className={`file-library-viewer is-${props.item.kind}`}
       role="dialog"
     >
-      <div className="file-library-viewer-head file-library-hud">
-        <button aria-label="返回文件库" type="button" onClick={props.onClose}>
-          <ArrowLeft aria-hidden="true" size={22} />
-        </button>
-        <span className="file-library-viewer-title">
-          <strong>{props.item.name}</strong>
-          <small>
-            {props.item.kind === "app"
-              ? KIND_LABELS[props.item.kind]
-              : `${KIND_LABELS[props.item.kind]} · ${
-                formatLibraryBytes(props.item.size)
-              }`}
-          </small>
-        </span>
-        {props.item.kind === "link" && props.item.url
-          ? (
-            <a
-              aria-label="在新标签打开"
-              href={props.item.url}
-              rel="noreferrer"
-              target="_blank"
-            >
-              <ArrowSquareOut aria-hidden="true" size={21} />
-            </a>
-          )
-          : null}
-        {props.item.kind === "app" ? null : (
-          <>
-            {props.item.kind === "image" || props.item.kind === "live-photo"
-              ? (
-                <>
-                  <button
-                    aria-label={props.item.favorite ? "取消收藏" : "收藏"}
-                    type="button"
-                    onClick={() => {
-                      void props.library.updatePhotoDetails(props.item.id, {
-                        favorite: !props.item.favorite,
-                      }).then(props.onItemsChange);
-                    }}
-                  >
-                    <Heart
-                      aria-hidden="true"
-                      size={21}
-                      weight={props.item.favorite ? "fill" : "regular"}
-                    />
-                  </button>
-                  <button
-                    aria-label="照片信息"
-                    aria-pressed={showInfo}
-                    type="button"
-                    onClick={() => setShowInfo((current) => !current)}
-                  >
-                    <Info aria-hidden="true" size={21} />
-                  </button>
-                </>
-              )
-              : null}
-            <button
-              aria-label="下载"
-              type="button"
-              onClick={() => void download()}
-            >
-              <DownloadSimple aria-hidden="true" size={21} />
+      {props.item.kind === "video" ? null : (
+        <>
+          <div className="file-library-viewer-head file-library-viewer-surface">
+            <button aria-label="返回文件库" type="button" onClick={props.onClose}>
+              <ArrowLeft aria-hidden="true" size={22} />
             </button>
-            <button
-              aria-label="删除"
-              disabled={deleting}
-              type="button"
-              onClick={() => setConfirmDelete(true)}
+            <span className="file-library-viewer-title">
+              <strong>{props.item.name}</strong>
+              <small>
+                {props.item.kind === "app"
+                  ? KIND_LABELS[props.item.kind]
+                  : `${KIND_LABELS[props.item.kind]} · ${
+                    formatLibraryBytes(props.item.size)
+                  }`}
+              </small>
+            </span>
+          </div>
+          {props.item.kind === "app" ? null : (
+            <nav
+              aria-label={`${props.item.name} 文件操作`}
+              className="file-library-viewer-actions file-library-viewer-surface"
             >
-              <Trash aria-hidden="true" size={20} />
-            </button>
-          </>
-        )}
-      </div>
+              {props.item.kind === "link" && props.item.url
+                ? (
+                  <a
+                    aria-label="在新标签打开"
+                    href={props.item.url}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    <ArrowSquareOut aria-hidden="true" size={21} />
+                  </a>
+                )
+                : null}
+              {props.item.kind === "image" || props.item.kind === "live-photo"
+                ? (
+                  <>
+                    <button
+                      aria-label={props.item.favorite ? "取消收藏" : "收藏"}
+                      type="button"
+                      onClick={() => {
+                        void props.library.updatePhotoDetails(props.item.id, {
+                          favorite: !props.item.favorite,
+                        }).then(props.onItemsChange);
+                      }}
+                    >
+                      <Heart
+                        aria-hidden="true"
+                        size={21}
+                        weight={props.item.favorite ? "fill" : "regular"}
+                      />
+                    </button>
+                    <button
+                      aria-label="照片信息"
+                      aria-pressed={showInfo}
+                      type="button"
+                      onClick={() => {
+                        setShowEditor(false);
+                        setShowDownloadOptions(false);
+                        setDownloadError("");
+                        setShowInfo((current) => !current);
+                      }}
+                    >
+                      <Info aria-hidden="true" size={21} />
+                    </button>
+                  </>
+                )
+                : null}
+              <button
+                aria-label="编辑文件"
+                aria-pressed={showEditor}
+                type="button"
+                onClick={toggleEditor}
+              >
+                <PencilSimple aria-hidden="true" size={20} />
+              </button>
+              <button
+                aria-label={props.item.kind === "live-photo" ? "选择下载格式" : "下载"}
+                aria-pressed={props.item.kind === "live-photo"
+                  ? showDownloadOptions
+                  : undefined}
+                type="button"
+                onClick={() =>
+                  props.item.kind === "live-photo"
+                    ? toggleDownloadOptions()
+                    : void download()}
+              >
+                <DownloadSimple aria-hidden="true" size={21} />
+              </button>
+              <button
+                aria-label="删除"
+                disabled={deleting}
+                type="button"
+                onClick={() => {
+                  setShowDownloadOptions(false);
+                  setDownloadError("");
+                  setConfirmDelete(true);
+                }}
+              >
+                <Trash aria-hidden="true" size={20} />
+              </button>
+            </nav>
+          )}
+        </>
+      )}
 
       <div className="file-library-viewer-stage">
         {props.item.kind === "app" && props.item.app &&
@@ -706,8 +1201,10 @@ function LibraryViewer(props: {
           ? (
             <iframe
               allow="autoplay; fullscreen"
+              ref={mediaPlayerIframeRef}
               src={mediaPlayerSource}
               title={`${props.item.name} · OpenFX Media Player`}
+              onLoad={syncMediaPlayerFileDetails}
             />
           )
           : null}
@@ -767,6 +1264,155 @@ function LibraryViewer(props: {
           )
           : null}
       </div>
+      {showDownloadOptions && props.item.kind === "live-photo" && props.item.motion
+        ? (
+          <aside
+            aria-label="选择实况图片下载格式"
+            className="file-library-live-export file-library-hud"
+            role="dialog"
+          >
+            <header>
+              <span>
+                <strong>下载实况图片</strong>
+                <small>原片始终保留在 OPFS 中</small>
+              </span>
+              <button
+                aria-label="关闭下载格式"
+                type="button"
+                onClick={() => {
+                  setShowDownloadOptions(false);
+                  setDownloadError("");
+                }}
+              >
+                <X aria-hidden="true" size={18} />
+              </button>
+            </header>
+            <div className="file-library-live-export-options">
+              <button
+                autoFocus
+                disabled={downloadingFormat !== null}
+                type="button"
+                onClick={() => void downloadLivePhoto("original-pair")}
+              >
+                <span className="file-library-live-export-glyphs">
+                  <ImagesSquare aria-hidden="true" size={23} />
+                  <FilmStrip aria-hidden="true" size={23} />
+                </span>
+                <span>
+                  <strong>原片组合</strong>
+                  <small>
+                    {(getFileExtension(
+                      props.item.still?.name ?? props.item.source.name,
+                    ) ||
+                      "HEIC").toUpperCase()} +{" "}
+                    {(getFileExtension(props.item.motion.name) ||
+                      "MOV").toUpperCase()} · ZIP
+                  </small>
+                </span>
+              </button>
+              <button
+                disabled={downloadingFormat !== null ||
+                  !["jpg", "jpeg"].includes(
+                    getFileExtension(
+                      props.item.preview?.name ?? props.item.still?.name ??
+                        props.item.source.name,
+                    ),
+                  )}
+                type="button"
+                onClick={() => void downloadLivePhoto("jpeg-pair")}
+              >
+                <span className="file-library-live-export-glyphs">
+                  <ImagesSquare aria-hidden="true" size={23} />
+                  <FilmStrip aria-hidden="true" size={23} />
+                </span>
+                <span>
+                  <strong>兼容组合</strong>
+                  <small>JPEG + MOV · ZIP</small>
+                </span>
+              </button>
+              <button
+                disabled={downloadingFormat !== null}
+                type="button"
+                onClick={() => void downloadLivePhoto("livp")}
+              >
+                <FileZip aria-hidden="true" size={24} />
+                <span>
+                  <strong>OpenFX LIVP</strong>
+                  <small>原片 + 动态 · 单文件</small>
+                </span>
+              </button>
+            </div>
+            {downloadError ? <small role="alert">{downloadError}</small> : null}
+          </aside>
+        )
+        : null}
+      {showEditor && props.item.kind !== "app"
+        ? (
+          <aside
+            aria-label="编辑文件"
+            className="file-library-item-editor file-library-hud"
+          >
+            <header>
+              <strong>编辑文件</strong>
+              <button
+                aria-label="关闭编辑"
+                type="button"
+                onClick={() => {
+                  setShowEditor(false);
+                  setEditError("");
+                }}
+              >
+                <X aria-hidden="true" size={18} />
+              </button>
+            </header>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void saveEdits();
+              }}
+            >
+              <label>
+                <span>文件名</span>
+                <input
+                  autoFocus
+                  maxLength={255}
+                  required
+                  value={nameDraft}
+                  onChange={(event) => setNameDraft(event.target.value)}
+                />
+              </label>
+              {props.item.kind === "image" || props.item.kind === "live-photo"
+                ? (
+                  <label>
+                    <span>相册</span>
+                    <input
+                      placeholder="以逗号分隔，例如：旅行, 家人"
+                      value={albums}
+                      onChange={(event) => setAlbums(event.target.value)}
+                    />
+                  </label>
+                )
+                : null}
+              {editError ? <small role="alert">{editError}</small> : null}
+              <footer>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowEditor(false);
+                    setEditError("");
+                  }}
+                >
+                  取消
+                </button>
+                <button disabled={saving} type="submit">
+                  <Check aria-hidden="true" size={18} />
+                  {saving ? "保存中…" : "保存"}
+                </button>
+              </footer>
+            </form>
+          </aside>
+        )
+        : null}
       {showInfo && (props.item.kind === "image" || props.item.kind === "live-photo")
         ? (
           <aside className="file-library-photo-info file-library-hud">
@@ -852,19 +1498,6 @@ function LibraryViewer(props: {
                 </a>
               )
               : null}
-            <label>
-              <span>相册</span>
-              <input
-                placeholder="以逗号分隔，例如：旅行, 家人"
-                value={albums}
-                onChange={(event) => setAlbums(event.target.value)}
-                onBlur={() => {
-                  void props.library.updatePhotoDetails(props.item.id, {
-                    albums: albums.split(","),
-                  }).then(props.onItemsChange);
-                }}
-              />
-            </label>
             <small>
               {props.item.processing?.status === "completed"
                 ? "元数据与动态片段分析完成"
@@ -910,103 +1543,25 @@ function LibraryViewer(props: {
   );
 }
 
-function LibraryComposer(props: {
-  kind: ComposerKind;
-  busy: boolean;
-  onClose: () => void;
-  onSubmit: (name: string, value: string) => Promise<void>;
-}) {
-  const [name, setName] = useState("");
-  const [value, setValue] = useState("");
-  const isLink = props.kind === "link";
-
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    if (!value.trim()) return;
-    void props.onSubmit(name, value);
-  }
-
-  return (
-    <div
-      className="file-library-composer-backdrop"
-      role="presentation"
-      onMouseDown={props.onClose}
-    >
-      <form
-        aria-label={isLink ? "保存链接" : "新建文本"}
-        className="file-library-composer file-library-hud"
-        onMouseDown={(event) => event.stopPropagation()}
-        onSubmit={submit}
-      >
-        <div className="file-library-composer-head">
-          <strong>{isLink ? "保存链接" : "新建文本"}</strong>
-          <button aria-label="关闭" type="button" onClick={props.onClose}>
-            <X aria-hidden="true" size={20} />
-          </button>
-        </div>
-        <label>
-          <span>名称</span>
-          <input
-            autoFocus
-            placeholder={isLink ? "可选，默认使用域名" : "未命名文本"}
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-          />
-        </label>
-        <label>
-          <span>{isLink ? "网址" : "内容"}</span>
-          {isLink
-            ? (
-              <input
-                inputMode="url"
-                placeholder="https://example.com"
-                required
-                type="url"
-                value={value}
-                onChange={(event) => setValue(event.target.value)}
-              />
-            )
-            : (
-              <textarea
-                placeholder="写下内容…"
-                required
-                rows={8}
-                value={value}
-                onChange={(event) => setValue(event.target.value)}
-              />
-            )}
-        </label>
-        <button
-          className="file-library-composer-submit"
-          disabled={props.busy}
-          type="submit"
-        >
-          <Plus aria-hidden="true" size={19} />
-          {props.busy ? "正在保存…" : "保存到文件库"}
-        </button>
-      </form>
-    </div>
-  );
-}
-
 export function FileLibraryHomepage(props: {
   renderApp: (appId: LibraryAppId) => ReactNode;
 }) {
   const [library] = useState(createOpfsFileLibrary);
+  const [nativePhotoImporter] = useState(createNativePhotoImporter);
   const [session] = useState(() =>
     createFileLibrarySession({
       store: library,
       createVideoThumbnail,
       defaultAppCount: LIBRARY_APP_COUNT,
       isVisible: () => document.visibilityState !== "hidden",
+      nativePhotoImporter,
     })
   );
   const [sessionSnapshot, setSessionSnapshot] = useState(session.getSnapshot);
-  const { items, busy, message, storage } = sessionSnapshot;
+  const { items, busy, message, nativePhotosAvailable, storage } = sessionSnapshot;
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerItemId, setViewerItemId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [smartView, setSmartView] = useState<LibrarySmartView>("all");
   const [gridColumns, setGridColumns] = useState<LibraryGridColumns>(() => {
     try {
       return parseLibraryGridColumns(
@@ -1016,34 +1571,42 @@ export function FileLibraryHomepage(props: {
       return 3;
     }
   });
-  const [composer, setComposer] = useState<ComposerKind | null>(null);
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const photosInputRef = useRef<HTMLInputElement>(null);
   const pinchGesture = useRef<PinchGesture | null>(null);
-  const selectedById = selectedId
-    ? items.find((item) => item.id === selectedId) ?? null
-    : null;
-  const selected = selectedById ?? items.find((item) => item.app?.id === "finlyzer") ??
-    items[0] ?? null;
-
-  const visibleItems = useMemo(
-    () => filterLibraryItems(searchLibraryItems(items, query), smartView),
-    [items, query, smartView],
+  const gridEntries = useMemo(
+    () => buildSimilarityGridEntries(items),
+    [items],
   );
-  const duplicateGroups = useMemo(() => findDuplicateGroups(items), [items]);
+  const matchingIds = useMemo(
+    () => new Set(searchLibraryItems(items, query).map((item) => item.id)),
+    [items, query],
+  );
+  const visibleEntries = useMemo(
+    () =>
+      gridEntries.filter((entry) =>
+        entry.items.some((item) => matchingIds.has(item.id))
+      ),
+    [gridEntries, matchingIds],
+  );
+  const selectedEntry = selectedId
+    ? gridEntries.find((entry) => entry.items.some((item) => item.id === selectedId)) ??
+      null
+    : null;
+  const selected = selectedEntry?.kind === "item" ? selectedEntry.items[0] : null;
+  const selectedGitHubLinks = selected?.kind === "app" && selected.app &&
+      isLibraryAppId(selected.app.id)
+    ? getLibraryApp(selected.app.id).links?.filter((link) => isGitHubHref(link.href)) ??
+      []
+    : [];
+  const viewerItem = viewerItemId
+    ? items.find((item) => item.id === viewerItemId && canOpenLibraryItem(item)) ?? null
+    : null;
   const hudProgress = useMemo(
     () => summarizeFileLibraryHudProgress(items),
     [items],
   );
-  const duplicateTypes = useMemo(() => {
-    const types = new Map<string, DuplicateGroup["type"]>();
-    for (const group of duplicateGroups) {
-      for (const id of group.itemIds) {
-        if (group.type === "exact" || !types.has(id)) types.set(id, group.type);
-      }
-    }
-    return types;
-  }, [duplicateGroups]);
 
   useEffect(() => {
     document.body.classList.add("homepage-body", "file-library-body");
@@ -1075,27 +1638,24 @@ export function FileLibraryHomepage(props: {
     if (inputRef.current) inputRef.current.value = "";
   }
 
-  async function submitComposer(name: string, value: string) {
-    if (!composer || busy) return;
-    if (await session.createItem(composer, name, value)) {
-      setComposer(null);
-    }
-  }
-
   async function removeItem(item: LibraryItem) {
+    const nextSelectedId =
+      selectedEntry?.items.find((candidate) => candidate.id !== item.id)?.id ?? null;
     if (await session.removeItem(item.id)) {
-      setSelectedId(null);
-      setViewerOpen(false);
+      setSelectedId((current) =>
+        selectedEntry?.items.some((candidate) => candidate.id === current)
+          ? nextSelectedId
+          : current
+      );
+      setViewerItemId(null);
     }
   }
 
-  async function toggleDuplicateReview() {
-    if (smartView === "duplicates") {
-      setSmartView("all");
-      return;
-    }
-    setSmartView("duplicates");
-    await session.reviewDuplicates();
+  function toggleEntrySelection(entry: LibraryGridEntry) {
+    setSelectedId((current) =>
+      toggleFileLibraryEntrySelection(current, entry, gridEntries)
+    );
+    setViewerItemId(null);
   }
 
   const storageText = storage
@@ -1162,83 +1722,65 @@ export function FileLibraryHomepage(props: {
       }}
     >
       <header className="file-library-head">
-        {selected
-          ? (
-            <div className="file-library-hud-preview">
-              <LibraryHudPreview item={selected} library={library} />
-            </div>
-          )
-          : null}
-
-        <div className="file-library-searchbar">
-          <label className="file-library-search">
-            <MagnifyingGlass aria-hidden="true" size={21} />
-            <input
-              aria-label={`搜索文件，当前 ${visibleItems.length} 项`}
-              placeholder={`搜索 ${visibleItems.length} 项`}
-              type="search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Escape") setQuery("");
-              }}
-            />
-          </label>
-          <nav className="file-library-toolbar-actions" aria-label="文件库操作">
-            {selected
+        <div className="file-library-hud-preview">
+          {selectedEntry?.kind === "group"
+            ? (
+              <LibrarySimilarityHud
+                entry={selectedEntry}
+                library={library}
+                onOpen={(item) => setViewerItemId(item.id)}
+              />
+            )
+            : selected
+            ? <LibraryHudPreview item={selected} library={library} />
+            : (
+              <LibraryStorageOverview
+                fileCount={hudProgress.total}
+                items={items}
+                query={query}
+                resultCount={visibleEntries.length}
+                storage={storage}
+                onQueryChange={setQuery}
+              />
+            )}
+          {selected
+            ? canOpenLibraryItem(selected)
               ? (
-                <>
-                  <button
-                    aria-label="打开所选内容"
-                    type="button"
-                    onClick={() => setViewerOpen(true)}
-                  >
-                    <ArrowsOutSimple aria-hidden="true" size={22} weight="light" />
-                  </button>
-                  <button
-                    aria-label={selected.favorite ? "取消收藏" : "收藏"}
-                    aria-pressed={Boolean(selected.favorite)}
-                    type="button"
-                    onClick={() =>
-                      void session.setFavorite(selected.id, !selected.favorite)}
-                  >
-                    <HeartStraight aria-hidden="true" size={22} weight="light" />
-                  </button>
-                </>
+                <button
+                  aria-label={`打开 ${selected.name} 全屏详情`}
+                  className="file-library-hud-open"
+                  type="button"
+                  onClick={() => setViewerItemId(selected.id)}
+                />
               )
-              : null}
-            <button
-              aria-label="导入文件"
-              type="button"
-              onClick={() => inputRef.current?.click()}
-            >
-              <TrayArrowDown aria-hidden="true" size={22} weight="light" />
-            </button>
-            <button
-              aria-label="保存链接"
-              type="button"
-              onClick={() => setComposer("link")}
-            >
-              <LinkSimpleHorizontal aria-hidden="true" size={22} weight="light" />
-            </button>
-            <button
-              aria-label="新建文本"
-              type="button"
-              onClick={() => setComposer("text")}
-            >
-              <TextT aria-hidden="true" size={22} weight="light" />
-            </button>
-            <button
-              aria-label={smartView === "duplicates"
-                ? "退出重复项审阅"
-                : "检查重复文件"}
-              aria-pressed={smartView === "duplicates"}
-              type="button"
-              onClick={() => void toggleDuplicateReview()}
-            >
-              <StackSimple aria-hidden="true" size={22} weight="light" />
-            </button>
-          </nav>
+              : null
+            : null}
+          {selected
+            ? (
+              <nav className="file-library-selection-actions" aria-label="所选文件操作">
+                {selectedGitHubLinks.map((link) => (
+                  <a
+                    aria-label={`在 GitHub 打开 ${selected.name}`}
+                    href={link.href}
+                    key={`${link.label}:${link.href}`}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    <GithubLogo aria-hidden="true" size={22} weight="light" />
+                  </a>
+                ))}
+                <button
+                  aria-label={selected.favorite ? "取消收藏" : "收藏"}
+                  aria-pressed={Boolean(selected.favorite)}
+                  type="button"
+                  onClick={() =>
+                    void session.setFavorite(selected.id, !selected.favorite)}
+                >
+                  <HeartStraight aria-hidden="true" size={22} weight="light" />
+                </button>
+              </nav>
+            )
+            : null}
         </div>
         <span className="sr-only" aria-live="polite">
           {hudProgress.label}，{hudProgress.processed}/{hudProgress.total}；{message}；
@@ -1262,32 +1804,66 @@ export function FileLibraryHomepage(props: {
         onPointerUp={(event) => removePinchPointer(event.pointerId)}
         onPointerCancel={(event) => removePinchPointer(event.pointerId)}
       >
-        {visibleItems.map((item) => (
-          <LibraryCard
-            key={item.id}
-            item={item}
-            library={library}
-            duplicateType={duplicateTypes.get(item.id)}
-            selected={selected?.id === item.id}
-            onSelect={(item) => {
-              setSelectedId(item.id);
-            }}
-          />
-        ))}
-        {items.length === 0 && !busy
-          ? (
+        <article
+          aria-label="导入照片或文件"
+          className="file-library-import-tile"
+          role="group"
+        >
+          <span className="file-library-import-tile-kicker">OPFS INPUT</span>
+          <ImagesSquare aria-hidden="true" size={42} weight="thin" />
+          <span className="file-library-import-tile-copy">
+            <strong>{busy ? "正在导入…" : "导入内容"}</strong>
+            <span>从照片图库选取，或导入任意文件</span>
+          </span>
+          <span className="file-library-import-actions">
             <button
-              className="file-library-empty-tile"
+              aria-label="从 Photos 选择照片或实况原片"
+              disabled={busy}
+              type="button"
+              onClick={() => {
+                if (nativePhotosAvailable) {
+                  void session.importFromPhotos();
+                } else {
+                  photosInputRef.current?.click();
+                }
+              }}
+            >
+              <ImagesSquare aria-hidden="true" size={19} />
+              Photos
+            </button>
+            <button
+              aria-label="从文件导入"
+              disabled={busy}
               type="button"
               onClick={() => inputRef.current?.click()}
             >
-              <FolderOpen aria-hidden="true" size={40} weight="thin" />
-              <strong>导入你的第一个文件</strong>
-              <span>图片、Live Photo、视频、文本或任意文件</span>
+              <FolderOpen aria-hidden="true" size={19} />
+              文件
             </button>
-          )
-          : null}
-        {items.length > 0 && visibleItems.length === 0
+          </span>
+        </article>
+        {visibleEntries.map((entry) =>
+          entry.kind === "group"
+            ? (
+              <LibrarySimilarityCard
+                entry={entry}
+                key={entry.id}
+                library={library}
+                selected={selectedEntry?.id === entry.id}
+                onSelect={() => toggleEntrySelection(entry)}
+              />
+            )
+            : (
+              <LibraryCard
+                item={entry.items[0]}
+                key={entry.id}
+                library={library}
+                selected={selectedEntry?.id === entry.id}
+                onSelect={() => toggleEntrySelection(entry)}
+              />
+            )
+        )}
+        {query.trim() && visibleEntries.length === 0
           ? (
             <div className="file-library-empty-tile is-result">
               <MagnifyingGlass aria-hidden="true" size={32} />
@@ -1307,6 +1883,17 @@ export function FileLibraryHomepage(props: {
           if (event.target.files) void importSelected(event.target.files);
         }}
       />
+      <input
+        accept=".heic,.heif,.jpg,.jpeg,.mov,.mp4,image/heic,image/heif,image/jpeg,video/quicktime,video/mp4"
+        hidden
+        multiple
+        ref={photosInputRef}
+        type="file"
+        onChange={(event) => {
+          if (event.target.files) void importSelected(event.target.files);
+          event.currentTarget.value = "";
+        }}
+      />
 
       {dragging
         ? (
@@ -1317,26 +1904,17 @@ export function FileLibraryHomepage(props: {
           </div>
         )
         : null}
-      {selected && viewerOpen
+      {viewerItem
         ? (
           <LibraryViewer
-            item={selected}
-            key={selected.id}
+            item={viewerItem}
+            key={viewerItem.id}
             library={library}
-            onClose={() => setViewerOpen(false)}
+            onClose={() => setViewerItemId(null)}
             onDelete={removeItem}
             onItemsChange={session.replaceItems}
+            onUpdate={session.updateItemDetails}
             renderApp={props.renderApp}
-          />
-        )
-        : null}
-      {composer
-        ? (
-          <LibraryComposer
-            busy={busy}
-            kind={composer}
-            onClose={() => setComposer(null)}
-            onSubmit={submitComposer}
           />
         )
         : null}

@@ -47,17 +47,14 @@ Deno.test("file library declares complete light and dark semantic tokens", () =>
   }
 });
 
-Deno.test("migrated App panels use semantic text tokens", () => {
+Deno.test("summary-only App panels are removed from the standalone viewer", () => {
   expect(app).not.toMatch(/color:\s*["']#[0-9a-f]{3,8}["']/i);
-  expect(app).toContain('className="chinagas-install-link"');
-  expect(app).toContain('className="chinagas-install-note"');
-
-  expect(cssRule(css, ".chinagas-install-link")).toContain(
-    "color: var(--text-on-accent)",
-  );
-  expect(cssRule(css, ".chinagas-install-note")).toContain(
-    "color: var(--text-secondary)",
-  );
+  expect(app).toContain('if (renderer.kind === "summary") return null');
+  expect(app).not.toContain('className="chinagas-install-link"');
+  expect(app).not.toContain('className="chinagas-install-note"');
+  expect(css).not.toContain(".chinagas-install-link");
+  expect(css).not.toContain(".chinagas-install-note");
+  expect(css).not.toContain(".panel-download-link");
 });
 
 Deno.test("file-library and App viewer surfaces retain semantic theming", () => {
@@ -68,19 +65,57 @@ Deno.test("file-library and App viewer surfaces retain semantic theming", () => 
   expect(css).toContain("background: var(--surface");
 });
 
-Deno.test("homepage uses a full-bleed selected-item HUD and borderless control strip", () => {
+Deno.test("homepage uses a full-bleed preview or storage HUD and borderless controls", () => {
   expect(homepage).toContain(
     'className="file-library-hud-preview"',
   );
-  expect(homepage).toContain('className="file-library-searchbar"');
-  expect(homepage).toContain('aria-label="文件库操作"');
-  expect(homepage).toContain('aria-label="导入文件"');
-  expect(homepage).toContain('aria-label="保存链接"');
-  expect(homepage).toContain('aria-label="新建文本"');
-  expect(homepage).toContain('className="file-library-toolbar-actions"');
-  expect(homepage).toContain('className="file-library-hud-preview-app-copy"');
+  expect(homepage).toContain('className="file-library-storage-overview"');
+  expect(homepage).toContain('aria-label="文件库存储空间"');
+  expect(homepage).toContain("summarizeFileLibraryStorageHeatmap(props.items");
+  expect(homepage).toContain('className="file-library-storage-heatmap"');
+  expect(homepage).toContain('className="file-library-storage-tile-copy"');
+  expect(homepage).toContain("data-storage-kind={tile.id}");
+  expect(homepage).not.toContain(
+    'items.find((item) => item.app?.id === "finlyzer")',
+  );
+  expect(homepage).toContain(
+    'className="file-library-search file-library-hud-search"',
+  );
+  expect(homepage).toContain('className="file-library-import-tile"');
+  expect(homepage).toContain('aria-label="从 Photos 选择照片或实况原片"');
+  expect(homepage).toContain('aria-label="从文件导入"');
+  expect(homepage).toContain("ref={photosInputRef}");
+  expect(homepage).toContain("createNativePhotoImporter");
+  expect(homepage).toContain("nativePhotosAvailable");
+  expect(homepage).toContain("session.importFromPhotos()");
+  expect(homepage).toContain('className="file-library-selection-actions"');
+  expect(homepage).toContain("<GithubLogo");
+  expect(homepage).toContain("selectedGitHubLinks.map((link)");
+  expect(homepage).toContain("!isGitHubHref(link.href)");
+  expect(homepage).toContain('className="file-library-hud-open"');
+  expect(homepage).toContain("onClick={() => setViewerItemId(selected.id)}");
+  expect(homepage).not.toContain('aria-label="打开所选内容"');
+  expect(homepage).not.toContain('aria-label="保存链接"');
+  expect(homepage).not.toContain('aria-label="新建文本"');
+  expect(homepage).not.toContain("LibraryComposer");
+  expect(homepage).not.toContain("setComposer");
+  expect(homepage).toContain("file-library-hud-preview-app-copy");
+  expect(homepage).toContain('className="file-library-hud-app-summary"');
+  expect(homepage).toContain("appSummary.highlights?.slice(0, 3)");
+  expect(homepage).toContain("canOpenLibraryItem(selected)");
+  expect(homepage).toContain("isLibraryAppOpenable(item.app.id)");
   expect(homepage).toContain("props.item.app?.description");
-  expect(homepage).toContain("placeholder={`搜索 ${visibleItems.length} 项`}");
+  expect(homepage).toContain("placeholder={`搜索 ${props.resultCount} 项`}");
+  expect(homepage.indexOf('className="file-library-import-tile"')).toBeLessThan(
+    homepage.indexOf("{visibleEntries.map((entry) =>"),
+  );
+  expect(homepage).toContain("buildSimilarityGridEntries(items)");
+  expect(homepage).toContain('className="file-library-group-hud"');
+  expect(homepage).toContain('className="file-library-group-hud-members"');
+  expect(homepage).toContain("new IntersectionObserver");
+  expect(homepage).toContain('rootMargin: "200px"');
+  expect(homepage).not.toContain('aria-label="检查重复文件"');
+  expect(homepage).not.toContain("reviewDuplicates");
   expect(homepage).not.toContain('className="file-library-selection"');
   expect(homepage).not.toContain('className="file-library-count"');
   expect(homepage).not.toContain("HomepageThemeControl");
@@ -100,7 +135,8 @@ Deno.test("homepage uses a full-bleed selected-item HUD and borderless control s
   expect(libraryCss).toContain(
     "grid-auto-rows: calc(100vw / var(--file-library-grid-columns))",
   );
-  expect(libraryCss).toContain("border-radius: 18px 18px 0 0");
+  expect(libraryCss).toContain("border-radius: 0;\n  overflow: hidden");
+  expect(libraryCss).not.toContain("border-radius: 18px 18px 0 0");
   expect(libraryCss).toContain("gap: 0");
   expect(libraryCss).toContain("padding: 0");
   expect(cssRule(libraryCss, ".file-library-hud-preview")).toContain(
@@ -109,16 +145,59 @@ Deno.test("homepage uses a full-bleed selected-item HUD and borderless control s
   expect(cssRule(libraryCss, ".file-library-hud-preview-app-copy")).toContain(
     "width: min(760px, calc(100% - 48px))",
   );
+  expect(cssRule(libraryCss, ".file-library-hud-open")).toContain("inset: 0");
+  expect(cssRule(libraryCss, ".file-library-hud-open")).toContain(
+    "cursor: zoom-in",
+  );
+  expect(cssRule(libraryCss, ".file-library-selection-actions")).toContain(
+    "background: transparent",
+  );
+  expect(cssRule(libraryCss, ".file-library-selection-actions")).toContain(
+    "backdrop-filter: none",
+  );
+  expect(cssRule(libraryCss, ".file-library-hud-preview-app-copy.is-summary"))
+    .toContain(
+      "overflow-y: auto",
+    );
+  expect(cssRule(libraryCss, ".file-library-hud-app-links > a")).toContain(
+    "min-height: 44px",
+  );
+  expect(cssRule(libraryCss, ".file-library-storage-overview")).toContain(
+    "isolation: isolate",
+  );
+  expect(cssRule(libraryCss, ".file-library-storage-heatmap")).toContain(
+    "position: absolute",
+  );
+  expect(cssRule(libraryCss, ".file-library-storage-tile")).toContain(
+    "position: absolute",
+  );
+  expect(libraryCss).not.toContain(".file-library-storage-meter-track");
+  expect(libraryCss).not.toContain(".file-library-storage-meter-details");
   const operationHover = cssRule(
     libraryCss,
-    ".file-library-toolbar-actions > button:hover,\n.file-library-toolbar-actions > button:focus-visible",
+    ".file-library-selection-actions > button:hover,\n.file-library-selection-actions > button:focus-visible,\n.file-library-selection-actions > a:hover,\n.file-library-selection-actions > a:focus-visible",
   );
   expect(operationHover).toContain("background: transparent");
   expect(operationHover).toContain("box-shadow: none");
   expect(operationHover).toContain("color: #9ebddd");
 });
 
-Deno.test("portrait mobile pins a forty-percent HUD above the scrolling grid", () => {
+Deno.test("selected video and Live Photo HUD previews autoplay silently without a duplicate LIVE tag", () => {
+  expect(homepage).toContain('"live-photo": "实况照片"');
+  expect(homepage).toContain(
+    "aria-label={`${props.item.name} 静音循环预览`}",
+  );
+  expect(homepage).toMatch(
+    /aria-label=\{`\$\{props\.item\.name\} 静音循环预览`\}[\s\S]*?autoPlay[\s\S]*?loop[\s\S]*?muted[\s\S]*?playsInline/,
+  );
+  expect(homepage).not.toContain('className="file-library-live-badge"');
+  expect(homepage).not.toContain("/> LIVE");
+  expect(libraryCss).not.toContain(".file-library-live-badge");
+  expect(cssRule(libraryCss, ".file-library-hud-preview-surface > video"))
+    .toContain("object-fit: cover");
+});
+
+Deno.test("portrait mobile keeps HUD search above the scrolling grid", () => {
   const portraitRule = "@media (max-width: 900px) and (orientation: portrait)";
   expect(libraryCss).toContain(portraitRule);
   expect(libraryCss.lastIndexOf(portraitRule)).toBeGreaterThan(
@@ -128,7 +207,8 @@ Deno.test("portrait mobile pins a forty-percent HUD above the scrolling grid", (
     "position: fixed",
   );
   expect(libraryCss).toContain("height: 40svh");
-  expect(libraryCss).toContain("inset: calc(40svh + 60px) 0 0");
+  expect(libraryCss).toContain("inset: 40svh 0 0");
+  expect(libraryCss).not.toContain("inset: calc(40svh + 60px) 0 0");
   expect(libraryCss).toContain("overflow-y: auto");
   expect(libraryCss).toContain("overscroll-behavior: contain");
   expect(libraryCss).not.toContain("margin-top: calc(40svh + 60px)");
@@ -147,20 +227,58 @@ Deno.test("landscape and wide desktop share a split HUD and scrolling matrix", (
     "grid-template-columns: var(--file-library-hud-width) minmax(0, 1fr)",
   );
   expect(wideLayout).toContain(
-    "grid-template-rows: minmax(0, 1fr) var(--file-library-toolbar-height)",
+    "grid-template-rows: minmax(0, 1fr)",
   );
-  expect(wideLayout).toContain("--file-library-toolbar-height: 56px");
-  expect(wideLayout).toContain("border-radius: 18px 0 0 18px");
+  expect(wideLayout).not.toContain("--file-library-toolbar-height");
+  expect(wideLayout).toContain("border-radius: 0");
+  expect(wideLayout).not.toContain("border-radius: 18px 0 0 18px");
   expect(wideLayout).toContain("grid-auto-rows: min-content");
   expect(wideLayout).not.toContain("grid-auto-rows: auto");
   expect(wideLayout).toContain("overflow-y: auto");
   expect(wideLayout).toContain("object-fit: contain");
 });
 
+Deno.test("the file viewer uses media-style floating controls and an index-backed editor", () => {
+  expect(homepage).toContain('aria-label="编辑文件"');
+  expect(homepage).toContain(
+    'className="file-library-item-editor file-library-hud"',
+  );
+  expect(homepage).toContain("normalizeLibraryItemName(nameDraft)");
+  expect(homepage).toContain("onUpdate={session.updateItemDetails}");
+  expect(homepage).toContain("isMediaPlayerFileActionMessage(event.data)");
+  expect(homepage).toContain("makeMediaPlayerFileDetailsMessage(props.item.id");
+  expect(homepage).toContain("ref={mediaPlayerIframeRef}");
+  expect(homepage).toContain(
+    'className="file-library-viewer-actions file-library-viewer-surface"',
+  );
+
+  const viewerHead = cssRule(libraryCss, ".file-library-viewer-head");
+  expect(viewerHead).toContain("left: max(8px, env(safe-area-inset-left))");
+  expect(cssRule(libraryCss, ".file-library-viewer-surface")).toContain(
+    "top: max(8px, env(safe-area-inset-top))",
+  );
+  expect(cssRule(libraryCss, ".file-library-viewer-surface")).toContain(
+    "backdrop-filter: blur(16px) saturate(150%)",
+  );
+  expect(cssRule(libraryCss, ".file-library-viewer-stage")).toContain(
+    "padding: 0",
+  );
+  expect(cssRule(libraryCss, ".file-library-item-editor")).toContain(
+    "top: max(64px, calc(env(safe-area-inset-top) + 56px))",
+  );
+  expect(homepage).toContain('aria-label="选择实况图片下载格式"');
+  expect(homepage).toContain('downloadLivePhoto("original-pair")');
+  expect(homepage).toContain('downloadLivePhoto("jpeg-pair")');
+  expect(homepage).toContain('downloadLivePhoto("livp")');
+  expect(cssRule(libraryCss, ".file-library-live-export")).toContain(
+    "border-radius: 24px",
+  );
+});
+
 Deno.test("video playback progress cannot replace the active player iframe", () => {
   expect(homepage).toContain("const [mediaPlayerSource] = useState(() =>");
   expect(homepage).toContain("src={mediaPlayerSource}");
-  expect(homepage).toContain("key={selected.id}");
+  expect(homepage).toContain("key={viewerItem.id}");
   expect(homepage).not.toContain("src={makeMediaPlayerUrl(playerRef");
 });
 
@@ -180,5 +298,14 @@ Deno.test("theme color transitions remain bounded", () => {
   );
   expect(cssRule(libraryCss, ".file-library-card::after")).toContain(
     "border-color 160ms ease",
+  );
+  expect(cssRule(libraryCss, ".file-library-card")).toContain(
+    "transform 180ms cubic-bezier(0.23, 1, 0.32, 1)",
+  );
+  expect(cssRule(libraryCss, ".file-library-card.is-selected")).toContain(
+    "transform: translateY(-3px) scale(1.025)",
+  );
+  expect(cssRule(libraryCss, ".file-library-card.is-selected::after")).toContain(
+    "border-color: transparent",
   );
 });

@@ -224,6 +224,11 @@ type ZipEntry = {
   localOffset: number;
 };
 
+export type StoredZipArchiveEntry = {
+  name: string;
+  content: Uint8Array;
+};
+
 function findZipEnd(view: DataView): number {
   const minimum = Math.max(0, view.byteLength - 65_557);
   for (let offset = view.byteLength - 22; offset >= minimum; offset -= 1) {
@@ -290,6 +295,17 @@ async function readZipEntry(data: Uint8Array, entry: ZipEntry): Promise<Uint8Arr
     throw new Error(`LIVP ZIP: ${entry.name} 解压长度不匹配`);
   }
   return output;
+}
+
+/** Decode every non-directory entry from a stored or deflated ZIP archive. */
+export async function decodeStoredZipArchive(
+  data: Uint8Array,
+): Promise<StoredZipArchiveEntry[]> {
+  const entries = listZipEntries(data).filter((entry) => !entry.name.endsWith("/"));
+  return await Promise.all(entries.map(async (entry) => ({
+    name: entry.name,
+    content: await readZipEntry(data, entry),
+  })));
 }
 
 function extensionOf(name: string): string {
@@ -405,11 +421,17 @@ export function encodeLivpArchive(
   video: Uint8Array,
   metadata: LivpMetadata,
 ): Uint8Array {
-  const files = [
+  return encodeStoredZipArchive([
     { name: `live.${metadata.imageFormat.toLowerCase()}`, content: image },
     { name: `live.${metadata.videoFormat.toLowerCase()}`, content: video },
     { name: "metadata.json", content: encoder.encode(JSON.stringify(metadata)) },
-  ];
+  ]);
+}
+
+/** Create a deterministic uncompressed UTF-8 ZIP archive. */
+export function encodeStoredZipArchive(
+  files: readonly StoredZipArchiveEntry[],
+): Uint8Array {
   const locals: Uint8Array[] = [];
   const centrals: Uint8Array[] = [];
   let localOffset = 0;

@@ -43,12 +43,6 @@ function createStore(initial: LibraryItem[]) {
       calls.push("import");
       return Promise.resolve(items);
     },
-    createText() {
-      return Promise.resolve(items);
-    },
-    createLink() {
-      return Promise.resolve(items);
-    },
     getStoredFile(reference) {
       calls.push(`read:${reference.path}`);
       return Promise.resolve(
@@ -104,12 +98,35 @@ function createStore(initial: LibraryItem[]) {
       );
       return Promise.resolve(items);
     },
-    retryFingerprintAnalysis() {
+    retryFingerprintAnalysis(id) {
+      calls.push(`retry-fingerprint:${id}`);
+      items = items.map((item) =>
+        item.id === id
+          ? {
+            ...item,
+            fingerprint: { version: 1, status: "pending" },
+          }
+          : item
+      );
       return Promise.resolve(items);
     },
     setFavorite(id, favorite) {
       calls.push(`favorite:${id}:${favorite}`);
       items = items.map((item) => item.id === id ? { ...item, favorite } : item);
+      return Promise.resolve(items);
+    },
+    updateItemDetails(id, patch) {
+      calls.push(`update:${id}:${patch.name ?? ""}`);
+      items = items.map((item) =>
+        item.id === id
+          ? {
+            ...item,
+            name: patch.name ?? item.name,
+            source: patch.name ? { ...item.source, name: patch.name } : item.source,
+            albums: patch.albums ?? item.albums,
+          }
+          : item
+      );
       return Promise.resolve(items);
     },
     removeItem(id) {
@@ -124,7 +141,14 @@ function createStore(initial: LibraryItem[]) {
       return Promise.resolve(true);
     },
   };
-  return { store, calls, getItems: () => items };
+  return {
+    store,
+    calls,
+    getItems: () => items,
+    setItems: (next: LibraryItem[]) => {
+      items = next;
+    },
+  };
 }
 
 Deno.test("file library session owns loading and background processing", async () => {
@@ -159,11 +183,14 @@ Deno.test("file library session owns loading and background processing", async (
     quota: 10,
     persisted: false,
   });
-  expect(session.getSnapshot().items.find((item) => item.id === "a")).toMatchObject({
-    processing: { status: "completed" },
-    fingerprint: { status: "completed" },
-  });
-  expect(session.getSnapshot().items.find((item) => item.id === "b")?.preview?.path)
+  expect(session.getSnapshot().items.find((item) => item.id === "a"))
+    .toMatchObject({
+      processing: { status: "completed" },
+      fingerprint: { status: "completed" },
+    });
+  expect(
+    session.getSnapshot().items.find((item) => item.id === "b")?.preview?.path,
+  )
     .toBe("/b/preview");
   expect(fake.calls.indexOf("photo:a")).toBeLessThan(
     fake.calls.indexOf("fingerprint:a"),
@@ -202,6 +229,61 @@ Deno.test("file library session serializes user mutations through busy state", a
   session.stop();
 });
 
+Deno.test("file library session imports one native Photos selection through the existing store", async () => {
+  const fake = createStore([]);
+  const imported: string[][] = [];
+  fake.store.importFiles = (files) => {
+    imported.push(files.map((file) => file.name));
+    return Promise.resolve(fake.getItems());
+  };
+  const session = createFileLibrarySession({
+    store: fake.store,
+    defaultAppCount: 13,
+    createVideoThumbnail: () => Promise.reject(new Error("unused")),
+    nativePhotoImporter: {
+      isAvailable: () => Promise.resolve(true),
+      pick: () =>
+        Promise.resolve([
+          new File(["still"], "IMG_7732.HEIC", { type: "image/heic" }),
+          new File(["motion"], "IMG_7732.mov", { type: "video/quicktime" }),
+        ]),
+    },
+  });
+
+  await session.start();
+  expect(session.getSnapshot().nativePhotosAvailable).toBe(true);
+  expect(await session.importFromPhotos()).toBe(true);
+  expect(imported).toEqual([["IMG_7732.HEIC", "IMG_7732.mov"]]);
+  expect(session.getSnapshot().message).toBe("已从 Photos 导入 1 张实况照片");
+  session.stop();
+});
+
+Deno.test("file library session can reopen Photos immediately after cancellation", async () => {
+  const fake = createStore([]);
+  let pickCalls = 0;
+  const session = createFileLibrarySession({
+    store: fake.store,
+    defaultAppCount: 13,
+    createVideoThumbnail: () => Promise.reject(new Error("unused")),
+    nativePhotoImporter: {
+      isAvailable: () => Promise.resolve(true),
+      pick: () => {
+        pickCalls += 1;
+        return Promise.resolve(null);
+      },
+    },
+  });
+
+  await session.start();
+  expect(await session.importFromPhotos()).toBe(false);
+  expect(session.getSnapshot().busy).toBe(false);
+  expect(session.getSnapshot().message).toBe("已取消选择");
+  expect(await session.importFromPhotos()).toBe(false);
+  expect(pickCalls).toBe(2);
+  expect(session.getSnapshot().busy).toBe(false);
+  session.stop();
+});
+
 Deno.test("file library session owns favorite mutations for every item kind", async () => {
   const fake = createStore([libraryItem("app", "app")]);
   const session = createFileLibrarySession({
@@ -215,5 +297,87 @@ Deno.test("file library session owns favorite mutations for every item kind", as
   expect(session.getSnapshot().items[0]?.favorite).toBe(true);
   expect(session.getSnapshot().message).toBe("已收藏");
   expect(fake.calls).toContain("favorite:app:true");
+  session.stop();
+});
+
+Deno.test("file library session owns file detail updates", async () => {
+  const fake = createStore([libraryItem("photo", "image")]);
+  const session = createFileLibrarySession({
+    store: fake.store,
+    defaultAppCount: 13,
+    createVideoThumbnail: () => Promise.reject(new Error("unused")),
+  });
+  await session.start();
+
+  expect(
+    await session.updateItemDetails("photo", {
+      name: "tokyo-poster.png",
+      albums: ["东京", "海报"],
+    }),
+  ).toBe(true);
+  expect(session.getSnapshot().items[0]).toMatchObject({
+    name: "tokyo-poster.png",
+    source: { name: "tokyo-poster.png" },
+    albums: ["东京", "海报"],
+  });
+  expect(session.getSnapshot().message).toBe("已更新文件信息");
+  expect(fake.calls).toContain("update:photo:tokyo-poster.png");
+  session.stop();
+});
+
+Deno.test("file library session retries failed fingerprints once per start", async () => {
+  const failed = libraryItem("failed", "file", {
+    fingerprint: {
+      version: 1,
+      status: "failed",
+      error: "worker unavailable",
+    },
+  });
+  const fake = createStore([failed]);
+  fake.store.processFingerprint = (id) => {
+    fake.calls.push(`fingerprint:${id}`);
+    const items = fake.getItems().map((item) =>
+      item.id === id
+        ? {
+          ...item,
+          fingerprint: {
+            version: 1 as const,
+            status: "failed" as const,
+            error: "worker unavailable",
+          },
+        }
+        : item
+    );
+    fake.setItems(items);
+    return Promise.resolve(items);
+  };
+  const session = createFileLibrarySession({
+    store: fake.store,
+    defaultAppCount: 13,
+    createVideoThumbnail: () => Promise.reject(new Error("unused")),
+  });
+
+  await session.start();
+  await session.whenIdle();
+  session.resumeBackgroundWork();
+  await session.whenIdle();
+
+  expect(fake.calls.filter((call) => call === "retry-fingerprint:failed"))
+    .toHaveLength(
+      1,
+    );
+  expect(fake.calls.filter((call) => call === "fingerprint:failed"))
+    .toHaveLength(1);
+
+  session.stop();
+  await session.start();
+  await session.whenIdle();
+
+  expect(fake.calls.filter((call) => call === "retry-fingerprint:failed"))
+    .toHaveLength(
+      2,
+    );
+  expect(fake.calls.filter((call) => call === "fingerprint:failed"))
+    .toHaveLength(2);
   session.stop();
 });

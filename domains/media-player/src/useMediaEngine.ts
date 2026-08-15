@@ -9,8 +9,8 @@ export function useMediaEngine(
   video: HTMLVideoElement | null,
 ) {
   const engineRef = useRef<PlaysVideoEngine | null>(null);
-  const [status, setStatus] = useState('Opening OpenFX library video…');
   const [phase, setPhase] = useState<MediaEnginePhase>('idle');
+  const [error, setError] = useState('');
   const [subtitleStatus, setSubtitleStatus] = useState('');
 
   useEffect(() => {
@@ -28,21 +28,18 @@ export function useMediaEngine(
     engineRef.current = engine;
     setPhase('opening');
 
-    const onLoading = ((event: CustomEvent) => {
-      setStatus(`Opening ${event.detail.file?.name ?? file.name}…`);
+    const onLoading = (() => {
       setPhase('opening');
+      setError('');
       setSubtitleStatus('');
     }) as EventListener;
-    const onReady = ((event: CustomEvent) => {
-      const mode = event.detail.passthrough
-        ? 'direct playback'
-        : `${event.detail.totalSegments} segments`;
-      setStatus(`Ready — ${mode}`);
+    const onReady = (() => {
       setPhase('ready');
+      setError('');
       applyResume();
     }) as EventListener;
     const onError = ((event: CustomEvent) => {
-      setStatus(`Error: ${event.detail.message}`);
+      setError(event.detail.message);
       setPhase('error');
     }) as EventListener;
     const onSubtitleStatus = ((event: CustomEvent) => {
@@ -88,9 +85,9 @@ export function useMediaEngine(
 
   return {
     clearExternalSubtitles,
+    error,
     loadSubtitleFile,
     phase,
-    status,
     subtitleStatus,
   };
 }

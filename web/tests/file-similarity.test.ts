@@ -1,15 +1,12 @@
 import { expect } from "@std/expect";
 
 import {
-  findDuplicateGroups,
+  buildSimilarityGridEntries,
+  findSimilarityGroups,
   hammingDistanceHex,
   type SimilarityCandidate,
 } from "../src/file-library/similarity-core.ts";
-import {
-  filterLibraryItems,
-  type LibraryItem,
-  parseLibraryIndex,
-} from "../src/file-library/model.ts";
+import { type LibraryItem, parseLibraryIndex } from "../src/file-library/model.ts";
 import { sha256Blob } from "../src/file-library/similarity-analysis.ts";
 import { buildVideoFingerprintTimestamps } from "../src/file-library/video-thumbnail.ts";
 
@@ -79,7 +76,7 @@ Deno.test("exact duplicate groups require every stored component to match", () =
     },
   ];
 
-  expect(findDuplicateGroups(candidates)).toEqual([
+  expect(findSimilarityGroups(candidates)).toEqual([
     {
       id: "exact:source-a",
       type: "exact",
@@ -163,7 +160,7 @@ Deno.test("visual duplicate groups respect image, video, and Live Photo semantic
     },
   ];
 
-  expect(findDuplicateGroups(candidates)).toEqual([
+  expect(findSimilarityGroups(candidates)).toEqual([
     {
       id: "similar:image-a:image-b",
       type: "similar",
@@ -179,7 +176,73 @@ Deno.test("visual duplicate groups respect image, video, and Live Photo semantic
   ]);
 });
 
-Deno.test("older indexes queue fingerprinting and duplicate view exposes match members", () => {
+Deno.test("exact and visual relations merge into one non-overlapping group", () => {
+  const black = "00".repeat(32);
+  const nearBlack = "00".repeat(31) + "0f";
+  const completed = (source: string, hash: string) => ({
+    version: 1 as const,
+    status: "completed" as const,
+    exact: { source },
+    still: { hash },
+  });
+  const candidates: SimilarityCandidate[] = [
+    {
+      id: "image-a",
+      kind: "image",
+      fingerprint: completed("same", black),
+    },
+    {
+      id: "image-b",
+      kind: "image",
+      fingerprint: completed("same", black),
+    },
+    {
+      id: "image-c",
+      kind: "image",
+      fingerprint: completed("variant", nearBlack),
+    },
+  ];
+
+  expect(findSimilarityGroups(candidates)).toEqual([
+    {
+      id: "similar:image-a:image-b:image-c",
+      type: "similar",
+      itemIds: ["image-a", "image-b", "image-c"],
+      similarity: 0.984375,
+    },
+  ]);
+});
+
+Deno.test("visual relations form stable transitive groups", () => {
+  const first = "00".repeat(32);
+  const bridge = "ff".repeat(3) + "7f" + "00".repeat(28);
+  const last = "ff".repeat(7) + "00".repeat(25);
+  const candidate = (id: string, hash: string): SimilarityCandidate => ({
+    id,
+    kind: "image",
+    fingerprint: {
+      version: 1,
+      status: "completed",
+      exact: { source: `source-${id}` },
+      still: { hash },
+    },
+  });
+
+  expect(findSimilarityGroups([
+    candidate("a", first),
+    candidate("b", bridge),
+    candidate("c", last),
+  ])).toEqual([
+    {
+      id: "similar:a:b:c",
+      type: "similar",
+      itemIds: ["a", "b", "c"],
+      similarity: 0.87890625,
+    },
+  ]);
+});
+
+Deno.test("older indexes queue fingerprinting and completed matches share one grid entry", () => {
   const storedItem = (id: string) => ({
     id,
     name: `${id}.txt`,
@@ -199,7 +262,7 @@ Deno.test("older indexes queue fingerprinting and duplicate view exposes match m
     version: 3,
     items: [storedItem("one"), storedItem("two")],
   });
-  expect(migrated.version).toBe(4);
+  expect(migrated.version).toBe(5);
   expect(migrated.items.map((item) => item.fingerprint?.status)).toEqual([
     "pending",
     "pending",
@@ -213,5 +276,47 @@ Deno.test("older indexes queue fingerprinting and duplicate view exposes match m
       exact: { source: "same" },
     },
   })) satisfies LibraryItem[];
-  expect(filterLibraryItems(completed, "duplicates")).toEqual(completed);
+  const entries = buildSimilarityGridEntries(completed);
+  expect(entries).toHaveLength(1);
+  expect(entries[0].kind).toBe("group");
+  expect(entries[0].items.map((item) => item.id)).toEqual(["one", "two"]);
+});
+
+Deno.test("grid grouping preserves input order and leaves unfinished analysis visible", () => {
+  const candidate = (
+    id: string,
+    status: "pending" | "failed" | "unsupported" | "completed",
+    source = id,
+  ): SimilarityCandidate => ({
+    id,
+    kind: "text",
+    fingerprint: status === "completed"
+      ? {
+        version: 1,
+        status,
+        exact: { source },
+      }
+      : { version: 1, status },
+  });
+  const entries = buildSimilarityGridEntries([
+    candidate("pending", "pending"),
+    candidate("match-b", "completed", "same"),
+    candidate("match-a", "completed", "same"),
+    candidate("failed", "failed"),
+    candidate("unsupported", "unsupported"),
+  ]);
+
+  expect(entries.map((entry) => entry.kind)).toEqual([
+    "item",
+    "group",
+    "item",
+    "item",
+  ]);
+  expect(entries.flatMap((entry) => entry.items.map((item) => item.id))).toEqual([
+    "pending",
+    "match-b",
+    "match-a",
+    "failed",
+    "unsupported",
+  ]);
 });

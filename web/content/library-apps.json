@@ -11,7 +11,18 @@
         "MCP",
         "Deno"
       ],
-      "sourcePath": "domains/e/ · runtime-neutral Agent framework"
+      "sourcePath": "domains/e/ · runtime-neutral Agent framework",
+      "highlights": [
+        "结构化 AgentDecision、消息队列、会话与 replay 事实链。",
+        "工具权限、工作区边界、高风险动作审批与单次消费保护。",
+        "src/core、src/app 与 src/foreground 分离内核、运行时和前台协议。"
+      ],
+      "links": [
+        {
+          "label": "查看源码",
+          "href": "https://github.com/intpfx/OpenFX/tree/main/domains/e"
+        }
+      ]
     },
     {
       "id": "chinagas-wms-qrcode",
@@ -23,7 +34,18 @@
         "QR Code",
         "WMS"
       ],
-      "sourcePath": "greasyfork.org/zh-CN/scripts/550879 · domains/chinagas-wms-qrcode/"
+      "sourcePath": "greasyfork.org/zh-CN/scripts/550879 · domains/chinagas-wms-qrcode/",
+      "highlights": [
+        "在 WMS 物料详情页自动提取信息并生成二维码。",
+        "二维码以可拖拽悬浮窗呈现，方便仓储人员手机扫描。",
+        "脚本已停止更新，但现有功能完整并继续保留分发。"
+      ],
+      "links": [
+        {
+          "label": "Greasy Fork 安装",
+          "href": "https://greasyfork.org/zh-CN/scripts/550879"
+        }
+      ]
     },
     {
       "id": "bewlyscript",
@@ -37,6 +59,11 @@
         "Desktop"
       ],
       "sourcePath": "domains/BewlyScript/ · dist/BewlyScript.user.js",
+      "highlights": [
+        "以 www.bilibili.com 桌面原站为完整体验基准。",
+        "交付为 Safari Userscripts / Tampermonkey 可安装的单文件脚本。",
+        "包含 GM/browser shim、同进程 API dispatcher 与移动站提示。"
+      ],
       "provenance": {
         "origin": {
           "label": "keleus/BewlyCat",
@@ -44,7 +71,14 @@
         },
         "changes": "单文件 userscript、GM/browser shim、m 站 document-start 提示。",
         "differences": "上游是浏览器扩展；本版只交付油猴脚本，完整体验在 www 桌面原站。"
-      }
+      },
+      "links": [
+        {
+          "label": "下载 Userscript",
+          "href": "/bewlyscript/BewlyScript.user.js",
+          "download": "BewlyScript.user.js"
+        }
+      ]
     },
     {
       "id": "smartisax",
@@ -58,6 +92,11 @@
         "WebRTC"
       ],
       "sourcePath": "github.com/intpfx/Smartisax · public",
+      "highlights": [
+        "面向 Smartisan R2 / Smartisan OS 8.5.3 的 hard-ROM 修改工作区。",
+        "覆盖分区镜像编辑、super 重建、刷入验证和可回滚镜像账本。",
+        "包含 Portal 远程控制、WebRTC、TextBoom、OCR 与系统应用逆向。"
+      ],
       "links": [
         {
           "label": "GitHub",
@@ -131,6 +170,11 @@
         "React"
       ],
       "sourcePath": "github.com/intpfx/LiveSystem · private",
+      "highlights": [
+        "覆盖材料计划、库存流转、施工进度、财务核算和备份中心。",
+        "LiveDock 提供统一工作区、WebSocket 协作和内嵌 Agent Runtime。",
+        "Bun / Elysia / SQLite 后端与 React 19 / Vite+ 前端组合。"
+      ],
       "links": [
         {
           "label": "GitHub",
@@ -219,6 +263,11 @@
         "IoT"
       ],
       "sourcePath": "github.com/intpfx/WanderingPlan · public",
+      "highlights": [
+        "面向智能书柜和货柜场景的 HaaS600 / AliOS Things 毕设项目。",
+        "仓库保留 Code 固件与业务源码、Docs 文档和 Model 结构模型。",
+        "已实现温度、人体检测、GPS、磁力锁和阿里云模块等能力。"
+      ],
       "links": [
         {
           "label": "GitHub",

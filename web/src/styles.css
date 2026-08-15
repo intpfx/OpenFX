@@ -273,34 +273,6 @@ textarea {
   font-size: 0.72rem;
 }
 
-.chinagas-install-actions {
-  display: flex;
-  align-items: flex-start;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.chinagas-install-link {
-  display: inline-block;
-  border-radius: var(--radius);
-  background: var(--accent);
-  padding: 0.75rem 1.5rem;
-  color: var(--text-on-accent);
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.chinagas-install-link:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 3px;
-}
-
-.chinagas-install-note {
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: 0.85rem;
-}
-
 .map-poster-tool-section,
 .map-poster-live-section {
   min-height: 0;
@@ -728,26 +700,6 @@ textarea {
   color: var(--text-primary);
   font-family: ui-monospace, "SFMono-Regular", SFMono-Regular, Menlo, monospace;
   font-size: 0.7rem;
-}
-
-.panel-download-link {
-  display: inline-flex;
-  width: fit-content;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--accent);
-  border-radius: var(--radius);
-  margin-top: auto;
-  background: var(--accent);
-  color: var(--text-on-accent);
-  font-size: 0.8rem;
-  font-weight: 700;
-  padding: 0.72rem 1rem;
-  text-decoration: none;
-}
-
-.panel-download-link:hover {
-  filter: brightness(1.05);
 }
 
 /* 加载状态 */

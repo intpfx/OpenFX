@@ -8,6 +8,20 @@ export type MediaPlayerProgressMessage = {
   ended: boolean;
 };
 
+export type MediaPlayerFileAction = "close" | "edit" | "download" | "delete";
+
+export type MediaPlayerFileActionMessage = {
+  type: "openfx:media-player:file-action";
+  itemId: string;
+  action: MediaPlayerFileAction;
+};
+
+export type MediaPlayerFileDetailsMessage = {
+  type: "openfx:media-player:file-details";
+  itemId: string;
+  name: string;
+};
+
 export function isMediaPlayerProgressMessage(
   value: unknown,
 ): value is MediaPlayerProgressMessage {
@@ -18,6 +32,30 @@ export function isMediaPlayerProgressMessage(
     typeof message.positionSec === "number" &&
     typeof message.durationSec === "number" &&
     typeof message.ended === "boolean";
+}
+
+export function isMediaPlayerFileActionMessage(
+  value: unknown,
+): value is MediaPlayerFileActionMessage {
+  if (!value || typeof value !== "object") return false;
+  const message = value as Partial<MediaPlayerFileActionMessage>;
+  return message.type === "openfx:media-player:file-action" &&
+    typeof message.itemId === "string" &&
+    (message.action === "close" ||
+      message.action === "edit" ||
+      message.action === "download" ||
+      message.action === "delete");
+}
+
+export function makeMediaPlayerFileDetailsMessage(
+  itemId: string,
+  name: string,
+): MediaPlayerFileDetailsMessage {
+  return {
+    type: "openfx:media-player:file-details",
+    itemId,
+    name,
+  };
 }
 
 export function makeMediaPlayerUrl(

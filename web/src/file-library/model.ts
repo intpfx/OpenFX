@@ -1,11 +1,10 @@
 import {
   createPendingFileFingerprint,
   type FileFingerprint,
-  findDuplicateGroups,
   normalizeFileFingerprint,
 } from "./similarity-core.ts";
 
-export const FILE_LIBRARY_INDEX_VERSION = 4 as const;
+export const FILE_LIBRARY_INDEX_VERSION = 5 as const;
 
 export type LibraryWatchState = "unwatched" | "in-progress" | "watched";
 
@@ -34,8 +33,7 @@ export type LibrarySmartView =
   | "places"
   | "videos"
   | "movies"
-  | "shows"
-  | "duplicates";
+  | "shows";
 
 export type LibraryPhotoMetadata = {
   width?: number;
@@ -103,6 +101,9 @@ export type LibraryItem = {
   updatedAt: string;
   size: number;
   source: StoredFileRef;
+  /** Original still-image bytes for Live Photos whose source is a container. */
+  still?: StoredFileRef;
+  /** Browser-compatible visual proxy; never replaces original bytes. */
   preview?: StoredFileRef;
   motion?: StoredFileRef;
   subtitles?: StoredFileRef[];
@@ -117,6 +118,11 @@ export type LibraryItem = {
   app?: LibraryAppRef;
 };
 
+export type LibraryItemDetailsPatch = {
+  name?: string;
+  albums?: string[];
+};
+
 export type FileLibraryIndex = {
   version: typeof FILE_LIBRARY_INDEX_VERSION;
   items: LibraryItem[];
@@ -126,6 +132,57 @@ export type LivePhotoPair = {
   image: File;
   motion: File;
 };
+
+export function normalizeLibraryItemName(value: string): string {
+  const name = value.trim();
+  if (!name) throw new Error("文件名不能为空");
+  if (name.length > 255) throw new Error("文件名不能超过 255 个字符");
+  if (name === "." || name === "..") throw new Error("请输入有效的文件名");
+  if (/[/\\\u0000-\u001f\u007f]/.test(name)) {
+    throw new Error("文件名不能包含斜杠或控制字符");
+  }
+  return name;
+}
+
+export function normalizeLibraryAlbums(values: readonly string[]): string[] {
+  const albums: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    const album = value.trim();
+    if (!album || seen.has(album)) continue;
+    seen.add(album);
+    albums.push(album);
+  }
+  return albums;
+}
+
+export function applyLibraryItemDetails(
+  item: LibraryItem,
+  patch: LibraryItemDetailsPatch,
+  updatedAt = new Date().toISOString(),
+): LibraryItem {
+  if (item.kind === "app") return item;
+  const name = patch.name === undefined
+    ? item.name
+    : normalizeLibraryItemName(patch.name);
+  const albums = patch.albums === undefined
+    ? item.albums
+    : normalizeLibraryAlbums(patch.albums);
+  const media = item.kind === "video" && name !== item.name
+    ? {
+      ...parseLibraryMediaMetadata(name),
+      thumbnailTimestampSec: item.media?.thumbnailTimestampSec,
+    }
+    : item.media;
+  return {
+    ...item,
+    name,
+    source: name === item.source.name ? item.source : { ...item.source, name },
+    albums: item.kind === "image" || item.kind === "live-photo" ? albums : item.albums,
+    media,
+    updatedAt,
+  };
+}
 
 const IMAGE_EXTENSIONS = new Set([
   "avif",
@@ -415,7 +472,7 @@ export function parseLibraryIndex(value: unknown): FileLibraryIndex {
   const version = (value as { version?: unknown }).version;
   if (
     (version !== 1 && version !== 2 && version !== 3 &&
-      version !== FILE_LIBRARY_INDEX_VERSION) ||
+      version !== 4 && version !== FILE_LIBRARY_INDEX_VERSION) ||
     !Array.isArray(candidate.items)
   ) {
     return createEmptyLibraryIndex();
@@ -431,6 +488,7 @@ export function parseLibraryIndex(value: unknown): FileLibraryIndex {
       typeof record.updatedAt === "string" &&
       typeof record.size === "number" &&
       isStoredFileRef(record.source) &&
+      (!record.still || isStoredFileRef(record.still)) &&
       (!record.preview || isStoredFileRef(record.preview)) &&
       (!record.motion || isStoredFileRef(record.motion)) &&
       (!record.subtitles ||
@@ -445,7 +503,26 @@ export function parseLibraryIndex(value: unknown): FileLibraryIndex {
           ? parseLibraryMediaMetadata(item.name)
           : item.media;
         const isPhoto = item.kind === "image" || item.kind === "live-photo";
-        const processing = item.processing?.status === "running"
+        const still = item.kind === "live-photo"
+          ? item.still ??
+            (getFileExtension(item.source.name) === "livp" ? item.preview : item.source)
+          : undefined;
+        const photoStill = item.kind === "image" ? item.source : still;
+        const needsCompatiblePreview = Boolean(
+          photoStill &&
+            (getFileExtension(photoStill.name) === "heic" ||
+              getFileExtension(photoStill.name) === "heif") &&
+            (!item.preview ||
+              getFileExtension(item.preview.name) === "heic" ||
+              getFileExtension(item.preview.name) === "heif"),
+        );
+        const processing = needsCompatiblePreview
+          ? {
+            status: "pending" as const,
+            stage: "metadata" as const,
+            attempts: item.processing?.attempts ?? 0,
+          }
+          : item.processing?.status === "running"
           ? { ...item.processing, status: "pending" as const }
           : item.processing ?? (isPhoto
             ? {
@@ -458,6 +535,7 @@ export function parseLibraryIndex(value: unknown): FileLibraryIndex {
           createPendingFileFingerprint();
         return {
           ...item,
+          still,
           media,
           processing,
           fingerprint,
@@ -468,14 +546,6 @@ export function parseLibraryIndex(value: unknown): FileLibraryIndex {
       }),
     ),
   };
-}
-
-export function normalizeLibraryUrl(value: string): string {
-  const parsed = new URL(value.trim());
-  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-    throw new Error("只支持 http 或 https 链接");
-  }
-  return parsed.href;
 }
 
 export function formatLibraryBytes(bytes: number): string {
@@ -552,12 +622,6 @@ export function filterLibraryItems(
     );
   }
   if (view === "videos") return items.filter((item) => item.kind === "video");
-  if (view === "duplicates") {
-    const duplicateIds = new Set(
-      findDuplicateGroups(items).flatMap((group) => group.itemIds),
-    );
-    return items.filter((item) => duplicateIds.has(item.id));
-  }
   if (view === "movies") {
     return items.filter((item) =>
       item.kind === "video" && item.media?.kind === "movie"

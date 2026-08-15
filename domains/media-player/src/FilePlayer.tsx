@@ -1,12 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-
+import {
+  isOpenFxLibraryFileDetailsMessage,
+  makeOpenFxLibraryFileActionMessage,
+  type OpenFxLibraryFileAction,
+  parseOpenFxLibraryFileRequest,
+  readOpenFxLibraryFile,
+} from './openfx-library-player.js';
 import { PlaybackVideo } from './PlaybackVideo.js';
-import { parseOpenFxLibraryFileRequest, readOpenFxLibraryFile } from './openfx-library-player.js';
 import { useMediaEngine } from './useMediaEngine.js';
 
 export function FilePlayer() {
   const [request] = useState(() => parseOpenFxLibraryFileRequest(window.location.search));
   const [file, setFile] = useState<File | null>(null);
+  const [fileName, setFileName] = useState(request?.name ?? '');
   const [readError, setReadError] = useState('');
   const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(null);
   const [activeSubtitlePath, setActiveSubtitlePath] = useState('');
@@ -31,11 +37,28 @@ export function FilePlayer() {
     };
   }, [request]);
 
-  const { clearExternalSubtitles, loadSubtitleFile, phase, status } = useMediaEngine(
-    file,
-    request?.resumePositionSec,
-    videoElement,
-  );
+  const {
+    clearExternalSubtitles,
+    error: engineError,
+    loadSubtitleFile,
+    phase,
+  } = useMediaEngine(file, request?.resumePositionSec, videoElement);
+
+  useEffect(() => {
+    if (!request?.itemId) return;
+    const onMessage = (event: MessageEvent) => {
+      if (
+        event.origin === location.origin &&
+        event.source === window.parent &&
+        isOpenFxLibraryFileDetailsMessage(event.data) &&
+        event.data.itemId === request.itemId
+      ) {
+        setFileName(event.data.name);
+      }
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [request?.itemId]);
 
   useEffect(() => {
     if (!request?.itemId || !videoElement) return;
@@ -90,6 +113,17 @@ export function FilePlayer() {
     [clearExternalSubtitles, loadSubtitleFile, request],
   );
 
+  const emitFileAction = useCallback(
+    (action: OpenFxLibraryFileAction) => {
+      if (!request?.itemId || window.parent === window) return;
+      window.parent.postMessage(
+        makeOpenFxLibraryFileActionMessage(request.itemId, action),
+        location.origin,
+      );
+    },
+    [request?.itemId],
+  );
+
   useEffect(() => {
     const first = request?.subtitles?.[0];
     if (phase !== 'ready' || !first || loadedSubtitlePathRef.current) return;
@@ -99,7 +133,17 @@ export function FilePlayer() {
   return (
     <main className="media-player-page">
       <div className="media-player-stage">
-        <PlaybackVideo onVideoElementChange={setVideoElement} />
+        <PlaybackVideo
+          libraryFile={
+            request?.itemId
+              ? {
+                  name: fileName,
+                  onAction: emitFileAction,
+                }
+              : undefined
+          }
+          onVideoElementChange={setVideoElement}
+        />
       </div>
       {request?.subtitles?.length ? (
         <label className="media-player-subtitles">
@@ -118,9 +162,9 @@ export function FilePlayer() {
           </select>
         </label>
       ) : null}
-      <output className={`media-player-status${readError ? ' is-error' : ''}`}>
-        {readError ? `Error: ${readError}` : status}
-      </output>
+      {readError || engineError ? (
+        <output className="media-player-error">Error: {readError || engineError}</output>
+      ) : null}
     </main>
   );
 }

@@ -1,4 +1,5 @@
-import type { LibraryItem } from "./model.ts";
+import type { LibraryItem, LibraryItemDetailsPatch } from "./model.ts";
+import type { NativePhotoImporter } from "./native-photo-import.ts";
 import {
   isMediaPlayerProgressMessage,
   type MediaPlayerProgressMessage,
@@ -13,27 +14,26 @@ import {
   installFileLaunchConsumer,
   registerOpenFxServiceWorker,
 } from "./pwa-import.ts";
-import { findDuplicateGroups } from "./similarity-core.ts";
 
 export type FileLibrarySessionSnapshot = Readonly<{
   items: LibraryItem[];
   busy: boolean;
   message: string;
   storage: StorageEstimate | null;
+  nativePhotosAvailable: boolean;
 }>;
 
 export type FileLibrarySessionStore = Pick<
   OpfsFileLibrary,
   | "load"
   | "importFiles"
-  | "createText"
-  | "createLink"
   | "getStoredFile"
   | "storeVideoThumbnail"
   | "recordPlayback"
   | "processPhoto"
   | "processFingerprint"
   | "retryFingerprintAnalysis"
+  | "updateItemDetails"
   | "setFavorite"
   | "removeItem"
   | "estimate"
@@ -47,6 +47,7 @@ type SessionDependencies = {
   createVideoThumbnail: (source: File) => Promise<VideoThumbnailRecord>;
   defaultAppCount: number;
   isVisible?: () => boolean;
+  nativePhotoImporter?: NativePhotoImporter;
 };
 
 type SessionListener = (snapshot: FileLibrarySessionSnapshot) => void;
@@ -56,6 +57,7 @@ const INITIAL_SNAPSHOT: FileLibrarySessionSnapshot = {
   busy: false,
   message: "正在打开本地文件库…",
   storage: null,
+  nativePhotosAvailable: false,
 };
 
 function errorMessage(error: unknown, fallback: string): string {
@@ -112,6 +114,39 @@ export function createFileLibrarySession(dependencies: SessionDependencies) {
     } catch {
       if (belongsToCurrentRun(run)) publish({ storage: null });
     }
+  }
+
+  async function refreshNativePhotoAvailability(run = generation): Promise<void> {
+    const nativePhotosAvailable =
+      await dependencies.nativePhotoImporter?.isAvailable() ??
+        false;
+    if (belongsToCurrentRun(run)) publish({ nativePhotosAvailable });
+  }
+
+  async function retryFailedFingerprintsOnStart(
+    items: LibraryItem[],
+    run: number,
+  ): Promise<{ items: LibraryItem[]; failed: boolean }> {
+    const failedItems = items.filter((item) => item.fingerprint?.status === "failed");
+    const retryNext = async (
+      index: number,
+      current: LibraryItem[],
+      failed: boolean,
+    ): Promise<{ items: LibraryItem[]; failed: boolean }> => {
+      const item = failedItems[index];
+      if (!item || !belongsToCurrentRun(run)) return { items: current, failed };
+      fingerprintFailures.delete(item.id);
+      try {
+        // Each mutation returns the next complete index, so retries must stay serialized.
+        const retried = await dependencies.store.retryFingerprintAnalysis(item.id);
+        if (!belongsToCurrentRun(run)) return { items: current, failed };
+        return retryNext(index + 1, retried, failed);
+      } catch {
+        if (!belongsToCurrentRun(run)) return { items: current, failed };
+        return retryNext(index + 1, current, true);
+      }
+    };
+    return retryNext(0, items, false);
   }
 
   async function runPhotoQueue(run: number): Promise<void> {
@@ -235,17 +270,23 @@ export function createFileLibrarySession(dependencies: SessionDependencies) {
     const run = ++generation;
     publish(INITIAL_SNAPSHOT);
     try {
-      const items = await dependencies.store.load();
+      const loadedItems = await dependencies.store.load();
       if (!belongsToCurrentRun(run)) return;
+      const retry = await retryFailedFingerprintsOnStart(loadedItems, run);
+      if (!belongsToCurrentRun(run)) return;
+      const items = retry.items;
       const storedFileCount = items.filter((item) => item.kind !== "app").length;
       publish({
         items,
-        message: storedFileCount > 0
+        message: retry.failed
+          ? "部分文件指纹将在下次打开时重试"
+          : storedFileCount > 0
           ? "导入内容仅保存在当前浏览器"
           : `${dependencies.defaultAppCount} 个默认 App 已就绪`,
       });
       startBackgroundWork();
       await refreshStorage(run);
+      await refreshNativePhotoAvailability(run);
     } catch (error) {
       if (belongsToCurrentRun(run)) {
         publish({ message: errorMessage(error, "无法打开 OPFS 文件库") });
@@ -282,26 +323,29 @@ export function createFileLibrarySession(dependencies: SessionDependencies) {
     }
   }
 
-  async function createItem(
-    kind: "text" | "link",
-    name: string,
-    value: string,
-  ): Promise<boolean> {
-    if (!active || snapshot.busy) return false;
+  async function importFromPhotos(): Promise<boolean> {
+    const importer = dependencies.nativePhotoImporter;
+    if (!active || !snapshot.nativePhotosAvailable || !importer || snapshot.busy) {
+      return false;
+    }
     const run = generation;
-    publish({ busy: true });
+    publish({ busy: true, message: "正在打开 Photos…" });
     try {
-      const items = kind === "link"
-        ? await dependencies.store.createLink(name, value)
-        : await dependencies.store.createText(name, value);
+      const files = await importer.pick();
+      if (!belongsToCurrentRun(run)) return false;
+      if (!files || files.length === 0) {
+        publish({ message: "已取消选择" });
+        return false;
+      }
+      const items = await dependencies.store.importFiles(files);
       if (!belongsToCurrentRun(run)) return false;
       replaceItems(items);
-      publish({ message: kind === "link" ? "链接已保存" : "文本已保存" });
+      publish({ message: "已从 Photos 导入 1 张实况照片" });
       await refreshStorage(run);
       return true;
     } catch (error) {
       if (belongsToCurrentRun(run)) {
-        publish({ message: errorMessage(error, "保存失败") });
+        publish({ message: errorMessage(error, "无法从 Photos 导入实况照片") });
       }
       return false;
     } finally {
@@ -344,23 +388,24 @@ export function createFileLibrarySession(dependencies: SessionDependencies) {
     }
   }
 
-  async function reviewDuplicates(): Promise<void> {
-    if (!active) return;
+  async function updateItemDetails(
+    id: string,
+    patch: LibraryItemDetailsPatch,
+  ): Promise<boolean> {
+    if (!active) return false;
     const run = generation;
-    for (const item of snapshot.items) {
-      if (item.fingerprint?.status !== "failed") continue;
-      fingerprintFailures.delete(item.id);
-      const items = await dependencies.store.retryFingerprintAnalysis(item.id);
-      if (!belongsToCurrentRun(run)) return;
+    try {
+      const items = await dependencies.store.updateItemDetails(id, patch);
+      if (!belongsToCurrentRun(run)) return false;
       replaceItems(items);
+      publish({ message: "已更新文件信息" });
+      return true;
+    } catch (error) {
+      if (belongsToCurrentRun(run)) {
+        publish({ message: errorMessage(error, "无法更新文件信息") });
+      }
+      return false;
     }
-    const groups = findDuplicateGroups(snapshot.items);
-    const matchCount = new Set(groups.flatMap((group) => group.itemIds)).size;
-    publish({
-      message: matchCount > 0
-        ? `发现 ${groups.length} 组、${matchCount} 个重复或相似文件，请逐项确认`
-        : "查重在后台进行；完成后重复项会显示在这里",
-    });
   }
 
   async function recordPlayback(message: MediaPlayerProgressMessage): Promise<void> {
@@ -400,10 +445,10 @@ export function createFileLibrarySession(dependencies: SessionDependencies) {
     start,
     stop,
     importFiles,
-    createItem,
+    importFromPhotos,
     removeItem,
     setFavorite,
-    reviewDuplicates,
+    updateItemDetails,
     recordPlayback,
     persistStorage,
     replaceItems,

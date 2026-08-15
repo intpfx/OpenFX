@@ -1,0 +1,18 @@
+[project]
+name = "OpenFX"
+version = "0.1.0"
+entry = "src/main.ts"
+bundle_id = "com.siaovon.openfx"
+description = "OpenFX OPFS file library for macOS"
+
+[build]
+out_dir = "dist"
+
+[macos]
+bundle_id = "com.siaovon.openfx"
+category = "public.app-category.productivity"
+minimum_os = "13.0"
+entitlements = ["com.apple.security.network.client", "com.apple.security.network.server", "com.apple.security.personal-information.photos-library"]
+
+[macos.info_plist]
+NSPhotoLibraryUsageDescription = "OpenFX 仅在您从系统选择器选中实况照片后读取其静态帧和动态片段。"

@@ -19,6 +19,7 @@
     "@phosphor-icons/react": "npm:@phosphor-icons/react@^2.1.10",
     "@vitejs/plugin-react": "npm:@vitejs/plugin-react@^5.1.4",
     "@voidzero-dev/vite-plus-core": "npm:@voidzero-dev/vite-plus-core@0.1.21",
+    "heic-to/next": "npm:heic-to@1.5.2/next",
     "vite-plus": "npm:vite-plus@0.1.21",
     "h3": "npm:h3@^1.15.11",
     "nitropack": "npm:nitropack@^2.13.4",

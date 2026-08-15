@@ -1,11 +1,8 @@
 import { dir, file, write } from "opfs-tools";
 
+import { decodeLivpArchive } from "../../../domains/_shared/livp-codec.ts";
 import {
-  decodeLivpArchive,
-  encodeLivpArchive,
-  type LivpMetadata,
-} from "../../../domains/_shared/livp-codec.ts";
-import {
+  applyLibraryItemDetails,
   classifyFile,
   createEmptyLibraryIndex,
   deriveLibraryWatchState,
@@ -13,9 +10,10 @@ import {
   type FileLibraryIndex,
   getFileExtension,
   type LibraryItem,
+  type LibraryItemDetailsPatch,
   type LibraryPhotoMetadata,
   linkSidecarSubtitles,
-  normalizeLibraryUrl,
+  normalizeLibraryAlbums,
   pairLivePhotoFiles,
   parseLibraryIndex,
   parseLibraryMediaMetadata,
@@ -23,6 +21,10 @@ import {
   type StoredFileRef,
 } from "./model.ts";
 import { analyzePhotoInWorker } from "./photo-analysis.ts";
+import {
+  createLivePhotoExport,
+  type LivePhotoExportFormat,
+} from "./live-photo-export.ts";
 import {
   isDefaultLibraryApp,
   setDefaultLibraryAppFavorite,
@@ -180,6 +182,7 @@ async function storeLivePhotoPair(image: File, motion: File): Promise<LibraryIte
   );
   return {
     ...item,
+    still: item.source,
     motion: storedRef(
       motionPath,
       motion,
@@ -235,6 +238,7 @@ async function storeLivp(source: File): Promise<LibraryItem> {
   );
   return {
     ...item,
+    still: storedRef(imagePath, image, imageName, decoded.imageMimeType),
     preview: storedRef(imagePath, image, imageName, decoded.imageMimeType),
     motion: storedRef(motionPath, motion, motionName, decoded.videoMimeType),
   };
@@ -277,35 +281,6 @@ async function importFiles(input: readonly File[]): Promise<LibraryItem[]> {
     );
     throw error;
   }
-}
-
-async function createText(name: string, content: string): Promise<LibraryItem[]> {
-  const title = name.trim() || "未命名文本";
-  const filename = /\.[a-z0-9]+$/i.test(title) ? title : `${title}.txt`;
-  const value = new File([content], filename, { type: "text/plain;charset=utf-8" });
-  const item = await storeGenericFile(value);
-  return await mutateItems((items) => [item, ...items]);
-}
-
-async function createLink(name: string, inputUrl: string): Promise<LibraryItem[]> {
-  const url = normalizeLibraryUrl(inputUrl);
-  const parsed = new URL(url);
-  const title = name.trim() || parsed.hostname;
-  const id = createId();
-  const value = new File([url], `${title}.url`, { type: "text/uri-list" });
-  const path = `${LIBRARY_ITEMS_ROOT}/${id}/source`;
-  await writeBlob(path, value);
-  const item = {
-    ...baseItem(
-      id,
-      title,
-      "link",
-      storedRef(path, value, value.name, value.type),
-      value.size,
-    ),
-    url,
-  } satisfies LibraryItem;
-  return await mutateItems((items) => [item, ...items]);
 }
 
 async function getStoredFile(reference: StoredFileRef): Promise<File> {
@@ -406,8 +381,21 @@ async function processPhoto(id: string, signal?: AbortSignal): Promise<LibraryIt
   if (!selected) return (await readIndex()).items;
 
   try {
-    const source = await getStoredFile(selected.preview ?? selected.source);
+    const source = await getStoredFile(
+      selected.still ?? selected.preview ?? selected.source,
+    );
     const result = await analyzePhotoInWorker(source, signal);
+    let previewRef = selected.preview;
+    if (result.preview) {
+      const previewPath = `${LIBRARY_ITEMS_ROOT}/${id}/preview.jpg`;
+      await writeBlob(previewPath, result.preview);
+      previewRef = storedRef(
+        previewPath,
+        result.preview,
+        `${source.name.replace(/\.[^.]+$/, "")}.jpg`,
+        result.preview.type || "image/jpeg",
+      );
+    }
     let motionRef = selected.motion;
     if (result.motion && !motionRef) {
       const motionPath = `${LIBRARY_ITEMS_ROOT}/${id}/motion`;
@@ -426,6 +414,10 @@ async function processPhoto(id: string, signal?: AbortSignal): Promise<LibraryIt
         return {
           ...item,
           kind: motionRef ? "live-photo" : item.kind,
+          still: item.kind === "live-photo" || motionRef
+            ? item.still ?? item.source
+            : item.still,
+          preview: previewRef,
           motion: motionRef,
           size: motionRef && !item.motion ? item.size + motionRef.size : item.size,
           photo: { ...item.photo, ...result.metadata },
@@ -501,10 +493,13 @@ async function processFingerprint(
   if (!selected) return (await readIndex()).items;
 
   try {
-    const visualRef = selected.kind === "live-photo"
-      ? selected.preview ?? selected.source
+    const originalRef = selected.kind === "live-photo"
+      ? selected.still ?? selected.source
       : selected.source;
-    const source = await getStoredFile(visualRef);
+    const source = await getStoredFile(originalRef);
+    const still = selected.kind === "image" || selected.kind === "live-photo"
+      ? await getStoredFile(selected.preview ?? originalRef)
+      : undefined;
     const motion = selected.motion ? await getStoredFile(selected.motion) : undefined;
     let video;
     let visualError: string | undefined;
@@ -519,9 +514,7 @@ async function processFingerprint(
     const fingerprint = await analyzeFileFingerprintInWorker({
       source,
       motion,
-      still: selected.kind === "image" || selected.kind === "live-photo"
-        ? source
-        : undefined,
+      still,
       video,
     }, signal);
     if (visualError) {
@@ -575,8 +568,7 @@ async function updatePhotoDetails(
       if (item.id !== id || (item.kind !== "image" && item.kind !== "live-photo")) {
         return item;
       }
-      const albums = patch.albums?.map((album) => album.trim()).filter(Boolean)
-        .filter((album, index, values) => values.indexOf(album) === index);
+      const albums = patch.albums ? normalizeLibraryAlbums(patch.albums) : undefined;
       return {
         ...item,
         favorite: patch.favorite ?? item.favorite,
@@ -585,6 +577,15 @@ async function updatePhotoDetails(
         updatedAt: new Date().toISOString(),
       };
     })
+  );
+}
+
+async function updateItemDetails(
+  id: string,
+  patch: LibraryItemDetailsPatch,
+): Promise<LibraryItem[]> {
+  return await mutateItems((items) =>
+    items.map((item) => item.id === id ? applyLibraryItemDetails(item, patch) : item)
   );
 }
 
@@ -603,35 +604,36 @@ async function setFavorite(
   );
 }
 
-async function exportLivePhoto(item: LibraryItem): Promise<File> {
+async function exportLivePhoto(
+  item: LibraryItem,
+  format: LivePhotoExportFormat = "livp",
+): Promise<File> {
   if (item.kind !== "live-photo" || !item.motion) {
     throw new Error("此条目不是完整的实况图片");
   }
-  const [image, motion] = await Promise.all([
-    getStoredFile(item.preview ?? item.source),
+  const stillRef = item.still ?? item.source;
+  const stillExtension = getFileExtension(stillRef.name);
+  const jpegRef = stillExtension === "jpg" || stillExtension === "jpeg"
+    ? stillRef
+    : item.preview && ["jpg", "jpeg"].includes(getFileExtension(item.preview.name))
+    ? item.preview
+    : undefined;
+  if (format === "jpeg-pair" && !jpegRef) {
+    throw new Error("JPEG 兼容预览尚未生成，请稍后重试");
+  }
+  const [still, jpeg, motion] = await Promise.all([
+    getStoredFile(stillRef),
+    jpegRef ? getStoredFile(jpegRef) : Promise.resolve(undefined),
     getStoredFile(item.motion),
   ]);
-  const imageFormat = getFileExtension(image.name) || "jpg";
-  const videoFormat = getFileExtension(motion.name) || "mov";
-  const metadata: LivpMetadata = {
-    version: "2",
-    timestamp: item.photo?.capturedAt ?? item.createdAt,
-    stillImageTime: 0,
-    imageFormat,
-    videoFormat,
+  return await createLivePhotoExport({
+    name: item.name,
+    createdAt: item.createdAt,
+    still,
+    jpeg,
+    motion,
     photo: item.photo,
-  };
-  const encoded = encodeLivpArchive(
-    new Uint8Array(await image.arrayBuffer()),
-    new Uint8Array(await motion.arrayBuffer()),
-    metadata,
-  );
-  const name = item.name.replace(/\.[^.]+$/, "") || "Live Photo";
-  const bytes = encoded.buffer.slice(
-    encoded.byteOffset,
-    encoded.byteOffset + encoded.byteLength,
-  ) as ArrayBuffer;
-  return new File([bytes], `${name}.livp`, { type: "application/zip" });
+  }, format);
 }
 
 async function estimate(): Promise<StorageEstimate> {
@@ -655,10 +657,6 @@ export function createOpfsFileLibrary() {
     },
     importFiles: async (input: readonly File[]) =>
       withDefaultLibraryApps(await importFiles(input)),
-    createText: async (name: string, content: string) =>
-      withDefaultLibraryApps(await createText(name, content)),
-    createLink: async (name: string, inputUrl: string) =>
-      withDefaultLibraryApps(await createLink(name, inputUrl)),
     getStoredFile,
     storeVideoThumbnail: async (id: string, thumbnail: VideoThumbnailRecord) =>
       withDefaultLibraryApps(await storeVideoThumbnail(id, thumbnail)),
@@ -676,6 +674,8 @@ export function createOpfsFileLibrary() {
       id: string,
       patch: { favorite?: boolean; albums?: string[]; photo?: LibraryPhotoMetadata },
     ) => withDefaultLibraryApps(await updatePhotoDetails(id, patch)),
+    updateItemDetails: async (id: string, patch: LibraryItemDetailsPatch) =>
+      withDefaultLibraryApps(await updateItemDetails(id, patch)),
     setFavorite: async (id: string, favorite: boolean) =>
       withDefaultLibraryApps(await setFavorite(id, favorite)),
     exportLivePhoto,

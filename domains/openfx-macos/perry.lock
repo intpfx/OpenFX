@@ -1,0 +1,4 @@
+version = 1
+
+[native_library.openfx-native-photos.sha256_per_target]
+macos-arm64 = "ca5e9480f7ba6b2b2ddc5017502f2199746bd97f79247482c07039b8712d0510"

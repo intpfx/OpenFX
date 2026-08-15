@@ -203,13 +203,13 @@ export async function createVideoFingerprintFrames(
       !Number.isFinite(video.duration) || video.duration <= 0 ||
       video.videoWidth <= 0 || video.videoHeight <= 0
     ) {
-      throw new Error("视频缺少可用于查重的画面或时长信息");
+      throw new Error("视频缺少可用于相似分析的画面或时长信息");
     }
     const canvas = document.createElement("canvas");
     canvas.width = THUMBNAIL_WIDTH;
     canvas.height = THUMBNAIL_HEIGHT;
     const context = canvas.getContext("2d");
-    if (!context) throw new Error("浏览器不支持视频查重画布");
+    if (!context) throw new Error("浏览器不支持视频相似分析画布");
 
     const timestampsSec = buildVideoFingerprintTimestamps(video.duration);
     const frames: Blob[] = [];

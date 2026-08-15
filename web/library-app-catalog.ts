@@ -19,19 +19,19 @@ export type LibraryAppLink = {
 };
 
 const LIBRARY_APP_RENDERERS = {
-  "e-agent-framework": { kind: "component", component: "agent-framework" },
+  "e-agent-framework": { kind: "summary" },
   "how-much-this": { kind: "component", component: "how-much" },
   hlc: { kind: "embedded", layout: "fill", sandbox: "preview" },
   "wanone-memorial": { kind: "embedded" },
-  "chinagas-wms-qrcode": { kind: "component", component: "chinagas" },
-  bewlyscript: { kind: "component", component: "bewlyscript" },
+  "chinagas-wms-qrcode": { kind: "summary" },
+  bewlyscript: { kind: "summary" },
   gasmap: { kind: "embedded" },
   finlyzer: { kind: "embedded" },
   "costing-assistant": { kind: "embedded" },
   "map-poster": { kind: "component", component: "map-poster" },
-  smartisax: { kind: "component", component: "smartisax" },
-  "live-system": { kind: "component", component: "live-system" },
-  "wandering-plan": { kind: "component", component: "wandering-plan" },
+  smartisax: { kind: "summary" },
+  "live-system": { kind: "summary" },
+  "wandering-plan": { kind: "summary" },
 } as const;
 
 export type LibraryAppId = keyof typeof LIBRARY_APP_RENDERERS;
@@ -43,6 +43,7 @@ export type LibraryAppDefinition = {
   name: string;
   description: string;
   coverDescription?: string;
+  highlights?: string[];
   tech: string[];
   sourcePath: string;
   preview?: LibraryAppLivePreview;
@@ -76,11 +77,13 @@ function createCatalog(): LibraryAppDefinition[] {
     );
   }
   for (const app of apps) {
-    if (
-      isLibraryAppId(app.id) &&
-      LIBRARY_APP_RENDERERS[app.id].kind === "embedded" && !app.preview
-    ) {
+    if (!isLibraryAppId(app.id)) continue;
+    const renderer = LIBRARY_APP_RENDERERS[app.id];
+    if (renderer.kind === "embedded" && !app.preview) {
       throw new Error(`嵌入式 OpenFX App 缺少同源 preview：${app.id}`);
+    }
+    if (renderer.kind === "summary" && !app.highlights?.length) {
+      throw new Error(`摘要型 OpenFX App 缺少 highlights：${app.id}`);
     }
   }
   return apps as LibraryAppDefinition[];
@@ -96,6 +99,10 @@ export function getLibraryApp(appId: LibraryAppId): LibraryAppDefinition {
 
 export function getLibraryAppRenderer(appId: LibraryAppId): LibraryAppRenderer {
   return LIBRARY_APP_RENDERERS[appId];
+}
+
+export function isLibraryAppOpenable(appId: LibraryAppId): boolean {
+  return LIBRARY_APP_RENDERERS[appId].kind !== "summary";
 }
 
 export function listHiddenLibraryApps(): LibraryAppDefinition[] {

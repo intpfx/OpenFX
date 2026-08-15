@@ -1,0 +1,28 @@
+{
+  "name": "@openfx/macos",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/main.ts",
+  "scripts": {
+    "prepare:web": "deno task --config ../../web/deno.json build && deno run -A tools/stage-web.ts",
+    "prepare:native": "deno run -A tools/build-native-shim.ts",
+    "test:native-presenter": "deno run -A tools/test-native-presenter.ts",
+    "check:native": "bun run prepare:native && bun run test:native-presenter && cd native/openfx-native-photos && perry native validate --no-build && xcrun swiftc -typecheck swift/OpenFXNativeServer.swift -framework AppKit -framework Foundation -framework Network -framework Photos -framework PhotosUI -framework UniformTypeIdentifiers",
+    "check:perry": "perry check src/main.ts --deep-deps",
+    "check": "bun run check:native && bun run check:perry",
+    "compile": "bun run prepare:native && perry lock --update openfx-native-photos && perry compile src/main.ts -o dist/OpenFX",
+    "package:macos": "deno run -A tools/package-macos-app.ts",
+    "build": "bun run prepare:web && bun run check && bun run compile && bun run package:macos"
+  },
+  "dependencies": {
+    "openfx-native-photos": "file:./native/openfx-native-photos"
+  },
+  "perry": {
+    "allow": {
+      "nativeLibrary": [
+        "openfx-native-photos"
+      ]
+    }
+  }
+}

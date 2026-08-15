@@ -3,6 +3,7 @@ import { expect } from "@std/expect";
 import {
   getLibraryAppRenderer,
   isLibraryAppId,
+  isLibraryAppOpenable,
   LIBRARY_APP_IDS,
   LIBRARY_APPS,
 } from "../library-app-catalog.ts";
@@ -31,8 +32,35 @@ Deno.test("e is introduced as a runtime-neutral built-in App", async () => {
   expect(eApp?.name).toBe("e · Agent 执行框架");
   expect(eApp?.sourcePath).toContain("domains/e/");
   expect(eApp?.tech).toContain("Agent Runtime");
-  expect(appSource).toContain('panelId="e-agent-framework"');
-  expect(appSource).toContain("运行时无关的 TypeScript Agent 内核");
+  expect(eApp?.highlights).toHaveLength(3);
+  expect(getLibraryAppRenderer("e-agent-framework")).toEqual({ kind: "summary" });
+  expect(isLibraryAppOpenable("e-agent-framework")).toBe(false);
+  expect(appSource).not.toContain('panelId="e-agent-framework"');
+  expect(appSource).not.toContain("function EAgentFrameworkPanel");
+});
+
+Deno.test("summary Apps stay in the HUD while runnable Apps remain openable", () => {
+  const summaryIds = [
+    "bewlyscript",
+    "chinagas-wms-qrcode",
+    "e-agent-framework",
+    "live-system",
+    "smartisax",
+    "wandering-plan",
+  ] as const;
+
+  for (const appId of summaryIds) {
+    const app = LIBRARY_APPS.find((candidate) => candidate.id === appId);
+    expect(getLibraryAppRenderer(appId)).toEqual({ kind: "summary" });
+    expect(isLibraryAppOpenable(appId)).toBe(false);
+    expect(app?.highlights).toHaveLength(3);
+  }
+
+  for (
+    const appId of LIBRARY_APP_IDS.filter((id) => !summaryIds.includes(id as never))
+  ) {
+    expect(isLibraryAppOpenable(appId)).toBe(true);
+  }
 });
 
 Deno.test("built-in Apps use live previews or stable color tiles without covers", () => {

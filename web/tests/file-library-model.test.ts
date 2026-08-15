@@ -7,11 +7,14 @@ import {
 } from "../../domains/_shared/livp-codec.ts";
 
 import {
+  applyLibraryItemDetails,
   classifyFile,
   deriveLibraryWatchState,
   filterLibraryItems,
   type LibraryItem,
   linkSidecarSubtitles,
+  normalizeLibraryAlbums,
+  normalizeLibraryItemName,
   pairLivePhotoFiles,
   parseLibraryIndex,
   parseLibraryMediaMetadata,
@@ -27,8 +30,13 @@ import {
   xmpIndicatesMotionPhoto,
 } from "../src/file-library/motion-photo.ts";
 import { getLibraryAppTileColor } from "../src/file-library/app-tile.ts";
-import { makeMediaPlayerUrl } from "../src/file-library/media-player-url.ts";
+import {
+  isMediaPlayerFileActionMessage,
+  makeMediaPlayerFileDetailsMessage,
+  makeMediaPlayerUrl,
+} from "../src/file-library/media-player-url.ts";
 import { parseJpegPhotoMetadata } from "../src/file-library/photo-metadata.ts";
+import { analyzePhotoFile } from "../src/file-library/photo-analysis.ts";
 import {
   buildThumbnailCandidateTimestamps,
   selectBestThumbnailFrame,
@@ -43,6 +51,50 @@ Deno.test("file library classifies previewable and downloadable formats", () => 
   expect(classifyFile(new File([], "archive.7z"))).toBe("file");
 });
 
+Deno.test("file details rename the index and download reference without rewriting bytes", () => {
+  const item = {
+    id: "photo",
+    kind: "image",
+    name: "before.png",
+    createdAt: "2026-08-13T00:00:00.000Z",
+    updatedAt: "2026-08-13T00:00:00.000Z",
+    size: 4,
+    source: {
+      path: "/openfx-file-library/items/photo/source",
+      name: "before.png",
+      type: "image/png",
+      size: 4,
+      lastModified: 0,
+    },
+    albums: ["旧相册"],
+  } satisfies LibraryItem;
+
+  const updated = applyLibraryItemDetails(item, {
+    name: "  after.png  ",
+    albums: ["东京", "东京", "  海报 "],
+  }, "2026-08-13T01:00:00.000Z");
+
+  expect(updated).toMatchObject({
+    name: "after.png",
+    source: {
+      path: item.source.path,
+      name: "after.png",
+      type: item.source.type,
+    },
+    albums: ["东京", "海报"],
+    updatedAt: "2026-08-13T01:00:00.000Z",
+  });
+  expect(normalizeLibraryItemName("poster.png")).toBe("poster.png");
+  expect(normalizeLibraryAlbums([" 东京 ", "", "东京", "海报"])).toEqual([
+    "东京",
+    "海报",
+  ]);
+  expect(() => normalizeLibraryItemName("   ")).toThrow("文件名不能为空");
+  expect(() => normalizeLibraryItemName("bad/name.png")).toThrow(
+    "文件名不能包含斜杠或控制字符",
+  );
+});
+
 Deno.test("same-name image and MOV import as one Live Photo pair", () => {
   const image = new File([], "IMG_2026.HEIC", { type: "image/heic" });
   const motion = new File([], "IMG_2026.MOV", { type: "video/quicktime" });
@@ -52,6 +104,69 @@ Deno.test("same-name image and MOV import as one Live Photo pair", () => {
 
   expect(result.pairs).toEqual([{ image, motion }]);
   expect(result.remaining).toEqual([note]);
+});
+
+Deno.test("HEIC photo analysis creates a JPEG preview without changing the original", async () => {
+  const source = new File([new Uint8Array([0, 1, 2])], "IMG_2026.HEIC", {
+    type: "image/heic",
+  });
+  const jpeg = new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], {
+    type: "image/jpeg",
+  });
+
+  const result = await analyzePhotoFile(source, (input) => {
+    expect(input).toBe(source);
+    return Promise.resolve(jpeg);
+  });
+
+  expect(result.preview).toBe(jpeg);
+  expect(result.preview?.type).toBe("image/jpeg");
+  expect(source.name).toBe("IMG_2026.HEIC");
+  expect(source.type).toBe("image/heic");
+});
+
+Deno.test("v4 HEIC Live Photos retain their original still and queue a compatible preview", () => {
+  const archive = {
+    path: "/openfx-file-library/items/live/source",
+    name: "IMG_2026.livp",
+    type: "application/zip",
+    size: 30,
+    lastModified: 0,
+  };
+  const heic = {
+    path: "/openfx-file-library/items/live/image",
+    name: "IMG_2026.heic",
+    type: "image/heic",
+    size: 10,
+    lastModified: 0,
+  };
+  const motion = {
+    path: "/openfx-file-library/items/live/motion",
+    name: "IMG_2026.mov",
+    type: "video/quicktime",
+    size: 20,
+    lastModified: 0,
+  };
+
+  const migrated = parseLibraryIndex({
+    version: 4,
+    items: [{
+      id: "live",
+      kind: "live-photo",
+      name: "IMG_2026.livp",
+      createdAt: "2026-08-14T00:00:00.000Z",
+      updatedAt: "2026-08-14T00:00:00.000Z",
+      size: 30,
+      source: archive,
+      preview: heic,
+      motion,
+      processing: { status: "completed", stage: "motion-photo", attempts: 1 },
+    }],
+  });
+
+  expect(migrated.version).toBe(5);
+  expect(migrated.items[0]?.still).toEqual(heic);
+  expect(migrated.items[0]?.processing).toMatchObject({ status: "pending" });
 });
 
 Deno.test("file search covers names, kinds, MIME types, and URLs", () => {
@@ -124,6 +239,32 @@ Deno.test("file library routes OPFS video into the minimal media player", () => 
   expect(JSON.parse(parsed.searchParams.get("subtitles") ?? "[]")).toHaveLength(1);
 });
 
+Deno.test("file library accepts only scoped media-player file actions", () => {
+  expect(isMediaPlayerFileActionMessage({
+    type: "openfx:media-player:file-action",
+    itemId: "one",
+    action: "download",
+  })).toBe(true);
+  expect(isMediaPlayerFileActionMessage({
+    type: "openfx:media-player:file-action",
+    itemId: "one",
+    action: "overwrite",
+  })).toBe(false);
+  expect(isMediaPlayerFileActionMessage({
+    type: "openfx:media-player:progress",
+    itemId: "one",
+    action: "download",
+  })).toBe(false);
+});
+
+Deno.test("file library syncs renamed video details without rebuilding its URL", () => {
+  expect(makeMediaPlayerFileDetailsMessage("one", "renamed.mov")).toEqual({
+    type: "openfx:media-player:file-details",
+    itemId: "one",
+    name: "renamed.mov",
+  });
+});
+
 Deno.test("v1 indexes migrate media metadata and sidecar subtitle relationships", () => {
   const video = {
     id: "video",
@@ -155,7 +296,7 @@ Deno.test("v1 indexes migrate media metadata and sidecar subtitle relationships"
   } satisfies LibraryItem;
 
   const migrated = parseLibraryIndex({ version: 1, items: [video, subtitle] });
-  expect(migrated.version).toBe(4);
+  expect(migrated.version).toBe(5);
   expect(migrated.items[0].media).toMatchObject({
     kind: "show",
     title: "Example Show",
