@@ -88,8 +88,8 @@
     "build": "deno task build",
     "runtime": {
       "type": "dynamic",
-      "entrypoint": "web/.output/server/index.ts",
-      "cwd": "."
+      "entrypoint": "server/index.ts",
+      "cwd": "web/.output"
     },
     "exclude": [
       ".git/",

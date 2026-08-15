@@ -42,10 +42,24 @@ Deno.test("root config publishes the root-level Web product through Deploy CLI",
     build: "deno task build",
     runtime: {
       type: "dynamic",
-      entrypoint: "web/.output/server/index.ts",
-      cwd: ".",
+      entrypoint: "server/index.ts",
+      cwd: "web/.output",
     },
   });
+});
+
+Deno.test("Deno runtime serves built public files without inlining them into the entry", async () => {
+  const nitroConfig = await Deno.readTextFile(
+    new URL("../nitro.config.ts", import.meta.url),
+  );
+  const webConfig = await readJsonConfig<WebConfig>(
+    new URL("../deno.json", import.meta.url),
+  );
+
+  expect(nitroConfig).toContain('serveStatic: "deno"');
+  expect(nitroConfig).not.toContain('serveStatic: "inline"');
+  expect(webConfig.tasks?.preview).toContain("cd .output");
+  expect(webConfig.tasks?.preview).toContain("server/index.ts");
 });
 
 Deno.test("Web tasks expose explicit client, server, and full-stack dev commands", async () => {

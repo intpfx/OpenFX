@@ -90,6 +90,8 @@ OpenFX 是个人项目集合 monorepo。Agent 应以实际源码、配置、测�
 - 共享服务端逻辑需同时兼容 Nitro dev 的 Node 环境和 Deno Deploy bundle。
 - 不把 Node-only API 带入 Deno Deploy 路径，除非有明确构建/运行时隔离。
 - 修改嵌套路由时检查相对 import；生产 build 比 dev 更严格。
+- Deno Deploy 动态入口从 `web/.output` 运行，并通过 Nitro 的 Deno 文件系统 handler 读取
+  `.output/public`；不要把大型客户端、Worker、WASM 或媒体资源内联进 server entry。
 - 当前公开边界为 `/api/health`、`/api/how-much/*`、
   `/api/map-poster/render`、`/media-player/*` 和 `/hlc/*`。
 - 静态发布目录、缓存、开发代理和构建前准备统一登记在 `publication-targets.ts`；

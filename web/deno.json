@@ -10,7 +10,7 @@
     "dev:server": "deno run --config deno.json --lock ../deno.lock --frozen -A npm:nitropack@2.13.4 dev",
     "dev": "deno task prepare && deno run --config deno.json --lock ../deno.lock --frozen -A npm:concurrently@9.2.1 -k -n client,server -c blue,green \"deno task dev:client\" \"deno task dev:server\"",
     "build": "deno run --config deno.json --lock ../deno.lock --frozen -A tools/build-with-metadata.ts",
-    "preview": "deno task build && deno run --unstable-kv -A .output/server/index.ts",
+    "preview": "deno task build && cd .output && deno run --unstable-kv -A server/index.ts",
     "test": "deno test --allow-env --allow-read=src/App.tsx,src/file-library/FileLibraryHomepage.tsx,src/file-library/file-library.css,src/styles.css,deno.json,nitro.config.ts,vite.config.ts,public/map-poster/tokyo-japanese-ink.webp,public/site.webmanifest,public/sw.js,../domains/hlc/public/hlc,../deno.json,index.html,public/theme-bootstrap.js tests"
   },
   "imports": {

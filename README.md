@@ -203,10 +203,12 @@ deno task check
 deno task deploy
 ```
 
-命令从仓库根上传源码，在 Deploy 构建环境运行 `deno task build`，并以
-`web/.output/server/index.ts` 作为动态入口。根配置固定发布到
-`universes/openfx`；只有明确准备 切换生产流量时才追加 `--prod`。CI 或 Agent 使用
-`DENO_DEPLOY_TOKEN`，并追加 `--json --non-interactive`。
+命令从仓库根上传源码，在 Deploy 构建环境运行 `deno task build`，随后以 `web/.output`
+为运行目录、`server/index.ts` 为动态入口。Nitro 使用 Deno 文件系统静态
+资源处理器读取同目录下的 `public/`，避免把大型 Worker、WASM 和媒体资源内联进 server
+entry 而拖慢 Deploy warm-up。根配置固定发布到 `universes/openfx`；只有明确准备切换生产
+流量时才追加 `--prod`。CI 或 Agent 使用 `DENO_DEPLOY_TOKEN`，并追加
+`--json --non-interactive`。
 
 `domains/media-player/.openfx-public/` 保存最小播放器的确定性发布快照。普通开发和 GitHub
 CI 会从 domain 源码重新构建它，CI 同时检查快照无差异；Deno Deploy 直接复用该

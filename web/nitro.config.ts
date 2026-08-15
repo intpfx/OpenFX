@@ -16,7 +16,7 @@ const denoDeployEntry = process.env.NITRO_PRESET === "deno_deploy" ||
 export default defineNitroConfig({
   srcDir: fileURLToPath(new URL("./server", import.meta.url)),
   entry: denoDeployEntry,
-  serveStatic: "inline",
+  serveStatic: "deno",
   output: {
     dir: fileURLToPath(new URL("./.output", import.meta.url)),
   },
