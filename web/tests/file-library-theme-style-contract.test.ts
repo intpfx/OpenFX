@@ -12,6 +12,9 @@ const app = await Deno.readTextFile(
 const homepage = await Deno.readTextFile(
   new URL("../src/file-library/FileLibraryHomepage.tsx", import.meta.url),
 );
+const audioPlayer = await Deno.readTextFile(
+  new URL("../src/file-library/library-audio-player.tsx", import.meta.url),
+);
 const manifest = JSON.parse(
   await Deno.readTextFile(new URL("../public/site.webmanifest", import.meta.url)),
 );
@@ -195,6 +198,68 @@ Deno.test("selected video and Live Photo HUD previews autoplay silently without 
   expect(libraryCss).not.toContain(".file-library-live-badge");
   expect(cssRule(libraryCss, ".file-library-hud-preview-surface > video"))
     .toContain("object-fit: cover");
+});
+
+Deno.test("music previews prioritize album artwork across the grid, HUD, and viewer", () => {
+  expect(homepage).toContain("getLibraryItemVisualRef(props.item)");
+  expect(homepage).toContain("item.audio?.title");
+  expect(homepage).toContain("file-library-hud-audio");
+  expect(homepage).toContain("file-library-audio-viewer");
+  expect(homepage).toContain('className="file-library-audio-artwork"');
+  expect(homepage).toContain("onPlayingChange={setPlaying}");
+  expect(homepage).toContain(
+    'import { LibraryAudioPlayer } from "./library-audio-player.tsx";',
+  );
+  expect(homepage).toContain("<LibraryAudioPlayer");
+  expect(homepage).not.toMatch(/<audio[\s\S]*?\bcontrols\b/);
+  expect(audioPlayer).toContain('import { createPlayer } from "@videojs/react"');
+  expect(audioPlayer).toContain("audioFeatures");
+  expect(audioPlayer).toContain("AudioSkin");
+  expect(audioPlayer).toContain("features: audioFeatures");
+  expect(audioPlayer).toContain("<AudioSkin");
+  expect(audioPlayer).toContain("<Audio");
+  expect(audioPlayer).toContain("onPlay={() => props.onPlayingChange(true)}");
+  expect(audioPlayer).toContain("onPause={() => props.onPlayingChange(false)}");
+  expect(cssRule(libraryCss, ".file-library-audio-controls")).toContain(
+    "--media-color-primary: #fff",
+  );
+  expect(
+    cssRule(libraryCss, ".file-library-audio-controls .media-controls"),
+  ).toContain("border-radius: 999px");
+  expect(cssRule(libraryCss, ".file-library-hud-audio-cover > img")).toContain(
+    "object-fit: cover",
+  );
+  expect(cssRule(libraryCss, ".file-library-audio-artwork > img")).toContain(
+    "object-fit: cover",
+  );
+  expect(cssRule(libraryCss, ".file-library-audio-artwork")).toContain(
+    "transition: transform",
+  );
+});
+
+Deno.test("music without artwork uses a solid title tile and exposes embedded plain lyrics", () => {
+  expect(homepage).toContain("getLibraryAudioTileColor");
+  expect(homepage).toContain('className="file-library-audio-title-tile"');
+  expect(homepage).toContain('className="file-library-audio-lyrics"');
+  expect(homepage).toContain("内嵌歌词 · 无时间轴");
+  expect(homepage).toContain("这首歌没有可显示的内嵌歌词");
+  expect(homepage).not.toContain("MusicNotesSimple");
+  expect(cssRule(libraryCss, ".file-library-audio-title-tile")).toContain(
+    "font-size: clamp(",
+  );
+  expect(
+    cssRule(
+      libraryCss,
+      ".file-library-card.has-audio-title-fallback .file-library-card-media",
+    ),
+  )
+    .toContain("background: var(--audio-fallback-color)");
+  expect(cssRule(libraryCss, ".file-library-audio-lyrics-lines")).toContain(
+    "overflow-y: auto",
+  );
+  expect(cssRule(libraryCss, ".file-library-audio-lyric-line")).toContain(
+    "font-size: clamp(",
+  );
 });
 
 Deno.test("portrait mobile keeps HUD search above the scrolling grid", () => {

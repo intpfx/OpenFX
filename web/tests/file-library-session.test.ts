@@ -82,6 +82,26 @@ function createStore(initial: LibraryItem[]) {
       );
       return Promise.resolve(items);
     },
+    processAudio(id) {
+      calls.push(`audio:${id}`);
+      items = items.map((item) =>
+        item.id === id
+          ? {
+            ...item,
+            preview: {
+              path: `/${id}/cover`,
+              name: "cover.jpg",
+              type: "image/jpeg",
+              size: 4,
+              lastModified: 0,
+            },
+            audio: { title: "Song", artist: "Artist", album: "Album" },
+            audioProcessing: { status: "completed", attempts: 1 },
+          }
+          : item
+      );
+      return Promise.resolve(items);
+    },
     processFingerprint(id) {
       calls.push(`fingerprint:${id}`);
       items = items.map((item) =>
@@ -163,7 +183,15 @@ Deno.test("file library session owns loading and background processing", async (
       exact: { source: "b".repeat(64) },
     },
   });
-  const fake = createStore([photo, video]);
+  const audio = libraryItem("c", "audio", {
+    audioProcessing: { status: "pending", attempts: 0 },
+    fingerprint: {
+      version: 1,
+      status: "completed",
+      exact: { source: "c".repeat(64) },
+    },
+  });
+  const fake = createStore([photo, video, audio]);
   const session = createFileLibrarySession({
     store: fake.store,
     defaultAppCount: 13,
@@ -192,6 +220,13 @@ Deno.test("file library session owns loading and background processing", async (
     session.getSnapshot().items.find((item) => item.id === "b")?.preview?.path,
   )
     .toBe("/b/preview");
+  expect(session.getSnapshot().items.find((item) => item.id === "c"))
+    .toMatchObject({
+      audio: { title: "Song", artist: "Artist", album: "Album" },
+      audioProcessing: { status: "completed" },
+      preview: { path: "/c/cover" },
+    });
+  expect(fake.calls).toContain("audio:c");
   expect(fake.calls.indexOf("photo:a")).toBeLessThan(
     fake.calls.indexOf("fingerprint:a"),
   );

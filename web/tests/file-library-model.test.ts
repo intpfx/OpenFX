@@ -11,6 +11,7 @@ import {
   classifyFile,
   deriveLibraryWatchState,
   filterLibraryItems,
+  getLibraryItemVisualRef,
   type LibraryItem,
   linkSidecarSubtitles,
   normalizeLibraryAlbums,
@@ -164,7 +165,7 @@ Deno.test("v4 HEIC Live Photos retain their original still and queue a compatibl
     }],
   });
 
-  expect(migrated.version).toBe(5);
+  expect(migrated.version).toBe(8);
   expect(migrated.items[0]?.still).toEqual(heic);
   expect(migrated.items[0]?.processing).toMatchObject({ status: "pending" });
 });
@@ -196,6 +197,33 @@ Deno.test("file search covers names, kinds, MIME types, and URLs", () => {
   expect(searchLibraryItems([base, link], "github")).toEqual([link]);
   expect(searchLibraryItems([base, link], "text/plain")).toEqual([base, link]);
   expect(searchLibraryItems([base, link], "missing")).toEqual([]);
+});
+
+Deno.test("file search covers analyzed music title, artist, and album", () => {
+  const song = {
+    id: "song",
+    name: "track-01.flac",
+    kind: "audio",
+    createdAt: "2026-08-15T00:00:00.000Z",
+    updatedAt: "2026-08-15T00:00:00.000Z",
+    size: 12,
+    source: {
+      path: "/song",
+      name: "track-01.flac",
+      type: "audio/flac",
+      size: 12,
+      lastModified: 0,
+    },
+    audio: {
+      title: "夜航星",
+      artist: "不才",
+      album: "我的三体",
+    },
+  } satisfies LibraryItem;
+
+  expect(searchLibraryItems([song], "夜航星")).toEqual([song]);
+  expect(searchLibraryItems([song], "不才")).toEqual([song]);
+  expect(searchLibraryItems([song], "我的三体")).toEqual([song]);
 });
 
 Deno.test("default Apps are merged without entering the OPFS item index", () => {
@@ -296,7 +324,7 @@ Deno.test("v1 indexes migrate media metadata and sidecar subtitle relationships"
   } satisfies LibraryItem;
 
   const migrated = parseLibraryIndex({ version: 1, items: [video, subtitle] });
-  expect(migrated.version).toBe(5);
+  expect(migrated.version).toBe(8);
   expect(migrated.items[0].media).toMatchObject({
     kind: "show",
     title: "Example Show",
@@ -312,6 +340,78 @@ Deno.test("v1 indexes migrate media metadata and sidecar subtitle relationships"
   expect(linkSidecarSubtitles([video, subtitle])[0].subtitles).toEqual([
     subtitle.source,
   ]);
+});
+
+Deno.test("legacy audio items queue metadata analysis and prefer stored album artwork", () => {
+  const source = {
+    path: "/openfx-file-library/items/song/source",
+    name: "song.mp3",
+    type: "audio/mpeg",
+    size: 100,
+    lastModified: 0,
+  };
+  const cover = {
+    path: "/openfx-file-library/items/song/cover",
+    name: "song.cover.jpg",
+    type: "image/jpeg",
+    size: 20,
+    lastModified: 0,
+  };
+  const migrated = parseLibraryIndex({
+    version: 5,
+    items: [{
+      id: "song",
+      name: "song.mp3",
+      kind: "audio",
+      createdAt: "2026-08-15T00:00:00.000Z",
+      updatedAt: "2026-08-15T00:00:00.000Z",
+      size: 100,
+      source,
+    }],
+  });
+
+  expect(migrated.version).toBe(8);
+  expect(migrated.items[0].audioProcessing).toEqual({
+    status: "pending",
+    attempts: 0,
+  });
+  expect(getLibraryItemVisualRef(migrated.items[0])).toBeUndefined();
+  expect(getLibraryItemVisualRef({
+    ...migrated.items[0],
+    preview: cover,
+    audio: { title: "Song", artist: "Artist", album: "Album" },
+    audioProcessing: { status: "completed", attempts: 1 },
+  })).toEqual(cover);
+});
+
+Deno.test("older audio items requeue once so embedded lyrics can be discovered", () => {
+  const source = {
+    path: "/openfx-file-library/items/song/source",
+    name: "song.mp3",
+    type: "audio/mpeg",
+    size: 100,
+    lastModified: 0,
+  };
+  const migrated = parseLibraryIndex({
+    version: 7,
+    items: [{
+      id: "song",
+      name: "song.mp3",
+      kind: "audio",
+      createdAt: "2026-08-15T00:00:00.000Z",
+      updatedAt: "2026-08-15T00:00:00.000Z",
+      size: 100,
+      source,
+      audio: { title: "Song", artist: "Artist" },
+      audioProcessing: { status: "completed", attempts: 1 },
+    }],
+  });
+
+  expect(migrated.version).toBe(8);
+  expect(migrated.items[0].audioProcessing).toEqual({
+    status: "pending",
+    attempts: 1,
+  });
 });
 
 Deno.test("media smart views and playback state stay independent from file storage", () => {

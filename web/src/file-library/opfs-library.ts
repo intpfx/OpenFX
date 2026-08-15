@@ -21,6 +21,7 @@ import {
   type StoredFileRef,
 } from "./model.ts";
 import { analyzePhotoInWorker } from "./photo-analysis.ts";
+import { analyzeAudioInWorker } from "./audio-analysis.ts";
 import {
   createLivePhotoExport,
   type LivePhotoExportFormat,
@@ -146,6 +147,12 @@ function baseItem(
     fingerprint: createPendingFileFingerprint(),
   } satisfies LibraryItem;
   if (kind === "video") return { ...item, media: parseLibraryMediaMetadata(name) };
+  if (kind === "audio") {
+    return {
+      ...item,
+      audioProcessing: { status: "pending", attempts: 0 },
+    };
+  }
   if (kind === "image" || kind === "live-photo") {
     return {
       ...item,
@@ -454,6 +461,78 @@ async function processPhoto(id: string, signal?: AbortSignal): Promise<LibraryIt
   }
 }
 
+async function processAudio(id: string, signal?: AbortSignal): Promise<LibraryItem[]> {
+  let selected: LibraryItem | undefined;
+  await mutateItems((items) =>
+    items.map((item) => {
+      if (item.id !== id || item.kind !== "audio") return item;
+      selected = item;
+      return {
+        ...item,
+        audioProcessing: {
+          status: "running",
+          attempts: (item.audioProcessing?.attempts ?? 0) + 1,
+        },
+      };
+    })
+  );
+  if (!selected) return (await readIndex()).items;
+
+  try {
+    const source = await getStoredFile(selected.source);
+    const result = await analyzeAudioInWorker(source, signal);
+    let previewRef = selected.preview;
+    if (result.artwork) {
+      const subtype = result.artwork.type.split("/")[1]?.replace("jpeg", "jpg") ||
+        "jpg";
+      const previewPath = `${LIBRARY_ITEMS_ROOT}/${id}/album-art`;
+      await writeBlob(previewPath, result.artwork);
+      previewRef = storedRef(
+        previewPath,
+        result.artwork,
+        `${source.name.replace(/\.[^.]+$/, "")}.cover.${subtype}`,
+        result.artwork.type || "image/jpeg",
+      );
+    }
+    return await mutateItems((items) =>
+      items.map((item) =>
+        item.id === id
+          ? {
+            ...item,
+            audio: result.metadata,
+            audioProcessing: {
+              status: "completed",
+              attempts: item.audioProcessing?.attempts ?? 1,
+            },
+            preview: previewRef,
+            updatedAt: new Date().toISOString(),
+          }
+          : item
+      )
+    );
+  } catch (error) {
+    const aborted = error instanceof DOMException && error.name === "AbortError";
+    return await mutateItems((items) =>
+      items.map((item) =>
+        item.id === id
+          ? {
+            ...item,
+            audioProcessing: {
+              status: aborted ? "pending" as const : "failed" as const,
+              attempts: item.audioProcessing?.attempts ?? 1,
+              error: aborted
+                ? undefined
+                : error instanceof Error
+                ? error.message
+                : "音频分析失败",
+            },
+          }
+          : item
+      )
+    );
+  }
+}
+
 async function retryPhotoAnalysis(id: string): Promise<LibraryItem[]> {
   return await mutateItems((items) =>
     items.map((item) =>
@@ -664,6 +743,8 @@ export function createOpfsFileLibrary() {
       withDefaultLibraryApps(await recordPlayback(id, update)),
     processPhoto: async (id: string, signal?: AbortSignal) =>
       withDefaultLibraryApps(await processPhoto(id, signal)),
+    processAudio: async (id: string, signal?: AbortSignal) =>
+      withDefaultLibraryApps(await processAudio(id, signal)),
     retryPhotoAnalysis: async (id: string) =>
       withDefaultLibraryApps(await retryPhotoAnalysis(id)),
     processFingerprint: async (id: string, signal?: AbortSignal) =>

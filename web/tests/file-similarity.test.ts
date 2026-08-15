@@ -262,7 +262,7 @@ Deno.test("older indexes queue fingerprinting and completed matches share one gr
     version: 3,
     items: [storedItem("one"), storedItem("two")],
   });
-  expect(migrated.version).toBe(5);
+  expect(migrated.version).toBe(8);
   expect(migrated.items.map((item) => item.fingerprint?.status)).toEqual([
     "pending",
     "pending",

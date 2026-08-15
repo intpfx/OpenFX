@@ -11,15 +11,18 @@
     "dev": "deno task prepare && deno run --config deno.json --lock ../deno.lock --frozen -A npm:concurrently@9.2.1 -k -n client,server -c blue,green \"deno task dev:client\" \"deno task dev:server\"",
     "build": "deno run --config deno.json --lock ../deno.lock --frozen -A tools/build-with-metadata.ts",
     "preview": "deno task build && deno run --unstable-kv -A .output/server/index.ts",
-    "test": "deno test --allow-env --allow-read=src/App.tsx,src/file-library/FileLibraryHomepage.tsx,src/file-library/file-library.css,src/styles.css,deno.json,nitro.config.ts,vite.config.ts,public/map-poster/tokyo-japanese-ink.webp,public/site.webmanifest,public/sw.js,../domains/hlc/public/hlc,../deno.json,index.html,public/theme-bootstrap.js tests"
+    "test": "deno test --allow-env --allow-read=src/App.tsx,src/file-library/FileLibraryHomepage.tsx,src/file-library/library-audio-player.tsx,src/file-library/file-library.css,src/styles.css,deno.json,nitro.config.ts,vite.config.ts,public/map-poster/tokyo-japanese-ink.webp,public/site.webmanifest,public/sw.js,../domains/hlc/public/hlc,../deno.json,index.html,public/theme-bootstrap.js tests"
   },
   "imports": {
     "@std/expect": "jsr:@std/expect@^1.0.17",
     "@/": "./",
     "@phosphor-icons/react": "npm:@phosphor-icons/react@^2.1.10",
+    "@videojs/react": "npm:@videojs/react@10.0.0-beta.26",
+    "@videojs/react/": "npm:@videojs/react@10.0.0-beta.26/",
     "@vitejs/plugin-react": "npm:@vitejs/plugin-react@^5.1.4",
     "@voidzero-dev/vite-plus-core": "npm:@voidzero-dev/vite-plus-core@0.1.21",
     "heic-to/next": "npm:heic-to@1.5.2/next",
+    "jsmediatags/dist/jsmediatags.min.js": "npm:jsmediatags@3.9.7/dist/jsmediatags.min.js",
     "vite-plus": "npm:vite-plus@0.1.21",
     "h3": "npm:h3@^1.15.11",
     "nitropack": "npm:nitropack@^2.13.4",

@@ -11,3 +11,7 @@ export function getLibraryAppTileColor(appId: string): string {
   const lightness = 32 + (unsigned >>> 16) % 9;
   return `hsl(${hue} ${saturation}% ${lightness}%)`;
 }
+
+export function getLibraryAudioTileColor(audioId: string): string {
+  return getLibraryAppTileColor(`audio:${audioId}`);
+}
