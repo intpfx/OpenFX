@@ -5,6 +5,19 @@ import {
   createFileLibrarySession,
   type FileLibrarySessionStore,
 } from "../src/file-library/file-library-session.ts";
+import {
+  acceptPairingApproval,
+  approvePairingRequest,
+  createPairingRequest,
+  createPrivateMesh,
+  revokePrivateMeshMember,
+} from "../src/file-library/private-mesh.ts";
+import {
+  createEmptyPrivateMeshLocalRecord,
+  type PrivateMeshLocalRecord,
+} from "../src/file-library/private-mesh-store.ts";
+import { createMemoryPrivateMeshKeyVault } from "../src/file-library/private-mesh-key-vault.ts";
+import type { PrivateMeshCatalogRecord } from "../src/file-library/private-mesh-catalog.ts";
 
 const NOW = "2026-08-11T00:00:00.000Z";
 
@@ -195,6 +208,286 @@ Deno.test("file library session owns loading and background processing", async (
   expect(fake.calls.indexOf("photo:a")).toBeLessThan(
     fake.calls.indexOf("fingerprint:a"),
   );
+  session.stop();
+});
+
+Deno.test("file library session owns private mesh creation, pairing, and revocation", async () => {
+  const fake = createStore([]);
+  const privateMeshKeyVault = createMemoryPrivateMeshKeyVault();
+  let meshRecord: PrivateMeshLocalRecord = createEmptyPrivateMeshLocalRecord();
+  const meshSaves: PrivateMeshLocalRecord[] = [];
+  const session = createFileLibrarySession({
+    store: fake.store,
+    defaultAppCount: 13,
+    createVideoThumbnail: () => Promise.reject(new Error("unused")),
+    privateMeshKeyVault,
+    privateMeshStore: {
+      load: () => Promise.resolve(meshRecord),
+      save: (next) => {
+        meshRecord = next;
+        meshSaves.push(next);
+        return Promise.resolve();
+      },
+    },
+  });
+
+  await session.start();
+  expect(session.getSnapshot().privateMesh.status).toBe("unconfigured");
+
+  const created = await session.createPrivateNetwork({
+    meshName: "家庭文件网络",
+    nodeName: "Mac mini",
+    recoveryPassphrase: "a passphrase only the owner knows",
+    now: NOW,
+  });
+  expect(created?.recoveryCode).toMatch(/^openfx-recovery-v2\./u);
+  expect(session.getSnapshot().privateMesh).toMatchObject({
+    status: "ready",
+    meshName: "家庭文件网络",
+    localNodeName: "Mac mini",
+    memberCount: 1,
+    canInvite: true,
+  });
+
+  const pending = await createPairingRequest(
+    { nodeName: "iPad", now: NOW },
+    createMemoryPrivateMeshKeyVault(),
+  );
+  const approved = await session.approvePrivateMeshPairing(
+    pending.requestCode,
+    { now: NOW },
+  );
+  expect(approved?.approvalCode).toMatch(/^openfx-approve-v1\./u);
+  expect(approved?.verificationCode).toBe(pending.verificationCode);
+  expect(session.getSnapshot().privateMesh).toMatchObject({
+    status: "ready",
+    memberCount: 2,
+  });
+  expect(meshSaves).toHaveLength(2);
+
+  expect(
+    await session.revokePrivateMeshMember(pending.request.payload.nodeId, {
+      now: "2026-08-15T00:05:00.000Z",
+    }),
+  ).toBe(true);
+  expect(session.getSnapshot().privateMesh).toMatchObject({
+    status: "ready",
+    epoch: 2,
+    memberCount: 1,
+    pendingEpochUpdates: [],
+  });
+  expect(meshSaves).toHaveLength(3);
+});
+
+Deno.test("file library session accepts and persists an offline epoch update", async () => {
+  const ownerVault = createMemoryPrivateMeshKeyVault();
+  const revokedVault = createMemoryPrivateMeshKeyVault();
+  const remainingVault = createMemoryPrivateMeshKeyVault();
+  const owner = await createPrivateMesh({
+    meshName: "家庭文件网络",
+    nodeName: "Mac mini",
+    recoveryPassphrase: "a passphrase only the owner knows",
+    now: NOW,
+  }, ownerVault);
+  const revokedPending = await createPairingRequest(
+    { nodeName: "旧 iPad", now: NOW },
+    revokedVault,
+  );
+  const firstApproval = await approvePairingRequest(
+    owner.state,
+    revokedPending.requestCode,
+    ownerVault,
+    { now: NOW },
+  );
+  const revokedState = await acceptPairingApproval(
+    revokedPending,
+    firstApproval.approvalCode,
+    revokedVault,
+  );
+  const remainingPending = await createPairingRequest(
+    { nodeName: "新 iPhone", now: NOW },
+    remainingVault,
+  );
+  const secondApproval = await approvePairingRequest(
+    firstApproval.state,
+    remainingPending.requestCode,
+    ownerVault,
+    { now: NOW },
+  );
+  const remainingState = await acceptPairingApproval(
+    remainingPending,
+    secondApproval.approvalCode,
+    remainingVault,
+  );
+  const rotated = await revokePrivateMeshMember(
+    secondApproval.state,
+    revokedState.localNode.nodeId,
+    ownerVault,
+    { now: NOW },
+  );
+  const updateCode = rotated.pendingEpochUpdates.find((update) =>
+    update.nodeId === remainingState.localNode.nodeId
+  )?.updateCode;
+  if (!updateCode) throw new Error("expected epoch update code");
+  let meshRecord: PrivateMeshLocalRecord = {
+    version: 2,
+    state: remainingState,
+    pendingPairing: null,
+  };
+  const saves: PrivateMeshLocalRecord[] = [];
+  const fake = createStore([]);
+  const session = createFileLibrarySession({
+    store: fake.store,
+    defaultAppCount: 13,
+    createVideoThumbnail: () => Promise.reject(new Error("unused")),
+    privateMeshKeyVault: remainingVault,
+    privateMeshStore: {
+      load: () => Promise.resolve(meshRecord),
+      save: (next) => {
+        meshRecord = next;
+        saves.push(next);
+        return Promise.resolve();
+      },
+    },
+  });
+
+  await session.start();
+  expect(await session.acceptPrivateMeshEpochUpdate(updateCode)).toBe(true);
+  expect(session.getSnapshot().privateMesh).toMatchObject({
+    status: "ready",
+    epoch: 2,
+    memberCount: 2,
+    pendingEpochUpdates: [],
+  });
+  expect(saves).toHaveLength(1);
+  expect(meshRecord.state?.meshKey).toBe(rotated.meshKey);
+});
+
+Deno.test("file library session reloads authorized remote catalog metadata while offline", async () => {
+  const ownerVault = createMemoryPrivateMeshKeyVault();
+  const memberVault = createMemoryPrivateMeshKeyVault();
+  const owner = await createPrivateMesh({
+    meshName: "家庭文件网络",
+    nodeName: "Mac mini",
+    recoveryPassphrase: "a passphrase only the owner knows",
+    now: NOW,
+  }, ownerVault);
+  const pending = await createPairingRequest(
+    { nodeName: "iPad", now: NOW },
+    memberVault,
+  );
+  const approved = await approvePairingRequest(
+    owner.state,
+    pending.requestCode,
+    ownerVault,
+    { now: NOW },
+  );
+  let meshRecord: PrivateMeshLocalRecord = {
+    version: 2,
+    state: approved.state,
+    pendingPairing: null,
+  };
+  let catalogRecord: PrivateMeshCatalogRecord = {
+    version: 1,
+    meshId: approved.state.descriptor.meshId,
+    snapshots: [
+      {
+        nodeId: pending.request.payload.nodeId,
+        receivedAt: "2026-08-15T01:00:00.000Z",
+        entries: [{
+          itemId: "photo-1",
+          name: "海边.heic",
+          kind: "image",
+          type: "image/heic",
+          size: 2048,
+          updatedAt: NOW,
+          thumbnail: { version: 1, revision: "4096:1723683600000" },
+        }],
+      },
+      {
+        nodeId: "revoked-node",
+        receivedAt: "2026-08-15T01:00:00.000Z",
+        entries: [],
+      },
+    ],
+  };
+  const catalogSaves: PrivateMeshCatalogRecord[] = [];
+  const cachedThumbnail = new Blob(["cached-preview"], { type: "image/webp" });
+  const thumbnailLoads: string[] = [];
+  const thumbnailRemovals: string[] = [];
+  const fake = createStore([]);
+  const session = createFileLibrarySession({
+    store: fake.store,
+    defaultAppCount: 13,
+    createVideoThumbnail: () => Promise.reject(new Error("unused")),
+    privateMeshKeyVault: ownerVault,
+    privateMeshStore: {
+      load: () => Promise.resolve(meshRecord),
+      save: (next) => {
+        meshRecord = next;
+        return Promise.resolve();
+      },
+    },
+    privateMeshCatalogStore: {
+      load: () => Promise.resolve(catalogRecord),
+      save: (next) => {
+        catalogRecord = next;
+        catalogSaves.push(next);
+        return Promise.resolve();
+      },
+    },
+    privateMeshThumbnailStore: {
+      load: (key) => {
+        thumbnailLoads.push(`${key.nodeId}:${key.itemId}:${key.revision}`);
+        return Promise.resolve(cachedThumbnail);
+      },
+      save: () => Promise.resolve(),
+      remove: (key) => {
+        thumbnailRemovals.push(`${key.nodeId}:${key.itemId}:${key.revision}`);
+        return Promise.resolve();
+      },
+    },
+  });
+
+  await session.start();
+
+  expect(session.getSnapshot().privateMesh).toMatchObject({
+    status: "ready",
+    remoteFiles: [{
+      nodeId: pending.request.payload.nodeId,
+      nodeName: "iPad",
+      itemId: "photo-1",
+      availability: "cached",
+      receivedAt: "2026-08-15T01:00:00.000Z",
+    }],
+  });
+  expect(catalogSaves).toHaveLength(1);
+  expect(catalogRecord.snapshots.map((snapshot) => snapshot.nodeId)).toEqual([
+    pending.request.payload.nodeId,
+  ]);
+  const thumbnail = await session.getPrivateMeshRemoteThumbnail(
+    pending.request.payload.nodeId,
+    "photo-1",
+  );
+  expect(thumbnail).toBe(cachedThumbnail);
+  expect(thumbnailLoads).toEqual([
+    `${pending.request.payload.nodeId}:photo-1:4096:1723683600000`,
+  ]);
+
+  expect(
+    await session.revokePrivateMeshMember(pending.request.payload.nodeId, {
+      now: "2026-08-15T02:00:00.000Z",
+    }),
+  ).toBe(true);
+  expect(session.getSnapshot().privateMesh).toMatchObject({
+    status: "ready",
+    remoteFiles: [],
+  });
+  expect(catalogRecord.snapshots).toEqual([]);
+  expect(catalogSaves).toHaveLength(2);
+  expect(thumbnailRemovals).toEqual([
+    `${pending.request.payload.nodeId}:photo-1:4096:1723683600000`,
+  ]);
   session.stop();
 });
 

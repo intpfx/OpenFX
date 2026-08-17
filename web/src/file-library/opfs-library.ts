@@ -14,6 +14,7 @@ import {
   type LibraryPhotoMetadata,
   linkSidecarSubtitles,
   normalizeLibraryAlbums,
+  normalizeLibraryItemName,
   pairLivePhotoFiles,
   parseLibraryIndex,
   parseLibraryMediaMetadata,
@@ -33,10 +34,23 @@ import {
 import { createPendingFileFingerprint } from "./similarity-core.ts";
 import { analyzeFileFingerprintInWorker } from "./similarity-analysis.ts";
 import { createVideoFingerprintFrames } from "./video-thumbnail.ts";
+import {
+  assertPrivateMeshFileCapacity,
+  createPrivateMeshStagedFileSink,
+} from "./private-mesh-staged-file.ts";
+import type {
+  PrivateMeshFileCheckpoint,
+  PrivateMeshFileMetadata,
+  PrivateMeshFileSink,
+} from "./private-mesh-transfer.ts";
 
 const LIBRARY_ROOT = "/openfx-file-library";
 const LIBRARY_ITEMS_ROOT = `${LIBRARY_ROOT}/items`;
+const LIBRARY_STAGING_ROOT = `${LIBRARY_ROOT}/staging`;
 const LIBRARY_INDEX_PATH = `${LIBRARY_ROOT}/index.json`;
+const PRIVATE_MESH_STAGING_VERSION = 1 as const;
+const PRIVATE_MESH_STAGING_TTL_MS = 24 * 60 * 60 * 1_000;
+const EMPTY_PRIVATE_MESH_FILE_CHAIN_SHA256 = "0".repeat(64);
 
 class UnsupportedLivpError extends Error {}
 
@@ -59,6 +73,22 @@ export type PlaybackUpdate = {
   durationSec: number;
   ended?: boolean;
 };
+
+export type PrivateMeshRemoteFileScope = Readonly<{
+  meshId: string;
+  nodeId: string;
+  itemId: string;
+}>;
+
+type PrivateMeshStagingRecord = Readonly<{
+  version: 1;
+  generation: number;
+  scope: PrivateMeshRemoteFileScope;
+  metadata: PrivateMeshFileMetadata;
+  libraryItemId: string;
+  checkpoint: PrivateMeshFileCheckpoint;
+  expiresAt: number;
+}>;
 
 function createId(): string {
   return globalThis.crypto?.randomUUID?.() ??
@@ -166,6 +196,312 @@ async function storeGenericFile(source: File): Promise<LibraryItem> {
     storedRef(path, source, source.name, source.type),
     source.size,
   );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function parsePrivateMeshStagingRecord(
+  value: unknown,
+): PrivateMeshStagingRecord | null {
+  if (!isRecord(value) || value.version !== PRIVATE_MESH_STAGING_VERSION) {
+    return null;
+  }
+  const { generation, scope, metadata, libraryItemId, checkpoint, expiresAt } = value;
+  if (
+    !Number.isSafeInteger(generation) || (generation as number) < 0 ||
+    !Number.isSafeInteger(expiresAt) || (expiresAt as number) < 0 ||
+    typeof libraryItemId !== "string" ||
+    !/^[a-z0-9-]{1,100}$/u.test(libraryItemId) ||
+    !isRecord(scope) || typeof scope.meshId !== "string" || !scope.meshId ||
+    typeof scope.nodeId !== "string" || !scope.nodeId ||
+    typeof scope.itemId !== "string" || !scope.itemId ||
+    !isRecord(metadata) || typeof metadata.itemId !== "string" ||
+    typeof metadata.name !== "string" || typeof metadata.mimeType !== "string" ||
+    !Number.isSafeInteger(metadata.lastModified) ||
+    (metadata.lastModified as number) < 0 ||
+    !Number.isSafeInteger(metadata.size) || (metadata.size as number) < 0 ||
+    !isRecord(checkpoint) || !Number.isSafeInteger(checkpoint.offset) ||
+    (checkpoint.offset as number) < 0 ||
+    (checkpoint.offset as number) > (metadata.size as number) ||
+    !Number.isSafeInteger(checkpoint.chunks) ||
+    (checkpoint.chunks as number) < 0 ||
+    typeof checkpoint.chainSha256 !== "string" ||
+    !/^[0-9a-f]{64}$/u.test(checkpoint.chainSha256)
+  ) return null;
+  return value as unknown as PrivateMeshStagingRecord;
+}
+
+function privateMeshStagingRecordMatches(
+  record: PrivateMeshStagingRecord,
+  scope: PrivateMeshRemoteFileScope,
+  metadata: PrivateMeshFileMetadata,
+): boolean {
+  return record.scope.meshId === scope.meshId &&
+    record.scope.nodeId === scope.nodeId &&
+    record.scope.itemId === scope.itemId &&
+    record.metadata.itemId === metadata.itemId &&
+    record.metadata.name === metadata.name &&
+    record.metadata.mimeType === metadata.mimeType &&
+    record.metadata.lastModified === metadata.lastModified &&
+    record.metadata.size === metadata.size;
+}
+
+async function privateMeshStagingKey(
+  scope: PrivateMeshRemoteFileScope,
+): Promise<string> {
+  const value = new TextEncoder().encode(
+    `${scope.meshId}\0${scope.nodeId}\0${scope.itemId}`,
+  );
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", value));
+  return [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function privateMeshStagingRecordPath(key: string, generation: number): string {
+  return `${LIBRARY_STAGING_ROOT}/${key}.${generation % 2}.json`;
+}
+
+async function readPrivateMeshStagingRecords(
+  key: string,
+): Promise<PrivateMeshStagingRecord[]> {
+  const records: PrivateMeshStagingRecord[] = [];
+  for (const slot of [0, 1]) {
+    const stored = file(privateMeshStagingRecordPath(key, slot), "r");
+    if (!await stored.exists()) continue;
+    try {
+      const record = parsePrivateMeshStagingRecord(JSON.parse(await stored.text()));
+      if (record) records.push(record);
+    } catch {
+      // The other slot remains a valid checkpoint if this write was interrupted.
+    }
+  }
+  return records.sort((left, right) => right.generation - left.generation);
+}
+
+async function persistPrivateMeshStagingRecord(
+  key: string,
+  record: PrivateMeshStagingRecord,
+): Promise<void> {
+  await write(
+    privateMeshStagingRecordPath(key, record.generation),
+    JSON.stringify(record),
+    { overwrite: true },
+  );
+}
+
+async function removePrivateMeshStagingRecords(key: string): Promise<void> {
+  await Promise.allSettled(
+    [0, 1].map((slot) =>
+      file(privateMeshStagingRecordPath(key, slot)).remove({ force: true })
+    ),
+  );
+}
+
+async function removePrivateMeshStagingRecordAndItem(
+  key: string,
+  libraryItemId: string,
+): Promise<void> {
+  await Promise.allSettled([
+    removePrivateMeshStagingRecords(key),
+    dir(`${LIBRARY_ITEMS_ROOT}/${libraryItemId}`).remove({ force: true }),
+  ]);
+}
+
+async function cleanupPrivateMeshStaging(
+  index: FileLibraryIndex,
+): Promise<void> {
+  const stagingRoot = dir(LIBRARY_STAGING_ROOT);
+  if (!await stagingRoot.exists()) return;
+  const indexedIds = new Set(index.items.map((item) => item.id));
+  const keys = new Set<string>();
+  for (const child of await stagingRoot.children()) {
+    if (child.kind !== "file") continue;
+    const match = /^([0-9a-f]{64})\.[01]\.json$/u.exec(child.name);
+    if (match) {
+      keys.add(match[1]);
+      continue;
+    }
+    const legacy = /^([a-z0-9-]{1,100})\.part$/u.exec(child.name);
+    if (legacy) {
+      await Promise.allSettled([
+        child.remove({ force: true }),
+        dir(`${LIBRARY_ITEMS_ROOT}/${legacy[1]}`).remove({ force: true }),
+      ]);
+    }
+  }
+  for (const key of keys) {
+    const records = await readPrivateMeshStagingRecords(key);
+    const record = records[0];
+    if (!record) {
+      await removePrivateMeshStagingRecords(key);
+      continue;
+    }
+    for (const stale of records.slice(1)) {
+      if (
+        stale.libraryItemId !== record.libraryItemId &&
+        !indexedIds.has(stale.libraryItemId)
+      ) {
+        await dir(`${LIBRARY_ITEMS_ROOT}/${stale.libraryItemId}`).remove({
+          force: true,
+        });
+      }
+    }
+    if (indexedIds.has(record.libraryItemId)) {
+      await removePrivateMeshStagingRecords(key);
+      continue;
+    }
+    const source = file(
+      `${LIBRARY_ITEMS_ROOT}/${record.libraryItemId}/source`,
+      "r",
+    );
+    if (record.expiresAt <= Date.now() || !await source.exists()) {
+      await removePrivateMeshStagingRecordAndItem(key, record.libraryItemId);
+    }
+  }
+}
+
+function createPrivateMeshRemoteFileSink(
+  scope: PrivateMeshRemoteFileScope,
+): PrivateMeshFileSink {
+  return createPrivateMeshStagedFileSink({
+    async open(metadata) {
+      assertOpfsAvailable();
+      const name = normalizeLibraryItemName(metadata.name);
+      await dir(LIBRARY_STAGING_ROOT).create();
+      const key = await privateMeshStagingKey(scope);
+      const existingRecords = await readPrivateMeshStagingRecords(key);
+      const existing = existingRecords.find((record) =>
+        record.expiresAt > Date.now() &&
+        privateMeshStagingRecordMatches(record, scope, metadata)
+      );
+      const indexedIds = new Set((await readIndex()).items.map((item) => item.id));
+      for (const record of existingRecords) {
+        if (
+          record !== existing && !indexedIds.has(record.libraryItemId)
+        ) {
+          await dir(`${LIBRARY_ITEMS_ROOT}/${record.libraryItemId}`).remove({
+            force: true,
+          });
+        }
+      }
+      if (!existing) await removePrivateMeshStagingRecords(key);
+
+      let record: PrivateMeshStagingRecord = existing ?? {
+        version: PRIVATE_MESH_STAGING_VERSION,
+        generation: 0,
+        scope,
+        metadata,
+        libraryItemId: createId(),
+        checkpoint: {
+          offset: 0,
+          chunks: 0,
+          chainSha256: EMPTY_PRIVATE_MESH_FILE_CHAIN_SHA256,
+        },
+        expiresAt: Date.now() + PRIVATE_MESH_STAGING_TTL_MS,
+      };
+      const id = record.libraryItemId;
+      const itemRoot = `${LIBRARY_ITEMS_ROOT}/${id}`;
+      const sourcePath = `${itemRoot}/source`;
+      const sourceFile = file(sourcePath);
+      if (existing && !await sourceFile.exists()) {
+        await removePrivateMeshStagingRecordAndItem(key, id);
+        throw new Error("远程文件续传内容已丢失，请重新读取");
+      }
+      const estimate = await navigator.storage.estimate();
+      assertPrivateMeshFileCapacity(
+        estimate,
+        metadata.size - record.checkpoint.offset,
+      );
+      if (!existing) await persistPrivateMeshStagingRecord(key, record);
+      await dir(itemRoot).create();
+      const storedSize = await sourceFile.getSize();
+      const stagingWriter = await sourceFile.createWriter().catch(async (error) => {
+        await removePrivateMeshStagingRecordAndItem(key, id);
+        throw error;
+      });
+      try {
+        if (storedSize < record.checkpoint.offset) {
+          throw new Error("远程文件续传内容不完整，请重新读取");
+        }
+        if (storedSize !== record.checkpoint.offset) {
+          await stagingWriter.truncate(record.checkpoint.offset);
+          await stagingWriter.flush();
+        }
+      } catch (error) {
+        await stagingWriter.close().catch(() => undefined);
+        await removePrivateMeshStagingRecordAndItem(key, id);
+        throw error;
+      }
+      let writerOpen = true;
+
+      async function closeWriter(): Promise<void> {
+        if (!writerOpen) return;
+        writerOpen = false;
+        await stagingWriter.close();
+      }
+
+      async function cleanup(): Promise<void> {
+        if (writerOpen) {
+          try {
+            await closeWriter();
+          } catch {
+            writerOpen = false;
+          }
+        }
+        await removePrivateMeshStagingRecordAndItem(key, id);
+      }
+
+      return {
+        checkpoint: record.checkpoint,
+        async write(chunk, offset, checkpoint) {
+          if (!writerOpen) throw new Error("远程文件暂存写入已关闭");
+          const chunkBytes = chunk.byteLength;
+          const written = await stagingWriter.write(chunk, { at: offset });
+          if (written !== chunkBytes) {
+            throw new Error("远程文件暂存写入不完整");
+          }
+          await stagingWriter.flush();
+          const nextRecord = {
+            ...record,
+            generation: record.generation + 1,
+            checkpoint,
+            expiresAt: Date.now() + PRIVATE_MESH_STAGING_TTL_MS,
+          } satisfies PrivateMeshStagingRecord;
+          await persistPrivateMeshStagingRecord(key, nextRecord);
+          record = nextRecord;
+        },
+        async commit() {
+          await stagingWriter.flush();
+          await closeWriter();
+          const reference: StoredFileRef = {
+            path: sourcePath,
+            name,
+            type: metadata.mimeType,
+            size: metadata.size,
+            lastModified: metadata.lastModified,
+          };
+          const item = baseItem(
+            id,
+            name,
+            classifyFile({ name, type: metadata.mimeType }),
+            reference,
+            metadata.size,
+          );
+          await mutateItems((items) =>
+            items.some((candidate) => candidate.id === id) ? items : [item, ...items]
+          );
+          await removePrivateMeshStagingRecords(key);
+        },
+        async preserve() {
+          if (!writerOpen) return;
+          await stagingWriter.flush();
+          await closeWriter();
+        },
+        discard: cleanup,
+      };
+    },
+  });
 }
 
 async function storeLivePhotoPair(image: File, motion: File): Promise<LibraryItem> {
@@ -653,10 +989,13 @@ export function createOpfsFileLibrary() {
   return {
     load: async () => {
       await mutationQueue;
-      return withDefaultLibraryApps(sortLibraryItems((await readIndex()).items));
+      const index = await readIndex();
+      await cleanupPrivateMeshStaging(index);
+      return withDefaultLibraryApps(sortLibraryItems(index.items));
     },
     importFiles: async (input: readonly File[]) =>
       withDefaultLibraryApps(await importFiles(input)),
+    createPrivateMeshRemoteFileSink,
     getStoredFile,
     storeVideoThumbnail: async (id: string, thumbnail: VideoThumbnailRecord) =>
       withDefaultLibraryApps(await storeVideoThumbnail(id, thumbnail)),

@@ -52,6 +52,17 @@ OpenFX 是个人项目集合 monorepo。Agent 应以实际源码、配置、测�
 - `web/src/App.tsx`
 - `web/src/styles.css`
 - `web/src/file-library/`
+- `web/src/file-library/private-mesh.ts`
+- `web/src/file-library/private-mesh-key-vault.ts`
+- `web/src/file-library/private-mesh-recovery.ts`
+- `web/src/file-library/private-mesh-store.ts`
+- `web/src/file-library/private-mesh-catalog.ts`
+- `web/src/file-library/private-mesh-catalog-sync.ts`
+- `web/src/file-library/private-mesh-catalog-store.ts`
+- `web/src/file-library/private-mesh-thumbnail.ts`
+- `web/src/file-library/private-mesh-transport.ts`
+- `web/src/file-library/private-mesh-transfer.ts`
+- `web/src/file-library/private-mesh-staged-file.ts`
 - `web/content/library-apps.json`
 - `web/library-app-catalog.ts`
 - `web/publication-targets.ts`
@@ -64,7 +75,8 @@ OpenFX 是个人项目集合 monorepo。Agent 应以实际源码、配置、测�
 - App 内容、catalog renderer、`App.tsx` 组件分支和测试必须保持一致；不要恢复平行的 App
   ID 列表。
 - 文件库加载、mutation、存储估算、后台照片/指纹/缩略图任务和浏览器事件统一通过
-  `file-library-session.ts`；React 页面不重新拼装这些工作流。
+  `file-library-session.ts`；私有网络创建/配对也必须由 session 统一编排，React
+  页面不重新 拼装这些工作流或接触本机私钥。
 - App 有真实同源页面时才使用动态 preview；否则使用稳定纯色色块和大字号名称。
 - 文件源字节保存在 OPFS；索引迁移不得无故重写源文件。
 - 预览能力失败时应降级为原件下载，不丢弃导入内容。
@@ -82,6 +94,55 @@ OpenFX 是个人项目集合 monorepo。Agent 应以实际源码、配置、测�
 - 不恢复已退役的 LivpExplorer 应用；Live Photo、照片元数据和 LIVP 能力以文件库及
   `_shared/livp-codec.ts` 为唯一事实来源，ChronoFrame MIT 归属保留在根 `NOTICE`。
 - UI 改动在 Codex in-app browser 验证桌面和窄屏；不可用时再用 Safari。
+- 私有设备网络不引入账号、中心用户表或服务端设备目录；`PrivateMesh` 根公钥是网络身份，
+  根签名成员证书是加入事实，设备名只作人类可见标签。
+- 设备配对请求必须短时有效、由请求设备签名、带一次性 ID 并显示双方一致的校验码；已使用
+  请求不得再次批准。普通成员默认无邀请权限。
+- 网络密钥只通过请求设备的加密公钥传递；配对响应使用 ECDH P-256 派生的一次性密钥和
+  AES-256-GCM，不把网络密钥、根私钥或设备私钥放进 session snapshot、日志或 URL。
+- 私有网络状态独立保存在 `/openfx-private-mesh/state.json`，不得并入文件索引或为迁移而
+  重写原件。加载时验证成员证书，损坏状态不得静默重置或覆盖。
+- 日常设备私钥必须在同源 IndexedDB 中以不可导出 `CryptoKey` 持久化；OPFS 状态只保存密钥
+  引用。只有创建所有者恢复材料时可以一次性导出根私钥，并必须先经口令派生密钥加密再显示。
+- v1 JWK 状态迁移必须先导入并验证本机密钥，再保留 `state.v1-backup.json` 原文备份，最后
+  写入 v2 引用状态。任一步失败都应保留旧状态并阻止联网，不能静默生成新身份。
+- 成员撤销只能由持有根签名密钥的所有者执行，不能撤销本机所有者。撤销必须单调增加网络
+  epoch、轮换网络密钥、重新签发全部保留成员证书，并为每台保留设备生成独立加密更新码；
+  只从列表删除成员而不换密钥和证书属于无效撤销。
+- epoch 更新必须先在接收设备持久化并验证根签名、成员唯一性、本机公钥绑定和新网络密钥，
+  再通过 DataChannel
+  返回确认。所有者在确认前必须持久保留逐设备更新码；旧代次离线设备之间 可能暂时互通，UI
+  和文档不得宣称无中心撤销可以瞬时覆盖全网。
+- 浏览器传输、发现和中继必须是可替换 adapter。发现/中继只能处理端到端加密或不透明连接
+  数据，没有成员批准权。
+- WebRTC SDP 必须绑定网络 ID、发送/接收成员、短时会话 ID 和有效期，并由发送设备签名；
+  不能接受仅依赖 SDP 指纹、设备名或未验证成员 ID 的连接码。当前人工直连默认不使用公共
+  STUN；只有双方明确选择时才使用固定 STUN 服务辅助发现直连地址，不提供 TURN 中继， Deno
+  Deploy 不承担信令。answer 接收端等待 DataChannel 的期限不得短于连接码有效期；页面或
+  session 关闭时必须清理待接管连接。
+- 远程目录默认只传文件名、类型、大小和更新时间，不传 OPFS 路径、照片 GPS 或原件字节；
+  原件必须由用户动作按需请求。当前 4 MiB 单文件和不含 Live Photo 组合是显式首切片限制，
+  接收端必须逐块校验 SHA-256、有序更新哈希链并写入未索引 OPFS 暂存，落盘确认后发送端才
+  继续；只有声明长度、分块数和最终哈希链全部匹配，才能登记索引。检查点必须在字节 flush
+  后以可恢复双槽记录持久化，并按网络、设备与远端条目隔离；重开时必须校验元数据和前缀哈希
+  链，并回滚未确认尾部。用户明确取消或关闭面板应清理暂存；session 停止、超时、暂存写入
+  失败或连接关闭应停止远端发送并保留最近一次已确认检查点，默认 24 小时后清理。接收前必须
+  按剩余字节与安全余量预检 OPFS 配额。放宽现有 4 MiB 限制前仍须完成真实双设备断线续传与
+  容量边界验收，不能只提高常量。
+- 远端目录按设备完整快照持久化到
+  `/openfx-private-mesh/catalog.json`，只能作为离线展示缓存； session
+  加载和成员变更时必须按当前网络 ID 与已授权远端成员过滤，撤销成员的快照必须清除。
+  缓存不得成为成员权限、文件存在性或同步完成的事实来源，也不得写入本机文件索引；缓存损坏
+  可以忽略，但不能覆盖或阻断已验证的网络身份。
+- 在线目录变化只发送失效事件；接收端必须重新请求并校验完整快照，不能把通知载荷当成目录
+  增量。session 负责广播真实目录变化并按远端设备合并密集刷新；断线时取消待处理刷新。
+  WebRTC PeerConnection 和短时 SDP 不得持久化，也不得把在线汇合表述为离线传播、文件同步
+  或跨重启自动重连。
+- 远程缩略图只能使用图片或已有视频预览生成最长边 320 px、不超过 128 KiB 的 WebP
+  派生字节；目录只传版本描述。缩略图必须独立缓存在
+  `/openfx-private-mesh/thumbnails/`，不得覆盖原始引用、HEIC 静态帧或本机文件索引。
+  session 负责请求去重、有界预取、版本失效和成员撤销后的精确清理；任何失败都只降级为
+  占位图，不得触发原件读取或阻断后续用户操作。
 
 ## Nitro and Deno Deploy
 
@@ -94,6 +155,8 @@ OpenFX 是个人项目集合 monorepo。Agent 应以实际源码、配置、测�
   `.output/public`；不要把大型客户端、Worker、WASM 或媒体资源内联进 server entry。
 - 当前公开边界为 `/api/health`、`/api/how-much/*`、
   `/api/map-poster/render`、`/media-player/*` 和 `/hlc/*`。
+- Deno Deploy 不保存私有网络账号、成员、目录、信令、原件或密钥；新增这些服务端边界前
+  必须另行确认产品架构，不得把配对基础默认扩展成中心控制面。
 - 静态发布目录、缓存、开发代理和构建前准备统一登记在 `publication-targets.ts`；
   Nitro/Vite/构建脚本只实现各自 adapter。
 
@@ -201,6 +264,16 @@ deno task --config web/deno.json build
 按范围补充：
 
 - Web/API：更新 `web/tests/` 并运行对应测试。
+- 私有网络身份、证书和配对：运行 `web/tests/private-mesh.test.ts`，并通过 session
+  测试确认所有持久化 mutation 都由 `file-library-session.ts` 编排；撤销必须覆盖新
+  epoch、 新密钥、剩余证书、目标绑定更新码和无效待更新状态。
+- 私有网络连接和按需文件传输：运行 `web/tests/private-mesh-transport.test.ts` 与
+  `web/tests/private-mesh-transfer.test.ts` 与
+  `web/tests/private-mesh-staged-file.test.ts` 与
+  `web/tests/private-mesh-catalog-sync.test.ts` 与
+  `web/tests/private-mesh-thumbnail.test.ts`，再在两个独立 origin 完成人工
+  offer/answer、远程目录、派生缩略图、小文件导入、断线后手工重连续传和在线 epoch
+  更新确认验收。
 - Agent framework：`deno test --allow-env domains/e/tests`。
 - Map Poster：`deno test --allow-env web/tests/map-poster.test.ts`。
 - Media player：在 domain 内运行 format、lint、typecheck、test 和 build。

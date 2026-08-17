@@ -58,7 +58,17 @@ import {
 import {
   connectFileLibrarySessionToBrowser,
   createFileLibrarySession,
+  type FileLibrarySession,
+  type PrivateMeshRemoteFileSnapshot,
+  type PrivateMeshSessionSnapshot,
 } from "./file-library-session.ts";
+import { createOpfsPrivateMeshStore } from "./private-mesh-store.ts";
+import {
+  createOpfsPrivateMeshCatalogStore,
+  createOpfsPrivateMeshThumbnailStore,
+} from "./private-mesh-catalog-store.ts";
+import { createPrivateMeshThumbnail } from "./private-mesh-thumbnail.ts";
+import { createIndexedDbPrivateMeshKeyVault } from "./private-mesh-key-vault.ts";
 import { createNativePhotoImporter } from "./native-photo-import.ts";
 import { getLibraryAppTileColor } from "./app-tile.ts";
 import {
@@ -171,6 +181,45 @@ function useStoredObjectUrl(
   }, [library, reference]);
 
   return value;
+}
+
+function PrivateMeshRemoteThumbnail(props: {
+  session: FileLibrarySession;
+  entry: PrivateMeshRemoteFileSnapshot;
+}) {
+  const [url, setUrl] = useState("");
+
+  useEffect(() => {
+    setUrl("");
+    if (!props.entry.thumbnail) return;
+    let active = true;
+    let objectUrl = "";
+    props.session.getPrivateMeshRemoteThumbnail(
+      props.entry.nodeId,
+      props.entry.itemId,
+    ).then((thumbnail) => {
+      if (!active || !thumbnail) return;
+      objectUrl = URL.createObjectURL(thumbnail);
+      setUrl(objectUrl);
+    }).catch(() => undefined);
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [
+    props.entry.itemId,
+    props.entry.nodeId,
+    props.entry.thumbnail?.revision,
+    props.session,
+  ]);
+
+  return (
+    <span className="file-library-private-mesh-remote-thumbnail">
+      {url
+        ? <img alt="" src={url} />
+        : getFileExtension(props.entry.name).toUpperCase() || "FILE"}
+    </span>
+  );
 }
 
 function LivePhotoView(props: {
@@ -798,7 +847,9 @@ function LibraryStorageOverview(props: {
   fileCount: number;
   query: string;
   resultCount: number;
+  privateMesh: PrivateMeshSessionSnapshot;
   onQueryChange: (query: string) => void;
+  onOpenPrivateMesh: () => void;
 }) {
   const heatmap = summarizeFileLibraryStorageHeatmap(props.items, props.storage);
   const summary = heatmap.summary;
@@ -860,6 +911,22 @@ function LibraryStorageOverview(props: {
             ? summary.persisted ? "持久存储已启用" : "未启用持久存储"
             : "存储状态将在文件库打开后显示"}
         </p>
+        <button
+          className="file-library-private-mesh-trigger"
+          type="button"
+          onClick={props.onOpenPrivateMesh}
+        >
+          <LinkSimple aria-hidden="true" size={18} />
+          {props.privateMesh.status === "ready"
+            ? `${props.privateMesh.meshName} · ${props.privateMesh.memberCount} 台设备`
+            : props.privateMesh.status === "loading"
+            ? "正在读取私有网络"
+            : props.privateMesh.status === "error"
+            ? "私有网络需要处理"
+            : props.privateMesh.pendingPairing
+            ? "继续设备配对"
+            : "创建或加入私有网络"}
+        </button>
         <label className="file-library-search file-library-hud-search">
           <MagnifyingGlass aria-hidden="true" size={21} />
           <input
@@ -874,6 +941,715 @@ function LibraryStorageOverview(props: {
           />
         </label>
       </div>
+    </section>
+  );
+}
+
+function PrivateMeshPanel(props: {
+  session: FileLibrarySession;
+  snapshot: PrivateMeshSessionSnapshot;
+  onClose: () => void;
+}) {
+  const [meshName, setMeshName] = useState("我的文件网络");
+  const [nodeName, setNodeName] = useState("");
+  const [recoveryPassphrase, setRecoveryPassphrase] = useState("");
+  const [recoveryPassphraseConfirmation, setRecoveryPassphraseConfirmation] = useState(
+    "",
+  );
+  const [requestCode, setRequestCode] = useState("");
+  const [approvalCode, setApprovalCode] = useState("");
+  const [recoveryCode, setRecoveryCode] = useState("");
+  const [transportTargetNodeId, setTransportTargetNodeId] = useState("");
+  const [transportOffer, setTransportOffer] = useState<
+    { nodeId: string; code: string } | null
+  >(null);
+  const [transportAnswerCode, setTransportAnswerCode] = useState("");
+  const [incomingTransportOffer, setIncomingTransportOffer] = useState("");
+  const [transportAnswerResult, setTransportAnswerResult] = useState("");
+  const [epochUpdateCode, setEpochUpdateCode] = useState("");
+  const [revokeCandidateNodeId, setRevokeCandidateNodeId] = useState<string | null>(
+    null,
+  );
+  const [usePublicStun, setUsePublicStun] = useState(false);
+  const [remoteFileReadKey, setRemoteFileReadKey] = useState<string | null>(null);
+  const remoteFileReadCanceled = useRef(false);
+  const [approvalResult, setApprovalResult] = useState<
+    null | {
+      approvalCode: string;
+      verificationCode: string;
+    }
+  >(null);
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState("");
+  const revokeCandidate = props.snapshot.status === "ready"
+    ? props.snapshot.members.find((member) =>
+      member.nodeId === revokeCandidateNodeId &&
+      member.nodeId !== props.snapshot.localNodeId &&
+      member.role !== "owner"
+    )
+    : undefined;
+
+  async function run(action: () => Promise<boolean>): Promise<void> {
+    setWorking(true);
+    setError("");
+    try {
+      if (!await action()) setError("操作未完成，请检查输入后重试");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "操作失败");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function readRemoteFile(
+    remoteNodeId: string,
+    itemId: string,
+  ): Promise<void> {
+    const key = `${remoteNodeId}:${itemId}`;
+    remoteFileReadCanceled.current = false;
+    setRemoteFileReadKey(key);
+    setWorking(true);
+    setError("");
+    try {
+      const completed = await props.session.importPrivateMeshRemoteFile(
+        remoteNodeId,
+        itemId,
+      );
+      if (!completed && !remoteFileReadCanceled.current) {
+        setError("无法读取远程文件，请检查设备连接后重试");
+      }
+    } catch (cause) {
+      if (!remoteFileReadCanceled.current) {
+        setError(cause instanceof Error ? cause.message : "无法读取远程文件");
+      }
+    } finally {
+      setWorking(false);
+      setRemoteFileReadKey(null);
+    }
+  }
+
+  return (
+    <section
+      aria-label="私有网络"
+      aria-modal="true"
+      className="file-library-private-mesh-panel file-library-hud"
+      role="dialog"
+    >
+      <header>
+        <span>
+          <small>PRIVATE MESH</small>
+          <strong>私有设备网络</strong>
+        </span>
+        <button
+          aria-label="关闭私有网络面板"
+          type="button"
+          onClick={() => {
+            props.session.cancelPrivateMeshRemoteFileImport();
+            props.onClose();
+          }}
+        >
+          <X aria-hidden="true" size={20} />
+        </button>
+      </header>
+
+      {props.snapshot.status === "loading"
+        ? <p>正在读取当前设备的网络身份…</p>
+        : props.snapshot.status === "error"
+        ? (
+          <div className="file-library-private-mesh-notice is-error" role="alert">
+            <strong>无法打开私有网络身份</strong>
+            <span>{props.snapshot.message}</span>
+            <small>为防止身份丢失，OpenFX 不会自动覆盖损坏状态。</small>
+          </div>
+        )
+        : props.snapshot.status === "ready"
+        ? (
+          <div className="file-library-private-mesh-content">
+            <div className="file-library-private-mesh-summary">
+              <span>
+                {props.snapshot.localNodeRole === "owner" ? "所有者设备" : "成员设备"}
+              </span>
+              <strong>{props.snapshot.meshName}</strong>
+              <small>
+                本机：{props.snapshot.localNodeName} · 密钥代次 {props.snapshot.epoch}
+              </small>
+              <code>{props.snapshot.meshId}</code>
+            </div>
+            <div className="file-library-private-mesh-members">
+              <strong>{props.snapshot.memberCount} 台成员设备</strong>
+              <ul>
+                {props.snapshot.members.map((member) => (
+                  <li key={member.nodeId}>
+                    <span>
+                      <strong>{member.nodeName}</strong>
+                      <small>{member.role === "owner" ? "所有者" : "成员"}</small>
+                    </span>
+                    {props.snapshot.canInvite &&
+                        member.nodeId !== props.snapshot.localNodeId &&
+                        member.role !== "owner"
+                      ? (
+                        <button
+                          aria-label={`撤销 ${member.nodeName}`}
+                          disabled={working}
+                          type="button"
+                          onClick={() => setRevokeCandidateNodeId(member.nodeId)}
+                        >
+                          撤销
+                        </button>
+                      )
+                      : null}
+                  </li>
+                ))}
+              </ul>
+              {revokeCandidate
+                ? (
+                  <div
+                    aria-label={`确认撤销 ${revokeCandidate.nodeName}`}
+                    className="file-library-private-mesh-revoke-confirm"
+                    role="alertdialog"
+                  >
+                    <strong>撤销“{revokeCandidate.nodeName}”？</strong>
+                    <small>
+                      确认后会立即轮换网络密钥；仍获授权的离线设备需要专用更新码才能进入当前代次。
+                    </small>
+                    <span>
+                      <button
+                        disabled={working}
+                        type="button"
+                        onClick={() => setRevokeCandidateNodeId(null)}
+                      >
+                        取消
+                      </button>
+                      <button
+                        disabled={working}
+                        type="button"
+                        onClick={() =>
+                          void run(async () => {
+                            const revoked = await props.session
+                              .revokePrivateMeshMember(revokeCandidate.nodeId);
+                            if (revoked) setRevokeCandidateNodeId(null);
+                            return revoked;
+                          })}
+                      >
+                        {working ? "正在撤销…" : "确认撤销并轮换密钥"}
+                      </button>
+                    </span>
+                  </div>
+                )
+                : null}
+            </div>
+            {props.snapshot.pendingEpochUpdates.length > 0
+              ? (
+                <div className="file-library-private-mesh-epoch-updates">
+                  <strong>等待密钥更新</strong>
+                  <small>
+                    在线设备会自动确认；请把下面的逐设备更新码交给仍获授权的离线设备。
+                  </small>
+                  <ul>
+                    {props.snapshot.pendingEpochUpdates.map((update) => (
+                      <li key={update.nodeId}>
+                        <span>{update.nodeName}</span>
+                        <textarea
+                          aria-label={`${update.nodeName} 的密钥更新码`}
+                          readOnly
+                          rows={3}
+                          value={update.updateCode}
+                          onFocus={(event) =>
+                            event.currentTarget.select()}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )
+              : null}
+            {props.snapshot.localNodeRole === "member"
+              ? (
+                <form
+                  className="file-library-private-mesh-form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void run(async () => {
+                      const accepted = await props.session
+                        .acceptPrivateMeshEpochUpdate(epochUpdateCode);
+                      if (accepted) setEpochUpdateCode("");
+                      return accepted;
+                    });
+                  }}
+                >
+                  <strong>更新网络密钥代次</strong>
+                  <small>若本机在轮换时离线，请粘贴所有者设备提供的专用更新码。</small>
+                  <textarea
+                    aria-label="私有网络密钥更新码"
+                    placeholder="openfx-epoch-v1.…"
+                    required
+                    rows={4}
+                    value={epochUpdateCode}
+                    onChange={(event) => setEpochUpdateCode(event.target.value)}
+                  />
+                  <button disabled={working} type="submit">验证并更新</button>
+                </form>
+              )
+              : null}
+            {props.snapshot.members.some((member) =>
+                member.nodeId !== props.snapshot.localNodeId
+              )
+              ? (
+                <div className="file-library-private-mesh-transport">
+                  <label className="file-library-private-mesh-stun-option">
+                    <input
+                      checked={usePublicStun}
+                      type="checkbox"
+                      onChange={(event) => setUsePublicStun(event.target.checked)}
+                    />
+                    <span>
+                      <strong>允许公共 STUN 辅助寻址</strong>
+                      <small>
+                        关闭时只尝试局域网直连；开启后会向 Cloudflare STUN
+                        暴露当前公网地址，但连接码、目录和文件仍不经过该服务。
+                      </small>
+                    </span>
+                  </label>
+                  <form
+                    className="file-library-private-mesh-form"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void run(async () => {
+                        const offered = await props.session
+                          .createPrivateMeshTransportOffer(
+                            transportTargetNodeId,
+                            { usePublicStun },
+                          );
+                        if (!offered) return false;
+                        setTransportOffer({
+                          nodeId: transportTargetNodeId,
+                          code: offered.offerCode,
+                        });
+                        setTransportAnswerCode("");
+                        return true;
+                      });
+                    }}
+                  >
+                    <strong>
+                      {usePublicStun ? "公共 STUN 辅助直连" : "同一局域网直连"}
+                    </strong>
+                    <small>
+                      {usePublicStun
+                        ? "连接码由成员密钥签名，不经过 Deno Deploy；STUN 只帮助发现可直连地址，不提供中继。"
+                        : "连接码由成员密钥签名，不经过 Deno Deploy；当前只收集本机 WebRTC 地址，跨公网连接仍需后续发现或中继层。"}
+                    </small>
+                    <select
+                      aria-label="要连接的成员设备"
+                      required
+                      value={transportTargetNodeId}
+                      onChange={(event) => setTransportTargetNodeId(event.target.value)}
+                    >
+                      <option value="">选择目标设备</option>
+                      {props.snapshot.members.flatMap((member) =>
+                        member.nodeId === props.snapshot.localNodeId ? [] : [
+                          <option key={member.nodeId} value={member.nodeId}>
+                            {member.nodeName}
+                          </option>,
+                        ]
+                      )}
+                    </select>
+                    <button disabled={working} type="submit">生成连接 offer</button>
+                    {transportOffer
+                      ? (
+                        <div className="file-library-private-mesh-code">
+                          <textarea
+                            aria-label="WebRTC 连接 offer"
+                            readOnly
+                            rows={4}
+                            value={transportOffer.code}
+                            onFocus={(event) => event.currentTarget.select()}
+                          />
+                          <textarea
+                            aria-label="WebRTC 连接 answer"
+                            placeholder="粘贴目标设备返回的 openfx-rtc-v1.…"
+                            required
+                            rows={4}
+                            value={transportAnswerCode}
+                            onChange={(event) =>
+                              setTransportAnswerCode(event.target.value)}
+                          />
+                          <button
+                            disabled={working}
+                            type="button"
+                            onClick={() => {
+                              void run(() =>
+                                props.session.completePrivateMeshTransportOffer(
+                                  transportOffer.nodeId,
+                                  transportAnswerCode,
+                                )
+                              );
+                            }}
+                          >
+                            完成直连
+                          </button>
+                        </div>
+                      )
+                      : null}
+                  </form>
+                  <form
+                    className="file-library-private-mesh-form"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void run(async () => {
+                        const accepted = await props.session
+                          .acceptPrivateMeshTransportOffer(
+                            incomingTransportOffer,
+                            { usePublicStun },
+                          );
+                        if (!accepted) return false;
+                        setTransportAnswerResult(accepted.answerCode);
+                        return true;
+                      });
+                    }}
+                  >
+                    <strong>接受成员连接</strong>
+                    <textarea
+                      aria-label="收到的 WebRTC 连接 offer"
+                      placeholder="粘贴成员设备发来的 openfx-rtc-v1.…"
+                      required
+                      rows={4}
+                      value={incomingTransportOffer}
+                      onChange={(event) =>
+                        setIncomingTransportOffer(event.target.value)}
+                    />
+                    <button disabled={working} type="submit">验证并生成 answer</button>
+                    {transportAnswerResult
+                      ? (
+                        <textarea
+                          aria-label="返回的 WebRTC 连接 answer"
+                          readOnly
+                          rows={4}
+                          value={transportAnswerResult}
+                          onFocus={(event) => event.currentTarget.select()}
+                        />
+                      )
+                      : null}
+                  </form>
+                  {props.snapshot.connections.length > 0
+                    ? (
+                      <div className="file-library-private-mesh-connections">
+                        <strong>当前设备连接</strong>
+                        <ul>
+                          {props.snapshot.connections.map((connection) => (
+                            <li key={connection.nodeId}>
+                              <span>{connection.nodeName}</span>
+                              <small>
+                                {connection.status === "connected"
+                                  ? "已连接"
+                                  : connection.status === "connecting"
+                                  ? "连接中"
+                                  : connection.message ?? "连接失败"}
+                              </small>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )
+                    : null}
+                  {props.snapshot.remoteFiles.length > 0
+                    ? (
+                      <div className="file-library-private-mesh-remote-files">
+                        <strong>远程文件目录</strong>
+                        <small>
+                          这里只持久保存受限元数据；设备在线时点按才会读取原件。
+                        </small>
+                        <ul>
+                          {props.snapshot.remoteFiles.map((entry) => {
+                            const remoteFileKey = `${entry.nodeId}:${entry.itemId}`;
+                            const reading = working &&
+                              remoteFileReadKey === remoteFileKey;
+                            return (
+                              <li key={remoteFileKey}>
+                                <div className="file-library-private-mesh-remote-main">
+                                  <PrivateMeshRemoteThumbnail
+                                    entry={entry}
+                                    session={props.session}
+                                  />
+                                  <span className="file-library-private-mesh-remote-details">
+                                    <strong>{entry.name}</strong>
+                                    <small>
+                                      {entry.nodeName} ·{" "}
+                                      {formatLibraryBytes(entry.size)} ·
+                                      {entry.availability === "online"
+                                        ? " 在线"
+                                        : " 离线缓存"}
+                                    </small>
+                                  </span>
+                                </div>
+                                <button
+                                  aria-label={reading
+                                    ? `取消读取 ${entry.name}`
+                                    : `读取 ${entry.name}`}
+                                  disabled={!reading &&
+                                    (working || entry.availability !== "online" ||
+                                      entry.size > 4 * 1024 * 1024)}
+                                  type="button"
+                                  onClick={() => {
+                                    if (reading) {
+                                      remoteFileReadCanceled.current = true;
+                                      props.session.cancelPrivateMeshRemoteFileImport();
+                                    } else {
+                                      void readRemoteFile(
+                                        entry.nodeId,
+                                        entry.itemId,
+                                      );
+                                    }
+                                  }}
+                                >
+                                  {reading
+                                    ? "取消"
+                                    : entry.availability !== "online"
+                                    ? "设备离线"
+                                    : entry.size > 4 * 1024 * 1024
+                                    ? "暂不支持"
+                                    : "读取"}
+                                </button>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    )
+                    : null}
+                </div>
+              )
+              : null}
+            {props.snapshot.canInvite
+              ? (
+                <form
+                  className="file-library-private-mesh-form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void run(async () => {
+                      const approved = await props.session.approvePrivateMeshPairing(
+                        requestCode,
+                      );
+                      if (!approved) return false;
+                      setApprovalResult(approved);
+                      return true;
+                    });
+                  }}
+                >
+                  <strong>批准新设备</strong>
+                  <small>在新设备生成请求码，粘贴到这里并核对六位验证码。</small>
+                  <textarea
+                    aria-label="新设备配对请求码"
+                    placeholder="openfx-pair-v1.…"
+                    required
+                    rows={3}
+                    value={requestCode}
+                    onChange={(event) => setRequestCode(event.target.value)}
+                  />
+                  <button disabled={working} type="submit">
+                    {working ? "正在验证…" : "验证并批准"}
+                  </button>
+                  {approvalResult
+                    ? (
+                      <div className="file-library-private-mesh-code">
+                        <span>双方验证码</span>
+                        <strong>{approvalResult.verificationCode}</strong>
+                        <textarea
+                          aria-label="设备配对批准码"
+                          readOnly
+                          rows={4}
+                          value={approvalResult.approvalCode}
+                          onFocus={(event) => event.currentTarget.select()}
+                        />
+                        <small>把批准码交回刚才的新设备，完成加入。</small>
+                      </div>
+                    )
+                    : null}
+                </form>
+              )
+              : (
+                <div className="file-library-private-mesh-notice">
+                  当前设备可以访问和存储文件，但不能邀请其他设备。
+                </div>
+              )}
+          </div>
+        )
+        : (
+          <div className="file-library-private-mesh-content">
+            {props.snapshot.pendingPairing
+              ? (
+                <form
+                  className="file-library-private-mesh-form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void run(async () => {
+                      const accepted = await props.session.acceptPrivateMeshPairing(
+                        approvalCode,
+                      );
+                      if (accepted) setApprovalCode("");
+                      return accepted;
+                    });
+                  }}
+                >
+                  <strong>等待已有设备批准</strong>
+                  <small>
+                    请求设备：{props.snapshot.pendingPairing.nodeName} · 验证码
+                  </small>
+                  <div className="file-library-private-mesh-verification">
+                    {props.snapshot.pendingPairing.verificationCode}
+                  </div>
+                  <textarea
+                    aria-label="当前设备配对请求码"
+                    readOnly
+                    rows={4}
+                    value={props.snapshot.pendingPairing.requestCode}
+                    onFocus={(event) => event.currentTarget.select()}
+                  />
+                  <textarea
+                    aria-label="已有设备返回的批准码"
+                    placeholder="粘贴 openfx-approve-v1.…"
+                    required
+                    rows={4}
+                    value={approvalCode}
+                    onChange={(event) => setApprovalCode(event.target.value)}
+                  />
+                  <button disabled={working} type="submit">
+                    {working ? "正在加入…" : "完成加入"}
+                  </button>
+                </form>
+              )
+              : (
+                <>
+                  <form
+                    className="file-library-private-mesh-form"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void run(async () => {
+                        if (
+                          recoveryPassphrase !== recoveryPassphraseConfirmation
+                        ) {
+                          throw new Error("两次输入的恢复口令不一致");
+                        }
+                        const created = await props.session.createPrivateNetwork({
+                          meshName,
+                          nodeName,
+                          recoveryPassphrase,
+                        });
+                        if (!created) return false;
+                        setRecoveryCode(created.recoveryCode);
+                        setRecoveryPassphrase("");
+                        setRecoveryPassphraseConfirmation("");
+                        return true;
+                      });
+                    }}
+                  >
+                    <strong>创建私有网络</strong>
+                    <small>
+                      本机成为所有者，不创建账号，也不向 Deno Deploy 上传身份。
+                    </small>
+                    <input
+                      aria-label="私有网络名称"
+                      maxLength={80}
+                      required
+                      value={meshName}
+                      onChange={(event) => setMeshName(event.target.value)}
+                    />
+                    <input
+                      aria-label="当前设备名称"
+                      maxLength={80}
+                      placeholder="例如：MacBook"
+                      required
+                      value={nodeName}
+                      onChange={(event) => setNodeName(event.target.value)}
+                    />
+                    <input
+                      aria-label="恢复口令"
+                      autoComplete="new-password"
+                      maxLength={256}
+                      minLength={12}
+                      placeholder="恢复口令（至少 12 个字符）"
+                      required
+                      type="password"
+                      value={recoveryPassphrase}
+                      onChange={(event) => setRecoveryPassphrase(event.target.value)}
+                    />
+                    <input
+                      aria-label="确认恢复口令"
+                      autoComplete="new-password"
+                      maxLength={256}
+                      minLength={12}
+                      placeholder="再次输入恢复口令"
+                      required
+                      type="password"
+                      value={recoveryPassphraseConfirmation}
+                      onChange={(event) =>
+                        setRecoveryPassphraseConfirmation(event.target.value)}
+                      onInvalid={(event) => {
+                        event.currentTarget.setCustomValidity(
+                          recoveryPassphraseConfirmation === recoveryPassphrase
+                            ? ""
+                            : "两次输入的恢复口令不一致",
+                        );
+                      }}
+                      onInput={(event) => {
+                        event.currentTarget.setCustomValidity(
+                          event.currentTarget.value === recoveryPassphrase
+                            ? ""
+                            : "两次输入的恢复口令不一致",
+                        );
+                      }}
+                    />
+                    <button disabled={working} type="submit">
+                      {working ? "正在生成密钥…" : "创建网络"}
+                    </button>
+                  </form>
+                  <form
+                    className="file-library-private-mesh-form"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void run(async () =>
+                        Boolean(
+                          await props.session.beginPrivateMeshPairing({ nodeName }),
+                        )
+                      );
+                    }}
+                  >
+                    <strong>加入已有网络</strong>
+                    <small>先生成一次性请求码，再由网络中的所有者设备批准。</small>
+                    <input
+                      aria-label="待加入设备名称"
+                      maxLength={80}
+                      placeholder="当前设备名称"
+                      required
+                      value={nodeName}
+                      onChange={(event) => setNodeName(event.target.value)}
+                    />
+                    <button disabled={working} type="submit">生成配对请求</button>
+                  </form>
+                </>
+              )}
+          </div>
+        )}
+
+      {recoveryCode
+        ? (
+          <div className="file-library-private-mesh-recovery" role="status">
+            <strong>立即保存恢复码</strong>
+            <small>
+              它已由恢复口令加密，二者缺一不可；本次关闭后不会再次自动显示。
+            </small>
+            <textarea
+              aria-label="私有网络恢复码"
+              readOnly
+              rows={5}
+              value={recoveryCode}
+              onFocus={(event) => event.currentTarget.select()}
+            />
+          </div>
+        )
+        : null}
+      {error
+        ? <p className="file-library-private-mesh-error" role="alert">{error}</p>
+        : null}
     </section>
   );
 }
@@ -1547,6 +2323,14 @@ export function FileLibraryHomepage(props: {
   renderApp: (appId: LibraryAppId) => ReactNode;
 }) {
   const [library] = useState(createOpfsFileLibrary);
+  const [privateMeshKeyVault] = useState(createIndexedDbPrivateMeshKeyVault);
+  const [privateMeshStore] = useState(() =>
+    createOpfsPrivateMeshStore(privateMeshKeyVault)
+  );
+  const [privateMeshCatalogStore] = useState(createOpfsPrivateMeshCatalogStore);
+  const [privateMeshThumbnailStore] = useState(
+    createOpfsPrivateMeshThumbnailStore,
+  );
   const [nativePhotoImporter] = useState(createNativePhotoImporter);
   const [session] = useState(() =>
     createFileLibrarySession({
@@ -1555,10 +2339,16 @@ export function FileLibraryHomepage(props: {
       defaultAppCount: LIBRARY_APP_COUNT,
       isVisible: () => document.visibilityState !== "hidden",
       nativePhotoImporter,
+      privateMeshStore,
+      privateMeshCatalogStore,
+      privateMeshThumbnailStore,
+      privateMeshKeyVault,
+      createPrivateMeshThumbnail,
     })
   );
   const [sessionSnapshot, setSessionSnapshot] = useState(session.getSnapshot);
-  const { items, busy, message, nativePhotosAvailable, storage } = sessionSnapshot;
+  const { items, busy, message, nativePhotosAvailable, storage, privateMesh } =
+    sessionSnapshot;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [viewerItemId, setViewerItemId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -1572,6 +2362,7 @@ export function FileLibraryHomepage(props: {
     }
   });
   const [dragging, setDragging] = useState(false);
+  const [showPrivateMesh, setShowPrivateMesh] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const photosInputRef = useRef<HTMLInputElement>(null);
   const pinchGesture = useRef<PinchGesture | null>(null);
@@ -1740,7 +2531,9 @@ export function FileLibraryHomepage(props: {
                 query={query}
                 resultCount={visibleEntries.length}
                 storage={storage}
+                privateMesh={privateMesh}
                 onQueryChange={setQuery}
+                onOpenPrivateMesh={() => setShowPrivateMesh(true)}
               />
             )}
           {selected
@@ -1915,6 +2708,15 @@ export function FileLibraryHomepage(props: {
             onItemsChange={session.replaceItems}
             onUpdate={session.updateItemDetails}
             renderApp={props.renderApp}
+          />
+        )
+        : null}
+      {showPrivateMesh
+        ? (
+          <PrivateMeshPanel
+            session={session}
+            snapshot={privateMesh}
+            onClose={() => setShowPrivateMesh(false)}
           />
         )
         : null}
