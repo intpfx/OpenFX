@@ -35,7 +35,7 @@ dsh plugin --profile web add dsh-openfx-web
 dsh plugin --profile web add dsh-conversation-browser
 ```
 
-安装或升级后重启 `dsh web`。会话浏览器通过官方 `conversation.input.dock` 槽把地址栏放在消息输入框上方，和浏览器视图共享会话级状态；不需要修改 DeepSeek Harness 源码或查询宿主 DOM。
+安装或升级后重启 `dsh web`。会话浏览器通过官方 `conversation.input.overlay` 槽把地址栏放进输入卡；安装 `dsh-workspace-shell` 时，它会位于会话搜索框和消息输入框之间。地址栏和浏览器视图共享会话级状态，不需要修改 DeepSeek Harness 源码，也不通过 JavaScript 查询或搬移宿主 DOM。
 
 ## 本地开发
 

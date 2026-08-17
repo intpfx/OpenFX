@@ -12,8 +12,8 @@ dsh plugin --profile web add dsh-conversation-browser
 - 拒绝带用户名/密码的 URL、`javascript:`、`file:` 和其他非 HTTP(S) 协议；
 - 后退、前进和刷新由插件自己的会话级历史管理；
 - 不提供“在新标签页打开”，避免把沙箱内页面提升到宿主浏览器权限；
-- 地址栏通过 DSH 官方 `conversation.input.dock` 插件槽位于消息输入框上方，只在“浏览器”视图激活时显示；浏览器视图与地址栏共享同一个会话级状态，不修改或查询宿主 DOM。
+- 地址栏通过 DSH 官方 `conversation.input.overlay` 插件槽成为输入卡内部的一行；与 `dsh-workspace-shell` 同时安装时，它位于会话搜索框和消息输入框之间，只在“浏览器”视图激活时显示。浏览器视图与地址栏共享同一个会话级状态，不修改宿主源码，也不通过 JavaScript 查询或搬移宿主 DOM。
 
 部分网站通过 `X-Frame-Options` 或 CSP 禁止嵌入，此时浏览器视图无法绕过网站策略。iframe 不共享宿主登录态，也不能访问宿主页面 DOM。
 
-本包要求提供 `conversation.view` 与 `conversation.input.dock` 的 DSH Web 版本。它由 DeepSeek Harness 的实验性 `ui-browser` 实现迁出并继续维护，保留原始 MIT 授权声明。
+本包要求提供 `conversation.view` 与 `conversation.input.overlay` 的 DSH Web 版本。它由 DeepSeek Harness 的实验性 `ui-browser` 实现迁出并继续维护，保留原始 MIT 授权声明。

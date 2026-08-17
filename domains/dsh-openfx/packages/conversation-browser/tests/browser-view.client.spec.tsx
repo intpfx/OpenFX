@@ -6,7 +6,7 @@ import { useSyncExternalStore } from 'react'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { normalizeBrowserAddress } from '../src/client/browser-address.ts'
 import { createBrowserViewStore } from '../src/client/browser-store.ts'
-import { BrowserAddressDock } from '../src/client/BrowserAddressDock.tsx'
+import { BrowserAddressOverlay } from '../src/client/BrowserAddressOverlay.tsx'
 import { BrowserView } from '../src/client/BrowserView.tsx'
 import { en } from '../src/client/locales.ts'
 
@@ -127,7 +127,7 @@ function mountBrowser() {
   } as unknown as ConvViewProps
   const view = render(
     <>
-      <BrowserAddressDock
+      <BrowserAddressOverlay
         {...standard as never}
         useStore={bindSnapshotSelector(store)}
         actions={store.actions}
@@ -158,20 +158,20 @@ describe('browser view', () => {
       t: translate,
     }
     const view = render(
-      <BrowserAddressDock {...shared as never} />,
+      <BrowserAddressOverlay {...shared as never} />,
     )
     expect(screen.queryByRole('toolbar', { name: 'Browser toolbar' })).toBeNull()
 
     view.rerender(
       <>
-        <BrowserAddressDock {...shared as never} />
+        <BrowserAddressOverlay {...shared as never} />
         <BrowserView {...shared as never} inspect={null} onInspectDone={() => {}} />
       </>,
     )
     const toolbar = screen.getByRole('toolbar', { name: 'Browser toolbar' })
-    expect(toolbar.parentElement?.hasAttribute('data-browser-address-dock')).toBe(true)
+    expect(toolbar.parentElement?.hasAttribute('data-browser-address-overlay')).toBe(true)
 
-    view.rerender(<BrowserAddressDock {...shared as never} />)
+    view.rerender(<BrowserAddressOverlay {...shared as never} />)
     expect(screen.queryByRole('toolbar', { name: 'Browser toolbar' })).toBeNull()
   })
 
@@ -179,7 +179,7 @@ describe('browser view', () => {
     const { view } = mountBrowser()
     const toolbar = screen.getByRole('toolbar', { name: 'Browser toolbar' })
     expect(document.querySelector('[data-conversation-input-header]')).toBeNull()
-    expect(toolbar.parentElement?.hasAttribute('data-browser-address-dock')).toBe(true)
+    expect(toolbar.parentElement?.hasAttribute('data-browser-address-overlay')).toBe(true)
     expect(view.container.querySelector('[data-browser-viewport]')).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Open a page' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Back' })).toHaveProperty('disabled', true)

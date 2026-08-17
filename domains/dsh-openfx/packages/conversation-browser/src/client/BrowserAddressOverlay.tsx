@@ -1,4 +1,4 @@
-/** Address-bar seat rendered through the host's public input-dock slot. */
+/** Address bar rendered inside the host's public composer overlay slot. */
 import type { FormEvent } from 'react'
 import type { PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import {
@@ -14,12 +14,12 @@ import { createBrowserViewStore } from './browser-store.ts'
 import css from './BrowserView.module.css'
 
 type BrowserStore = ReturnType<typeof createBrowserViewStore>
-type BrowserAddressDockProps = PropsRuntime<'conversation.input.dock'>
+type BrowserAddressOverlayProps = PropsRuntime<'conversation.input.overlay'>
   & PropsStore<BrowserStore>
   & PropsLocale<'browser'>
 
-/** Browser address controls shown only while the Browser conversation view is mounted. */
-export function BrowserAddressDock({ useStore, actions, t }: BrowserAddressDockProps) {
+/** Browser address controls shown inside the composer card while the Browser view is mounted. */
+export function BrowserAddressOverlay({ useStore, actions, t }: BrowserAddressOverlayProps) {
   const { active, address, history, cursor } = useStore(state => state)
   const currentUrl = history[cursor] ?? null
   const canGoBack = cursor > 0
@@ -38,7 +38,7 @@ export function BrowserAddressDock({ useStore, actions, t }: BrowserAddressDockP
   }
 
   return (
-    <div className={css.dock} data-browser-address-dock="">
+    <div className={css.addressOverlay} data-browser-address-overlay="">
       <form className={css.toolbar} role="toolbar" aria-label={t('toolbar.label')} onSubmit={navigate}>
         <Tooltip label={() => t('action.back')} side="bottom">
           <button

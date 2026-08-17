@@ -5,7 +5,7 @@ import { apply as nodeApply, name as nodeName } from '../src/index.ts'
 import * as BrowserInvariant from '../src/invariant.ts'
 
 describe('browser plugin wiring', () => {
-  it('shares one session store between the browser view and its input dock', () => {
+  it('shares one session store between the browser view and its in-card input overlay', () => {
     const registrations: Record<string, unknown>[] = []
     const dispose = vi.fn()
     const ctx = {
@@ -27,11 +27,11 @@ describe('browser plugin wiring', () => {
     apply(ctx as never)
     expect(registrations).toHaveLength(2)
     const view = registrations.find(registration => registration.name === 'conversation.view')
-    const dock = registrations.find(registration => registration.name === 'conversation.input.dock')
+    const overlay = registrations.find(registration => registration.name === 'conversation.input.overlay')
     expect(view).toMatchObject({ id: 'browser', order: 20, locale: 'browser' })
-    expect(dock).toMatchObject({ id: 'browser-address', order: 100, locale: 'browser' })
+    expect(overlay).toMatchObject({ id: 'browser-address', order: 100, locale: 'browser' })
     expect((view?.label as () => string)()).toBe('浏览器')
-    expect(view?.store).toBe(dock?.store)
+    expect(view?.store).toBe(overlay?.store)
     const store = view?.store as {
       create: (scope: string) => { getSnapshot: () => unknown }
       spec: { init: unknown; actions: unknown }

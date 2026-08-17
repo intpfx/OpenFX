@@ -2,7 +2,8 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
-import { BrowserAddressDock } from './BrowserAddressDock.tsx'
+import type {} from '@deepseek-ai/dsh-client-ui-input-trigger/client'
+import { BrowserAddressOverlay } from './BrowserAddressOverlay.tsx'
 import { BrowserView } from './BrowserView.tsx'
 import { createBrowserViewStore } from './browser-store.ts'
 import { en, NS, zh } from './locales.ts'
@@ -26,11 +27,11 @@ export function apply(ctx: Context): void {
     label: () => t('view.browser'),
     store: browserStore,
   }, BrowserView))
-  ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
-    name: 'conversation.input.dock',
+  ctx.slots.inject('conversation.input.overlay', () => ctx.slots.register({
+    name: 'conversation.input.overlay',
     id: 'browser-address',
     order: 100,
     locale: NS,
     store: browserStore,
-  }, BrowserAddressDock))
+  }, BrowserAddressOverlay))
 }
