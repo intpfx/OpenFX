@@ -216,3 +216,94 @@ Deno.test("private mesh answerer keeps listening while the manual signal is vali
     globalThis.setTimeout = nativeSetTimeout;
   }
 });
+
+Deno.test("private mesh answer keeps usable ICE candidates when WebKit does not finish gathering", async () => {
+  const ownerVault = createMemoryPrivateMeshKeyVault();
+  const memberVault = createMemoryPrivateMeshKeyVault();
+  const owner = await createPrivateMesh({
+    meshName: "家庭文件网络",
+    nodeName: "Mac",
+    recoveryPassphrase: "a passphrase only the owner knows",
+    now: NOW,
+  }, ownerVault);
+  const pending = await createPairingRequest({
+    nodeName: "Web",
+    now: NOW,
+  }, memberVault);
+  const approved = await approvePairingRequest(
+    owner.state,
+    pending.requestCode,
+    ownerVault,
+    { now: NOW },
+  );
+  const member = await acceptPairingApproval(
+    pending,
+    approved.approvalCode,
+    memberVault,
+  );
+  const offerCode = await createPrivateMeshSignalCode(
+    member,
+    {
+      kind: "offer",
+      recipientNodeId: approved.state.localNode.nodeId,
+      description: {
+        type: "offer",
+        sdp: "v=0\r\na=candidate:offer 1 udp 1 host.local 5000 typ host\r\n",
+      },
+      now: NOW,
+    },
+    memberVault,
+  );
+  const channel = new EventTarget() as EventTarget & {
+    label: string;
+    close(): void;
+  };
+  channel.label = "openfx-private-mesh-v1";
+  channel.close = () => undefined;
+  class StalledWebKitPeerConnection extends EventTarget {
+    iceGatheringState = "gathering" as RTCIceGatheringState;
+    localDescription: RTCSessionDescription | null = null;
+
+    setRemoteDescription(): Promise<void> {
+      return Promise.resolve();
+    }
+
+    createAnswer(): Promise<RTCSessionDescriptionInit> {
+      return Promise.resolve({
+        type: "answer",
+        sdp: "v=0\r\na=candidate:answer 1 udp 1 host.local 5001 typ host\r\n",
+      });
+    }
+
+    setLocalDescription(
+      description: RTCSessionDescriptionInit,
+    ): Promise<void> {
+      this.localDescription = description as RTCSessionDescription;
+      return Promise.resolve();
+    }
+
+    close(): void {}
+  }
+  const peerConnection = new StalledWebKitPeerConnection();
+  const accepted = await acceptPrivateMeshConnectionOffer(
+    approved.state,
+    offerCode,
+    ownerVault,
+    {
+      now: NOW,
+      iceGatheringTimeoutMs: 1,
+      createPeerConnection: () => peerConnection as unknown as RTCPeerConnection,
+    },
+  );
+  const answer = await parsePrivateMeshSignalCode(member, accepted.answerCode, {
+    kind: "answer",
+    sessionId: accepted.connection.sessionId,
+    now: NOW,
+  });
+  expect(answer.description.sdp).toContain("a=candidate:answer");
+
+  const event = new Event("datachannel");
+  Object.defineProperty(event, "channel", { value: channel });
+  peerConnection.dispatchEvent(event);
+  await expect(accepted.connection.channel).resolves.toBe(channel);
+});

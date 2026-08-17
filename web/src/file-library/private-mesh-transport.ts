@@ -221,6 +221,12 @@ async function waitForIceGathering(
   await new Promise<void>((resolve, reject) => {
     const timeout = setTimeout(() => {
       cleanup();
+      if (
+        /(^|\r?\n)a=candidate:/.test(connection.localDescription?.sdp ?? "")
+      ) {
+        resolve();
+        return;
+      }
       reject(new Error("收集本机 WebRTC 地址超时"));
     }, timeoutMs);
     const changed = () => {
