@@ -4,7 +4,7 @@ import {
   normalizeFileFingerprint,
 } from "./similarity-core.ts";
 
-export const FILE_LIBRARY_INDEX_VERSION = 5 as const;
+export const FILE_LIBRARY_INDEX_VERSION = 8 as const;
 
 export type LibraryWatchState = "unwatched" | "in-progress" | "watched";
 
@@ -22,6 +22,25 @@ export type LibraryMediaMetadata = {
   seasonNumber?: number;
   episodeNumber?: number;
   thumbnailTimestampSec?: number;
+};
+
+export type LibraryAudioMetadata = {
+  title?: string;
+  artist?: string;
+  album?: string;
+  lyrics?: LibraryPlainLyrics;
+};
+
+export type LibraryPlainLyrics = {
+  kind: "plain";
+  lines: string[];
+  language?: string;
+};
+
+export type LibraryAudioProcessing = {
+  status: "pending" | "running" | "completed" | "failed";
+  attempts: number;
+  error?: string;
 };
 
 export type LibrarySmartView =
@@ -109,6 +128,8 @@ export type LibraryItem = {
   subtitles?: StoredFileRef[];
   playback?: LibraryPlaybackState;
   media?: LibraryMediaMetadata;
+  audio?: LibraryAudioMetadata;
+  audioProcessing?: LibraryAudioProcessing;
   photo?: LibraryPhotoMetadata;
   processing?: LibraryPhotoProcessing;
   fingerprint?: FileFingerprint;
@@ -364,6 +385,16 @@ export function classifyFile(
   return "file";
 }
 
+export function getLibraryItemVisualRef(
+  item: LibraryItem,
+): StoredFileRef | undefined {
+  if (item.kind === "image" || item.kind === "live-photo") {
+    return item.preview ?? item.source;
+  }
+  if (item.kind === "video" || item.kind === "audio") return item.preview;
+  return undefined;
+}
+
 export function pairLivePhotoFiles(files: readonly File[]): {
   pairs: LivePhotoPair[];
   remaining: File[];
@@ -471,8 +502,9 @@ export function parseLibraryIndex(value: unknown): FileLibraryIndex {
   const candidate = value as Partial<FileLibraryIndex>;
   const version = (value as { version?: unknown }).version;
   if (
-    (version !== 1 && version !== 2 && version !== 3 &&
-      version !== 4 && version !== FILE_LIBRARY_INDEX_VERSION) ||
+    (version !== 1 && version !== 2 && version !== 3 && version !== 4 &&
+      version !== 5 && version !== 6 && version !== 7 &&
+      version !== FILE_LIBRARY_INDEX_VERSION) ||
     !Array.isArray(candidate.items)
   ) {
     return createEmptyLibraryIndex();
@@ -531,12 +563,26 @@ export function parseLibraryIndex(value: unknown): FileLibraryIndex {
               attempts: 0,
             }
             : undefined);
+        const audioProcessing = item.kind === "audio"
+          ? version !== FILE_LIBRARY_INDEX_VERSION
+            ? {
+              status: "pending" as const,
+              attempts: item.audioProcessing?.attempts ?? 0,
+            }
+            : item.audioProcessing?.status === "running"
+            ? { ...item.audioProcessing, status: "pending" as const }
+            : item.audioProcessing ?? {
+              status: "pending" as const,
+              attempts: 0,
+            }
+          : undefined;
         const fingerprint = normalizeFileFingerprint(item.fingerprint) ??
           createPendingFileFingerprint();
         return {
           ...item,
           still,
           media,
+          audioProcessing,
           processing,
           fingerprint,
           albums: Array.isArray(item.albums)
@@ -575,6 +621,9 @@ export function searchLibraryItems(
       item.url ?? "",
       item.media?.title ?? "",
       item.media?.kind ?? "",
+      item.audio?.title ?? "",
+      item.audio?.artist ?? "",
+      item.audio?.album ?? "",
       item.photo?.make ?? "",
       item.photo?.model ?? "",
       item.photo?.lensModel ?? "",

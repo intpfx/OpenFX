@@ -139,6 +139,7 @@ export type FileLibrarySessionStore =
     | "storeVideoThumbnail"
     | "recordPlayback"
     | "processPhoto"
+    | "processAudio"
     | "processFingerprint"
     | "retryFingerprintAnalysis"
     | "updateItemDetails"
@@ -247,18 +248,24 @@ function isPendingThumbnail(item: LibraryItem): boolean {
   return item.kind === "video" && !item.preview;
 }
 
+function isPendingAudio(item: LibraryItem): boolean {
+  return item.kind === "audio" && item.audioProcessing?.status === "pending";
+}
+
 export function createFileLibrarySession(dependencies: SessionDependencies) {
   const privateMeshKeyVault = dependencies.privateMeshKeyVault ??
     createMemoryPrivateMeshKeyVault();
   const listeners = new Set<SessionListener>();
   const thumbnailFailures = new Set<string>();
   const photoFailures = new Set<string>();
+  const audioFailures = new Set<string>();
   const fingerprintFailures = new Set<string>();
   const activeControllers = new Set<AbortController>();
   let snapshot = INITIAL_SNAPSHOT;
   let generation = 0;
   let active = false;
   let photoRun: Promise<void> | null = null;
+  let audioRun: Promise<void> | null = null;
   let fingerprintRun: Promise<void> | null = null;
   let thumbnailRun: Promise<void> | null = null;
   let privateMeshRecord = createEmptyPrivateMeshLocalRecord();
@@ -755,6 +762,34 @@ export function createFileLibrarySession(dependencies: SessionDependencies) {
     }
   }
 
+  async function runAudioQueue(run: number): Promise<void> {
+    let processed = false;
+    while (belongsToCurrentRun(run)) {
+      const item = snapshot.items.find((candidate) =>
+        isPendingAudio(candidate) && !audioFailures.has(candidate.id)
+      );
+      if (!item) break;
+      const controller = new AbortController();
+      activeControllers.add(controller);
+      try {
+        const items = await dependencies.store.processAudio(item.id, controller.signal);
+        if (!belongsToCurrentRun(run)) {
+          controller.abort();
+          return;
+        }
+        replaceItems(items);
+        processed = true;
+      } catch (error) {
+        if (!belongsToCurrentRun(run)) return;
+        audioFailures.add(item.id);
+        publish({ message: errorMessage(error, "音频标签分析暂时失败") });
+      } finally {
+        activeControllers.delete(controller);
+      }
+    }
+    if (processed) await refreshStorage(run);
+  }
+
   async function runThumbnailQueue(run: number): Promise<void> {
     if (dependencies.isVisible && !dependencies.isVisible()) return;
     let processed = false;
@@ -787,6 +822,15 @@ export function createFileLibrarySession(dependencies: SessionDependencies) {
     ) {
       photoRun = runPhotoQueue(run).finally(() => {
         photoRun = null;
+        startBackgroundWork();
+      });
+    }
+    if (
+      !audioRun &&
+      snapshot.items.some((item) => isPendingAudio(item) && !audioFailures.has(item.id))
+    ) {
+      audioRun = runAudioQueue(run).finally(() => {
+        audioRun = null;
         startBackgroundWork();
       });
     }
@@ -1458,9 +1502,10 @@ export function createFileLibrarySession(dependencies: SessionDependencies) {
   }
 
   async function whenIdle(): Promise<void> {
-    while (photoRun || fingerprintRun || thumbnailRun) {
+    while (photoRun || audioRun || fingerprintRun || thumbnailRun) {
       await Promise.all([
         photoRun ?? Promise.resolve(),
+        audioRun ?? Promise.resolve(),
         fingerprintRun ?? Promise.resolve(),
         thumbnailRun ?? Promise.resolve(),
       ]);

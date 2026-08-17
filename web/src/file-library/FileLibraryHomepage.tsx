@@ -43,6 +43,7 @@ import {
 import {
   formatLibraryBytes,
   getFileExtension,
+  getLibraryItemVisualRef,
   type LibraryItem,
   type LibraryItemDetailsPatch,
   normalizeLibraryItemName,
@@ -70,7 +71,8 @@ import {
 import { createPrivateMeshThumbnail } from "./private-mesh-thumbnail.ts";
 import { createIndexedDbPrivateMeshKeyVault } from "./private-mesh-key-vault.ts";
 import { createNativePhotoImporter } from "./native-photo-import.ts";
-import { getLibraryAppTileColor } from "./app-tile.ts";
+import { getLibraryAppTileColor, getLibraryAudioTileColor } from "./app-tile.ts";
+import { LibraryAudioPlayer } from "./library-audio-player.tsx";
 import {
   summarizeFileLibraryHudProgress,
   summarizeFileLibraryStorageHeatmap,
@@ -141,6 +143,21 @@ function formatMediaTime(seconds: number): string {
 
 function formatPhotoNumber(value: number, digits = 2): string {
   return String(Number(value.toFixed(digits)));
+}
+
+function getAudioTitle(item: LibraryItem): string {
+  return item.audio?.title ?? item.name.replace(/\.[^./]+$/, "");
+}
+
+function getAudioByline(item: LibraryItem): string {
+  return [item.audio?.artist, item.audio?.album].filter(Boolean).join(" · ") ||
+    `音频 · ${formatLibraryBytes(item.size)}`;
+}
+
+function getAudioFallbackColor(item: LibraryItem): string {
+  return getLibraryAudioTileColor(
+    [getAudioTitle(item), item.audio?.artist].filter(Boolean).join(":"),
+  );
 }
 
 function saveDownload(stored: File): void {
@@ -331,6 +348,140 @@ function LivePhotoView(props: {
   );
 }
 
+function LibraryHudAudio(props: {
+  item: LibraryItem;
+  artworkUrl: string;
+}) {
+  const hasArtwork = Boolean(props.artworkUrl);
+  return (
+    <div
+      className={`file-library-hud-audio${
+        hasArtwork ? "" : " has-audio-title-fallback"
+      }`}
+      style={{
+        "--audio-fallback-color": getAudioFallbackColor(props.item),
+      } as CSSProperties}
+    >
+      {hasArtwork
+        ? (
+          <img
+            alt=""
+            aria-hidden="true"
+            className="file-library-hud-audio-backdrop"
+            src={props.artworkUrl}
+          />
+        )
+        : null}
+      <span className="file-library-hud-audio-cover">
+        {hasArtwork
+          ? <img alt={`${getAudioTitle(props.item)} 专辑封面`} src={props.artworkUrl} />
+          : (
+            <span className="file-library-audio-title-tile">
+              {getAudioTitle(props.item)}
+            </span>
+          )}
+      </span>
+      <span className="file-library-hud-audio-copy">
+        <strong>{getAudioTitle(props.item)}</strong>
+        <span>{getAudioByline(props.item)}</span>
+        {props.item.audioProcessing?.status === "pending" ||
+            props.item.audioProcessing?.status === "running"
+          ? <small>正在读取音频标签与专辑封面…</small>
+          : null}
+      </span>
+    </div>
+  );
+}
+
+function LibraryAudioViewer(props: {
+  item: LibraryItem;
+  artworkUrl: string;
+  sourceUrl: string;
+}) {
+  const [playing, setPlaying] = useState(false);
+  const lyrics = props.item.audio?.lyrics;
+  return (
+    <div
+      className={`file-library-audio-viewer${
+        props.artworkUrl ? "" : " has-audio-title-fallback"
+      }`}
+      style={{
+        "--audio-fallback-color": getAudioFallbackColor(props.item),
+      } as CSSProperties}
+    >
+      {props.artworkUrl
+        ? (
+          <img
+            alt=""
+            aria-hidden="true"
+            className="file-library-audio-backdrop"
+            src={props.artworkUrl}
+          />
+        )
+        : null}
+      <section className="file-library-audio-identity">
+        <div
+          className={`file-library-audio-artwork-frame${playing ? " is-playing" : ""}`}
+        >
+          <div className="file-library-audio-artwork">
+            {props.artworkUrl
+              ? (
+                <img
+                  alt={`${getAudioTitle(props.item)} 专辑封面`}
+                  src={props.artworkUrl}
+                />
+              )
+              : (
+                <span className="file-library-audio-title-tile">
+                  {getAudioTitle(props.item)}
+                </span>
+              )}
+          </div>
+        </div>
+        <section className="file-library-audio-player-copy">
+          <span>{props.item.audio?.artist || "未知歌手"}</span>
+          <h1>{getAudioTitle(props.item)}</h1>
+          <p>{props.item.audio?.album || "本地音乐"}</p>
+          <LibraryAudioPlayer
+            autoPlay
+            label={getAudioTitle(props.item)}
+            sourceUrl={props.sourceUrl}
+            onPlayingChange={setPlaying}
+          />
+        </section>
+      </section>
+      <section className="file-library-audio-lyrics" aria-label="歌词">
+        <header>
+          <strong>歌词</strong>
+          <span>{lyrics ? "内嵌歌词 · 无时间轴" : "本地音乐"}</span>
+        </header>
+        {lyrics
+          ? (
+            <div className="file-library-audio-lyrics-lines" tabIndex={0}>
+              {lyrics.lines.map((line, index) => (
+                <p
+                  className="file-library-audio-lyric-line"
+                  key={`${index}-${line}`}
+                  style={{
+                    "--lyric-line-delay": `${Math.min(index, 10) * 34}ms`,
+                  } as CSSProperties}
+                >
+                  {line}
+                </p>
+              ))}
+            </div>
+          )
+          : (
+            <div className="file-library-audio-lyrics-empty">
+              <strong>这首歌没有可显示的内嵌歌词</strong>
+              <span>仍可正常播放和下载原始音乐文件。</span>
+            </div>
+          )}
+      </section>
+    </div>
+  );
+}
+
 function LibraryCard(props: {
   item: LibraryItem;
   library: OpfsFileLibrary;
@@ -339,15 +490,15 @@ function LibraryCard(props: {
 }) {
   const appPreview = props.item.kind === "app" ? props.item.app?.preview : undefined;
   const showsAppColor = props.item.kind === "app" && !appPreview;
-  const visualRef = props.item.preview ?? props.item.source;
-  const showsVisual = props.item.kind === "image" ||
-    props.item.kind === "live-photo" ||
-    (props.item.kind === "video" && Boolean(props.item.preview));
+  const visualRef = getLibraryItemVisualRef(props.item);
+  const showsVisual = Boolean(visualRef);
   const { url, failed } = useStoredObjectUrl(
     props.library,
     showsVisual ? visualRef : undefined,
   );
   const [textPreview, setTextPreview] = useState("");
+  const showsAudioTitleFallback = props.item.kind === "audio" &&
+    (!visualRef || failed);
 
   useEffect(() => {
     if (props.item.kind !== "text") {
@@ -371,6 +522,8 @@ function LibraryCard(props: {
   const hostname = props.item.url ? new URL(props.item.url).hostname : "";
   const displayName = props.item.kind === "video"
     ? props.item.media?.title ?? props.item.name
+    : props.item.kind === "audio"
+    ? getAudioTitle(props.item)
     : props.item.name;
   const progress = props.item.playback?.watchState === "in-progress" &&
       props.item.playback.durationSec > 0
@@ -385,9 +538,12 @@ function LibraryCard(props: {
       className={`file-library-card is-${props.item.kind}${
         appPreview ? " has-live-app-preview" : ""
       }${showsAppColor ? " has-color-app-preview" : ""}${
-        props.selected ? " is-selected" : ""
-      }`}
+        showsAudioTitleFallback ? " has-audio-title-fallback" : ""
+      }${props.selected ? " is-selected" : ""}`}
       data-library-item={props.item.id}
+      style={{
+        "--audio-fallback-color": getAudioFallbackColor(props.item),
+      } as CSSProperties}
     >
       <span
         className="file-library-card-media"
@@ -419,8 +575,14 @@ function LibraryCard(props: {
             </span>
           )
           : null}
-        {url && (props.item.kind === "image" || props.item.kind === "live-photo" ||
-            props.item.kind === "video")
+        {showsAudioTitleFallback
+          ? (
+            <span className="file-library-audio-title-tile">
+              {getAudioTitle(props.item)}
+            </span>
+          )
+          : null}
+        {url
           ? (
             <img
               alt=""
@@ -446,10 +608,10 @@ function LibraryCard(props: {
             </span>
           )
           : null}
-        {(props.item.kind === "audio" || props.item.kind === "pdf" ||
+        {(props.item.kind === "pdf" ||
             props.item.kind === "file" ||
             (props.item.kind === "video" && !props.item.preview) ||
-            (showsVisual && (!url || failed)))
+            (props.item.kind !== "audio" && showsVisual && (!url || failed)))
           ? (
             <span className="file-library-card-file-preview" aria-hidden="true">
               <span>{extension.slice(0, 6)}</span>
@@ -463,17 +625,25 @@ function LibraryCard(props: {
             </span>
           )
           : null}
-        {props.item.processing?.status === "failed"
+        {props.item.processing?.status === "failed" ||
+            props.item.audioProcessing?.status === "failed"
           ? (
-            <span className="file-library-processing-badge" title="照片分析失败">
+            <span
+              className="file-library-processing-badge"
+              title={props.item.kind === "audio" ? "音频标签分析失败" : "照片分析失败"}
+            >
               !
             </span>
           )
           : null}
       </span>
-      {showsAppColor ? null : <span className="file-library-card-shade" />}
+      {showsAppColor || showsAudioTitleFallback
+        ? null
+        : <span className="file-library-card-shade" />}
       <span className="file-library-card-copy">
-        {showsAppColor ? null : <strong>{displayName}</strong>}
+        {showsAppColor || showsAudioTitleFallback
+          ? null
+          : <strong>{displayName}</strong>}
         <span>
           {props.item.kind === "app"
             ? KIND_LABELS[props.item.kind]
@@ -484,6 +654,8 @@ function LibraryCard(props: {
             ? `剧集 · S${String(props.item.media.seasonNumber ?? 0).padStart(2, "0")}E${
               String(props.item.media.episodeNumber ?? 0).padStart(2, "0")
             }`
+            : props.item.kind === "audio"
+            ? getAudioByline(props.item)
             : `${KIND_LABELS[props.item.kind]} · ${
               formatLibraryBytes(props.item.size)
             }`}
@@ -514,10 +686,8 @@ function LibraryGroupMemberVisual(props: {
 }) {
   const visualElementRef = useRef<HTMLSpanElement>(null);
   const [visualReady, setVisualReady] = useState(!props.defer);
-  const visualRef = props.item.preview ?? props.item.source;
-  const showsVisual = props.item.kind === "image" ||
-    props.item.kind === "live-photo" ||
-    (props.item.kind === "video" && Boolean(props.item.preview));
+  const visualRef = getLibraryItemVisualRef(props.item);
+  const showsVisual = Boolean(visualRef);
   const { url } = useStoredObjectUrl(
     props.library,
     showsVisual && visualReady ? visualRef : undefined,
@@ -683,10 +853,8 @@ function LibraryHudPreview(props: {
     appSummary?.links?.filter((link) => !isGitHubHref(link.href)) ?? [];
   const appPreview = props.item.kind === "app" ? props.item.app?.preview : undefined;
   const showsAppColor = props.item.kind === "app" && !appPreview;
-  const visualRef = props.item.preview ?? props.item.source;
-  const showsVisual = props.item.kind === "image" ||
-    props.item.kind === "live-photo" ||
-    (props.item.kind === "video" && Boolean(props.item.preview));
+  const visualRef = getLibraryItemVisualRef(props.item);
+  const showsVisual = Boolean(visualRef);
   const { url } = useStoredObjectUrl(
     props.library,
     showsVisual ? visualRef : undefined,
@@ -804,7 +972,9 @@ function LibraryHudPreview(props: {
           </div>
         )
         : null}
-      {motionUrl
+      {props.item.kind === "audio"
+        ? <LibraryHudAudio artworkUrl={url} item={props.item} />
+        : motionUrl
         ? (
           <video
             aria-label={`${props.item.name} 静音循环预览`}
@@ -829,8 +999,8 @@ function LibraryHudPreview(props: {
           </div>
         )
         : null}
-      {!appPreview && !showsAppColor && !url && props.item.kind !== "text" &&
-          props.item.kind !== "link"
+      {!appPreview && !showsAppColor && !url && props.item.kind !== "audio" &&
+          props.item.kind !== "text" && props.item.kind !== "link"
         ? (
           <span className="file-library-hud-preview-file">
             {props.item.source.name.split(".").pop()?.toUpperCase() || "FILE"}
@@ -1681,6 +1851,10 @@ function LibraryViewer(props: {
     props.library,
     props.item.kind === "live-photo" ? props.item.motion : undefined,
   );
+  const audioArtwork = useStoredObjectUrl(
+    props.library,
+    props.item.kind === "audio" ? props.item.preview : undefined,
+  );
   const [text, setText] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -1866,7 +2040,11 @@ function LibraryViewer(props: {
               <ArrowLeft aria-hidden="true" size={22} />
             </button>
             <span className="file-library-viewer-title">
-              <strong>{props.item.name}</strong>
+              <strong>
+                {props.item.kind === "audio"
+                  ? getAudioTitle(props.item)
+                  : props.item.name}
+              </strong>
               <small>
                 {props.item.kind === "app"
                   ? KIND_LABELS[props.item.kind]
@@ -2000,7 +2178,13 @@ function LibraryViewer(props: {
           )
           : null}
         {props.item.kind === "audio" && media.url
-          ? <audio controls autoPlay src={media.url} />
+          ? (
+            <LibraryAudioViewer
+              artworkUrl={audioArtwork.url}
+              item={props.item}
+              sourceUrl={media.url}
+            />
+          )
           : null}
         {props.item.kind === "pdf" && media.url
           ? (
