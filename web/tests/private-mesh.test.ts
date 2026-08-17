@@ -428,3 +428,37 @@ Deno.test("persisted mesh state survives JSON while certificate tampering is rej
     "私有网络成员证书或本机密钥无效",
   );
 });
+
+Deno.test("persisted mesh validation reads key vault entries serially for WebKit", async () => {
+  const vault = createMemoryPrivateMeshKeyVault();
+  const created = await createPrivateMesh({
+    meshName: "家庭文件网络",
+    nodeName: "MacBook",
+    recoveryPassphrase: "a passphrase only the owner knows",
+    now: NOW,
+  }, vault);
+  let activeReads = 0;
+  let maximumActiveReads = 0;
+  const serialOnlyVault = {
+    ...vault,
+    async matchesPublicKey(...args: Parameters<typeof vault.matchesPublicKey>) {
+      activeReads += 1;
+      maximumActiveReads = Math.max(maximumActiveReads, activeReads);
+      await Promise.resolve();
+      try {
+        return await vault.matchesPublicKey(...args);
+      } finally {
+        activeReads -= 1;
+      }
+    },
+  };
+
+  await expect(
+    validatePrivateMeshLocalRecord({
+      version: 2,
+      state: created.state,
+      pendingPairing: null,
+    }, serialOnlyVault),
+  ).resolves.toBeUndefined();
+  expect(maximumActiveReads).toBe(1);
+});

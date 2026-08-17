@@ -290,38 +290,36 @@ export async function validatePrivateMeshLocalRecord(
             !update.updateCode.startsWith("openfx-epoch-v1.");
         })
       ) throw new Error("invalid pending epoch update");
-      const [signingMatches, encryptionMatches, rootMatches] = await Promise.all([
-        keyVault.matchesPublicKey(
-          state.localNode.signingKey,
-          state.localNode.signingPublicKey,
-        ),
-        keyVault.matchesPublicKey(
-          state.localNode.encryptionKey,
-          state.localNode.encryptionPublicKey,
-        ),
-        state.rootSigningKey
-          ? keyVault.matchesPublicKey(
-            state.rootSigningKey,
-            state.descriptor.rootPublicKey,
-          )
-          : Promise.resolve(true),
-      ]);
+      // WebKit can stall when several IndexedDB records containing non-extractable
+      // CryptoKeys are cloned concurrently after a cold WKWebView start.
+      const signingMatches = await keyVault.matchesPublicKey(
+        state.localNode.signingKey,
+        state.localNode.signingPublicKey,
+      );
+      const encryptionMatches = await keyVault.matchesPublicKey(
+        state.localNode.encryptionKey,
+        state.localNode.encryptionPublicKey,
+      );
+      const rootMatches = state.rootSigningKey
+        ? await keyVault.matchesPublicKey(
+          state.rootSigningKey,
+          state.descriptor.rootPublicKey,
+        )
+        : true;
       if (!signingMatches || !encryptionMatches || !rootMatches) {
         throw new Error("local key mismatch");
       }
     }
     if (record.pendingPairing) {
       const pending = record.pendingPairing;
-      const [signingMatches, encryptionMatches] = await Promise.all([
-        keyVault.matchesPublicKey(
-          pending.identity.signingKey,
-          pending.request.payload.signingPublicKey,
-        ),
-        keyVault.matchesPublicKey(
-          pending.identity.encryptionKey,
-          pending.request.payload.encryptionPublicKey,
-        ),
-      ]);
+      const signingMatches = await keyVault.matchesPublicKey(
+        pending.identity.signingKey,
+        pending.request.payload.signingPublicKey,
+      );
+      const encryptionMatches = await keyVault.matchesPublicKey(
+        pending.identity.encryptionKey,
+        pending.request.payload.encryptionPublicKey,
+      );
       if (!signingMatches || !encryptionMatches) {
         throw new Error("pending key mismatch");
       }
