@@ -35,7 +35,7 @@ dsh plugin --profile web add dsh-openfx-web
 dsh plugin --profile web add dsh-conversation-browser
 ```
 
-安装或升级后重启 `dsh web`。会话浏览器在支持 `data-conversation-input-header` 的宿主中把地址栏嵌入输入卡；旧宿主会自动把地址栏放在浏览器内容顶部。
+安装或升级后重启 `dsh web`。会话浏览器通过官方 `conversation.input.dock` 槽把地址栏放在消息输入框上方，和浏览器视图共享会话级状态；不需要修改 DeepSeek Harness 源码或查询宿主 DOM。
 
 ## 本地开发
 

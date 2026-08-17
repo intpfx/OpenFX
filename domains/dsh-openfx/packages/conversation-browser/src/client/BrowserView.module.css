@@ -11,8 +11,19 @@
   background: var(--dsw-alias-bg-layer-1);
 }
 
-.inline {
-  grid-template-rows: auto minmax(0, 1fr);
+.dock {
+  width: calc(
+    100% -
+    var(--dsh-composer-side-clearance) -
+    var(--dsh-composer-side-clearance)
+  );
+  max-width: var(--dsh-composer-card-max-width);
+  min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  margin: 0 auto;
+  border-radius: 16px;
+  background: var(--dsw-alias-bg-layer-2);
 }
 
 .toolbar {

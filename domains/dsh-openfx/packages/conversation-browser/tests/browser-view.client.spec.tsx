@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { normalizeBrowserAddress } from '../src/client/browser-address.ts'
 import { createBrowserViewStore } from '../src/client/browser-store.ts'
+import { BrowserAddressDock } from '../src/client/BrowserAddressDock.tsx'
 import { BrowserView } from '../src/client/BrowserView.tsx'
 import { en } from '../src/client/locales.ts'
 
@@ -21,13 +22,6 @@ function bindSnapshotSelector<State>(store: {
 
 afterEach(() => {
   cleanup()
-  document.querySelector('[data-conversation-input-header]')?.remove()
-})
-
-beforeEach(() => {
-  const inputHeader = document.createElement('div')
-  inputHeader.setAttribute('data-conversation-input-header', '')
-  document.body.appendChild(inputHeader)
 })
 
 describe('browser address parsing', () => {
@@ -132,21 +126,60 @@ function mountBrowser() {
     onInspectDone: () => {},
   } as unknown as ConvViewProps
   const view = render(
-    <BrowserView
-      {...standard}
-      useStore={bindSnapshotSelector(store)}
-      actions={store.actions}
-      t={translate as never}
-    />,
+    <>
+      <BrowserAddressDock
+        {...standard as never}
+        useStore={bindSnapshotSelector(store)}
+        actions={store.actions}
+        t={translate as never}
+      />
+      <BrowserView
+        {...standard}
+        useStore={bindSnapshotSelector(store)}
+        actions={store.actions}
+        t={translate as never}
+      />
+    </>,
   )
   return { store, view }
 }
 
 describe('browser view', () => {
+  it('shows the address dock only while the browser view is active', () => {
+    const store = createBrowserViewStore().create()
+    const shared = {
+      sessionId: 'browser-view-test',
+      useSession: (() => undefined),
+      useSessions: (() => undefined),
+      useWorkspaces: (() => undefined),
+      useProjection: (() => undefined),
+      useStore: bindSnapshotSelector(store),
+      actions: store.actions,
+      t: translate,
+    }
+    const view = render(
+      <BrowserAddressDock {...shared as never} />,
+    )
+    expect(screen.queryByRole('toolbar', { name: 'Browser toolbar' })).toBeNull()
+
+    view.rerender(
+      <>
+        <BrowserAddressDock {...shared as never} />
+        <BrowserView {...shared as never} inspect={null} onInspectDone={() => {}} />
+      </>,
+    )
+    const toolbar = screen.getByRole('toolbar', { name: 'Browser toolbar' })
+    expect(toolbar.parentElement?.hasAttribute('data-browser-address-dock')).toBe(true)
+
+    view.rerender(<BrowserAddressDock {...shared as never} />)
+    expect(screen.queryByRole('toolbar', { name: 'Browser toolbar' })).toBeNull()
+  })
+
   it('starts empty with an address toolbar and safe disabled controls', () => {
     const { view } = mountBrowser()
     const toolbar = screen.getByRole('toolbar', { name: 'Browser toolbar' })
-    expect(toolbar.parentElement?.hasAttribute('data-conversation-input-header')).toBe(true)
+    expect(document.querySelector('[data-conversation-input-header]')).toBeNull()
+    expect(toolbar.parentElement?.hasAttribute('data-browser-address-dock')).toBe(true)
     expect(view.container.querySelector('[data-browser-viewport]')).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Open a page' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Back' })).toHaveProperty('disabled', true)
@@ -154,14 +187,6 @@ describe('browser view', () => {
     expect(screen.getByRole('button', { name: 'Reload' })).toHaveProperty('disabled', true)
     expect(screen.queryByRole('link', { name: 'Open in new tab' })).toBeNull()
     expect(screen.queryByTitle('Browser content')).toBeNull()
-  })
-
-  it('keeps a usable inline toolbar when the host has no input-header seat', () => {
-    document.querySelector('[data-conversation-input-header]')?.remove()
-    const { view } = mountBrowser()
-    const toolbar = screen.getByRole('toolbar', { name: 'Browser toolbar' })
-    expect(view.container.contains(toolbar)).toBe(true)
-    expect(toolbar.closest('[data-conversation-composer-overlay]')).toBeTruthy()
   })
 
   it('navigates, reloads, and moves through toolbar-owned history', () => {

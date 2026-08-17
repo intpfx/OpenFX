@@ -4,10 +4,9 @@ window.__ModuleLoader__.load({
 		var module = { exports: {} };
 		var exports = module.exports;
 		Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
-		let react = require("react");
-		let react_dom = require("react-dom");
 		let _deepseek_ai_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 		let react_jsx_runtime = require("react/jsx-runtime");
+		let react = require("react");
 		let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-runtime/client");
 		//#region src/client/browser-address.ts
 		const SCHEME = /^[a-z][a-z\d+.-]*:/i;
@@ -49,7 +48,7 @@ window.__ModuleLoader__.load({
 		}
 		//#endregion
 		//#region \0dsh-css:/Users/siaovon/Documents/OpenFX/domains/dsh-openfx/packages/conversation-browser/src/client/BrowserView.module.css.mjs
-		const css = ".-WXG7q_root{box-sizing:border-box;width:100%;height:100%;min-height:0;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-1);grid-template-rows:minmax(0,1fr);display:grid;position:relative;overflow:hidden}.-WXG7q_inline{grid-template-rows:auto minmax(0,1fr)}.-WXG7q_toolbar{z-index:2;box-sizing:border-box;min-height:40px;box-shadow:inset 0 -1px 0 var(--dsw-alias-border-l2);background:0 0;align-items:center;gap:0;padding:0 8px;display:flex;position:relative}.-WXG7q_iconButton{width:40px;height:40px;color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:0;border-radius:8px;flex:0 0 40px;justify-content:center;align-items:center;text-decoration:none;transition:color .14s cubic-bezier(.23,1,.32,1),background-color .14s cubic-bezier(.23,1,.32,1),transform .1s cubic-bezier(.23,1,.32,1);display:inline-flex}.-WXG7q_iconButton:hover:not(:disabled){color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-hover)}.-WXG7q_iconButton:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:-2px}.-WXG7q_iconButton:active:not(:disabled){transform:scale(.97)}.-WXG7q_iconButton:disabled{color:var(--dsw-alias-label-dimmed);cursor:not-allowed}.-WXG7q_address{background:0 0;border:0;border-radius:0;flex:1;gap:8px;min-width:120px;height:34px;padding:0 8px}.-WXG7q_address:focus-within{box-shadow:inset 0 -2px 0 var(--dsw-alias-state-business-primary);border-color:#0000}.-WXG7q_viewport{background:var(--dsw-alias-bg-layer-1);flex-direction:column;min-width:0;min-height:0;display:flex;overflow:hidden}.-WXG7q_notice,.-WXG7q_status{border-bottom:1px solid var(--dsw-alias-border-l2);font:var(--dsw-font-xxs-12);padding:7px 14px}.-WXG7q_notice{color:var(--dsw-alias-state-error-primary);background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 8%, var(--dsw-alias-bg-layer-1))}.-WXG7q_status{color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-2)}.-WXG7q_empty{text-align:center;flex-direction:column;flex:1;justify-content:center;align-self:center;align-items:center;max-width:440px;padding:32px 24px;display:flex}.-WXG7q_emptyIcon{border:1px solid var(--dsw-alias-border-l2);width:56px;height:56px;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-2);border-radius:16px;justify-content:center;align-items:center;margin-bottom:16px;display:inline-flex}.-WXG7q_empty h2{color:var(--dsw-alias-label-primary);font:var(--dsw-font-s-strong-14);margin:0}.-WXG7q_empty p{color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xs-13);margin:8px 0 0}.-WXG7q_empty small{color:var(--dsw-alias-label-caption);font:var(--dsw-font-xxs-12);margin-top:14px}.-WXG7q_frame{background:var(--dsw-alias-bg-layer-1);border:0;flex:1 1 0;width:100%;height:auto;min-height:0;display:block}@media (width<=520px){.-WXG7q_toolbar{padding-inline:6px}.-WXG7q_address{min-width:0}}@media (prefers-reduced-motion:reduce){.-WXG7q_iconButton{transition:color .14s,background-color .14s}}";
+		const css = ".-WXG7q_root{box-sizing:border-box;width:100%;height:100%;min-height:0;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-1);grid-template-rows:minmax(0,1fr);display:grid;position:relative;overflow:hidden}.-WXG7q_dock{width:calc(100% - var(--dsh-composer-side-clearance) - var(--dsh-composer-side-clearance));max-width:var(--dsh-composer-card-max-width);box-sizing:border-box;background:var(--dsw-alias-bg-layer-2);border-radius:16px;min-width:0;margin:0 auto;overflow:hidden}.-WXG7q_toolbar{z-index:2;box-sizing:border-box;min-height:40px;box-shadow:inset 0 -1px 0 var(--dsw-alias-border-l2);background:0 0;align-items:center;gap:0;padding:0 8px;display:flex;position:relative}.-WXG7q_iconButton{width:40px;height:40px;color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:0;border-radius:8px;flex:0 0 40px;justify-content:center;align-items:center;text-decoration:none;transition:color .14s cubic-bezier(.23,1,.32,1),background-color .14s cubic-bezier(.23,1,.32,1),transform .1s cubic-bezier(.23,1,.32,1);display:inline-flex}.-WXG7q_iconButton:hover:not(:disabled){color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-hover)}.-WXG7q_iconButton:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:-2px}.-WXG7q_iconButton:active:not(:disabled){transform:scale(.97)}.-WXG7q_iconButton:disabled{color:var(--dsw-alias-label-dimmed);cursor:not-allowed}.-WXG7q_address{background:0 0;border:0;border-radius:0;flex:1;gap:8px;min-width:120px;height:34px;padding:0 8px}.-WXG7q_address:focus-within{box-shadow:inset 0 -2px 0 var(--dsw-alias-state-business-primary);border-color:#0000}.-WXG7q_viewport{background:var(--dsw-alias-bg-layer-1);flex-direction:column;min-width:0;min-height:0;display:flex;overflow:hidden}.-WXG7q_notice,.-WXG7q_status{border-bottom:1px solid var(--dsw-alias-border-l2);font:var(--dsw-font-xxs-12);padding:7px 14px}.-WXG7q_notice{color:var(--dsw-alias-state-error-primary);background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 8%, var(--dsw-alias-bg-layer-1))}.-WXG7q_status{color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-2)}.-WXG7q_empty{text-align:center;flex-direction:column;flex:1;justify-content:center;align-self:center;align-items:center;max-width:440px;padding:32px 24px;display:flex}.-WXG7q_emptyIcon{border:1px solid var(--dsw-alias-border-l2);width:56px;height:56px;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-2);border-radius:16px;justify-content:center;align-items:center;margin-bottom:16px;display:inline-flex}.-WXG7q_empty h2{color:var(--dsw-alias-label-primary);font:var(--dsw-font-s-strong-14);margin:0}.-WXG7q_empty p{color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xs-13);margin:8px 0 0}.-WXG7q_empty small{color:var(--dsw-alias-label-caption);font:var(--dsw-font-xxs-12);margin-top:14px}.-WXG7q_frame{background:var(--dsw-alias-bg-layer-1);border:0;flex:1 1 0;width:100%;height:auto;min-height:0;display:block}@media (width<=520px){.-WXG7q_toolbar{padding-inline:6px}.-WXG7q_address{min-width:0}}@media (prefers-reduced-motion:reduce){.-WXG7q_iconButton{transition:color .14s,background-color .14s}}";
 		const tagId = "dsh-conversation-browser/BrowserView.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId) + "]") === null) {
 			const tag = document.createElement("style");
@@ -60,11 +59,11 @@ window.__ModuleLoader__.load({
 		}
 		var BrowserView_module_css_default = {
 			"address": "-WXG7q_address",
+			"dock": "-WXG7q_dock",
 			"empty": "-WXG7q_empty",
 			"emptyIcon": "-WXG7q_emptyIcon",
 			"frame": "-WXG7q_frame",
 			"iconButton": "-WXG7q_iconButton",
-			"inline": "-WXG7q_inline",
 			"notice": "-WXG7q_notice",
 			"root": "-WXG7q_root",
 			"status": "-WXG7q_status",
@@ -72,126 +71,108 @@ window.__ModuleLoader__.load({
 			"viewport": "-WXG7q_viewport"
 		};
 		//#endregion
-		//#region src/client/BrowserView.tsx
-		/** Sandboxed browser view with toolbar-owned navigation history. */
-		const FRAME_SANDBOX = "allow-forms allow-modals allow-popups allow-scripts";
-		function useComposerInputHeader() {
-			const [host, setHost] = (0, react.useState)(null);
-			(0, react.useEffect)(() => {
-				const refresh = () => {
-					setHost(document.querySelector("[data-conversation-input-header]"));
-				};
-				refresh();
-				const observer = new MutationObserver(refresh);
-				observer.observe(document.body, {
-					childList: true,
-					subtree: true
-				});
-				return () => {
-					observer.disconnect();
-				};
-			}, []);
-			return host;
-		}
-		/** Browser view registered into the session-scoped conversation view slot. */
-		function BrowserView({ useStore, actions, t }) {
-			const { address, history, cursor, revision } = useStore((state) => state);
-			const [loading, setLoading] = (0, react.useState)(false);
-			const [error, setError] = (0, react.useState)(null);
+		//#region src/client/BrowserAddressDock.tsx
+		/** Browser address controls shown only while the Browser conversation view is mounted. */
+		function BrowserAddressDock({ useStore, actions, t }) {
+			const { active, address, history, cursor } = useStore((state) => state);
 			const currentUrl = history[cursor] ?? null;
 			const canGoBack = cursor > 0;
 			const canGoForward = cursor >= 0 && cursor < history.length - 1;
-			const composerInputHeader = useComposerInputHeader();
+			if (!active) return null;
 			const navigate = (event) => {
 				event.preventDefault();
 				const result = normalizeBrowserAddress(address);
 				if (!result.ok) {
-					setLoading(false);
-					setError(result.reason);
+					actions.fail(result.reason);
 					return;
 				}
-				setError(null);
-				setLoading(true);
 				actions.navigate(result.url);
 			};
-			const move = (action) => {
-				setError(null);
-				setLoading(true);
-				action();
-			};
-			const toolbar = /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("form", {
-				className: BrowserView_module_css_default.toolbar,
-				role: "toolbar",
-				"aria-label": t("toolbar.label"),
-				onSubmit: navigate,
-				children: [
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
-						label: () => t("action.back"),
-						side: "bottom",
-						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-							className: BrowserView_module_css_default.iconButton,
-							type: "button",
-							"aria-label": t("action.back"),
-							disabled: !canGoBack,
-							onClick: () => {
-								move(actions.back);
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				className: BrowserView_module_css_default.dock,
+				"data-browser-address-dock": "",
+				children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("form", {
+					className: BrowserView_module_css_default.toolbar,
+					role: "toolbar",
+					"aria-label": t("toolbar.label"),
+					onSubmit: navigate,
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
+							label: () => t("action.back"),
+							side: "bottom",
+							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								className: BrowserView_module_css_default.iconButton,
+								type: "button",
+								"aria-label": t("action.back"),
+								disabled: !canGoBack,
+								onClick: actions.back,
+								children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronLeftOutline14, {})
+							})
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
+							label: () => t("action.forward"),
+							side: "bottom",
+							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								className: BrowserView_module_css_default.iconButton,
+								type: "button",
+								"aria-label": t("action.forward"),
+								disabled: !canGoForward,
+								onClick: actions.forward,
+								children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronRightOutline14, {})
+							})
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
+							label: () => t("action.reload"),
+							side: "bottom",
+							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								className: BrowserView_module_css_default.iconButton,
+								type: "button",
+								"aria-label": t("action.reload"),
+								disabled: currentUrl === null,
+								onClick: actions.reload,
+								children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconRefreshOutline16, {})
+							})
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Input, {
+							className: BrowserView_module_css_default.address ?? "",
+							icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconGlobeOutline14, {}),
+							"aria-label": t("address.label"),
+							placeholder: t("address.placeholder"),
+							autoCapitalize: "none",
+							autoCorrect: "off",
+							spellCheck: false,
+							value: address,
+							onChange: (event) => {
+								actions.setAddress(event.currentTarget.value);
 							},
-							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronLeftOutline14, {})
+							onKeyDown: (event) => {
+								if (event.key !== "Enter") return;
+								event.preventDefault();
+								event.currentTarget.form?.requestSubmit();
+							}
 						})
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
-						label: () => t("action.forward"),
-						side: "bottom",
-						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-							className: BrowserView_module_css_default.iconButton,
-							type: "button",
-							"aria-label": t("action.forward"),
-							disabled: !canGoForward,
-							onClick: () => {
-								move(actions.forward);
-							},
-							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronRightOutline14, {})
-						})
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
-						label: () => t("action.reload"),
-						side: "bottom",
-						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-							className: BrowserView_module_css_default.iconButton,
-							type: "button",
-							"aria-label": t("action.reload"),
-							disabled: currentUrl === null,
-							onClick: () => {
-								move(actions.reload);
-							},
-							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconRefreshOutline16, {})
-						})
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Input, {
-						className: BrowserView_module_css_default.address ?? "",
-						icon: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconGlobeOutline14, {}),
-						"aria-label": t("address.label"),
-						placeholder: t("address.placeholder"),
-						autoCapitalize: "none",
-						autoCorrect: "off",
-						spellCheck: false,
-						value: address,
-						onChange: (event) => {
-							actions.setAddress(event.currentTarget.value);
-							setError(null);
-						},
-						onKeyDown: (event) => {
-							if (event.key !== "Enter") return;
-							event.preventDefault();
-							event.currentTarget.form?.requestSubmit();
-						}
-					})
-				]
+					]
+				})
 			});
-			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
-				className: `${BrowserView_module_css_default.root} ${composerInputHeader === null ? BrowserView_module_css_default.inline : ""}`,
+		}
+		//#endregion
+		//#region src/client/BrowserView.tsx
+		/** Sandboxed browser view with toolbar-owned navigation history. */
+		const FRAME_SANDBOX = "allow-forms allow-modals allow-popups allow-scripts";
+		/** Browser view registered into the session-scoped conversation view slot. */
+		function BrowserView({ useStore, actions, t }) {
+			const { history, cursor, revision, loading, error } = useStore((state) => state);
+			const currentUrl = history[cursor] ?? null;
+			(0, react.useEffect)(() => {
+				actions.setActive(true);
+				return () => {
+					actions.setActive(false);
+				};
+			}, [actions]);
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("section", {
+				className: BrowserView_module_css_default.root,
 				"data-conversation-composer-overlay": "",
-				children: [composerInputHeader === null ? toolbar : (0, react_dom.createPortal)(toolbar, composerInputHeader), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 					className: BrowserView_module_css_default.viewport,
 					"data-browser-viewport": "",
 					children: [
@@ -223,21 +204,22 @@ window.__ModuleLoader__.load({
 							sandbox: FRAME_SANDBOX,
 							referrerPolicy: "no-referrer",
 							loading: "eager",
-							onLoad: () => {
-								setLoading(false);
-							},
+							onLoad: actions.loaded,
 							onErrorCapture: () => {
-								setLoading(false);
-								setError("frame");
+								actions.fail("frame");
 							}
 						}, `${currentUrl}\u0000${revision}`)
 					]
-				})]
+				})
 			});
 		}
 		//#endregion
 		//#region src/client/browser-store.ts
 		/** Per-session address and toolbar-owned navigation history. */
+		function startLoading(draft) {
+			draft.error = null;
+			draft.loading = true;
+		}
 		/**
 		* Declare an exclusive browser store for one session view entry.
 		* @returns the store handle consumed by the slot renderer.
@@ -245,16 +227,24 @@ window.__ModuleLoader__.load({
 		function createBrowserViewStore() {
 			return (0, _deepseek_ai_dsh_client_runtime_client.defineStore)({
 				init: () => ({
+					active: false,
 					address: "",
 					history: [],
 					cursor: -1,
-					revision: 0
+					revision: 0,
+					loading: false,
+					error: null
 				}),
 				actions: {
+					setActive: (draft, active) => {
+						draft.active = active;
+					},
 					setAddress: (draft, address) => {
 						draft.address = address;
+						draft.error = null;
 					},
 					navigate: (draft, url) => {
+						startLoading(draft);
 						const current = draft.history[draft.cursor];
 						draft.address = url;
 						if (current !== url) {
@@ -268,6 +258,7 @@ window.__ModuleLoader__.load({
 						if (draft.cursor <= 0) return;
 						const target = draft.history[draft.cursor - 1];
 						if (target === void 0) return;
+						startLoading(draft);
 						draft.cursor -= 1;
 						draft.address = target;
 						draft.revision += 1;
@@ -276,6 +267,7 @@ window.__ModuleLoader__.load({
 						if (draft.cursor >= draft.history.length - 1) return;
 						const target = draft.history[draft.cursor + 1];
 						if (target === void 0) return;
+						startLoading(draft);
 						draft.cursor += 1;
 						draft.address = target;
 						draft.revision += 1;
@@ -283,8 +275,16 @@ window.__ModuleLoader__.load({
 					reload: (draft) => {
 						const current = draft.history[draft.cursor];
 						if (current === void 0) return;
+						startLoading(draft);
 						draft.address = current;
 						draft.revision += 1;
+					},
+					loaded: (draft) => {
+						draft.loading = false;
+					},
+					fail: (draft, error) => {
+						draft.loading = false;
+						draft.error = error;
 					}
 				}
 			});
@@ -348,14 +348,22 @@ window.__ModuleLoader__.load({
 				en
 			}), "conversation-browser: dictionaries");
 			const t = ctx.locale.bind(NS);
+			const browserStore = createBrowserViewStore();
 			ctx.slots.inject("conversation.view", () => ctx.slots.register({
 				name: "conversation.view",
 				id: "browser",
 				order: 20,
 				locale: NS,
 				label: () => t("view.browser"),
-				store: createBrowserViewStore
+				store: browserStore
 			}, BrowserView));
+			ctx.slots.inject("conversation.input.dock", () => ctx.slots.register({
+				name: "conversation.input.dock",
+				id: "browser-address",
+				order: 100,
+				locale: NS,
+				store: browserStore
+			}, BrowserAddressDock));
 		}
 		//#endregion
 		exports.apply = apply;

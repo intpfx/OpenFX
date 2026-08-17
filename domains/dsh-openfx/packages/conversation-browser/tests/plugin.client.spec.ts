@@ -5,8 +5,8 @@ import { apply as nodeApply, name as nodeName } from '../src/index.ts'
 import * as BrowserInvariant from '../src/invariant.ts'
 
 describe('browser plugin wiring', () => {
-  it('registers after Trajectory with an exclusive session store', () => {
-    let registration: Record<string, unknown> | undefined
+  it('shares one session store between the browser view and its input dock', () => {
+    const registrations: Record<string, unknown>[] = []
     const dispose = vi.fn()
     const ctx = {
       effect: (mount: () => unknown) => mount(),
@@ -17,7 +17,7 @@ describe('browser plugin wiring', () => {
       slots: {
         inject: (_name: string, mount: () => unknown) => mount(),
         register: (options: Record<string, unknown>) => {
-          registration = options
+          registrations.push(options)
           return dispose
         },
       },
@@ -25,13 +25,17 @@ describe('browser plugin wiring', () => {
 
     expect(inject).toEqual(['slots', 'locale'])
     apply(ctx as never)
-    expect(registration).toMatchObject({ id: 'browser', order: 20, locale: 'browser' })
-    expect((registration?.label as () => string)()).toBe('浏览器')
-    const createStore = registration?.store as () => {
+    expect(registrations).toHaveLength(2)
+    const view = registrations.find(registration => registration.name === 'conversation.view')
+    const dock = registrations.find(registration => registration.name === 'conversation.input.dock')
+    expect(view).toMatchObject({ id: 'browser', order: 20, locale: 'browser' })
+    expect(dock).toMatchObject({ id: 'browser-address', order: 100, locale: 'browser' })
+    expect((view?.label as () => string)()).toBe('浏览器')
+    expect(view?.store).toBe(dock?.store)
+    const store = view?.store as {
       create: (scope: string) => { getSnapshot: () => unknown }
       spec: { init: unknown; actions: unknown }
     }
-    const store = createStore()
     expect(store.spec.init).toBeTypeOf('function')
     expect(store.spec.actions).toBeTypeOf('object')
     expect(store.create('browser-test').getSnapshot()).toMatchObject({ cursor: -1, history: [] })
