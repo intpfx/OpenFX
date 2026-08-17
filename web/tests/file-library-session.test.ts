@@ -207,7 +207,7 @@ Deno.test("file library session owns loading and background processing", async (
   const fake = createStore([photo, video, audio]);
   const session = createFileLibrarySession({
     store: fake.store,
-    defaultAppCount: 13,
+    defaultAppCount: 19,
     createVideoThumbnail: () =>
       Promise.resolve({
         blob: new Blob(["preview"], { type: "image/jpeg" }),
@@ -253,7 +253,7 @@ Deno.test("file library session owns private mesh creation, pairing, and revocat
   const meshSaves: PrivateMeshLocalRecord[] = [];
   const session = createFileLibrarySession({
     store: fake.store,
-    defaultAppCount: 13,
+    defaultAppCount: 19,
     createVideoThumbnail: () => Promise.reject(new Error("unused")),
     privateMeshKeyVault,
     privateMeshStore: {
@@ -373,7 +373,7 @@ Deno.test("file library session accepts and persists an offline epoch update", a
   const fake = createStore([]);
   const session = createFileLibrarySession({
     store: fake.store,
-    defaultAppCount: 13,
+    defaultAppCount: 19,
     createVideoThumbnail: () => Promise.reject(new Error("unused")),
     privateMeshKeyVault: remainingVault,
     privateMeshStore: {
@@ -453,7 +453,7 @@ Deno.test("file library session reloads authorized remote catalog metadata while
   const fake = createStore([]);
   const session = createFileLibrarySession({
     store: fake.store,
-    defaultAppCount: 13,
+    defaultAppCount: 19,
     createVideoThumbnail: () => Promise.reject(new Error("unused")),
     privateMeshKeyVault: ownerVault,
     privateMeshStore: {
@@ -539,7 +539,7 @@ Deno.test("file library session serializes user mutations through busy state", a
   };
   const session = createFileLibrarySession({
     store: fake.store,
-    defaultAppCount: 13,
+    defaultAppCount: 19,
     createVideoThumbnail: () => Promise.reject(new Error("unused")),
   });
   await session.start();
@@ -566,7 +566,7 @@ Deno.test("file library session imports one native Photos selection through the 
   };
   const session = createFileLibrarySession({
     store: fake.store,
-    defaultAppCount: 13,
+    defaultAppCount: 19,
     createVideoThumbnail: () => Promise.reject(new Error("unused")),
     nativePhotoImporter: {
       isAvailable: () => Promise.resolve(true),
@@ -591,7 +591,7 @@ Deno.test("file library session can reopen Photos immediately after cancellation
   let pickCalls = 0;
   const session = createFileLibrarySession({
     store: fake.store,
-    defaultAppCount: 13,
+    defaultAppCount: 19,
     createVideoThumbnail: () => Promise.reject(new Error("unused")),
     nativePhotoImporter: {
       isAvailable: () => Promise.resolve(true),
@@ -616,7 +616,7 @@ Deno.test("file library session owns favorite mutations for every item kind", as
   const fake = createStore([libraryItem("app", "app")]);
   const session = createFileLibrarySession({
     store: fake.store,
-    defaultAppCount: 13,
+    defaultAppCount: 19,
     createVideoThumbnail: () => Promise.reject(new Error("unused")),
   });
   await session.start();
@@ -632,7 +632,7 @@ Deno.test("file library session owns file detail updates", async () => {
   const fake = createStore([libraryItem("photo", "image")]);
   const session = createFileLibrarySession({
     store: fake.store,
-    defaultAppCount: 13,
+    defaultAppCount: 19,
     createVideoThumbnail: () => Promise.reject(new Error("unused")),
   });
   await session.start();
@@ -681,7 +681,7 @@ Deno.test("file library session retries failed fingerprints once per start", asy
   };
   const session = createFileLibrarySession({
     store: fake.store,
-    defaultAppCount: 13,
+    defaultAppCount: 19,
     createVideoThumbnail: () => Promise.reject(new Error("unused")),
   });
 

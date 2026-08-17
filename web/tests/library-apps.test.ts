@@ -11,13 +11,13 @@ import { DEFAULT_LIBRARY_APPS } from "../src/file-library/default-apps.ts";
 
 Deno.test("the current project entries are built-in file-library Apps", () => {
   const appIds = LIBRARY_APPS.map((app) => app.id);
-  expect(appIds).toHaveLength(13);
+  expect(appIds).toHaveLength(19);
   expect(new Set(appIds).size).toBe(appIds.length);
   expect(new Set(appIds)).toEqual(new Set(LIBRARY_APP_IDS));
 
-  expect(DEFAULT_LIBRARY_APPS).toHaveLength(13);
+  expect(DEFAULT_LIBRARY_APPS).toHaveLength(19);
   expect(DEFAULT_LIBRARY_APPS.map((item) => item.kind)).toEqual(
-    Array.from({ length: 13 }, () => "app"),
+    Array.from({ length: 19 }, () => "app"),
   );
   expect(DEFAULT_LIBRARY_APPS.map((item) => item.app?.id)).toEqual(appIds);
   expect(DEFAULT_LIBRARY_APPS.map((item) => item.app?.description)).toEqual(
@@ -43,6 +43,12 @@ Deno.test("summary Apps stay in the HUD while runnable Apps remain openable", ()
   const summaryIds = [
     "bewlyscript",
     "chinagas-wms-qrcode",
+    "dsh-ambient-theme",
+    "dsh-conversation-browser",
+    "dsh-design-annotations",
+    "dsh-openfx-web",
+    "dsh-usage-balance",
+    "dsh-workspace-shell",
     "e-agent-framework",
     "live-system",
     "smartisax",

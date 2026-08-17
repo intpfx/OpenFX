@@ -24,7 +24,7 @@ Deploy。首页不是本机文件浏览器，也不是营销页，而是由应�
 - 照片在导入落盘后由可取消 Worker 解析 EXIF、位置和 Motion Photo；HEIC/HEIF 同时在本机
   生成 JPEG 预览代理，原始字节保持不变；任务状态持久化，中断后可恢复、失败后可重试；
 - 照片可按拍摄日期、实况、收藏、位置和相册派生查看，不复制原始字节；
-- 13 个内置 App 作为只读虚拟条目合并到同一内容墙，不占用 OPFS 配额。
+- 19 个内置 App 作为只读虚拟条目合并到同一内容墙，不占用 OPFS 配额。
 - 用户可以在本机创建不依赖账号的私有设备网络，或生成一次性配对请求加入已有网络；成员
   证书和网络密钥保存在本机 OPFS，设备私钥作为不可导出的 `CryptoKey` 保存在同源 IndexedDB
   密钥保险库，Deno Deploy 不保存私有网络状态。
@@ -209,7 +209,7 @@ Nuxt 应用。迁入实现使用浏览器 File、Worker 和 OPFS 边界，没有
 domains/          独立产品、历史项目和共享能力
   _shared/        运行时边界明确的共享算法与基础设施
   BewlyScript/    B 站桌面原站美化 userscript
-  dsh-balance-sidebar/  DSH Web 侧边栏余额与工作区 Token 统计插件
+  dsh-openfx/      DSH Web 五个能力包与一键组合包
   e/              运行时无关的 Agent 执行框架
   media-player/   文件库专用最小播放器
   openfx-macos/   Perry WKWebView 与原生 Photos 导入桥
@@ -218,22 +218,22 @@ web/              OPFS 文件库与 React + Nitro Web 产品
 
 主要 domain：
 
-| Domain                | 定位                                     | 与 Web 首页的关系        |
-| --------------------- | ---------------------------------------- | ------------------------ |
-| `_shared`             | 文件库 LIVP 容器编解码边界               | 被 Web 文件库引用        |
-| `BewlyScript`         | Vue userscript，输出单文件安装包         | 内置 App 与安装入口      |
-| `chinagas-wms-qrcode` | WMS 物料二维码 userscript                | 内置 App 介绍            |
-| `costing-assistant`   | 浏览器本地工程计价助手                   | 动态预览 App             |
-| `dsh-balance-sidebar` | DSH Web 侧边栏余额/花费/工作区热力图插件 | 与 Web 首页无关          |
-| `e`                   | Agent core、reference runtime 与前台协议 | 内置 App 介绍            |
-| `finlyzer`            | 本地优先账单分析 Electron 应用           | 动态预览 App             |
-| `gasmap`              | 燃气工程单线图工具                       | 动态预览 App             |
-| `hlc`                 | 圣灯社区 PWA/CMS                         | 只读同源展示 App         |
-| `how-much`            | 商品价格查询与地图报告                   | Web API 与内置 App       |
-| `map-poster`          | OSM 地图海报生成器                       | Web API 与内置 App       |
-| `media-player`        | OPFS 视频读取、Video.js 控件和播放引擎   | 文件能力，不重复作为 App |
-| `openfx-macos`        | Perry macOS 壳与原生 Photos Live Photo   | 复用完整 Web 文件库      |
-| `wanone`              | 早期静态站点纪念项目                     | 动态预览 App             |
+| Domain                | 定位                                       | 与 Web 首页的关系        |
+| --------------------- | ------------------------------------------ | ------------------------ |
+| `_shared`             | 文件库 LIVP 容器编解码边界                 | 被 Web 文件库引用        |
+| `BewlyScript`         | Vue userscript，输出单文件安装包           | 内置 App 与安装入口      |
+| `chinagas-wms-qrcode` | WMS 物料二维码 userscript                  | 内置 App 介绍            |
+| `costing-assistant`   | 浏览器本地工程计价助手                     | 动态预览 App             |
+| `dsh-openfx`          | DSH Web 主题、壳层、批注、用量与浏览器套件 | 六个内置 App 介绍        |
+| `e`                   | Agent core、reference runtime 与前台协议   | 内置 App 介绍            |
+| `finlyzer`            | 本地优先账单分析 Electron 应用             | 动态预览 App             |
+| `gasmap`              | 燃气工程单线图工具                         | 动态预览 App             |
+| `hlc`                 | 圣灯社区 PWA/CMS                           | 只读同源展示 App         |
+| `how-much`            | 商品价格查询与地图报告                     | Web API 与内置 App       |
+| `map-poster`          | OSM 地图海报生成器                         | Web API 与内置 App       |
+| `media-player`        | OPFS 视频读取、Video.js 控件和播放引擎     | 文件能力，不重复作为 App |
+| `openfx-macos`        | Perry macOS 壳与原生 Photos Live Photo     | 复用完整 Web 文件库      |
+| `wanone`              | 早期静态站点纪念项目                       | 动态预览 App             |
 
 Web 文件库还索引 Smartisax、LiveSystem 和 WanderingPlan 等外部项目。App 的公开文案、
 preview 和链接保存在 `web/content/library-apps.json`；ID、详情 renderer 与嵌入策略由
@@ -316,14 +316,14 @@ CI 会从 domain 源码重新构建它，CI 同时检查快照无差异；Deno D
 
 独立工具链：
 
-| 范围                          | 常用命令                                                                                  |
-| ----------------------------- | ----------------------------------------------------------------------------------------- |
-| `domains/BewlyScript`         | `bun install`、`bun run dev`、`bun run check:userscript`                                  |
-| `domains/dsh-balance-sidebar` | `pnpm install`、`pnpm test`、`pnpm build`（DSH web profile 以 link 方式安装）             |
-| `domains/media-player`        | `deno run --no-config -A openfx/build.ts`、`deno run --no-config -A npm:pnpm@9.15.9 test` |
-| `domains/map-poster`          | `bun test`、`bun run typecheck`                                                           |
-| `domains/finlyzer`            | `pnpm dev`、`pnpm dist:win`                                                               |
-| `domains/openfx-macos`        | `bun install`、`bun run check`、`bun run build`                                           |
+| 范围                   | 常用命令                                                                                  |
+| ---------------------- | ----------------------------------------------------------------------------------------- |
+| `domains/BewlyScript`  | `bun install`、`bun run dev`、`bun run check:userscript`                                  |
+| `domains/dsh-openfx`   | `pnpm install`、`pnpm test`、`pnpm typecheck`、`pnpm build`                               |
+| `domains/media-player` | `deno run --no-config -A openfx/build.ts`、`deno run --no-config -A npm:pnpm@9.15.9 test` |
+| `domains/map-poster`   | `bun test`、`bun run typecheck`                                                           |
+| `domains/finlyzer`     | `pnpm dev`、`pnpm dist:win`                                                               |
+| `domains/openfx-macos` | `bun install`、`bun run check`、`bun run build`                                           |
 
 ### Web 服务边界
 

@@ -1,0 +1,541 @@
+import { Service } from "@deepseek-ai/cordis";
+import { credentialRef } from "@deepseek-ai/dsh-credentials";
+//#region src/cost.ts
+/** deepseek-v4-flash official prices (CNY per 1M tokens). */
+const FLASH_COST_CONFIG = {
+	inputPerMillion: 1,
+	cacheReadPerMillion: .02,
+	cacheWritePerMillion: 0,
+	outputPerMillion: 2,
+	currency: "CNY"
+};
+/** deepseek-v4-pro official prices (CNY per 1M tokens). */
+const PRO_COST_CONFIG = {
+	inputPerMillion: 3,
+	cacheReadPerMillion: .025,
+	cacheWritePerMillion: 0,
+	outputPerMillion: 6,
+	currency: "CNY"
+};
+/** The default pricing preset (deepseek-v4-flash). */
+const DEFAULT_COST_CONFIG = FLASH_COST_CONFIG;
+/** Resolve a partial cost config against the defaults. */
+function resolveCostConfig(config = {}) {
+	return {
+		inputPerMillion: config.inputPerMillion ?? DEFAULT_COST_CONFIG.inputPerMillion,
+		cacheReadPerMillion: config.cacheReadPerMillion ?? DEFAULT_COST_CONFIG.cacheReadPerMillion,
+		cacheWritePerMillion: config.cacheWritePerMillion ?? DEFAULT_COST_CONFIG.cacheWritePerMillion,
+		outputPerMillion: config.outputPerMillion ?? DEFAULT_COST_CONFIG.outputPerMillion,
+		currency: config.currency ?? DEFAULT_COST_CONFIG.currency
+	};
+}
+/** Cost of a token count at a per-million price. */
+function costOfTokens(count, perMillion) {
+	if (count <= 0 || !Number.isFinite(count)) return 0;
+	return count / 1e6 * perMillion;
+}
+/** Total cost of one provider usage record. */
+function costOfUsage(usage, config) {
+	return costOfTokens(usage.inputTokens, config.inputPerMillion) + costOfTokens(usage.cacheReadTokens ?? 0, config.cacheReadPerMillion) + costOfTokens(usage.cacheWriteTokens ?? 0, config.cacheWritePerMillion) + costOfTokens(usage.outputTokens, config.outputPerMillion);
+}
+//#endregion
+//#region src/pricing.ts
+/** Official pricing page URL (zh-cn). */
+const PRICING_URL = "https://api-docs.deepseek.com/zh-cn/quick_start/pricing/";
+/** Number regex: `0.02`, `1`, `2`, `3.0` etc. Deliberately non-global: a
+* shared global regex leaks `lastIndex` across `exec` calls and would skip the
+* second price cell (the pro price), silently repricing pro sessions at the
+* flash rate. */
+const PRICE_RE = /(\d+(?:\.\d+)?)\s*元/;
+/** Strip HTML tags to plain text (keeps cell order). */
+function stripHtml(html) {
+	return html.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/\s+/g, " ").trim();
+}
+/** Parse one price cell text like `0.02元` into a number; NaN when absent. */
+function parsePriceCell(text) {
+	const m = PRICE_RE.exec(text);
+	if (m === null) return void 0;
+	const value = Number(m[1]);
+	return Number.isFinite(value) ? value : void 0;
+}
+/**
+* Parse the current single-price table: three rows labeled with the bucket
+* names, each carrying the flash and pro price cells.
+*/
+function parseCurrentTable(html) {
+	const hit = /百万tokens输入（缓存命中）([\s\S]{0,400}?)百万tokens输入（缓存未命中）([\s\S]{0,400}?)百万tokens输出([\s\S]{0,400}?)(?:并发限制|<\/table)/i.exec(stripHtml(html));
+	if (hit === null) return void 0;
+	const cacheReadCell = hit[1];
+	const inputCell = hit[2];
+	const outputCell = hit[3];
+	const cacheReadFlash = parsePriceCell(cacheReadCell);
+	const cacheReadPro = parsePriceCell(cacheReadCell.replace(/^\s*(\d+(?:\.\d+)?元)/, ""));
+	const inputFlash = parsePriceCell(inputCell);
+	const inputPro = parsePriceCell(inputCell.replace(/^\s*(\d+(?:\.\d+)?元)/, ""));
+	const outputFlash = parsePriceCell(outputCell);
+	const outputPro = parsePriceCell(outputCell.replace(/^\s*(\d+(?:\.\d+)?元)/, ""));
+	if (cacheReadFlash === void 0 || inputFlash === void 0 || outputFlash === void 0) return void 0;
+	return {
+		flash: {
+			cacheReadPerMillion: cacheReadFlash,
+			inputPerMillion: inputFlash,
+			outputPerMillion: outputFlash
+		},
+		pro: {
+			cacheReadPerMillion: cacheReadPro ?? cacheReadFlash,
+			inputPerMillion: inputPro ?? inputFlash,
+			outputPerMillion: outputPro ?? outputFlash
+		}
+	};
+}
+/**
+* Parse the upcoming peak-pricing table: model rows with off-peak and peak
+* cells, e.g. `deepseek-v4-flash 空闲时段 0.05 1.5 4.5 高峰时段 0.10 3.0 9.0`.
+*/
+function parsePeakTable(html) {
+	const text = stripHtml(html);
+	const flash = /deepseek-v4-flash\s+空闲时段\s+(\d+(?:\.\d+)?)元\s+(\d+(?:\.\d+)?)元\s+(\d+(?:\.\d+)?)元\s+高峰时段\s+(\d+(?:\.\d+)?)元\s+(\d+(?:\.\d+)?)元\s+(\d+(?:\.\d+)?)元/i.exec(text);
+	const pro = /deepseek-v4-pro\s+空闲时段\s+(\d+(?:\.\d+)?)元\s+(\d+(?:\.\d+)?)元\s+(\d+(?:\.\d+)?)元\s+高峰时段\s+(\d+(?:\.\d+)?)元\s+(\d+(?:\.\d+)?)元\s+(\d+(?:\.\d+)?)元/i.exec(text);
+	if (flash === null || pro === null) return void 0;
+	return {
+		flash: {
+			offPeak: {
+				cacheReadPerMillion: Number(flash[1]),
+				inputPerMillion: Number(flash[2]),
+				outputPerMillion: Number(flash[3])
+			},
+			peak: {
+				cacheReadPerMillion: Number(flash[4]),
+				inputPerMillion: Number(flash[5]),
+				outputPerMillion: Number(flash[6])
+			}
+		},
+		pro: {
+			offPeak: {
+				cacheReadPerMillion: Number(pro[1]),
+				inputPerMillion: Number(pro[2]),
+				outputPerMillion: Number(pro[3])
+			},
+			peak: {
+				cacheReadPerMillion: Number(pro[4]),
+				inputPerMillion: Number(pro[5]),
+				outputPerMillion: Number(pro[6])
+			}
+		}
+	};
+}
+/**
+* Fetch and parse the official pricing page.
+* @param fetchImpl - fetch-compatible function (injected for testability).
+* @param timeoutMs - abort timeout.
+* @returns the parsed snapshot; `error` is set when fetch/parse failed.
+*/
+async function fetchPricing(fetchImpl = globalThis.fetch, timeoutMs = 15e3) {
+	const fetchedAt = Date.now();
+	try {
+		const controller = new AbortController();
+		const timer = setTimeout(() => controller.abort(), timeoutMs);
+		let response;
+		try {
+			response = await fetchImpl(PRICING_URL, { signal: controller.signal });
+		} finally {
+			clearTimeout(timer);
+		}
+		if (!response.ok) return {
+			fetchedAt,
+			current: fallbackCurrent(),
+			error: `pricing page HTTP ${response.status}`
+		};
+		const html = await response.text();
+		const current = parseCurrentTable(html);
+		if (current === void 0) return {
+			fetchedAt,
+			current: fallbackCurrent(),
+			error: "pricing table not found"
+		};
+		return {
+			fetchedAt,
+			current,
+			...parsePeakTable(html) === void 0 ? {} : { peak: parsePeakTable(html) }
+		};
+	} catch (error) {
+		return {
+			fetchedAt,
+			current: fallbackCurrent(),
+			error: error instanceof Error ? error.message : String(error)
+		};
+	}
+}
+/** Built-in fallback (deepseek-v4-flash current official prices). */
+function fallbackCurrent() {
+	return {
+		flash: {
+			cacheReadPerMillion: .02,
+			inputPerMillion: 1,
+			outputPerMillion: 2
+		},
+		pro: {
+			cacheReadPerMillion: .025,
+			inputPerMillion: 3,
+			outputPerMillion: 6
+		}
+	};
+}
+const BEIJING_HOUR_FORMATTER = new Intl.DateTimeFormat("en-US", {
+	timeZone: "Asia/Shanghai",
+	hour: "numeric",
+	hour12: false
+});
+/**
+* Whether the current moment is a peak-pricing hour in Beijing time:
+* 09:00-12:00 and 14:00-18:00 (peak); everything else is off-peak.
+*/
+function isPeakHour(now = /* @__PURE__ */ new Date()) {
+	const parts = BEIJING_HOUR_FORMATTER.formatToParts(now);
+	const hour = Number(parts.find((p) => p.type === "hour")?.value);
+	if (Number.isNaN(hour)) return false;
+	return hour >= 9 && hour < 12 || hour >= 14 && hour < 18;
+}
+//#endregion
+//#region src/service.ts
+/**
+* dsh-usage-balance host service — the `usage-balance.*` RPC domain.
+* Resolves the DeepSeek API key through the DSH credentials seam
+* (`ctx.credentials`, ref `DEEPSEEK_API_KEY`) and queries the official
+* Get User Balance endpoint, caching the result so the browser readout can
+* poll without spamming the provider. Also prices every live session's
+* `tokenUsage` projection against the official per-model prices (auto model
+* detection from each session's request header, peak/off-peak aware).
+*
+* Ported from dsh-balance-meter (BSD-3-Clause, Copyright Ghost011118);
+* extended with the all-sessions cost snapshot used by the sidebar widget.
+* @module dsh-usage-balance/service
+*/
+/** DeepSeek API base URL. */
+const DEFAULT_BASE_URL = "https://api.deepseek.com";
+/** Default credential reference for the DeepSeek API key. */
+const DEFAULT_API_KEY_ENV = "DEEPSEEK_API_KEY";
+/** Default provider query pacing. */
+const DEFAULT_REFRESH_INTERVAL_SECONDS = 30;
+/** Official peak-pricing rollout: 2026-08-17 00:00 Beijing time (UTC+8). */
+const PEAK_PRICING_START_MS = Date.UTC(2026, 7, 16, 16, 0, 0);
+/** Parse a base URL into a safe `{ origin, pathPrefix }` pair. */
+function parseBaseUrl(raw) {
+	let url;
+	try {
+		url = new URL(raw);
+	} catch {
+		throw new Error(`dsh-usage-balance: invalid baseUrl "${raw}"`);
+	}
+	if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error(`dsh-usage-balance: baseUrl must be http(s), got "${url.protocol}"`);
+	let prefix = url.pathname.replace(/\/+$/, "");
+	return {
+		origin: url.origin,
+		prefix
+	};
+}
+/**
+* DeepSeek Get User Balance client + per-session cost estimator. Resolution of
+* the API key re-reads the credentials seam on every query so a changed key
+* reaches the next query without a plugin restart.
+*/
+var UsageBalanceService = class extends Service {
+	apiKeyEnv;
+	baseUrl;
+	refreshIntervalMs;
+	model;
+	/** Explicit per-million price overrides from `config.cost`, applied on top of any model preset. */
+	userCostOverrides;
+	pricingSnapshot;
+	pricingTimer;
+	cached;
+	cachedAt = 0;
+	inflight;
+	enabled;
+	constructor(ctx, config = {}) {
+		super(ctx, "usageBalance");
+		this.apiKeyEnv = credentialRef(config.apiKeyEnv ?? "DEEPSEEK_API_KEY");
+		this.baseUrl = config.baseUrl ?? "https://api.deepseek.com";
+		this.refreshIntervalMs = Math.max(0, (config.refreshIntervalSeconds ?? 30) * 1e3);
+		this.model = config.model ?? "auto";
+		this.userCostOverrides = config.cost;
+		this.enabled = config.enabled ?? true;
+		this.refreshPricing();
+		const cadenceMs = (config.pricingRefreshHours ?? 6) * 36e5;
+		this.pricingTimer = setInterval(() => {
+			this.refreshPricing();
+		}, cadenceMs);
+		this.pricingTimer.unref?.();
+	}
+	/** Whether the balance service answers queries while enabled. */
+	isEnabled() {
+		return this.enabled;
+	}
+	/** Master switch: stop answering fresh provider queries (cache may still read). */
+	setEnabled(enabled) {
+		this.enabled = enabled;
+	}
+	/** Change the session-cost pricing mode (used by the settings surface). */
+	setModel(model) {
+		this.model = model;
+	}
+	/**
+	* RPC: most recent balance + usage view. A healthy (error-free) cached view
+	* is returned while still fresh; an erroneous view is never reused as fresh,
+	* so the next poll re-queries the provider and the readout recovers
+	* automatically once the underlying condition clears (without a manual
+	* click). Concurrent queries are deduped.
+	*/
+	async view() {
+		if (!this.enabled) return {
+			fetchedAt: Date.now(),
+			available: false,
+			balances: [],
+			error: "disabled"
+		};
+		const now = Date.now();
+		const cached = this.cached;
+		if (cached !== void 0 && cached.error === void 0 && now - this.cachedAt < this.refreshIntervalMs && this.refreshIntervalMs > 0) return cached;
+		if (this.inflight !== void 0) return this.inflight;
+		this.inflight = this.query().then((view) => {
+			this.cached = view;
+			this.cachedAt = Date.now();
+			return view;
+		}).finally(() => {
+			this.inflight = void 0;
+		});
+		return this.inflight;
+	}
+	/** RPC: force a fresh provider query (bypasses the cache window). */
+	async refresh() {
+		const view = await this.query();
+		this.cached = view;
+		this.cachedAt = Date.now();
+		return view;
+	}
+	/**
+	* RPC: current session token usage + estimated cost. Reads the official
+	* `tokenUsage` projection (registered by dsh-token-meter) through the
+	* session-projection registry and applies per-million prices for the model
+	* actually driving this session (read from the session's request header),
+	* falling back to the configured `model` preset when the live model cannot
+	* be resolved. Returns zeroed values when the projection is unavailable.
+	* @param session - the session whose usage is read.
+	*/
+	sessionCost(session) {
+		const registry = this.ctx.get("sessionProjections");
+		let usage;
+		if (registry !== void 0) {
+			const value = registry.snapshot(session).values.tokenUsage;
+			if (value !== null && typeof value === "object") usage = value;
+		}
+		const buckets = usage ?? {
+			uncachedInputTokens: 0,
+			outputTokens: 0,
+			cacheReadTokens: 0,
+			cacheWriteTokens: 0
+		};
+		const { model, pricingKey } = this.resolveModelForSession(session);
+		const config = this.effectiveCostConfig(pricingKey);
+		const cost = costOfUsage({
+			inputTokens: buckets.uncachedInputTokens,
+			outputTokens: buckets.outputTokens,
+			cacheReadTokens: buckets.cacheReadTokens,
+			cacheWriteTokens: buckets.cacheWriteTokens
+		}, config);
+		return {
+			...buckets,
+			cost,
+			currency: config.currency,
+			pricingKey,
+			...model === void 0 ? {} : { model },
+			breakdown: {
+				input: costOfTokens(buckets.uncachedInputTokens, config.inputPerMillion),
+				cacheRead: costOfTokens(buckets.cacheReadTokens, config.cacheReadPerMillion),
+				cacheWrite: costOfTokens(buckets.cacheWriteTokens, config.cacheWritePerMillion),
+				output: costOfTokens(buckets.outputTokens, config.outputPerMillion)
+			}
+		};
+	}
+	/**
+	* RPC: cost snapshot over every live session, in creation order.
+	* Sessions that left memory (not live) are absent; the browser half prices
+	* those from the client-side `tokenUsage` projection at the fallback preset.
+	*/
+	sessionCosts() {
+		const sessions = this.ctx.get("sessions");
+		const sessionsMap = {};
+		for (const session of sessions?.list() ?? []) sessionsMap[session.id] = this.sessionCost(session);
+		return {
+			sessions: sessionsMap,
+			pricedAt: Date.now()
+		};
+	}
+	/**
+	* Resolve the pricing preset (and the raw model id, when known) for this
+	* session. An explicit configured `model` (`flash`/`pro`) wins over
+	* auto-detection; otherwise (`auto`) the session's request header model id is
+	* mapped to a preset, falling back to flash when no header exists or the id
+	* is not a known DeepSeek family.
+	* @param session - the session whose model to resolve.
+	*/
+	resolveModelForSession(session) {
+		if (this.model !== "auto") return { pricingKey: this.model };
+		const modelId = (typeof session.requestHeader === "function" ? session.requestHeader() : void 0)?.config?.model;
+		if (typeof modelId === "string" && modelId.length > 0) {
+			const lower = modelId.toLowerCase();
+			if (lower.includes("pro")) return {
+				model: modelId,
+				pricingKey: "pro"
+			};
+			if (lower.includes("flash")) return {
+				model: modelId,
+				pricingKey: "flash"
+			};
+		}
+		return { pricingKey: "flash" };
+	}
+	/**
+	* The cost config in effect right now for one pricing preset: auto-fetched
+	* official prices when available (peak table applied by the current
+	* Beijing-hour band once the peak rollout is live), otherwise the configured
+	* preset for that model.
+	* @param pricingKey - the model preset to price for (`flash` or `pro`).
+	*/
+	effectiveCostConfig(pricingKey = "flash") {
+		const snapshot = this.pricingSnapshot;
+		if (snapshot !== void 0 && snapshot.error === void 0) {
+			const prices = snapshot.current[pricingKey];
+			let cacheRead = prices.cacheReadPerMillion;
+			let input = prices.inputPerMillion;
+			let output = prices.outputPerMillion;
+			const peak = snapshot.peak?.[pricingKey];
+			if (peak !== void 0 && Date.now() >= PEAK_PRICING_START_MS) {
+				const band = isPeakHour() ? peak.peak : peak.offPeak;
+				cacheRead = band.cacheReadPerMillion;
+				input = band.inputPerMillion;
+				output = band.outputPerMillion;
+			}
+			return resolveCostConfig({
+				inputPerMillion: input,
+				cacheReadPerMillion: cacheRead,
+				outputPerMillion: output,
+				currency: this.userCostOverrides?.currency ?? this.modelCost(pricingKey).currency
+			});
+		}
+		return resolveCostConfig({
+			inputPerMillion: this.applyOverride(pricingKey, "inputPerMillion"),
+			cacheReadPerMillion: this.applyOverride(pricingKey, "cacheReadPerMillion"),
+			cacheWritePerMillion: pricingKey === "pro" ? PRO_COST_CONFIG.cacheWritePerMillion : FLASH_COST_CONFIG.cacheWritePerMillion,
+			outputPerMillion: this.applyOverride(pricingKey, "outputPerMillion"),
+			currency: this.userCostOverrides?.currency ?? this.modelCost(pricingKey).currency
+		});
+	}
+	/** One preset field, with any explicit user override applied. */
+	applyOverride(pricingKey, field) {
+		const override = this.userCostOverrides?.[field];
+		if (typeof override === "number") return override;
+		return this.modelCost(pricingKey)[field];
+	}
+	/** The built-in preset prices for one model. */
+	modelCost(pricingKey) {
+		return pricingKey === "pro" ? PRO_COST_CONFIG : FLASH_COST_CONFIG;
+	}
+	/**
+	* Re-fetch the official pricing page and update the effective cost config.
+	* Failures keep the previous snapshot (or the built-in preset) and record
+	* the error so the client can surface it.
+	*/
+	async refreshPricing() {
+		this.pricingSnapshot = await fetchPricing();
+	}
+	/** Current pricing snapshot (for diagnostics / client display). */
+	pricingInfo() {
+		return this.pricingSnapshot;
+	}
+	async query() {
+		const key = await this.resolveApiKey();
+		const fetchedAt = Date.now();
+		if (key === void 0) return {
+			fetchedAt,
+			available: false,
+			balances: [],
+			error: `no API key (store ${this.apiKeyEnv} via the credentials seam, or export it in the environment)`
+		};
+		try {
+			const { origin, prefix } = parseBaseUrl(this.baseUrl);
+			const url = `${origin}${prefix}/user/balance`;
+			const controller = new AbortController();
+			const timer = setTimeout(() => controller.abort(), 15e3);
+			let response;
+			try {
+				response = await fetch(url, {
+					method: "GET",
+					headers: {
+						authorization: `Bearer ${key}`,
+						accept: "application/json"
+					},
+					signal: controller.signal
+				});
+			} finally {
+				clearTimeout(timer);
+			}
+			if (!response.ok) {
+				const body = await response.text().catch(() => "");
+				return {
+					fetchedAt,
+					available: false,
+					balances: [],
+					error: `Get User Balance failed: HTTP ${response.status}${body ? ` — ${truncate(body, 200)}` : ""}`
+				};
+			}
+			const payload = await response.json();
+			const buckets = Array.isArray(payload.balance_infos) ? payload.balance_infos.reduce((items, balance) => {
+				const currency = String(balance.currency ?? "");
+				if (currency === "") return items;
+				items.push({
+					currency,
+					total_balance: String(balance.total_balance ?? "0"),
+					granted_balance: String(balance.granted_balance ?? "0"),
+					topped_up_balance: String(balance.topped_up_balance ?? "0")
+				});
+				return items;
+			}, []) : [];
+			const total = buckets.length === 1 ? Number(buckets[0].total_balance) : void 0;
+			return {
+				fetchedAt,
+				available: payload.is_available !== false,
+				balances: buckets,
+				...total === void 0 || Number.isNaN(total) ? {} : {
+					total,
+					currency: buckets[0].currency
+				}
+			};
+		} catch (error) {
+			return {
+				fetchedAt,
+				available: false,
+				balances: [],
+				error: error instanceof Error ? error.message : String(error)
+			};
+		}
+	}
+	/** Resolve the current API key through the credentials seam or the environment. */
+	async resolveApiKey() {
+		const credentials = this.ctx.get("credentials");
+		if (credentials !== void 0) {
+			const hit = await credentials.resolve(this.apiKeyEnv);
+			if (hit !== void 0 && hit.value.length > 0) return hit.value;
+		}
+		const value = this.ctx.get("launchEnvironment")?.get(String(this.apiKeyEnv));
+		if (value !== void 0 && value.value.length > 0) return value.value;
+		const envFallback = process.env[String(this.apiKeyEnv)];
+		if (typeof envFallback === "string" && envFallback.length > 0) return envFallback;
+	}
+};
+/** Bound a provider error body for reporting. */
+function truncate(text, max) {
+	return text.length <= max ? text : `${text.slice(0, max)}..`;
+}
+//#endregion
+export { PRICING_URL as a, DEFAULT_COST_CONFIG as c, costOfTokens as d, costOfUsage as f, UsageBalanceService as i, FLASH_COST_CONFIG as l, DEFAULT_BASE_URL as n, fetchPricing as o, resolveCostConfig as p, DEFAULT_REFRESH_INTERVAL_SECONDS as r, isPeakHour as s, DEFAULT_API_KEY_ENV as t, PRO_COST_CONFIG as u };

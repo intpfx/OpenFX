@@ -1,0 +1,11 @@
+- insert:
+    - id: usage-balance
+      name: "dsh-usage-balance"
+    - id: ambient-theme
+      name: "dsh-ambient-theme"
+    - id: workspace-shell
+      name: "dsh-workspace-shell"
+    - id: design-annotations
+      name: "dsh-design-annotations"
+    - id: conversation-browser
+      name: "dsh-conversation-browser"

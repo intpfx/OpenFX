@@ -1,8 +1,0 @@
-# dsh-balance-sidebar bundle patch: inserts its plugin row into the web profile
-# roster. The single row mounts BOTH halves: the host side (DeepSeek Get User
-# Balance query + /api/balance-sidebar JSON endpoints) and the browser side
-# (sidebar footer widget + session-row cost chips, via the dsh.client
-# declaration in package.json).
-- insert:
-    - id: balance-sidebar
-      name: "dsh-balance-sidebar"

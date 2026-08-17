@@ -50,7 +50,7 @@
       "domains/finlyzer/",
       "domains/hlc/",
       "domains/BewlyScript/",
-      "domains/dsh-balance-sidebar/",
+      "domains/dsh-openfx/",
       "domains/media-player/",
       "web/public/pdq/"
     ]
@@ -63,7 +63,7 @@
     "web/public/bewlyscript/",
     "domains/hlc/",
     "domains/BewlyScript/",
-    "domains/dsh-balance-sidebar/",
+    "domains/dsh-openfx/",
     "domains/media-player/",
     "web/public/pdq/",
     ".sisyphus"

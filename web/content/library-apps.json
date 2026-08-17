@@ -48,6 +48,132 @@
       ]
     },
     {
+      "id": "dsh-openfx-web",
+      "name": "DSH OpenFX Web",
+      "description": "OpenFX 为 DeepSeek Harness Web 维护的一键组合包，把用量、动态主题、紧凑工作区、设计批注和会话浏览器按稳定顺序装配。",
+      "coverDescription": "DeepSeek Harness Web 体验套件",
+      "tech": ["DeepSeek Harness", "Cordis", "TypeScript", "WebGL"],
+      "sourcePath": "domains/dsh-openfx/ · npm:dsh-openfx-web",
+      "highlights": [
+        "一个 bundle 装配五个可独立安装、独立发布的能力包。",
+        "拆分视觉、壳层、批注、计费和浏览状态，避免单插件跨域演进。",
+        "提供 profile patch、独立构建、测试与旧包迁移说明。"
+      ],
+      "links": [
+        { "label": "npm", "href": "https://www.npmjs.com/package/dsh-openfx-web" },
+        {
+          "label": "GitHub",
+          "href": "https://github.com/intpfx/OpenFX/tree/main/domains/dsh-openfx"
+        }
+      ]
+    },
+    {
+      "id": "dsh-usage-balance",
+      "name": "DSH Usage Balance",
+      "description": "账户余额、会话成本与工作区 token 热力图插件；凭据只留在宿主，同源 API 向浏览器提供展示数据。",
+      "coverDescription": "余额、成本与 token 热力图",
+      "tech": ["TypeScript", "React", "DSH Slots", "DeepSeek API"],
+      "sourcePath": "domains/dsh-openfx/packages/usage-balance/ · npm:dsh-usage-balance",
+      "highlights": [
+        "实时账户余额和宿主定价的会话成本。",
+        "按工作区聚合 token、成本与会话数量。",
+        "通过稳定 data 属性与紧凑壳层可选组合。"
+      ],
+      "links": [
+        { "label": "npm", "href": "https://www.npmjs.com/package/dsh-usage-balance" },
+        {
+          "label": "GitHub",
+          "href": "https://github.com/intpfx/OpenFX/tree/main/domains/dsh-openfx/packages/usage-balance"
+        }
+      ]
+    },
+    {
+      "id": "dsh-ambient-theme",
+      "name": "DSH Ambient Theme",
+      "description": "面向 DeepSeek Harness Web 的流体极光、粒子网格和鲸鱼点云背景，自动适配深浅主题与减少动态效果偏好。",
+      "coverDescription": "极光、粒子网格与鲸鱼点云",
+      "tech": ["WebGL", "Canvas", "SVG", "Vanilla JS"],
+      "sourcePath": "domains/dsh-openfx/packages/ambient-theme/ · npm:dsh-ambient-theme",
+      "highlights": [
+        "全屏 WebGL 流体极光与指针响应粒子网格。",
+        "输入卡鲸鱼点云使用包内 SVG，不依赖外部资源。",
+        "背景不拦截交互，减少动态效果时退化为静态帧。"
+      ],
+      "links": [
+        { "label": "npm", "href": "https://www.npmjs.com/package/dsh-ambient-theme" },
+        {
+          "label": "GitHub",
+          "href": "https://github.com/intpfx/OpenFX/tree/main/domains/dsh-openfx/packages/ambient-theme"
+        }
+      ]
+    },
+    {
+      "id": "dsh-workspace-shell",
+      "name": "DSH Workspace Shell",
+      "description": "双行工作区与会话标签、输入区搜索、统计重定位和窄屏布局组成的紧凑 Harness Web 壳层。",
+      "coverDescription": "紧凑工作区与会话壳层",
+      "tech": ["Vanilla JS", "Responsive UI", "Cordis", "DOM"],
+      "sourcePath": "domains/dsh-openfx/packages/workspace-shell/ · npm:dsh-workspace-shell",
+      "highlights": [
+        "工作区和会话改为可横向滚动的双行顶部标签。",
+        "搜索贴合输入卡，结果面板向上展开。",
+        "桌面与窄屏共享会话状态，不复制宿主业务逻辑。"
+      ],
+      "links": [
+        { "label": "npm", "href": "https://www.npmjs.com/package/dsh-workspace-shell" },
+        {
+          "label": "GitHub",
+          "href": "https://github.com/intpfx/OpenFX/tree/main/domains/dsh-openfx/packages/workspace-shell"
+        }
+      ]
+    },
+    {
+      "id": "dsh-design-annotations",
+      "name": "DSH Design Annotations",
+      "description": "通过 /design 圈选网页 DOM、持久化本地批注，并在用户确认后把批注交给当前 DeepSeek 会话。",
+      "coverDescription": "DOM 圈选与设计批注",
+      "tech": ["Vanilla JS", "DOM", "LocalStorage", "DSH Commands"],
+      "sourcePath": "domains/dsh-openfx/packages/design-annotations/ · npm:dsh-design-annotations",
+      "highlights": [
+        "点击任意界面元素创建定位明确的设计批注。",
+        "本地保存、逐条删除、清空和未发送状态管理。",
+        "只有明确选择发送时才写入当前会话。"
+      ],
+      "links": [
+        {
+          "label": "npm",
+          "href": "https://www.npmjs.com/package/dsh-design-annotations"
+        },
+        {
+          "label": "GitHub",
+          "href": "https://github.com/intpfx/OpenFX/tree/main/domains/dsh-openfx/packages/design-annotations"
+        }
+      ]
+    },
+    {
+      "id": "dsh-conversation-browser",
+      "name": "DSH Conversation Browser",
+      "description": "注册在“轨迹”右侧的会话级沙箱浏览器，提供地址输入、后退、前进与刷新，并保留每个会话自己的历史。",
+      "coverDescription": "会话级沙箱浏览器",
+      "tech": ["React", "Iframe Sandbox", "DSH Slots", "TypeScript"],
+      "sourcePath": "domains/dsh-openfx/packages/conversation-browser/ · npm:dsh-conversation-browser",
+      "highlights": [
+        "每个会话独立保存地址、历史游标与刷新版本。",
+        "只接受 HTTP(S)，拒绝凭据 URL 和危险协议。",
+        "地址栏可嵌入输入卡，旧宿主自动使用顶部回退布局。"
+      ],
+      "links": [
+        {
+          "label": "npm",
+          "href": "https://www.npmjs.com/package/dsh-conversation-browser"
+        },
+        {
+          "label": "GitHub",
+          "href": "https://github.com/intpfx/OpenFX/tree/main/domains/dsh-openfx/packages/conversation-browser"
+        }
+      ]
+    },
+    {
       "id": "bewlyscript",
       "name": "BewlyScript",
       "description": "基于 keleus/BewlyCat 的 OpenFX userscript 版，专注 B 站桌面原站美化，并在 m 站提示用户访问桌面版。",

@@ -1,0 +1,8 @@
+# dsh-usage-balance bundle patch: inserts its plugin row into the web profile
+# roster. The single row mounts BOTH halves: the host side (DeepSeek Get User
+# Balance query + /api/usage-balance JSON endpoints) and the browser side
+# (sidebar footer widget + session-row cost chips, via the dsh.client
+# declaration in package.json).
+- insert:
+    - id: usage-balance
+      name: "dsh-usage-balance"

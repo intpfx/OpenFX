@@ -1,0 +1,30 @@
+{
+  "name": "dsh-workspace-shell",
+  "description": "Compact workspace tabs, session navigation, composer search and responsive shell for DeepSeek Harness web.",
+  "version": "0.1.0",
+  "type": "module",
+  "engines": { "node": "^22.19.0 || >=24.0.0" },
+  "scripts": {
+    "build": "node ../../shared/build-vanilla-client.mjs",
+    "prepare": "pnpm run build",
+    "pack:check": "pnpm pack --dry-run"
+  },
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": ["lib", "src", "cordis.patch.yml", "README.md", "LICENSE"],
+  "license": "MIT",
+  "publishConfig": { "access": "public" },
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": { "inject": [], "platform": "web" }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/intpfx/OpenFX.git",
+    "directory": "domains/dsh-openfx/packages/workspace-shell"
+  }
+}
