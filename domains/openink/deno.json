@@ -1,0 +1,41 @@
+{
+  "name": "@openfx/openink",
+  "version": "0.1.0",
+  "private": true,
+  "exports": "./src/main.tsx",
+  "tasks": {
+    "dev": "deno run --config deno.json --lock ../../deno.lock --frozen -A tools/vite.ts dev",
+    "build": "deno run --config deno.json --lock ../../deno.lock --frozen -A tools/vite.ts build",
+    "test": "deno test tests",
+    "typecheck": "deno check src/main.tsx",
+    "check": "deno fmt --check . && deno lint . && deno task test && deno task typecheck"
+  },
+  "imports": {
+    "@phosphor-icons/react": "npm:@phosphor-icons/react@2.1.10",
+    "@std/expect": "jsr:@std/expect@^1.0.17",
+    "@vitejs/plugin-react": "npm:@vitejs/plugin-react@5.1.4",
+    "@voidzero-dev/vite-plus-core": "npm:@voidzero-dev/vite-plus-core@0.1.21",
+    "perfect-freehand": "npm:perfect-freehand@1.2.3",
+    "react": "npm:react@19.2.6",
+    "react/jsx-runtime": "npm:react@19.2.6/jsx-runtime",
+    "react-dom": "npm:react-dom@19.2.6",
+    "react-dom/client": "npm:react-dom@19.2.6/client"
+  },
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "lib": ["DOM", "DOM.Iterable", "ESNext", "deno.ns"],
+    "types": [
+      "npm:@types/react@^19.2.0",
+      "npm:@types/react-dom@^19.2.0"
+    ]
+  },
+  "fmt": {
+    "exclude": [".vite/", "public/"],
+    "lineWidth": 88,
+    "semiColons": true,
+    "singleQuote": false
+  },
+  "lint": {
+    "exclude": [".vite/", "public/"]
+  }
+}

@@ -230,10 +230,10 @@ Deno.test("default Apps are merged without entering the OPFS item index", () => 
   const merged = withDefaultLibraryApps([]);
 
   expect(merged).toEqual(DEFAULT_LIBRARY_APPS);
-  expect(merged).toHaveLength(19);
+  expect(merged).toHaveLength(20);
   expect(searchLibraryItems(merged, "OpenStreetMap").map((item) => item.name))
     .toContain("Map Poster");
-  expect(searchLibraryItems(merged, "App")).toHaveLength(19);
+  expect(searchLibraryItems(merged, "App")).toHaveLength(20);
 });
 
 Deno.test("App fallback colors are stable opaque HSL colors", () => {

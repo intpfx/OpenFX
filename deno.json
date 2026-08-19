@@ -5,7 +5,8 @@
   "nodeModulesDir": "auto",
   "workspace": [
     "./web",
-    "./domains/e"
+    "./domains/e",
+    "./domains/openink"
   ],
   "tasks": {
     "fmt": "deno fmt .",
@@ -29,7 +30,9 @@
     "semiColons": true,
     "singleQuote": false,
     "exclude": [
-      "web/public/pdq/"
+      "web/public/pdq/",
+      "domains/openink/.vite/",
+      "domains/openink/public/"
     ]
   },
   "lint": {
@@ -52,7 +55,9 @@
       "domains/BewlyScript/",
       "domains/dsh-openfx/",
       "domains/media-player/",
-      "web/public/pdq/"
+      "web/public/pdq/",
+      "domains/openink/.vite/",
+      "domains/openink/public/"
     ]
   },
   "exclude": [

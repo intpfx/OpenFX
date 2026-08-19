@@ -11,18 +11,36 @@ import { DEFAULT_LIBRARY_APPS } from "../src/file-library/default-apps.ts";
 
 Deno.test("the current project entries are built-in file-library Apps", () => {
   const appIds = LIBRARY_APPS.map((app) => app.id);
-  expect(appIds).toHaveLength(19);
+  expect(appIds).toHaveLength(20);
   expect(new Set(appIds).size).toBe(appIds.length);
   expect(new Set(appIds)).toEqual(new Set(LIBRARY_APP_IDS));
 
-  expect(DEFAULT_LIBRARY_APPS).toHaveLength(19);
+  expect(DEFAULT_LIBRARY_APPS).toHaveLength(20);
   expect(DEFAULT_LIBRARY_APPS.map((item) => item.kind)).toEqual(
-    Array.from({ length: 19 }, () => "app"),
+    Array.from({ length: 20 }, () => "app"),
   );
   expect(DEFAULT_LIBRARY_APPS.map((item) => item.app?.id)).toEqual(appIds);
   expect(DEFAULT_LIBRARY_APPS.map((item) => item.app?.description)).toEqual(
     LIBRARY_APPS.map((app) => app.description),
   );
+});
+
+Deno.test("OpenInk opens as a same-origin pressure drawing App", () => {
+  const openInk = LIBRARY_APPS.find((app) => app.id === "openink");
+
+  expect(openInk?.sourcePath).toBe("domains/openink/");
+  expect(openInk?.tech).toContain("perfect-freehand");
+  expect(openInk?.preview).toEqual({
+    src: "/openink/index.html",
+    title: "OpenInk 动态预览",
+    sandbox: "allow-scripts allow-same-origin allow-downloads",
+  });
+  expect(getLibraryAppRenderer("openink")).toEqual({
+    kind: "embedded",
+    layout: "fill",
+    sandbox: "preview",
+  });
+  expect(isLibraryAppOpenable("openink")).toBe(true);
 });
 
 Deno.test("e is introduced as a runtime-neutral built-in App", async () => {
@@ -75,6 +93,7 @@ Deno.test("built-in Apps use live previews or stable color tiles without covers"
     "finlyzer",
     "gasmap",
     "hlc",
+    "openink",
     "wanone-memorial",
   ];
 

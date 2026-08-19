@@ -28,6 +28,7 @@ Deno.test("web publication targets drive assets, proxies, and preparations", () 
     "hlc",
     "costing-assistant",
     "bewlyscript",
+    "openink",
     "media-player",
   ]);
   expect(new Set(WEB_DEV_PROXY_PATHS)).toEqual(
@@ -40,6 +41,7 @@ Deno.test("web publication targets drive assets, proxies, and preparations", () 
       "/hlc",
       "/costing-assistant",
       "/bewlyscript",
+      "/openink",
       "/media-player",
     ]),
   );

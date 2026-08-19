@@ -225,6 +225,20 @@ OpenFX 是个人项目集合 monorepo。Agent 应以实际源码、配置、测�
 - 测试避免网络，使用 fixture、预设或显式坐标。
 - 保留 `originalankur/maptoposter` 来源与 OpenFX 改造说明。
 
+### `domains/openink`
+
+- 原始 `x/y/pressure/time` 点列是笔画事实；不得只保存 `perfect-freehand` 输出多边形，
+  改粗细或后续笔刷变化必须从原始点重算。
+- `perfect-freehand` 只负责笔画几何，调用时显式传入 `size`、`thinning`、`smoothing`、
+  `streamline`、`simulatePressure` 与 `last`，不依赖可能变化的隐式默认值。
+- 选择、移动和缩放只更新笔画 transform，不重写原始点；一个擦除或变换手势只生成一次历史
+  commit，避免撤销粒度泄漏 Pointer Events 频率。
+- v1 只保存版本化原生笔画文档到同源 `localStorage`；不把未来照片蒙版、SDF、图层、标签、
+  云同步或 Carbo 专有格式伪装成已实现能力。
+- SVG 是 canonical 导出，PNG 只由 SVG 在本机派生；导出和存储失败不得清空当前画稿。
+- `public/openink/` 是 domain build 生成的同源发布快照。修改源码后运行
+  `deno task build`，并保持 publication target、App catalog、renderer 与测试一致。
+
 ### HLC、Finlyzer 与历史项目
 
 - HLC Web 面只发布同源只读展示，不接入登录、Deno KV 或写入工作流。
@@ -280,6 +294,8 @@ deno task --config web/deno.json build
   更新确认验收。
 - Agent framework：`deno test --allow-env domains/e/tests`。
 - Map Poster：`deno test --allow-env web/tests/map-poster.test.ts`。
+- OpenInk：在 domain 内运行 `deno task check` 与 `deno task build`，再在桌面和窄屏验证
+  压感/鼠标绘制、成组擦除、选择移动缩放、撤销重做、本机恢复与 SVG/PNG 下载。
 - Media player：在 domain 内运行 format、lint、typecheck、test 和 build。
 - macOS App：在 `domains/openfx-macos` 内运行 `bun run check` 与 `bun run build`。
 - BewlyScript：`bun run check:userscript`。

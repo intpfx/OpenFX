@@ -8,10 +8,14 @@
     "jsr:@std/internal@^1.0.13": "1.0.13",
     "jsr:@std/path@*": "1.1.4",
     "jsr:@std/path@^1.1.4": "1.1.4",
+    "npm:@phosphor-icons/react@2.1.10": "2.1.10_react@19.2.6_react-dom@19.2.6__react@19.2.6",
     "npm:@phosphor-icons/react@^2.1.10": "2.1.10_react@19.2.6_react-dom@19.2.6__react@19.2.6",
     "npm:@types/jsmediatags@3.9.6": "3.9.6",
+    "npm:@types/react-dom@^19.2.0": "19.2.4_@types+react@19.2.18",
+    "npm:@types/react@^19.2.0": "19.2.18",
     "npm:@videojs/react@10.0.0-beta.26": "10.0.0-beta.26_react@19.2.6_react-dom@19.2.6__react@19.2.6_@svta+cml-cta@1.0.6__@svta+cml-structured-field-values@1.1.3___@svta+cml-utils@1.5.0__@svta+cml-utils@1.5.0_@svta+cml-structured-field-values@1.1.3__@svta+cml-utils@1.5.0_@svta+cml-utils@1.5.0",
     "npm:@vitejs/plugin-react@5": "5.1.4_vite@8.0.13__esbuild@0.25.12",
+    "npm:@vitejs/plugin-react@5.1.4": "5.1.4_vite@8.0.13__esbuild@0.25.12",
     "npm:@vitejs/plugin-react@^5.1.4": "5.1.4_vite@8.0.13__esbuild@0.25.12",
     "npm:@voidzero-dev/vite-plus-core@0.1.21": "0.1.21",
     "npm:concurrently@9.2.1": "9.2.1",
@@ -23,8 +27,11 @@
     "npm:nitropack@^2.13.4": "2.13.4",
     "npm:opfs-tools@0.7.4": "0.7.4",
     "npm:pdq-wasm@0.3.9": "0.3.9",
+    "npm:perfect-freehand@1.2.3": "1.2.3",
     "npm:pnpm@9.15.9": "9.15.9",
+    "npm:react-dom@19.2.6": "19.2.6_react@19.2.6",
     "npm:react-dom@^19.1.0": "19.2.6_react@19.2.6",
+    "npm:react@19.2.6": "19.2.6",
     "npm:react@^19.1.0": "19.2.6",
     "npm:vite-plus@0.1.21": "0.1.21_vite@8.2.0"
   },
@@ -1320,6 +1327,18 @@
     "@types/jsmediatags@3.9.6": {
       "integrity": "sha512-a2IVxVGXBCCVzONBFKGBb2mnTNMAt0shl+Mb5+wM5YVxymhgqNilr/7/x+XePYM2DnmWwCYlBRjq+8q7nsp2PA=="
     },
+    "@types/react-dom@19.2.4_@types+react@19.2.18": {
+      "integrity": "sha512-Bsc+QHgp+P/F02XDzNCY9jnZNCUuLki36KT7VKrTXXLdHf+vHMNZnW1rVu5DNW/rCK+fya3DATySbLM4yhtKUw==",
+      "dependencies": [
+        "@types/react"
+      ]
+    },
+    "@types/react@19.2.18": {
+      "integrity": "sha512-AnzbBERsrLKtk2XSfTbYRLjQPdy116Sty4q+T+Bp3IC4l6jNBvreVPAHmpq9qhXQM7CXZPjLVmGMw9sy+hxQ3w==",
+      "dependencies": [
+        "csstype"
+      ]
+    },
     "@types/resolve@1.20.2": {
       "integrity": "sha512-60BCwRFOZCQhDncwQdxxeOEEkbc5dIMccYLwbxsS4TUNeVECQ/pBJ0j09mrHOl/JJvpRPGwO9SvE4nR2Nb/a4Q=="
     },
@@ -1833,6 +1852,9 @@
       "dependencies": [
         "uncrypto"
       ]
+    },
+    "csstype@3.2.3": {
+      "integrity": "sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ=="
     },
     "dashjs@5.2.0_@svta+cml-cta@1.0.6__@svta+cml-structured-field-values@1.1.3___@svta+cml-utils@1.5.0__@svta+cml-utils@1.5.0_@svta+cml-structured-field-values@1.1.3__@svta+cml-utils@1.5.0_@svta+cml-utils@1.5.0": {
       "integrity": "sha512-2W2KHFN53Sk7+rtdnIfSUK/3Oov+hraMTeVZwDOTSCNKM1cQtFiJdblNzRMnl59a/QDseG7JW+PC9mh/B+CMcg==",
@@ -2816,6 +2838,9 @@
     "perfect-debounce@2.1.0": {
       "integrity": "sha512-LjgdTytVFXeUgtHZr9WYViYSM/g8MkcTPYDlPa3cDqMirHjKiSZPYd6DoL7pK8AJQr+uWkQvCjHNdiMqsrJs+g=="
     },
+    "perfect-freehand@1.2.3": {
+      "integrity": "sha512-bHZSfqDHGNlPpgH2yxXgPHlQSPpEbo+qg7li0M78J9vNAi2yjwLeA4x79BEQhX44lEWpCLSFCeRZwpw0niiXPA=="
+    },
     "picocolors@1.1.1": {
       "integrity": "sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA=="
     },
@@ -3729,6 +3754,19 @@
       "domains/e": {
         "dependencies": [
           "jsr:@std/assert@^1.0.19"
+        ]
+      },
+      "domains/openink": {
+        "dependencies": [
+          "jsr:@std/expect@^1.0.17",
+          "npm:@phosphor-icons/react@2.1.10",
+          "npm:@types/react-dom@^19.2.0",
+          "npm:@types/react@^19.2.0",
+          "npm:@vitejs/plugin-react@5.1.4",
+          "npm:@voidzero-dev/vite-plus-core@0.1.21",
+          "npm:perfect-freehand@1.2.3",
+          "npm:react-dom@19.2.6",
+          "npm:react@19.2.6"
         ]
       },
       "web": {

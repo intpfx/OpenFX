@@ -68,6 +68,12 @@ export const WEB_PUBLICATION_TARGETS = Object.freeze(
       proxyPath: "/bewlyscript",
     },
     {
+      id: "openink",
+      directory: new URL("../domains/openink/public", import.meta.url),
+      maxAge: MONTH_SECONDS,
+      proxyPath: "/openink",
+    },
+    {
       id: "media-player",
       directory: new URL("../domains/media-player/.openfx-public", import.meta.url),
       baseURL: "/media-player",

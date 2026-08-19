@@ -24,7 +24,7 @@ Deploy。首页不是本机文件浏览器，也不是营销页，而是由应�
 - 照片在导入落盘后由可取消 Worker 解析 EXIF、位置和 Motion Photo；HEIC/HEIF 同时在本机
   生成 JPEG 预览代理，原始字节保持不变；任务状态持久化，中断后可恢复、失败后可重试；
 - 照片可按拍摄日期、实况、收藏、位置和相册派生查看，不复制原始字节；
-- 19 个内置 App 作为只读虚拟条目合并到同一内容墙，不占用 OPFS 配额。
+- 20 个内置 App 作为只读虚拟条目合并到同一内容墙，不占用 OPFS 配额。
 - 用户可以在本机创建不依赖账号的私有设备网络，或生成一次性配对请求加入已有网络；成员
   证书和网络密钥保存在本机 OPFS，设备私钥作为不可导出的 `CryptoKey` 保存在同源 IndexedDB
   密钥保险库，Deno Deploy 不保存私有网络状态。
@@ -212,6 +212,7 @@ domains/          独立产品、历史项目和共享能力
   dsh-openfx/      DSH Web 五个能力包与一键组合包
   e/              运行时无关的 Agent 执行框架
   media-player/   文件库专用最小播放器
+  openink/        本地优先压感绘图工作台
   openfx-macos/   Perry WKWebView 与原生 Photos 导入桥
 web/              OPFS 文件库与 React + Nitro Web 产品
 ```
@@ -232,6 +233,7 @@ web/              OPFS 文件库与 React + Nitro Web 产品
 | `how-much`            | 商品价格查询与地图报告                     | Web API 与内置 App       |
 | `map-poster`          | OSM 地图海报生成器                         | Web API 与内置 App       |
 | `media-player`        | OPFS 视频读取、Video.js 控件和播放引擎     | 文件能力，不重复作为 App |
+| `openink`             | 本地优先压感绘图与 SVG/PNG 导出            | 动态预览 App             |
 | `openfx-macos`        | Perry macOS 壳与原生 Photos Live Photo     | 复用完整 Web 文件库      |
 | `wanone`              | 早期静态站点纪念项目                       | 动态预览 App             |
 
@@ -269,6 +271,10 @@ Web 入口的几个深 Module 分别承担稳定边界：
   导入后的文件状态与 OPFS mutation 仍由 Web session 管理；
 - `domains/map-poster/src/web-service.ts` 管理地图海报输入与生成 use case，
   `viewport.ts` 管理纯 Web Mercator/瓦片计算，Web 服务层只注入 Nominatim adapter。
+- `domains/openink/src/drawing-document.ts`
+  保存版本化文档、原始压力点、不可变历史、变换纯函数与 `perfect-freehand`
+  派生轮廓命中；`stroke-renderer.ts` 复用同一轮廓并收束 SVG 导出，React 页面只处理
+  Pointer Events、渲染、本机持久化与下载。
 
 ## 开发
 
@@ -311,8 +317,8 @@ entry 而拖慢 Deploy warm-up。根配置固定发布到 `universes/openfx`；�
 CI 会从 domain 源码重新构建它，CI 同时检查快照无差异；Deno Deploy 直接复用该
 快照，避免在 3 GiB builder 中再次运行独立 pnpm 安装。
 
-这里的“统一”为根产品工具链收口，不是删除所有 domain 的包清单。下列独立产品仍由其
-上游工具链读取各自的 `package.json` 和锁文件，因此继续保留：
+这里的“统一”为根产品工具链收口，不是删除所有 domain 的独立构建边界。下列产品仍由其
+自身配置和工具链构建；需要包清单或独立锁文件的上游项目继续保留：
 
 独立工具链：
 
@@ -323,6 +329,7 @@ CI 会从 domain 源码重新构建它，CI 同时检查快照无差异；Deno D
 | `domains/media-player` | `deno run --no-config -A openfx/build.ts`、`deno run --no-config -A npm:pnpm@9.15.9 test` |
 | `domains/map-poster`   | `bun test`、`bun run typecheck`                                                           |
 | `domains/finlyzer`     | `pnpm dev`、`pnpm dist:win`                                                               |
+| `domains/openink`      | `deno task check`、`deno task build`                                                      |
 | `domains/openfx-macos` | `bun install`、`bun run check`、`bun run build`                                           |
 
 ### Web 服务边界
@@ -334,6 +341,7 @@ CI 会从 domain 源码重新构建它，CI 同时检查快照无差异；Deno D
 - `POST /api/map-poster/render`
 - `/media-player/*`
 - `/hlc/*`
+- `/openink/*`
 
 Map Poster 生产环境需要：
 
@@ -358,6 +366,10 @@ Map Poster 生产环境需要：
   `m.bilibili.com` 只显示请求桌面站提示，不挂载主 Vue App。
 - `domains/e` 的 core 必须保持运行时无关；文件系统、模型、Git、MCP 和副作用通过接口
   注入，危险动作经过 `SafetyActionGate`。
+- `domains/openink` 以原始压力点作为画稿事实，`perfect-freehand`
+  只负责生成可重算的轮廓；选择移动与缩放只修改变换。本轮持久化为同源 `localStorage`
+  中的单份 v1 文档，SVG 是 canonical 导出，PNG 由 SVG
+  本机派生；尚未实现照片清理、SDF、图层或同步。
 - `domains/openfx-macos` 的 `bun run build` 会先构建并暂存 Web 公共资源，校验 Perry 与
   Swift/C ABI 桥，产出 ad-hoc Hardened Runtime 签名的
   `dist/OpenFX.app`；正式分发仍需单独 配置 Developer ID、notarization 或 App Store

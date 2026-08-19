@@ -31,6 +31,7 @@ const LIBRARY_APP_RENDERERS = {
   "dsh-design-annotations": { kind: "summary" },
   "dsh-conversation-browser": { kind: "summary" },
   bewlyscript: { kind: "summary" },
+  openink: { kind: "embedded", layout: "fill", sandbox: "preview" },
   gasmap: { kind: "embedded" },
   finlyzer: { kind: "embedded" },
   "costing-assistant": { kind: "embedded" },
