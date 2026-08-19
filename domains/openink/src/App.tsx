@@ -17,11 +17,13 @@ import {
   PencilSimple,
   Plus,
   Selection,
+  SquaresFour,
   Stack,
   Trash,
   X,
 } from "@phosphor-icons/react";
 import {
+  type CSSProperties,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
   useEffect,
@@ -38,6 +40,7 @@ import {
   type ContentSelection,
   createDrawingDocument,
   createHistory,
+  DOCUMENT_MATERIAL_PRESETS,
   type DocumentHistory,
   type DocumentMaterial,
   type DrawingDocument,
@@ -90,7 +93,12 @@ import {
   type PhotoImportCommit,
 } from "./PhotoCleanupWorkspace.tsx";
 import { type DecodedPhoto, decodePhotoFile } from "./photo-import.ts";
-import { type RenderedInkLayer, strokeToSvgPath } from "./stroke-renderer.ts";
+import {
+  PIXEL_CONTENT_CELL_SIZE,
+  PIXEL_CONTENT_FILL_SIZE,
+  type RenderedInkLayer,
+  strokeToMaterialSvgPath,
+} from "./stroke-renderer.ts";
 
 const STORAGE_KEY = "openink.document.v1";
 const DEFAULT_INK = "#18201c";
@@ -228,6 +236,106 @@ const MATERIAL_PATTERN_IDS: Readonly<
   warhol: "openink-warhol-dots",
 };
 
+const MATERIAL_INK_FILTER_IDS: Readonly<
+  Partial<Record<DocumentMaterial["preset"], string>>
+> = {
+  blackboard: "openink-blackboard-chalk",
+  blueprint: "openink-blueprint-luminous",
+  letterpress: "openink-letterpress-press",
+  paper: "openink-paper-ink",
+  pixels: "openink-pixels-contrast",
+  sketch: "openink-sketch-graphite",
+  warhol: "openink-warhol-registration",
+};
+
+const MATERIAL_INK_MASK_IDS: Readonly<
+  Partial<Record<DocumentMaterial["preset"], string>>
+> = {
+  pixels: "openink-pixels-content-mask",
+};
+
+function materialUsesTexture(material: DocumentMaterial): boolean {
+  return material.textureStrength > 0 || material.edgeSoftness > 0 ||
+    material.bleed > 0;
+}
+
+function MaterialTextureFilterDefinition(
+  props: Readonly<{ material: DocumentMaterial }>,
+) {
+  const material = props.material;
+  if (!materialUsesTexture(material)) return null;
+  return (
+    <filter
+      id="openink-ink-texture"
+      x="-8%"
+      y="-8%"
+      width="116%"
+      height="116%"
+    >
+      <feTurbulence
+        type="fractalNoise"
+        baseFrequency="0.72"
+        numOctaves={2}
+        seed={23}
+        result="openink-noise"
+      />
+      <feDisplacementMap
+        in="SourceGraphic"
+        in2="openink-noise"
+        scale={material.bleed * 8}
+        xChannelSelector="R"
+        yChannelSelector="G"
+        result="openink-displaced"
+      />
+      <feGaussianBlur
+        in="openink-displaced"
+        stdDeviation={material.edgeSoftness * 1.25}
+        result="openink-softened"
+      />
+      <feComposite
+        in="openink-noise"
+        in2="openink-softened"
+        operator="in"
+        result="openink-grain"
+      />
+      <feComponentTransfer
+        in="openink-grain"
+        result="openink-grain-strength"
+      >
+        <feFuncA type="linear" slope={material.textureStrength} />
+      </feComponentTransfer>
+      <feBlend
+        in="openink-softened"
+        in2="openink-grain-strength"
+        mode="multiply"
+      />
+    </filter>
+  );
+}
+
+function MaterialInk(
+  props: Readonly<{ material: DocumentMaterial; children: ReactNode }>,
+) {
+  const presetFilterId = MATERIAL_INK_FILTER_IDS[props.material.preset];
+  const presetMaskId = MATERIAL_INK_MASK_IDS[props.material.preset];
+  return (
+    <g
+      className={`material-ink material-ink-${props.material.preset}`}
+      filter={presetFilterId ? `url(#${presetFilterId})` : undefined}
+      mask={presetMaskId ? `url(#${presetMaskId})` : undefined}
+      shapeRendering={props.material.preset === "pixels" ? "crispEdges" : undefined}
+    >
+      <g
+        filter={materialUsesTexture(props.material)
+          ? "url(#openink-ink-texture)"
+          : undefined}
+      >
+        {props.children}
+      </g>
+    </g>
+  );
+}
+
 function MaterialPatternDefinitions(
   props: Readonly<{ material: DocumentMaterial }>,
 ) {
@@ -235,111 +343,436 @@ function MaterialPatternDefinitions(
   switch (material.preset) {
     case "blackboard":
       return (
-        <pattern
-          id="openink-blackboard-dust"
-          width="42"
-          height="42"
-          patternUnits="userSpaceOnUse"
-        >
-          <circle cx="8" cy="11" r="1.2" fill={material.foreground} opacity="0.07" />
-          <circle cx="31" cy="28" r="0.8" fill={material.foreground} opacity="0.05" />
-        </pattern>
+        <>
+          <filter
+            id="openink-blackboard-chalk"
+            x="-10%"
+            y="-10%"
+            width="120%"
+            height="120%"
+            colorInterpolationFilters="sRGB"
+          >
+            <feTurbulence
+              type="fractalNoise"
+              baseFrequency="0.62 0.18"
+              numOctaves={2}
+              seed={41}
+              result="chalk-noise"
+            />
+            <feDisplacementMap
+              in="SourceGraphic"
+              in2="chalk-noise"
+              scale="1.8"
+              xChannelSelector="R"
+              yChannelSelector="G"
+              result="chalk-rough"
+            />
+            <feComposite
+              in="chalk-noise"
+              in2="chalk-rough"
+              operator="in"
+              result="chalk-grain"
+            />
+            <feBlend in="chalk-rough" in2="chalk-grain" mode="screen" />
+          </filter>
+          <pattern
+            id="openink-blackboard-dust"
+            width="72"
+            height="72"
+            patternUnits="userSpaceOnUse"
+          >
+            <path
+              d="M-8 18C14 13 38 22 80 15M-6 53C22 47 48 58 78 50"
+              fill="none"
+              stroke={material.foreground}
+              strokeOpacity="0.035"
+              strokeWidth="2.5"
+            />
+            <circle
+              cx="8"
+              cy="11"
+              r="1.2"
+              fill={material.foreground}
+              opacity="0.09"
+            />
+            <circle
+              cx="49"
+              cy="37"
+              r="0.8"
+              fill={material.foreground}
+              opacity="0.07"
+            />
+            <circle
+              cx="24"
+              cy="64"
+              r="1.6"
+              fill={material.foreground}
+              opacity="0.04"
+            />
+          </pattern>
+        </>
       );
     case "blueprint":
       return (
-        <pattern
-          id="openink-blueprint-grid"
-          width="32"
-          height="32"
-          patternUnits="userSpaceOnUse"
-        >
-          <path
-            d="M32 0H0V32"
-            fill="none"
-            stroke={material.foreground}
-            strokeOpacity="0.09"
-            strokeWidth="1"
-          />
-        </pattern>
+        <>
+          <filter
+            id="openink-blueprint-luminous"
+            x="-10%"
+            y="-10%"
+            width="120%"
+            height="120%"
+            colorInterpolationFilters="sRGB"
+          >
+            <feGaussianBlur
+              in="SourceAlpha"
+              stdDeviation="1.15"
+              result="blueprint-blur"
+            />
+            <feFlood
+              floodColor="#79e5ff"
+              floodOpacity="0.34"
+              result="blueprint-color"
+            />
+            <feComposite
+              in="blueprint-color"
+              in2="blueprint-blur"
+              operator="in"
+              result="blueprint-glow"
+            />
+            <feMerge>
+              <feMergeNode in="blueprint-glow" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+          <pattern
+            id="openink-blueprint-grid"
+            width="40"
+            height="40"
+            patternUnits="userSpaceOnUse"
+          >
+            <path
+              d="M8 0V40M16 0V40M24 0V40M32 0V40M0 8H40M0 16H40M0 24H40M0 32H40"
+              fill="none"
+              stroke={material.foreground}
+              strokeOpacity="0.055"
+              strokeWidth="0.7"
+            />
+            <path
+              d="M40 0H0V40"
+              fill="none"
+              stroke={material.foreground}
+              strokeOpacity="0.2"
+              strokeWidth="1.1"
+            />
+          </pattern>
+        </>
       );
     case "letterpress":
       return (
-        <pattern
-          id="openink-letterpress-fibers"
-          width="24"
-          height="24"
-          patternUnits="userSpaceOnUse"
-        >
-          <path
-            d="M-4 7L9 -2M3 26L26 3M18 29L29 18"
-            stroke={material.foreground}
-            strokeOpacity="0.035"
-            strokeWidth="1"
-          />
-        </pattern>
+        <>
+          <filter
+            id="openink-letterpress-press"
+            x="-10%"
+            y="-10%"
+            width="120%"
+            height="120%"
+            colorInterpolationFilters="sRGB"
+          >
+            <feGaussianBlur in="SourceAlpha" stdDeviation="0.45" result="press-blur" />
+            <feOffset
+              in="press-blur"
+              dx="-0.75"
+              dy="-0.75"
+              result="press-highlight-offset"
+            />
+            <feFlood
+              floodColor="#fff7e7"
+              floodOpacity="0.8"
+              result="press-highlight-color"
+            />
+            <feComposite
+              in="press-highlight-color"
+              in2="press-highlight-offset"
+              operator="in"
+              result="press-highlight"
+            />
+            <feOffset
+              in="press-blur"
+              dx="0.85"
+              dy="0.85"
+              result="press-shadow-offset"
+            />
+            <feFlood
+              floodColor="#3f2119"
+              floodOpacity="0.48"
+              result="press-shadow-color"
+            />
+            <feComposite
+              in="press-shadow-color"
+              in2="press-shadow-offset"
+              operator="in"
+              result="press-shadow"
+            />
+            <feMerge>
+              <feMergeNode in="press-highlight" />
+              <feMergeNode in="press-shadow" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+          <pattern
+            id="openink-letterpress-fibers"
+            width="32"
+            height="32"
+            patternUnits="userSpaceOnUse"
+          >
+            <path
+              d="M-4 9L11 -3M2 34L34 2M22 36L36 22"
+              stroke={material.foreground}
+              strokeOpacity="0.035"
+              strokeWidth="1"
+            />
+            <circle
+              cx="7"
+              cy="20"
+              r="0.9"
+              fill={material.foreground}
+              opacity="0.045"
+            />
+            <circle
+              cx="27"
+              cy="11"
+              r="0.7"
+              fill={material.foreground}
+              opacity="0.04"
+            />
+          </pattern>
+        </>
       );
     case "paper":
       return (
-        <pattern
-          id="openink-paper-rule"
-          width="100"
-          height="36"
-          patternUnits="userSpaceOnUse"
-        >
-          <path
-            d="M0 35.5H100"
-            stroke="#6c9aab"
-            strokeOpacity="0.18"
-            strokeWidth="1"
-          />
-        </pattern>
+        <>
+          <filter id="openink-paper-ink" x="-8%" y="-8%" width="116%" height="116%">
+            <feTurbulence
+              type="fractalNoise"
+              baseFrequency="0.015 0.4"
+              numOctaves={1}
+              seed={17}
+              result="paper-fiber"
+            />
+            <feDisplacementMap
+              in="SourceGraphic"
+              in2="paper-fiber"
+              scale="1.1"
+              xChannelSelector="R"
+              yChannelSelector="G"
+              result="paper-rough"
+            />
+            <feMorphology in="paper-rough" operator="dilate" radius="0.12" />
+          </filter>
+          <pattern
+            id="openink-paper-rule"
+            width="160"
+            height="40"
+            patternUnits="userSpaceOnUse"
+          >
+            <path
+              d="M0 39.5H160"
+              stroke="#6c9aab"
+              strokeOpacity="0.24"
+              strokeWidth="1"
+            />
+            <path
+              d="M28 0V40"
+              stroke="#d17a70"
+              strokeOpacity="0.22"
+              strokeWidth="1"
+            />
+          </pattern>
+        </>
       );
     case "pixels":
       return (
-        <pattern
-          id="openink-pixels-grid"
-          width="16"
-          height="16"
-          patternUnits="userSpaceOnUse"
-        >
-          <path
-            d="M16 0H0V16"
-            fill="none"
-            stroke="#202524"
-            strokeOpacity="0.08"
-            strokeWidth="1"
-            shapeRendering="crispEdges"
-          />
-        </pattern>
+        <>
+          <filter
+            id="openink-pixels-contrast"
+            x="-2%"
+            y="-2%"
+            width="104%"
+            height="104%"
+            colorInterpolationFilters="sRGB"
+          >
+            <feComponentTransfer>
+              <feFuncA type="discrete" tableValues="0 0 0 1 1" />
+            </feComponentTransfer>
+          </filter>
+          <pattern
+            id="openink-pixels-grid"
+            width="24"
+            height="24"
+            patternUnits="userSpaceOnUse"
+          >
+            <rect width="12" height="12" fill="#202524" opacity="0.035" />
+            <rect
+              x="12"
+              y="12"
+              width="12"
+              height="12"
+              fill="#202524"
+              opacity="0.035"
+            />
+            <path
+              d="M24 0H0V24M12 0V24M0 12H24"
+              fill="none"
+              stroke="#202524"
+              strokeOpacity="0.095"
+              strokeWidth="1"
+              shapeRendering="crispEdges"
+            />
+          </pattern>
+          <pattern
+            id="openink-pixels-content-cells"
+            width={PIXEL_CONTENT_CELL_SIZE}
+            height={PIXEL_CONTENT_CELL_SIZE}
+            patternUnits="userSpaceOnUse"
+          >
+            <rect
+              width={PIXEL_CONTENT_FILL_SIZE}
+              height={PIXEL_CONTENT_FILL_SIZE}
+              fill="#fff"
+              shapeRendering="crispEdges"
+            />
+          </pattern>
+          <mask
+            id="openink-pixels-content-mask"
+            x="0"
+            y="0"
+            width="100%"
+            height="100%"
+            maskUnits="userSpaceOnUse"
+          >
+            <rect
+              width="100%"
+              height="100%"
+              fill="url(#openink-pixels-content-cells)"
+            />
+          </mask>
+        </>
       );
     case "sketch":
       return (
-        <pattern
-          id="openink-sketch-hatch"
-          width="18"
-          height="18"
-          patternUnits="userSpaceOnUse"
-          patternTransform="rotate(18)"
-        >
-          <path
-            d="M0 0V18M9 0V18"
-            stroke="#3b3b38"
-            strokeOpacity="0.035"
-            strokeWidth="1"
-          />
-        </pattern>
+        <>
+          <filter
+            id="openink-sketch-graphite"
+            x="-10%"
+            y="-10%"
+            width="120%"
+            height="120%"
+          >
+            <feTurbulence
+              type="fractalNoise"
+              baseFrequency="0.38 0.75"
+              numOctaves={2}
+              seed={29}
+              result="graphite-noise"
+            />
+            <feDisplacementMap
+              in="SourceGraphic"
+              in2="graphite-noise"
+              scale="1.35"
+              xChannelSelector="R"
+              yChannelSelector="G"
+              result="graphite-rough"
+            />
+            <feComposite
+              in="graphite-noise"
+              in2="graphite-rough"
+              operator="in"
+              result="graphite-grain"
+            />
+            <feBlend in="graphite-rough" in2="graphite-grain" mode="multiply" />
+          </filter>
+          <pattern
+            id="openink-sketch-hatch"
+            width="22"
+            height="22"
+            patternUnits="userSpaceOnUse"
+            patternTransform="rotate(18)"
+          >
+            <path
+              d="M0 0V22M7 0V22M17 0V22"
+              stroke="#3b3b38"
+              strokeOpacity="0.035"
+              strokeWidth="0.8"
+            />
+            <circle cx="12" cy="8" r="0.7" fill="#3b3b38" opacity="0.045" />
+          </pattern>
+        </>
       );
     case "warhol":
       return (
-        <pattern
-          id="openink-warhol-dots"
-          width="28"
-          height="28"
-          patternUnits="userSpaceOnUse"
-        >
-          <circle cx="7" cy="7" r="4.5" fill="#ffe447" opacity="0.78" />
-          <circle cx="21" cy="21" r="4.5" fill="#52e5ca" opacity="0.58" />
-        </pattern>
+        <>
+          <filter
+            id="openink-warhol-registration"
+            x="-14%"
+            y="-14%"
+            width="128%"
+            height="128%"
+            colorInterpolationFilters="sRGB"
+          >
+            <feOffset in="SourceAlpha" dx="8" dy="7" result="warhol-cyan-alpha" />
+            <feFlood
+              floodColor="#29dbc2"
+              floodOpacity="0.92"
+              result="warhol-cyan-color"
+            />
+            <feComposite
+              in="warhol-cyan-color"
+              in2="warhol-cyan-alpha"
+              operator="in"
+              result="warhol-cyan"
+            />
+            <feOffset
+              in="SourceAlpha"
+              dx="-6"
+              dy="5"
+              result="warhol-yellow-alpha"
+            />
+            <feFlood
+              floodColor="#ffe147"
+              floodOpacity="0.88"
+              result="warhol-yellow-color"
+            />
+            <feComposite
+              in="warhol-yellow-color"
+              in2="warhol-yellow-alpha"
+              operator="in"
+              result="warhol-yellow"
+            />
+            <feMerge>
+              <feMergeNode in="warhol-cyan" />
+              <feMergeNode in="warhol-yellow" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+          <pattern
+            id="openink-warhol-dots"
+            width="36"
+            height="36"
+            patternUnits="userSpaceOnUse"
+          >
+            <rect width="18" height="18" fill="#ff6aae" opacity="0.32" />
+            <rect
+              x="18"
+              y="18"
+              width="18"
+              height="18"
+              fill="#ff6aae"
+              opacity="0.32"
+            />
+            <circle cx="9" cy="9" r="5.5" fill="#ffe447" opacity="0.82" />
+            <circle cx="27" cy="27" r="5.5" fill="#52e5ca" opacity="0.68" />
+          </pattern>
+        </>
       );
     default:
       return null;
@@ -348,7 +781,13 @@ function MaterialPatternDefinitions(
 
 function MaterialBackdrop(props: Readonly<{ material: DocumentMaterial }>) {
   const id = MATERIAL_PATTERN_IDS[props.material.preset];
-  return id ? <rect width="100%" height="100%" fill={`url(#${id})`} /> : null;
+  return id
+    ? (
+      <g className={`material-backdrop material-backdrop-${props.material.preset}`}>
+        <rect width="100%" height="100%" fill={`url(#${id})`} />
+      </g>
+    )
+    : null;
 }
 
 function MaterialSlider(
@@ -423,45 +862,61 @@ function DrawingThumbnail(
       aria-label={`${props.document.title} 缩略图`}
     >
       <defs>
+        <MaterialTextureFilterDefinition material={props.document.material} />
         <MaterialPatternDefinitions material={props.document.material} />
       </defs>
       <rect width="100%" height="100%" fill={props.document.material.background} />
-      <MaterialBackdrop material={props.document.material} />
-      {props.document.drawingLayers.map((layer) =>
-        layer.visible
-          ? (
-            <g key={layer.id} data-openink-layer={layer.id}>
-              {layer.content.map((reference) => {
-                if (reference.kind === "stroke") {
-                  const stroke = strokesById.get(reference.id);
-                  return stroke
+      <MaterialBackdrop
+        key={`backdrop-${props.document.material.preset}`}
+        material={props.document.material}
+      />
+      <MaterialInk
+        key={`ink-${props.document.material.preset}`}
+        material={props.document.material}
+      >
+        {props.document.drawingLayers.map((layer) =>
+          layer.visible
+            ? (
+              <g key={layer.id} data-openink-layer={layer.id}>
+                {layer.content.map((reference) => {
+                  if (reference.kind === "stroke") {
+                    const stroke = strokesById.get(reference.id);
+                    return stroke
+                      ? (
+                        <path
+                          key={reference.id}
+                          d={strokeToMaterialSvgPath(
+                            stroke,
+                            props.document.material.preset,
+                            true,
+                          )}
+                          fill={props.document.material.foreground}
+                          transform={`translate(${stroke.transform.x} ${stroke.transform.y}) scale(${stroke.transform.scale})`}
+                        />
+                      )
+                      : null;
+                  }
+                  const imported = importedById.get(reference.id);
+                  return imported && visuals[reference.id]
                     ? (
-                      <path
+                      <image
                         key={reference.id}
-                        d={strokeToSvgPath(stroke, true)}
-                        fill={props.document.material.foreground}
-                        transform={`translate(${stroke.transform.x} ${stroke.transform.y}) scale(${stroke.transform.scale})`}
+                        href={visuals[reference.id]}
+                        width={imported.width}
+                        height={imported.height}
+                        imageRendering={props.document.material.preset === "pixels"
+                          ? "pixelated"
+                          : undefined}
+                        transform={`translate(${imported.transform.x} ${imported.transform.y}) scale(${imported.transform.scale})`}
                       />
                     )
                     : null;
-                }
-                const imported = importedById.get(reference.id);
-                return imported && visuals[reference.id]
-                  ? (
-                    <image
-                      key={reference.id}
-                      href={visuals[reference.id]}
-                      width={imported.width}
-                      height={imported.height}
-                      transform={`translate(${imported.transform.x} ${imported.transform.y}) scale(${imported.transform.scale})`}
-                    />
-                  )
-                  : null;
-              })}
-            </g>
-          )
-          : null
-      )}
+                })}
+              </g>
+            )
+            : null
+        )}
+      </MaterialInk>
     </svg>
   );
 }
@@ -1356,7 +1811,7 @@ export function App() {
               setLibraryOpen(true);
             }}
           >
-            <Stack aria-hidden="true" size={19} />
+            <SquaresFour aria-hidden="true" size={19} />
             <span>画稿</span>
           </button>
           <button
@@ -1752,54 +2207,7 @@ export function App() {
               onPointerCancel={cancelGesture}
             >
               <defs>
-                <filter
-                  id="openink-live-material"
-                  x="-8%"
-                  y="-8%"
-                  width="116%"
-                  height="116%"
-                >
-                  <feTurbulence
-                    type="fractalNoise"
-                    baseFrequency="0.72"
-                    numOctaves={2}
-                    seed={23}
-                    result="openink-live-noise"
-                  />
-                  <feDisplacementMap
-                    in="SourceGraphic"
-                    in2="openink-live-noise"
-                    scale={displayMaterial.bleed * 8}
-                    xChannelSelector="R"
-                    yChannelSelector="G"
-                    result="openink-live-displaced"
-                  />
-                  <feGaussianBlur
-                    in="openink-live-displaced"
-                    stdDeviation={displayMaterial.edgeSoftness * 1.25}
-                    result="openink-live-softened"
-                  />
-                  <feComposite
-                    in="openink-live-noise"
-                    in2="openink-live-softened"
-                    operator="in"
-                    result="openink-live-grain"
-                  />
-                  <feComponentTransfer
-                    in="openink-live-grain"
-                    result="openink-live-grain-strength"
-                  >
-                    <feFuncA
-                      type="linear"
-                      slope={displayMaterial.textureStrength}
-                    />
-                  </feComponentTransfer>
-                  <feBlend
-                    in="openink-live-softened"
-                    in2="openink-live-grain-strength"
-                    mode="multiply"
-                  />
-                </filter>
+                <MaterialTextureFilterDefinition material={displayMaterial} />
                 <MaterialPatternDefinitions material={displayMaterial} />
               </defs>
               <rect
@@ -1808,16 +2216,13 @@ export function App() {
                 height="100%"
                 fill={displayMaterial.background}
               />
-              <MaterialBackdrop material={displayMaterial} />
-              <g
-                className="ink-content"
-                shapeRendering={displayMaterial.preset === "pixels"
-                  ? "crispEdges"
-                  : undefined}
-                filter={displayMaterial.textureStrength > 0 ||
-                    displayMaterial.edgeSoftness > 0 || displayMaterial.bleed > 0
-                  ? "url(#openink-live-material)"
-                  : undefined}
+              <MaterialBackdrop
+                key={`backdrop-${displayMaterial.preset}`}
+                material={displayMaterial}
+              />
+              <MaterialInk
+                key={`ink-${displayMaterial.preset}`}
+                material={displayMaterial}
               >
                 {displayDocument.drawingLayers.map((layer) =>
                   layer.visible
@@ -1833,7 +2238,11 @@ export function App() {
                                   className={selectedStrokeIds.has(reference.id)
                                     ? "is-selected"
                                     : undefined}
-                                  d={strokeToSvgPath(stroke, true)}
+                                  d={strokeToMaterialSvgPath(
+                                    stroke,
+                                    displayMaterial.preset,
+                                    true,
+                                  )}
                                   fill={displayMaterial.foreground}
                                   transform={`translate(${stroke.transform.x} ${stroke.transform.y}) scale(${stroke.transform.scale})`}
                                 />
@@ -1852,6 +2261,9 @@ export function App() {
                                 href={visual.url}
                                 width={imported.width}
                                 height={imported.height}
+                                imageRendering={displayMaterial.preset === "pixels"
+                                  ? "pixelated"
+                                  : undefined}
                                 transform={`translate(${imported.transform.x} ${imported.transform.y}) scale(${imported.transform.scale})`}
                               />
                             )
@@ -1861,7 +2273,11 @@ export function App() {
                             gestureState?.kind === "draw"
                           ? (
                             <path
-                              d={strokeToSvgPath(gestureState.stroke, false)}
+                              d={strokeToMaterialSvgPath(
+                                gestureState.stroke,
+                                displayMaterial.preset,
+                                false,
+                              )}
                               fill={displayMaterial.foreground}
                             />
                           )
@@ -1870,7 +2286,7 @@ export function App() {
                     )
                     : null
                 )}
-              </g>
+              </MaterialInk>
               {gestureState?.kind === "lasso" && gestureState.points.length > 1
                 ? (
                   <polyline
@@ -1957,10 +2373,18 @@ export function App() {
                 <button
                   key={preset}
                   type="button"
+                  className={`material-preset material-preset-${preset}`}
+                  style={{
+                    "--material-background": DOCUMENT_MATERIAL_PRESETS[preset]
+                      .background,
+                    "--material-foreground": DOCUMENT_MATERIAL_PRESETS[preset]
+                      .foreground,
+                  } as CSSProperties}
                   aria-pressed={displayMaterial.preset === preset}
                   onClick={() => selectMaterialPreset(preset)}
                 >
-                  {MATERIAL_PRESET_LABELS[preset]}
+                  <span className="material-preset-swatch" aria-hidden="true" />
+                  <span>{MATERIAL_PRESET_LABELS[preset]}</span>
                 </button>
               ))}
             </div>
