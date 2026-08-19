@@ -1,4 +1,5 @@
 import type { TextStore } from "./drawing-library.ts";
+import type { BinaryStore } from "./drawing-assets.ts";
 
 const ROOT_DIRECTORY = "openink-documents";
 
@@ -30,7 +31,7 @@ function isNotFound(error: unknown): boolean {
   return error instanceof DOMException && error.name === "NotFoundError";
 }
 
-export function createOpfsTextStore(): TextStore {
+export function createOpfsTextStore(): TextStore & BinaryStore {
   let rootPromise: Promise<FileSystemDirectoryHandle> | null = null;
   function root(): Promise<FileSystemDirectoryHandle> {
     if (!navigator.storage?.getDirectory) {
@@ -61,6 +62,30 @@ export function createOpfsTextStore(): TextStore {
       const writable = await handle.createWritable();
       try {
         await writable.write(contents);
+        await writable.close();
+      } catch (error) {
+        await writable.abort().catch(() => undefined);
+        throw error;
+      }
+    },
+    async readBytes(path) {
+      try {
+        const parent = await resolveParent(await root(), path, false);
+        const handle = await parent.directory.getFileHandle(parent.fileName);
+        return new Uint8Array(await (await handle.getFile()).arrayBuffer());
+      } catch (error) {
+        if (isNotFound(error)) return null;
+        throw error;
+      }
+    },
+    async writeBytes(path, contents) {
+      const parent = await resolveParent(await root(), path, true);
+      const handle = await parent.directory.getFileHandle(parent.fileName, {
+        create: true,
+      });
+      const writable = await handle.createWritable();
+      try {
+        await writable.write(contents.slice().buffer);
         await writable.close();
       } catch (error) {
         await writable.abort().catch(() => undefined);

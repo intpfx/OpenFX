@@ -1,6 +1,12 @@
 import { expect } from "@std/expect";
 
-import type { DrawingDocument, NativeStroke } from "../src/drawing-document.ts";
+import {
+  applyMaterialPreset,
+  commitImportedInkLayer,
+  createDrawingDocument,
+  type ImportedInkLayer,
+  type NativeStroke,
+} from "../src/drawing-document.ts";
 import { renderDocumentSvg, strokeToSvgPath } from "../src/stroke-renderer.ts";
 
 Deno.test("perfect-freehand output becomes a deterministic exportable SVG", () => {
@@ -21,14 +27,14 @@ Deno.test("perfect-freehand output becomes a deterministic exportable SVG", () =
     },
     transform: { x: 12, y: -8, scale: 1.4 },
   };
-  const document: DrawingDocument = {
-    version: 1,
-    id: "doc-1",
-    title: "雨夜手稿",
-    width: 1200,
-    height: 800,
-    createdAt: "2026-08-19T00:00:00.000Z",
-    updatedAt: "2026-08-19T00:00:01.000Z",
+  const document = {
+    ...createDrawingDocument({
+      id: "doc-1",
+      title: "雨夜手稿",
+      width: 1200,
+      height: 800,
+      now: "2026-08-19T00:00:00.000Z",
+    }),
     strokes: [stroke],
   };
 
@@ -41,4 +47,89 @@ Deno.test("perfect-freehand output becomes a deterministic exportable SVG", () =
   expect(svg).toContain('viewBox="0 0 1200 800"');
   expect(svg).toContain('transform="translate(12 -8) scale(1.4)"');
   expect(svg).toContain('fill="#18201c"');
+});
+
+Deno.test("blueprint material is encoded in canonical SVG without changing geometry", () => {
+  const stroke: NativeStroke = {
+    id: "stroke-blueprint",
+    points: [
+      { x: 20, y: 30, pressure: 0.5, time: 0 },
+      { x: 100, y: 80, pressure: 0.5, time: 16 },
+    ],
+    brush: {
+      color: "#ff0000",
+      size: 16,
+      thinning: 0.5,
+      smoothing: 0.7,
+      streamline: 0.6,
+      simulatePressure: true,
+    },
+    transform: { x: 0, y: 0, scale: 1 },
+  };
+  const base = {
+    ...createDrawingDocument({
+      id: "doc-blueprint",
+      now: "2026-08-19T00:00:00.000Z",
+      width: 400,
+      height: 300,
+    }),
+    strokes: [stroke],
+  };
+  const document = applyMaterialPreset(base, "blueprint", base.updatedAt);
+
+  const svg = renderDocumentSvg(document);
+
+  expect(svg).toContain('data-openink-material="blueprint"');
+  expect(svg).toContain('<rect width="100%" height="100%" fill="#174758"');
+  expect(svg).toContain('fill="#e8f4ee"');
+  expect(svg).toContain('filter="url(#openink-ink-texture)"');
+  expect(svg).toContain('id="openink-blueprint-grid"');
+  expect(svg).toContain("<feGaussianBlur");
+  expect(svg).toContain('slope="0.28"');
+  expect(svg).toContain(strokeToSvgPath(stroke, true));
+});
+
+Deno.test("canonical SVG embeds locally derived photo ink without the source photo", () => {
+  const empty = createDrawingDocument({
+    id: "doc-photo-export",
+    now: "2026-08-19T00:00:00.000Z",
+    width: 400,
+    height: 300,
+  });
+  const layer: ImportedInkLayer = {
+    id: "photo-export",
+    source: {
+      assetId: "a".repeat(64),
+      mimeType: "image/jpeg",
+      width: 1600,
+      height: 1200,
+      byteLength: 48_000,
+    },
+    maskAssetId: "b".repeat(64),
+    sdfAssetId: "c".repeat(64),
+    width: 200,
+    height: 150,
+    crop: {
+      topLeft: { x: 0, y: 0 },
+      topRight: { x: 1600, y: 0 },
+      bottomRight: { x: 1600, y: 1200 },
+      bottomLeft: { x: 0, y: 1200 },
+    },
+    cleanup: {
+      threshold: 0.3,
+      denoise: 0.2,
+      backgroundRemoval: 0.8,
+      thickness: 0,
+    },
+    transform: { x: 25, y: 30, scale: 1.5 },
+  };
+  const document = commitImportedInkLayer(empty, layer, empty.updatedAt);
+  const derivedPng = "data:image/png;base64,aW5r";
+
+  const svg = renderDocumentSvg(document, [{ id: layer.id, dataUrl: derivedPng }]);
+
+  expect(svg).toContain(`href="${derivedPng}"`);
+  expect(svg).toContain('width="200" height="150"');
+  expect(svg).toContain('transform="translate(25 30) scale(1.5)"');
+  expect(svg).not.toContain(layer.source.assetId);
 });

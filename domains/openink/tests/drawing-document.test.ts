@@ -1,12 +1,15 @@
 import { expect } from "@std/expect";
 
 import {
+  applyMaterialPreset,
   commitHistory,
+  commitImportedInkLayer,
   commitStroke,
   createDrawingDocument,
   createHistory,
   duplicateDrawingDocument,
   findStrokeAtPoint,
+  type ImportedInkLayer,
   type NativeStroke,
   parseDrawingDocument,
   redoHistory,
@@ -14,6 +17,7 @@ import {
   renameDrawingDocument,
   serializeDrawingDocument,
   undoHistory,
+  updateDocumentMaterial,
   updateStrokeTransform,
 } from "../src/drawing-document.ts";
 
@@ -266,7 +270,160 @@ Deno.test("a versioned document round-trips through local persistence", () => {
   });
 
   expect(parseDrawingDocument(serializeDrawingDocument(document))).toEqual(document);
-  expect(() => parseDrawingDocument('{"version":2}')).toThrow(
+  expect(() => parseDrawingDocument('{"version":3}')).toThrow(
     "OpenInk 文档版本不受支持",
   );
+});
+
+Deno.test("a v1 drawing migrates into the mixed document without changing strokes", () => {
+  const legacySource = JSON.stringify({
+    version: 1,
+    id: "legacy-doc",
+    title: "纸上手稿",
+    width: 1200,
+    height: 800,
+    createdAt: "2026-08-19T00:00:00.000Z",
+    updatedAt: "2026-08-19T00:01:00.000Z",
+    strokes: [{
+      id: "stroke-1",
+      points: [{ x: 12, y: 18, pressure: 0.72, time: 4 }],
+      brush: {
+        color: "#18201c",
+        size: 14,
+        thinning: 0.58,
+        smoothing: 0.72,
+        streamline: 0.62,
+        simulatePressure: false,
+      },
+      transform: { x: 0, y: 0, scale: 1 },
+    }],
+  });
+
+  const migrated = parseDrawingDocument(legacySource);
+
+  expect(migrated.version).toBe(2);
+  expect(migrated.strokes[0].points).toEqual([
+    { x: 12, y: 18, pressure: 0.72, time: 4 },
+  ]);
+  expect(migrated.importedInkLayers).toEqual([]);
+  expect(migrated.material).toEqual({
+    preset: "ink",
+    foreground: "#18201c",
+    background: "#f3f0e7",
+    textureStrength: 0,
+    edgeSoftness: 0,
+    bleed: 0,
+  });
+});
+
+Deno.test("an imported photo ink layer round-trips with non-destructive settings", () => {
+  const document = createDrawingDocument({
+    id: "doc-photo",
+    now: "2026-08-19T00:00:00.000Z",
+    width: 1200,
+    height: 800,
+  });
+  const layer: ImportedInkLayer = {
+    id: "layer-1",
+    source: {
+      assetId: "a".repeat(64),
+      mimeType: "image/jpeg",
+      width: 1600,
+      height: 1200,
+      byteLength: 48_000,
+    },
+    maskAssetId: "b".repeat(64),
+    sdfAssetId: "c".repeat(64),
+    width: 1000,
+    height: 700,
+    crop: {
+      topLeft: { x: 90, y: 70 },
+      topRight: { x: 1510, y: 80 },
+      bottomRight: { x: 1540, y: 1130 },
+      bottomLeft: { x: 60, y: 1120 },
+    },
+    cleanup: {
+      threshold: 0.36,
+      denoise: 0.4,
+      backgroundRemoval: 0.9,
+      thickness: 1.2,
+    },
+    transform: { x: 80, y: 50, scale: 0.8 },
+  };
+
+  const withPhoto = commitImportedInkLayer(
+    document,
+    layer,
+    "2026-08-19T00:02:00.000Z",
+  );
+  const restored = parseDrawingDocument(serializeDrawingDocument(withPhoto));
+
+  expect(restored.importedInkLayers).toEqual([layer]);
+  expect(restored.strokes).toEqual([]);
+});
+
+Deno.test("a document material preset changes presentation without rewriting content", () => {
+  const original = createDrawingDocument({
+    id: "doc-material",
+    now: "2026-08-19T00:00:00.000Z",
+    width: 1200,
+    height: 800,
+  });
+  const stroke: NativeStroke = {
+    id: "stroke-material",
+    points: [{ x: 10, y: 20, pressure: 0.7, time: 0 }],
+    brush: {
+      color: "#18201c",
+      size: 14,
+      thinning: 0.58,
+      smoothing: 0.72,
+      streamline: 0.62,
+      simulatePressure: false,
+    },
+    transform: { x: 0, y: 0, scale: 1 },
+  };
+  const withStroke = commitStroke(original, stroke, original.updatedAt);
+
+  const blueprint = applyMaterialPreset(
+    withStroke,
+    "blueprint",
+    "2026-08-19T00:03:00.000Z",
+  );
+
+  expect(blueprint.material).toEqual({
+    preset: "blueprint",
+    foreground: "#e8f4ee",
+    background: "#174758",
+    textureStrength: 0.28,
+    edgeSoftness: 0.18,
+    bleed: 0.08,
+  });
+  expect(blueprint.strokes[0].points).toBe(withStroke.strokes[0].points);
+});
+
+Deno.test("advanced material controls stay bounded and preserve the selected preset", () => {
+  const base = applyMaterialPreset(
+    createDrawingDocument({
+      id: "doc-material-controls",
+      now: "2026-08-19T00:00:00.000Z",
+      width: 1200,
+      height: 800,
+    }),
+    "chalk",
+    "2026-08-19T00:01:00.000Z",
+  );
+
+  const adjusted = updateDocumentMaterial(
+    base,
+    { textureStrength: 1.4, edgeSoftness: 0.41, bleed: -0.2 },
+    "2026-08-19T00:02:00.000Z",
+  );
+
+  expect(adjusted.material).toEqual({
+    ...base.material,
+    textureStrength: 1,
+    edgeSoftness: 0.41,
+    bleed: 0,
+  });
+  expect(adjusted.updatedAt).toBe("2026-08-19T00:02:00.000Z");
 });

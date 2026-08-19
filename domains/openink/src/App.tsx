@@ -7,7 +7,9 @@ import {
   DownloadSimple,
   Eraser,
   FilePlus,
+  ImageSquare,
   PencilSimple,
+  Selection,
   Stack,
   Trash,
   X,
@@ -21,24 +23,35 @@ import {
 } from "react";
 
 import {
+  applyMaterialPreset,
   commitHistory,
+  commitImportedInkLayer,
   commitStroke,
+  type ContentSelection,
   createDrawingDocument,
   createHistory,
   type DocumentHistory,
+  type DocumentMaterial,
+  type DrawingDocument,
   duplicateDrawingDocument,
   findStrokeAtPoint,
   type NativeStroke,
   parseDrawingDocument,
   redoHistory,
+  removeContentSelection,
   removeStrokes,
   renameDrawingDocument,
   serializeDrawingDocument,
   type StrokePoint,
-  type StrokeTransform,
+  transformContentSelection,
   undoHistory,
-  updateStrokeTransform,
+  updateDocumentMaterial,
 } from "./drawing-document.ts";
+import {
+  loadInkSdfAsset,
+  storeInkDerivatives,
+  storePhotoSource,
+} from "./drawing-assets.ts";
 import {
   activateDrawingDocument,
   bootstrapDrawingLibrary,
@@ -46,8 +59,21 @@ import {
   persistDrawingDocument,
 } from "./drawing-library.ts";
 import { downloadPng, downloadSvg } from "./export-document.ts";
+import { createInkMaskDataUrl, createInkMaskUrl } from "./ink-mask-image.ts";
+import { renderInkSdf } from "./ink-sdf.ts";
+import { applyLassoSelection } from "./lasso-operation.ts";
+import { getContentSelectionBounds } from "./lasso-selection.ts";
 import { createOpfsTextStore } from "./opfs-text-store.ts";
-import { getStrokeBounds, strokeToSvgPath } from "./stroke-renderer.ts";
+import {
+  createPhotoCleanupProcessor,
+  type PhotoCleanupProcessor,
+} from "./photo-cleanup-client.ts";
+import {
+  PhotoCleanupWorkspace,
+  type PhotoImportCommit,
+} from "./PhotoCleanupWorkspace.tsx";
+import { type DecodedPhoto, decodePhotoFile } from "./photo-import.ts";
+import { type RenderedInkLayer, strokeToSvgPath } from "./stroke-renderer.ts";
 
 const STORAGE_KEY = "openink.document.v1";
 const DEFAULT_INK = "#18201c";
@@ -59,7 +85,7 @@ const UPDATED_AT_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
   minute: "2-digit",
 });
 
-type Tool = "pen" | "select" | "eraser";
+type Tool = "pen" | "select" | "lasso" | "eraser";
 
 type DrawGesture = Readonly<{
   kind: "draw";
@@ -76,14 +102,32 @@ type EraseGesture = Readonly<{
 type TransformGesture = Readonly<{
   kind: "move" | "scale";
   pointerId: number;
-  strokeId: string;
+  selection: ContentSelection;
   startPoint: Readonly<{ x: number; y: number }>;
-  startTransform: StrokeTransform;
-  previewTransform: StrokeTransform;
+  origin: Readonly<{ x: number; y: number }>;
+  startDocument: DrawingDocument;
+  previewDocument: DrawingDocument;
   startDistance?: number;
 }>;
 
-type Gesture = DrawGesture | EraseGesture | TransformGesture;
+type LassoGesture = Readonly<{
+  kind: "lasso";
+  pointerId: number;
+  points: readonly Readonly<{ x: number; y: number }>[];
+}>;
+
+type Gesture = DrawGesture | EraseGesture | TransformGesture | LassoGesture;
+
+type PhotoImportSession = Readonly<{
+  photo: DecodedPhoto;
+  processor: PhotoCleanupProcessor;
+}>;
+
+type InkLayerVisual = Readonly<{
+  url: string;
+  width: number;
+  height: number;
+}>;
 
 function now(): string {
   return new Date().toISOString();
@@ -126,6 +170,26 @@ function pointForEvent(
   return { x: transformed.x, y: transformed.y };
 }
 
+function selectionHasContent(selection: ContentSelection): boolean {
+  return selection.strokeIds.length > 0 || selection.layerIds.length > 0;
+}
+
+function findImportedInkLayerAtPoint(
+  document: DrawingDocument,
+  point: Readonly<{ x: number; y: number }>,
+) {
+  for (let index = document.importedInkLayers.length - 1; index >= 0; index -= 1) {
+    const layer = document.importedInkLayers[index];
+    const right = layer.transform.x + layer.width * layer.transform.scale;
+    const bottom = layer.transform.y + layer.height * layer.transform.scale;
+    if (
+      point.x >= layer.transform.x && point.x <= right &&
+      point.y >= layer.transform.y && point.y <= bottom
+    ) return layer;
+  }
+  return null;
+}
+
 function ToolButton(
   props: Readonly<{
     active?: boolean;
@@ -151,21 +215,90 @@ function ToolButton(
   );
 }
 
+function MaterialSlider(
+  props: Readonly<{
+    label: string;
+    value: number;
+    onPreview: (value: number) => void;
+    onCommit: (value: number) => void;
+  }>,
+) {
+  const [draft, setDraft] = useState(props.value);
+  useEffect(() => setDraft(props.value), [props.value]);
+  return (
+    <label className="material-slider">
+      <span>{props.label}</span>
+      <input
+        type="range"
+        min="0"
+        max="1"
+        step="0.01"
+        value={draft}
+        onChange={(event) => {
+          const value = Number(event.currentTarget.value);
+          setDraft(value);
+          props.onPreview(value);
+        }}
+        onPointerUp={() => props.onCommit(draft)}
+        onKeyUp={() => props.onCommit(draft)}
+        onBlur={() => props.onCommit(draft)}
+      />
+      <strong>{Math.round(draft * 100)}</strong>
+    </label>
+  );
+}
+
 function DrawingThumbnail(
   props: Readonly<{ document: DocumentHistory["present"] }>,
 ) {
+  const [visuals, setVisuals] = useState<Readonly<Record<string, string>>>({});
+  useEffect(() => {
+    let active = true;
+    const urls: string[] = [];
+    void Promise.all(props.document.importedInkLayers.map(async (layer) => {
+      const sdf = await loadInkSdfAsset(DRAWING_STORE, layer.sdfAssetId);
+      const mask = renderInkSdf(sdf, {
+        thickness: layer.cleanup.thickness,
+        softness: 0.35,
+      });
+      const url = await createInkMaskUrl(mask, props.document.material.foreground);
+      urls.push(url);
+      return [layer.id, url] as const;
+    })).then((entries) => {
+      if (active) setVisuals(Object.fromEntries(entries));
+    }, () => {
+      if (active) setVisuals({});
+    });
+    return () => {
+      active = false;
+      for (const url of urls) URL.revokeObjectURL(url);
+    };
+  }, [props.document]);
   return (
     <svg
       viewBox={`0 0 ${props.document.width} ${props.document.height}`}
       role="img"
       aria-label={`${props.document.title} 缩略图`}
     >
-      <rect width="100%" height="100%" fill="#f3f0e7" />
+      <rect width="100%" height="100%" fill={props.document.material.background} />
+      {props.document.importedInkLayers.map((layer) =>
+        visuals[layer.id]
+          ? (
+            <image
+              key={layer.id}
+              href={visuals[layer.id]}
+              width={layer.width}
+              height={layer.height}
+              transform={`translate(${layer.transform.x} ${layer.transform.y}) scale(${layer.transform.scale})`}
+            />
+          )
+          : null
+      )}
       {props.document.strokes.map((stroke) => (
         <path
           key={stroke.id}
           d={strokeToSvgPath(stroke, true)}
-          fill={stroke.brush.color}
+          fill={props.document.material.foreground}
           transform={`translate(${stroke.transform.x} ${stroke.transform.y}) scale(${stroke.transform.scale})`}
         />
       ))}
@@ -192,7 +325,10 @@ export function App() {
   );
   const [tool, setTool] = useState<Tool>("pen");
   const [brushSize, setBrushSize] = useState(14);
-  const [selectedStrokeId, setSelectedStrokeId] = useState<string | null>(null);
+  const [selection, setSelection] = useState<ContentSelection>({
+    strokeIds: [],
+    layerIds: [],
+  });
   const [gestureState, setGestureState] = useState<Gesture | null>(null);
   const [saveStatus, setSaveStatus] = useState("正在打开本机画稿库");
   const [exportOpen, setExportOpen] = useState(false);
@@ -200,7 +336,13 @@ export function App() {
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [photoSession, setPhotoSession] = useState<PhotoImportSession | null>(null);
+  const [inkLayerVisuals, setInkLayerVisuals] = useState<
+    Readonly<Record<string, InkLayerVisual>>
+  >({});
+  const [materialPreview, setMaterialPreview] = useState<DocumentMaterial | null>(null);
   const canvasRef = useRef<SVGSVGElement>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
   const gestureRef = useRef<Gesture | null>(null);
   const libraryRef = useRef<DrawingLibrarySnapshot | null>(null);
   const bootPromiseRef = useRef<ReturnType<typeof bootstrapDrawingLibrary> | null>(
@@ -209,6 +351,9 @@ export function App() {
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const saveRequestRef = useRef(0);
   const document = history.present;
+  const displayMaterial = materialPreview ?? document.material;
+  const selectedStrokeIds = new Set(selection.strokeIds);
+  const selectedLayerIds = new Set(selection.layerIds);
 
   function setGesture(gesture: Gesture | null) {
     gestureRef.current = gesture;
@@ -275,7 +420,8 @@ export function App() {
     if (history.past.length === 0) return;
     const next = undoHistory(history);
     setHistory(next);
-    setSelectedStrokeId(null);
+    setSelection({ strokeIds: [], layerIds: [] });
+    setMaterialPreview(null);
     saveDocument(next.present);
   }
 
@@ -283,7 +429,8 @@ export function App() {
     if (history.future.length === 0) return;
     const next = redoHistory(history);
     setHistory(next);
-    setSelectedStrokeId(null);
+    setSelection({ strokeIds: [], layerIds: [] });
+    setMaterialPreview(null);
     saveDocument(next.present);
   }
 
@@ -331,6 +478,44 @@ export function App() {
   }, [initial]);
 
   useEffect(() => {
+    let active = true;
+    const urls: string[] = [];
+    void Promise.all(
+      document.importedInkLayers.map(async (layer) => {
+        const sdf = await loadInkSdfAsset(DRAWING_STORE, layer.sdfAssetId);
+        const mask = renderInkSdf(sdf, {
+          thickness: layer.cleanup.thickness,
+          softness: 0.35,
+        });
+        const url = await createInkMaskUrl(mask, displayMaterial.foreground);
+        urls.push(url);
+        return [layer.id, { url, width: mask.width, height: mask.height }] as const;
+      }),
+    ).then(
+      (entries) => {
+        if (!active) return;
+        setInkLayerVisuals(Object.fromEntries(entries));
+      },
+      (error) => {
+        if (!active) return;
+        setExportStatus(
+          error instanceof Error
+            ? `${error.message} · 照片墨迹稍后重试`
+            : "照片墨迹加载失败",
+        );
+        setInkLayerVisuals({});
+      },
+    );
+    return () => {
+      active = false;
+      for (const url of urls) URL.revokeObjectURL(url);
+    };
+  }, [
+    document.importedInkLayers,
+    displayMaterial.foreground,
+  ]);
+
+  useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       const target = event.target;
       if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
@@ -343,14 +528,19 @@ export function App() {
         return;
       }
       if (event.key === "Delete" || event.key === "Backspace") {
-        if (!selectedStrokeId) return;
+        if (!selectionHasContent(selection)) return;
         event.preventDefault();
-        commitDocument(removeStrokes(document, new Set([selectedStrokeId]), now()));
-        setSelectedStrokeId(null);
+        commitDocument(removeContentSelection(document, selection, now()));
+        setSelection({ strokeIds: [], layerIds: [] });
+        return;
+      }
+      if (event.key === "Escape") {
+        setSelection({ strokeIds: [], layerIds: [] });
         return;
       }
       if (event.key.toLowerCase() === "p") setTool("pen");
       if (event.key.toLowerCase() === "v") setTool("select");
+      if (event.key.toLowerCase() === "l") setTool("lasso");
       if (event.key.toLowerCase() === "e") setTool("eraser");
     }
     globalThis.addEventListener("keydown", handleKeyDown);
@@ -372,7 +562,7 @@ export function App() {
         pressure: pressureForEvent(event),
         time: performance.now(),
       };
-      setSelectedStrokeId(null);
+      setSelection({ strokeIds: [], layerIds: [] });
       setGesture({
         kind: "draw",
         pointerId: event.pointerId,
@@ -396,21 +586,33 @@ export function App() {
     if (tool === "eraser") {
       const hit = findStrokeAtPoint(document, point);
       const strokeIds = new Set(hit ? [hit.id] : []);
-      setSelectedStrokeId(null);
+      setSelection({ strokeIds: [], layerIds: [] });
       setGesture({ kind: "erase", pointerId: event.pointerId, strokeIds });
       return;
     }
 
-    const hit = findStrokeAtPoint(document, point);
-    setSelectedStrokeId(hit?.id ?? null);
-    if (hit) {
+    if (tool === "lasso") {
+      setSelection({ strokeIds: [], layerIds: [] });
+      setGesture({ kind: "lasso", pointerId: event.pointerId, points: [point] });
+      return;
+    }
+
+    const hitStroke = findStrokeAtPoint(document, point);
+    const hitLayer = hitStroke ? null : findImportedInkLayerAtPoint(document, point);
+    const nextSelection: ContentSelection = {
+      strokeIds: hitStroke ? [hitStroke.id] : [],
+      layerIds: hitLayer ? [hitLayer.id] : [],
+    };
+    setSelection(nextSelection);
+    if (selectionHasContent(nextSelection)) {
       setGesture({
         kind: "move",
         pointerId: event.pointerId,
-        strokeId: hit.id,
+        selection: nextSelection,
         startPoint: point,
-        startTransform: hit.transform,
-        previewTransform: hit.transform,
+        origin: point,
+        startDocument: document,
+        previewDocument: document,
       });
     }
   }
@@ -448,33 +650,80 @@ export function App() {
       return;
     }
 
+    if (gesture.kind === "lasso") {
+      const previous = gesture.points.at(-1);
+      if (previous && Math.hypot(point.x - previous.x, point.y - previous.y) < 1) {
+        return;
+      }
+      setGesture({ ...gesture, points: [...gesture.points, point] });
+      return;
+    }
+
     if (gesture.kind === "move") {
       setGesture({
         ...gesture,
-        previewTransform: {
-          ...gesture.startTransform,
-          x: gesture.startTransform.x + point.x - gesture.startPoint.x,
-          y: gesture.startTransform.y + point.y - gesture.startPoint.y,
-        },
+        previewDocument: transformContentSelection(
+          gesture.startDocument,
+          gesture.selection,
+          {
+            origin: gesture.origin,
+            translate: {
+              x: point.x - gesture.startPoint.x,
+              y: point.y - gesture.startPoint.y,
+            },
+            scale: 1,
+          },
+          gesture.startDocument.updatedAt,
+        ),
       });
       return;
     }
 
     const distance = Math.max(
       1,
-      Math.hypot(
-        point.x - gesture.startTransform.x,
-        point.y - gesture.startTransform.y,
-      ),
+      Math.hypot(point.x - gesture.origin.x, point.y - gesture.origin.y),
     );
     const startDistance = Math.max(1, gesture.startDistance ?? distance);
     setGesture({
       ...gesture,
-      previewTransform: {
-        ...gesture.startTransform,
-        scale: gesture.startTransform.scale * distance / startDistance,
-      },
+      previewDocument: transformContentSelection(
+        gesture.startDocument,
+        gesture.selection,
+        {
+          origin: gesture.origin,
+          translate: { x: 0, y: 0 },
+          scale: distance / startDistance,
+        },
+        gesture.startDocument.updatedAt,
+      ),
     });
+  }
+
+  async function finishLasso(gesture: LassoGesture) {
+    if (gesture.points.length < 3) {
+      setSelection({ strokeIds: [], layerIds: [] });
+      return;
+    }
+    setSaveStatus("正在切分套索中的照片墨迹");
+    try {
+      const result = await applyLassoSelection(
+        DRAWING_STORE,
+        document,
+        gesture.points,
+        {
+          createLayerId: () => crypto.randomUUID(),
+          now: now(),
+        },
+      );
+      if (result.document !== document) commitDocument(result.document);
+      setSelection(result.selection);
+      setSaveStatus(
+        selectionHasContent(result.selection) ? "套索内容已选中" : "套索内没有可选墨迹",
+      );
+    } catch (error) {
+      setSelection({ strokeIds: [], layerIds: [] });
+      setSaveStatus(error instanceof Error ? error.message : "套索切分失败");
+    }
   }
 
   function finishGesture(event: ReactPointerEvent<SVGSVGElement>) {
@@ -489,15 +738,10 @@ export function App() {
       commitDocument(commitStroke(document, gesture.stroke, now()));
     } else if (gesture.kind === "erase") {
       commitDocument(removeStrokes(document, gesture.strokeIds, now()));
+    } else if (gesture.kind === "lasso") {
+      void finishLasso(gesture);
     } else {
-      commitDocument(
-        updateStrokeTransform(
-          document,
-          gesture.strokeId,
-          gesture.previewTransform,
-          now(),
-        ),
-      );
+      commitDocument({ ...gesture.previewDocument, updatedAt: now() });
     }
   }
 
@@ -506,53 +750,38 @@ export function App() {
     setGesture(null);
   }
 
-  const selectedStroke = document.strokes.find((stroke) =>
-    stroke.id === selectedStrokeId
-  );
-  const selectedTransform = gestureState &&
-      (gestureState.kind === "move" || gestureState.kind === "scale") &&
-      gestureState.strokeId === selectedStrokeId
-    ? gestureState.previewTransform
-    : selectedStroke?.transform;
+  const displayDocument = gestureState &&
+      (gestureState.kind === "move" || gestureState.kind === "scale")
+    ? gestureState.previewDocument
+    : document;
   const displayStrokes: NativeStroke[] = [];
-  for (const stroke of document.strokes) {
+  for (const stroke of displayDocument.strokes) {
     if (gestureState?.kind === "erase" && gestureState.strokeIds.has(stroke.id)) {
       continue;
     }
-    displayStrokes.push(
-      stroke.id === selectedStrokeId && selectedTransform
-        ? { ...stroke, transform: selectedTransform }
-        : stroke,
-    );
+    displayStrokes.push(stroke);
   }
-  const selectedDisplayStroke = displayStrokes.find((stroke) =>
-    stroke.id === selectedStrokeId
-  );
-  const selectedBounds = selectedDisplayStroke
-    ? getStrokeBounds(selectedDisplayStroke)
-    : null;
+  const selectedBounds = getContentSelectionBounds(displayDocument, selection);
 
   function beginScale(event: ReactPointerEvent<SVGCircleElement>) {
     const svg = canvasRef.current;
-    if (!svg || !selectedDisplayStroke || !selectedBounds) return;
+    if (!svg || !selectedBounds || !selectionHasContent(selection)) return;
     event.preventDefault();
     event.stopPropagation();
     svg.setPointerCapture(event.pointerId);
     const point = pointForEvent(svg, event);
-    const startTransform = selectedDisplayStroke.transform;
+    const origin = { x: selectedBounds.x, y: selectedBounds.y };
     setGesture({
       kind: "scale",
       pointerId: event.pointerId,
-      strokeId: selectedDisplayStroke.id,
+      selection,
       startPoint: point,
-      startTransform,
-      previewTransform: startTransform,
+      origin,
+      startDocument: document,
+      previewDocument: document,
       startDistance: Math.max(
         1,
-        Math.hypot(
-          point.x - startTransform.x,
-          point.y - startTransform.y,
-        ),
+        Math.hypot(point.x - origin.x, point.y - origin.y),
       ),
     });
   }
@@ -563,7 +792,8 @@ export function App() {
       return;
     }
     setGesture(null);
-    setSelectedStrokeId(null);
+    setSelection({ strokeIds: [], layerIds: [] });
+    setMaterialPreview(null);
     void queueLibraryMutation(
       (snapshot) => activateDrawingDocument(DRAWING_STORE, snapshot, documentId),
       "画稿已打开",
@@ -583,7 +813,8 @@ export function App() {
     if (!libraryRef.current) return;
     const fresh = createEmptyDocument();
     setGesture(null);
-    setSelectedStrokeId(null);
+    setSelection({ strokeIds: [], layerIds: [] });
+    setMaterialPreview(null);
     setExportOpen(false);
     void queueLibraryMutation(
       (snapshot) => persistDrawingDocument(DRAWING_STORE, snapshot, fresh),
@@ -656,16 +887,128 @@ export function App() {
     );
   }
 
-  function removeSelectedStroke() {
-    if (!selectedStrokeId) return;
-    commitDocument(removeStrokes(document, new Set([selectedStrokeId]), now()));
-    setSelectedStrokeId(null);
+  async function beginPhotoImport(file: File) {
+    if (storageMode !== "opfs") {
+      setSaveStatus("照片原图需要 OPFS，本机画稿库尚不可用");
+      return;
+    }
+    setSaveStatus("正在读取照片，仅在本机处理");
+    let decoded: DecodedPhoto | null = null;
+    try {
+      decoded = await decodePhotoFile(file);
+      const processor = await createPhotoCleanupProcessor(decoded.processingImage);
+      setPhotoSession({ photo: decoded, processor });
+      setSaveStatus("照片已进入本机清理工作区");
+    } catch (error) {
+      if (decoded) URL.revokeObjectURL(decoded.previewUrl);
+      setSaveStatus(error instanceof Error ? error.message : "照片读取失败");
+    }
+  }
+
+  function closePhotoImport() {
+    if (!photoSession) return;
+    photoSession.processor.dispose();
+    URL.revokeObjectURL(photoSession.photo.previewUrl);
+    setPhotoSession(null);
+  }
+
+  async function commitPhotoImport(commit: PhotoImportCommit) {
+    if (!photoSession) return;
+    setSaveStatus("正在保存原图、蒙版与 SDF");
+    try {
+      const [source, derivatives] = await Promise.all([
+        storePhotoSource(DRAWING_STORE, {
+          bytes: photoSession.photo.bytes,
+          mimeType: photoSession.photo.mimeType,
+          width: photoSession.photo.sourceWidth,
+          height: photoSession.photo.sourceHeight,
+        }),
+        storeInkDerivatives(DRAWING_STORE, commit.result),
+      ]);
+      const scale = Math.min(
+        1,
+        document.width * 0.82 / commit.result.mask.width,
+        document.height * 0.82 / commit.result.mask.height,
+      );
+      const layer = {
+        id: crypto.randomUUID(),
+        source,
+        ...derivatives,
+        width: commit.result.mask.width,
+        height: commit.result.mask.height,
+        crop: commit.crop,
+        cleanup: commit.settings,
+        transform: {
+          x: (document.width - commit.result.mask.width * scale) / 2,
+          y: (document.height - commit.result.mask.height * scale) / 2,
+          scale,
+        },
+      };
+      commitDocument(commitImportedInkLayer(document, layer, now()));
+      closePhotoImport();
+      setSaveStatus("照片墨迹已加入画稿，原图保留在本机");
+    } catch (error) {
+      setSaveStatus(error instanceof Error ? error.message : "照片墨迹保存失败");
+    }
+  }
+
+  function selectMaterialPreset(preset: DocumentMaterial["preset"]) {
+    setMaterialPreview(null);
+    if (document.material.preset === preset) return;
+    commitDocument(applyMaterialPreset(document, preset, now()));
+  }
+
+  function previewMaterial(
+    key: "textureStrength" | "edgeSoftness" | "bleed",
+    value: number,
+  ) {
+    setMaterialPreview({ ...document.material, [key]: value });
+  }
+
+  function commitMaterial(
+    key: "textureStrength" | "edgeSoftness" | "bleed",
+    value: number,
+  ) {
+    setMaterialPreview(null);
+    if (document.material[key] === value) return;
+    commitDocument(updateDocumentMaterial(document, { [key]: value }, now()));
+  }
+
+  function removeSelectedContent() {
+    if (!selectionHasContent(selection)) return;
+    commitDocument(removeContentSelection(document, selection, now()));
+    setSelection({ strokeIds: [], layerIds: [] });
+  }
+
+  async function renderInkLayersForExport(): Promise<readonly RenderedInkLayer[]> {
+    return await Promise.all(document.importedInkLayers.map(async (layer) => {
+      const sdf = await loadInkSdfAsset(DRAWING_STORE, layer.sdfAssetId);
+      const mask = renderInkSdf(sdf, {
+        thickness: layer.cleanup.thickness,
+        softness: 0.35,
+      });
+      return {
+        id: layer.id,
+        dataUrl: createInkMaskDataUrl(mask, document.material.foreground),
+      };
+    }));
+  }
+
+  async function exportSvg() {
+    setExportStatus("正在生成 SVG");
+    try {
+      downloadSvg(document, await renderInkLayersForExport());
+      setExportStatus("SVG 已下载");
+      setExportOpen(false);
+    } catch (error) {
+      setExportStatus(error instanceof Error ? error.message : "SVG 导出失败");
+    }
   }
 
   async function exportPng() {
     setExportStatus("正在生成 PNG");
     try {
-      await downloadPng(document);
+      await downloadPng(document, await renderInkLayersForExport());
       setExportStatus("PNG 已下载");
       setExportOpen(false);
     } catch (error) {
@@ -686,7 +1029,11 @@ export function App() {
           <span className="brand-mark" aria-hidden="true">OI</span>
           <div>
             <strong>OpenInk</strong>
-            <span>{document.title} · {document.strokes.length} 笔</span>
+            <span>
+              {document.title} · {document.strokes.length} 笔 ·{" "}
+              {document.importedInkLayers.length}
+              张照片墨迹
+            </span>
           </div>
         </div>
         <div className="document-status" aria-live="polite">
@@ -694,6 +1041,27 @@ export function App() {
           {saveStatus}
         </div>
         <div className="topbar-actions">
+          <button
+            type="button"
+            className="topbar-button"
+            aria-label="导入纸张照片"
+            disabled={storageMode !== "opfs"}
+            onClick={() => photoInputRef.current?.click()}
+          >
+            <ImageSquare aria-hidden="true" size={19} />
+            <span>照片</span>
+          </button>
+          <input
+            ref={photoInputRef}
+            className="visually-hidden"
+            type="file"
+            accept="image/*"
+            onChange={(event) => {
+              const file = event.currentTarget.files?.[0];
+              event.currentTarget.value = "";
+              if (file) void beginPhotoImport(file);
+            }}
+          />
           <button
             type="button"
             className="topbar-button"
@@ -729,7 +1097,7 @@ export function App() {
             {exportOpen
               ? (
                 <div className="export-menu">
-                  <button type="button" onClick={() => downloadSvg(document)}>
+                  <button type="button" onClick={() => void exportSvg()}>
                     <strong>SVG</strong>
                     <span>保留可缩放轮廓</span>
                   </button>
@@ -743,6 +1111,18 @@ export function App() {
           </div>
         </div>
       </header>
+
+      {photoSession
+        ? (
+          <PhotoCleanupWorkspace
+            photo={photoSession.photo}
+            processor={photoSession.processor}
+            material={displayMaterial}
+            onCancel={closePhotoImport}
+            onConfirm={(commit) => void commitPhotoImport(commit)}
+          />
+        )
+        : null}
 
       {libraryOpen && library
         ? (
@@ -879,6 +1259,13 @@ export function App() {
             <CursorClick aria-hidden="true" size={23} weight="regular" />
           </ToolButton>
           <ToolButton
+            active={tool === "lasso"}
+            label="套索 L"
+            onClick={() => setTool("lasso")}
+          >
+            <Selection aria-hidden="true" size={23} weight="regular" />
+          </ToolButton>
+          <ToolButton
             active={tool === "eraser"}
             label="橡皮 E"
             onClick={() => setTool("eraser")}
@@ -898,8 +1285,8 @@ export function App() {
           </ToolButton>
           <ToolButton
             label="删除所选"
-            disabled={!selectedStrokeId}
-            onClick={removeSelectedStroke}
+            disabled={!selectionHasContent(selection)}
+            onClick={removeSelectedContent}
           >
             <Trash aria-hidden="true" size={22} />
           </ToolButton>
@@ -921,21 +1308,129 @@ export function App() {
               onPointerUp={finishGesture}
               onPointerCancel={cancelGesture}
             >
-              <rect className="paper-background" width="100%" height="100%" />
-              {displayStrokes.map((stroke) => (
-                <path
-                  key={stroke.id}
-                  className={stroke.id === selectedStrokeId ? "is-selected" : undefined}
-                  d={strokeToSvgPath(stroke, true)}
-                  fill={stroke.brush.color}
-                  transform={`translate(${stroke.transform.x} ${stroke.transform.y}) scale(${stroke.transform.scale})`}
-                />
-              ))}
-              {gestureState?.kind === "draw"
-                ? (
+              <defs>
+                <filter
+                  id="openink-live-material"
+                  x="-8%"
+                  y="-8%"
+                  width="116%"
+                  height="116%"
+                >
+                  <feTurbulence
+                    type="fractalNoise"
+                    baseFrequency="0.72"
+                    numOctaves={2}
+                    seed={23}
+                    result="openink-live-noise"
+                  />
+                  <feDisplacementMap
+                    in="SourceGraphic"
+                    in2="openink-live-noise"
+                    scale={displayMaterial.bleed * 8}
+                    xChannelSelector="R"
+                    yChannelSelector="G"
+                    result="openink-live-displaced"
+                  />
+                  <feGaussianBlur
+                    in="openink-live-displaced"
+                    stdDeviation={displayMaterial.edgeSoftness * 1.25}
+                    result="openink-live-softened"
+                  />
+                  <feComposite
+                    in="openink-live-noise"
+                    in2="openink-live-softened"
+                    operator="in"
+                    result="openink-live-grain"
+                  />
+                  <feComponentTransfer
+                    in="openink-live-grain"
+                    result="openink-live-grain-strength"
+                  >
+                    <feFuncA
+                      type="linear"
+                      slope={displayMaterial.textureStrength}
+                    />
+                  </feComponentTransfer>
+                  <feBlend
+                    in="openink-live-softened"
+                    in2="openink-live-grain-strength"
+                    mode="multiply"
+                  />
+                </filter>
+                <pattern
+                  id="openink-live-grid"
+                  width="32"
+                  height="32"
+                  patternUnits="userSpaceOnUse"
+                >
                   <path
-                    d={strokeToSvgPath(gestureState.stroke, false)}
-                    fill={gestureState.stroke.brush.color}
+                    d="M32 0H0V32"
+                    fill="none"
+                    stroke={displayMaterial.foreground}
+                    strokeOpacity="0.09"
+                    strokeWidth="1"
+                  />
+                </pattern>
+              </defs>
+              <rect
+                className="paper-background"
+                width="100%"
+                height="100%"
+                fill={displayMaterial.background}
+              />
+              {displayMaterial.preset === "blueprint"
+                ? <rect width="100%" height="100%" fill="url(#openink-live-grid)" />
+                : null}
+              <g
+                className="ink-content"
+                filter={displayMaterial.textureStrength > 0 ||
+                    displayMaterial.edgeSoftness > 0 || displayMaterial.bleed > 0
+                  ? "url(#openink-live-material)"
+                  : undefined}
+              >
+                {displayDocument.importedInkLayers.map((layer) => {
+                  const visual = inkLayerVisuals[layer.id];
+                  return visual
+                    ? (
+                      <image
+                        key={layer.id}
+                        className={selectedLayerIds.has(layer.id)
+                          ? "is-selected"
+                          : undefined}
+                        href={visual.url}
+                        width={layer.width}
+                        height={layer.height}
+                        transform={`translate(${layer.transform.x} ${layer.transform.y}) scale(${layer.transform.scale})`}
+                      />
+                    )
+                    : null;
+                })}
+                {displayStrokes.map((stroke) => (
+                  <path
+                    key={stroke.id}
+                    className={selectedStrokeIds.has(stroke.id)
+                      ? "is-selected"
+                      : undefined}
+                    d={strokeToSvgPath(stroke, true)}
+                    fill={displayMaterial.foreground}
+                    transform={`translate(${stroke.transform.x} ${stroke.transform.y}) scale(${stroke.transform.scale})`}
+                  />
+                ))}
+                {gestureState?.kind === "draw"
+                  ? (
+                    <path
+                      d={strokeToSvgPath(gestureState.stroke, false)}
+                      fill={displayMaterial.foreground}
+                    />
+                  )
+                  : null}
+              </g>
+              {gestureState?.kind === "lasso" && gestureState.points.length > 1
+                ? (
+                  <polyline
+                    className="lasso-outline"
+                    points={gestureState.points.map((point) => `${point.x},${point.y}`)
+                      .join(" ")}
                   />
                 )
                 : null}
@@ -958,7 +1453,8 @@ export function App() {
                 )
                 : null}
             </svg>
-            {document.strokes.length === 0 && gestureState?.kind !== "draw"
+            {document.strokes.length === 0 && document.importedInkLayers.length === 0 &&
+                gestureState?.kind !== "draw"
               ? (
                 <div className="empty-hint" aria-hidden="true">
                   <span>落笔即保存</span>
@@ -968,12 +1464,20 @@ export function App() {
               : null}
           </div>
           <div className="canvas-caption" aria-live="polite">
-            <span>{tool === "pen" ? "画笔" : tool === "select" ? "选择" : "橡皮"}</span>
+            <span>
+              {tool === "pen"
+                ? "画笔"
+                : tool === "select"
+                ? "选择"
+                : tool === "lasso"
+                ? "套索"
+                : "橡皮"}
+            </span>
             <span>{exportStatus}</span>
           </div>
         </div>
 
-        <aside className="inspector" aria-label="画笔设置">
+        <aside className="inspector" aria-label="画笔与材质设置">
           <div className="inspector-heading">
             <span>画笔</span>
             <strong>{brushSize}px</strong>
@@ -991,15 +1495,70 @@ export function App() {
             />
           </label>
           <div className="ink-sample" aria-hidden="true">
-            <span style={{ height: Math.max(4, brushSize * 0.72) }} />
+            <span
+              style={{
+                height: Math.max(4, brushSize * 0.72),
+                background: displayMaterial.foreground,
+              }}
+            />
           </div>
+          <section className="material-controls" aria-label="画稿材质">
+            <div className="material-heading">
+              <span>统一材质</span>
+              <strong>
+                {displayMaterial.preset === "ink"
+                  ? "墨水"
+                  : displayMaterial.preset === "pencil"
+                  ? "铅笔"
+                  : displayMaterial.preset === "chalk"
+                  ? "粉笔"
+                  : "蓝图"}
+              </strong>
+            </div>
+            <div className="material-presets">
+              {(["ink", "pencil", "chalk", "blueprint"] as const).map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  aria-pressed={displayMaterial.preset === preset}
+                  onClick={() => selectMaterialPreset(preset)}
+                >
+                  {preset === "ink"
+                    ? "墨"
+                    : preset === "pencil"
+                    ? "铅"
+                    : preset === "chalk"
+                    ? "粉"
+                    : "蓝"}
+                </button>
+              ))}
+            </div>
+            <MaterialSlider
+              label="纹理"
+              value={displayMaterial.textureStrength}
+              onPreview={(value) => previewMaterial("textureStrength", value)}
+              onCommit={(value) => commitMaterial("textureStrength", value)}
+            />
+            <MaterialSlider
+              label="软化"
+              value={displayMaterial.edgeSoftness}
+              onPreview={(value) => previewMaterial("edgeSoftness", value)}
+              onCommit={(value) => commitMaterial("edgeSoftness", value)}
+            />
+            <MaterialSlider
+              label="渗透"
+              value={displayMaterial.bleed}
+              onPreview={(value) => previewMaterial("bleed", value)}
+              onCommit={(value) => commitMaterial("bleed", value)}
+            />
+          </section>
           <div className="inspector-copy">
             <span>原始笔迹</span>
             <p>每个压力点都会保留。移动或缩放只改变变换，不会破坏原始轨迹。</p>
           </div>
           <dl className="shortcut-list">
             <div>
-              <dt>P / V / E</dt>
+              <dt>P / V / L / E</dt>
               <dd>切换工具</dd>
             </div>
             <div>

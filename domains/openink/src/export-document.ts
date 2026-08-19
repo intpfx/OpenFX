@@ -1,5 +1,5 @@
 import type { DrawingDocument } from "./drawing-document.ts";
-import { renderDocumentSvg } from "./stroke-renderer.ts";
+import { renderDocumentSvg, type RenderedInkLayer } from "./stroke-renderer.ts";
 
 function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
@@ -16,15 +16,25 @@ function exportBaseName(document: DrawingDocument): string {
   return safeTitle.replaceAll(/^-+|-+$/g, "");
 }
 
-export function downloadSvg(document: DrawingDocument): void {
+export function downloadSvg(
+  document: DrawingDocument,
+  renderedInkLayers: readonly RenderedInkLayer[] = [],
+): void {
   downloadBlob(
-    new Blob([renderDocumentSvg(document)], { type: "image/svg+xml;charset=utf-8" }),
+    new Blob([renderDocumentSvg(document, renderedInkLayers)], {
+      type: "image/svg+xml;charset=utf-8",
+    }),
     `${exportBaseName(document)}.svg`,
   );
 }
 
-export async function downloadPng(document: DrawingDocument): Promise<void> {
-  const svgBlob = new Blob([renderDocumentSvg(document)], { type: "image/svg+xml" });
+export async function downloadPng(
+  document: DrawingDocument,
+  renderedInkLayers: readonly RenderedInkLayer[] = [],
+): Promise<void> {
+  const svgBlob = new Blob([renderDocumentSvg(document, renderedInkLayers)], {
+    type: "image/svg+xml",
+  });
   const svgUrl = URL.createObjectURL(svgBlob);
   try {
     const image = new Image();

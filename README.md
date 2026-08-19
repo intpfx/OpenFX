@@ -371,8 +371,11 @@ Map Poster 生产环境需要：
   只负责生成可重算的轮廓；选择移动与缩放只修改变换。画稿库在同源 OPFS
   中保存不可变正文修订与双槽目录，支持缩略图列表、新建、重命名、复制和原子恢复；首次打开
   会在 OPFS 成功吸收后迁移并清除旧 `localStorage` v1 单画稿；兼容存储产生的新稿也会在
-  OPFS 恢复后先并入现有画稿库。SVG 是 canonical 导出，PNG 由 SVG
-  本机派生；尚未实现照片清理、SDF、图层、删除或同步。
+  OPFS 恢复后先并入现有画稿库。用户显式选择的纸张照片会以原始字节留在本机，并通过手动
+  四角透视、背景/阴影清理、阈值、降噪和粗细控制生成可重建蒙版与 SDF；套索可整笔选择原生
+  笔画，并把圈内照片墨迹切成可统一移动、缩放和删除的片段。墨水、铅笔、粉笔和蓝图是画稿级
+  统一材质。SVG 是 canonical 导出，PNG 由包含照片墨迹的 SVG 本机派生；尚未实现自动边缘
+  识别、旋转、逐图层材质、整张画稿删除、标签或云同步。
 - `domains/openfx-macos` 的 `bun run build` 会先构建并暂存 Web 公共资源，校验 Perry 与
   Swift/C ABI 桥，产出 ad-hoc Hardened Runtime 签名的
   `dist/OpenFX.app`；正式分发仍需单独 配置 Developer ID、notarization 或 App Store

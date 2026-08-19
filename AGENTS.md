@@ -231,16 +231,23 @@ OpenFX 是个人项目集合 monorepo。Agent 应以实际源码、配置、测�
   改粗细或后续笔刷变化必须从原始点重算。
 - `perfect-freehand` 只负责笔画几何，调用时显式传入 `size`、`thinning`、`smoothing`、
   `streamline`、`simulatePressure` 与 `last`，不依赖可能变化的隐式默认值。
-- 选择、移动和缩放只更新笔画 transform，不重写原始点；一个擦除或变换手势只生成一次历史
-  commit，避免撤销粒度泄漏 Pointer Events 频率。
+- 选择、移动和缩放只更新内容 transform，不重写原始点或照片蒙版；套索与原生笔画相交时选择
+  整笔，照片墨迹则按像素切成独立片段。一个擦除、套索切分或变换手势只生成一次历史
+  commit， 避免撤销粒度泄漏 Pointer Events 频率。
 - 画稿库在同源 `/openink-documents/` OPFS 中保存不可变正文修订与双槽目录；目录只有在正文
   成功关闭后才能切换代次，读取时优先最高完整代次并回退旧槽，不静默覆盖损坏状态。旧
   `localStorage` v1 单画稿只能在 OPFS 成功吸收或确认已有同 ID 更新版本后删除；OPFS
   不可用时保留兼容保存，恢复后不能因目录已存在而丢弃兼容稿。
-- 多画稿支持列表、派生 SVG
-  缩略图、新建、重命名和复制；缩略图不成为独立存储事实，暂不提供
-  删除。不把未来照片蒙版、SDF、图层、标签、云同步或 Carbo 专有格式伪装成已实现能力。
-- SVG 是 canonical 导出，PNG 只由 SVG 在本机派生；导出和存储失败不得清空当前画稿。
+- 多画稿支持列表、派生 SVG 缩略图、新建、重命名和复制；缩略图不成为独立存储事实，暂不
+  提供整张画稿删除、标签或云同步。
+- 照片导入只接受用户显式选择的本机图片，原始字节按 SHA-256 不可变保存到同源
+  `/openink-documents/assets/source/`，不得上传或写入画稿 JSON；手动四角透视、纸张背景与
+  阴影清理、阈值、降噪和粗细在 Worker 中处理，蒙版与 SDF 作为可重建派生资产保存到
+  `assets/derived/`。首版不伪装自动边缘识别、旋转、逐图层材质或 Carbo 专有格式。
+- 材质是画稿级展示状态，墨水、铅笔、粉笔与蓝图预设以及纹理、边缘柔化、渗墨必须同时作用于
+  原生笔画与照片墨迹，不能重写源几何、蒙版或原片。
+- SVG 是 canonical 导出，必须嵌入本机派生的照片墨迹而非原片；PNG 只由完整 SVG 在本机
+  派生。导出和存储失败不得清空当前画稿。
 - `public/openink/` 是 domain build 生成的同源发布快照。修改源码后运行
   `deno task build`，并保持 publication target、App catalog、renderer 与测试一致。
 
@@ -301,7 +308,8 @@ deno task --config web/deno.json build
 - Map Poster：`deno test --allow-env web/tests/map-poster.test.ts`。
 - OpenInk：在 domain 内运行 `deno task check` 与 `deno task build`，再在桌面和窄屏验证
   压感/鼠标绘制、成组擦除、选择移动缩放、撤销重做、旧单画稿迁移、多画稿新建/切换/重命名/
-  复制、重载恢复与 SVG/PNG 下载。
+  复制、照片四角校正与实时清理、SDF 粗细/柔化、套索切分与统一变换、材质预设、重载恢复与
+  包含照片墨迹的 SVG/PNG 下载。
 - Media player：在 domain 内运行 format、lint、typecheck、test 和 build。
 - macOS App：在 `domains/openfx-macos` 内运行 `bun run check` 与 `bun run build`。
 - BewlyScript：`bun run check:userscript`。

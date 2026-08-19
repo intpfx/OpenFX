@@ -1,4 +1,10 @@
 import { getStroke } from "perfect-freehand";
+import type { PhotoSourceAsset } from "./drawing-assets.ts";
+import type {
+  PhotoCleanupSettings,
+  PhotoQuad,
+  Point as PhotoPoint,
+} from "./photo-cleanup.ts";
 
 export type StrokePoint = Readonly<{
   x: number;
@@ -29,8 +35,70 @@ export type NativeStroke = Readonly<{
   transform: StrokeTransform;
 }>;
 
+export type MaterialPreset = "ink" | "pencil" | "chalk" | "blueprint";
+
+export type DocumentMaterial = Readonly<{
+  preset: MaterialPreset;
+  foreground: string;
+  background: string;
+  textureStrength: number;
+  edgeSoftness: number;
+  bleed: number;
+}>;
+
+export type ImportedInkLayer = Readonly<{
+  id: string;
+  source: PhotoSourceAsset;
+  maskAssetId: string;
+  sdfAssetId: string;
+  width: number;
+  height: number;
+  crop: PhotoQuad;
+  cleanup: PhotoCleanupSettings;
+  transform: StrokeTransform;
+}>;
+
+export const DEFAULT_DOCUMENT_MATERIAL: DocumentMaterial = {
+  preset: "ink",
+  foreground: "#18201c",
+  background: "#f3f0e7",
+  textureStrength: 0,
+  edgeSoftness: 0,
+  bleed: 0,
+};
+
+export const DOCUMENT_MATERIAL_PRESETS: Readonly<
+  Record<MaterialPreset, DocumentMaterial>
+> = {
+  ink: DEFAULT_DOCUMENT_MATERIAL,
+  pencil: {
+    preset: "pencil",
+    foreground: "#303633",
+    background: "#f0ebdf",
+    textureStrength: 0.46,
+    edgeSoftness: 0.24,
+    bleed: 0.04,
+  },
+  chalk: {
+    preset: "chalk",
+    foreground: "#edf0d7",
+    background: "#202722",
+    textureStrength: 0.68,
+    edgeSoftness: 0.34,
+    bleed: 0.16,
+  },
+  blueprint: {
+    preset: "blueprint",
+    foreground: "#e8f4ee",
+    background: "#174758",
+    textureStrength: 0.28,
+    edgeSoftness: 0.18,
+    bleed: 0.08,
+  },
+};
+
 export type DrawingDocument = Readonly<{
-  version: 1;
+  version: 2;
   id: string;
   title: string;
   width: number;
@@ -38,12 +106,25 @@ export type DrawingDocument = Readonly<{
   createdAt: string;
   updatedAt: string;
   strokes: readonly NativeStroke[];
+  importedInkLayers: readonly ImportedInkLayer[];
+  material: DocumentMaterial;
 }>;
 
 export type DocumentHistory = Readonly<{
   past: readonly DrawingDocument[];
   present: DrawingDocument;
   future: readonly DrawingDocument[];
+}>;
+
+export type ContentSelection = Readonly<{
+  strokeIds: readonly string[];
+  layerIds: readonly string[];
+}>;
+
+type ContentTransform = Readonly<{
+  origin: Point;
+  translate: Point;
+  scale: number;
 }>;
 
 type CreateDrawingDocumentOptions = Readonly<{
@@ -63,7 +144,7 @@ export function createDrawingDocument(
   options: CreateDrawingDocumentOptions,
 ): DrawingDocument {
   return {
-    version: 1,
+    version: 2,
     id: options.id,
     title: options.title ?? "未命名画稿",
     width: options.width,
@@ -71,6 +152,8 @@ export function createDrawingDocument(
     createdAt: options.now,
     updatedAt: options.now,
     strokes: [],
+    importedInkLayers: [],
+    material: DEFAULT_DOCUMENT_MATERIAL,
   };
 }
 
@@ -107,6 +190,70 @@ export function commitStroke(
     ...document,
     updatedAt: now,
     strokes: [...document.strokes, stroke],
+  };
+}
+
+export function commitImportedInkLayer(
+  document: DrawingDocument,
+  layer: ImportedInkLayer,
+  now: string,
+): DrawingDocument {
+  if (document.importedInkLayers.some((candidate) => candidate.id === layer.id)) {
+    throw new Error("OpenInk 照片墨迹层标识重复");
+  }
+  return {
+    ...document,
+    updatedAt: now,
+    importedInkLayers: [...document.importedInkLayers, layer],
+  };
+}
+
+export function applyMaterialPreset(
+  document: DrawingDocument,
+  preset: MaterialPreset,
+  now: string,
+): DrawingDocument {
+  return {
+    ...document,
+    updatedAt: now,
+    material: DOCUMENT_MATERIAL_PRESETS[preset],
+  };
+}
+
+type MaterialAdjustment = Readonly<
+  Partial<
+    Pick<
+      DocumentMaterial,
+      "foreground" | "background" | "textureStrength" | "edgeSoftness" | "bleed"
+    >
+  >
+>;
+
+function clampUnit(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
+export function updateDocumentMaterial(
+  document: DrawingDocument,
+  adjustment: MaterialAdjustment,
+  now: string,
+): DrawingDocument {
+  return {
+    ...document,
+    updatedAt: now,
+    material: {
+      ...document.material,
+      ...adjustment,
+      textureStrength: adjustment.textureStrength === undefined
+        ? document.material.textureStrength
+        : clampUnit(adjustment.textureStrength),
+      edgeSoftness: adjustment.edgeSoftness === undefined
+        ? document.material.edgeSoftness
+        : clampUnit(adjustment.edgeSoftness),
+      bleed: adjustment.bleed === undefined
+        ? document.material.bleed
+        : clampUnit(adjustment.bleed),
+    },
   };
 }
 
@@ -277,6 +424,44 @@ export function updateStrokeTransform(
   };
 }
 
+function applyContentTransform(
+  transform: StrokeTransform,
+  change: ContentTransform,
+): StrokeTransform {
+  return {
+    x: change.origin.x + (transform.x - change.origin.x) * change.scale +
+      change.translate.x,
+    y: change.origin.y + (transform.y - change.origin.y) * change.scale +
+      change.translate.y,
+    scale: Math.max(0.2, Math.min(8, transform.scale * change.scale)),
+  };
+}
+
+export function transformContentSelection(
+  document: DrawingDocument,
+  selection: ContentSelection,
+  change: ContentTransform,
+  now: string,
+): DrawingDocument {
+  const strokeIds = new Set(selection.strokeIds);
+  const layerIds = new Set(selection.layerIds);
+  if (strokeIds.size === 0 && layerIds.size === 0) return document;
+  return {
+    ...document,
+    updatedAt: now,
+    strokes: document.strokes.map((stroke) =>
+      strokeIds.has(stroke.id)
+        ? { ...stroke, transform: applyContentTransform(stroke.transform, change) }
+        : stroke
+    ),
+    importedInkLayers: document.importedInkLayers.map((layer) =>
+      layerIds.has(layer.id)
+        ? { ...layer, transform: applyContentTransform(layer.transform, change) }
+        : layer
+    ),
+  };
+}
+
 export function removeStrokes(
   document: DrawingDocument,
   strokeIds: ReadonlySet<string>,
@@ -286,6 +471,25 @@ export function removeStrokes(
   const strokes = document.strokes.filter((stroke) => !strokeIds.has(stroke.id));
   if (strokes.length === document.strokes.length) return document;
   return { ...document, updatedAt: now, strokes };
+}
+
+export function removeContentSelection(
+  document: DrawingDocument,
+  selection: ContentSelection,
+  now: string,
+): DrawingDocument {
+  const strokeIds = new Set(selection.strokeIds);
+  const layerIds = new Set(selection.layerIds);
+  if (strokeIds.size === 0 && layerIds.size === 0) return document;
+  const strokes = document.strokes.filter((stroke) => !strokeIds.has(stroke.id));
+  const importedInkLayers = document.importedInkLayers.filter((layer) =>
+    !layerIds.has(layer.id)
+  );
+  if (
+    strokes.length === document.strokes.length &&
+    importedInkLayers.length === document.importedInkLayers.length
+  ) return document;
+  return { ...document, updatedAt: now, strokes, importedInkLayers };
 }
 
 export function serializeDrawingDocument(document: DrawingDocument): string {
@@ -298,6 +502,75 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) > 0;
+}
+
+function isAssetId(value: unknown): value is string {
+  return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+}
+
+function parsePoint(value: unknown): PhotoPoint | null {
+  if (!isRecord(value) || !isFiniteNumber(value.x) || !isFiniteNumber(value.y)) {
+    return null;
+  }
+  return { x: value.x, y: value.y };
+}
+
+function parseImportedInkLayer(value: unknown): ImportedInkLayer | null {
+  if (!isRecord(value) || typeof value.id !== "string" || !isRecord(value.source)) {
+    return null;
+  }
+  const source = value.source;
+  const crop = isRecord(value.crop) ? value.crop : null;
+  const cleanup = isRecord(value.cleanup) ? value.cleanup : null;
+  const transform = isRecord(value.transform) ? value.transform : null;
+  const topLeft = parsePoint(crop?.topLeft);
+  const topRight = parsePoint(crop?.topRight);
+  const bottomRight = parsePoint(crop?.bottomRight);
+  const bottomLeft = parsePoint(crop?.bottomLeft);
+  if (
+    !isAssetId(source.assetId) || typeof source.mimeType !== "string" ||
+    !source.mimeType.startsWith("image/") || !isPositiveInteger(source.width) ||
+    !isPositiveInteger(source.height) || !isPositiveInteger(source.byteLength) ||
+    !isAssetId(value.maskAssetId) || !isAssetId(value.sdfAssetId) ||
+    !isPositiveInteger(value.width) || !isPositiveInteger(value.height) ||
+    !topLeft || !topRight || !bottomRight || !bottomLeft || !cleanup || !transform ||
+    !isFiniteNumber(cleanup.threshold) || !isFiniteNumber(cleanup.denoise) ||
+    !isFiniteNumber(cleanup.backgroundRemoval) || !isFiniteNumber(cleanup.thickness) ||
+    !isFiniteNumber(transform.x) || !isFiniteNumber(transform.y) ||
+    !isFiniteNumber(transform.scale)
+  ) {
+    return null;
+  }
+  return {
+    id: value.id,
+    source: {
+      assetId: source.assetId,
+      mimeType: source.mimeType,
+      width: source.width,
+      height: source.height,
+      byteLength: source.byteLength,
+    },
+    maskAssetId: value.maskAssetId,
+    sdfAssetId: value.sdfAssetId,
+    width: value.width,
+    height: value.height,
+    crop: { topLeft, topRight, bottomRight, bottomLeft },
+    cleanup: {
+      threshold: cleanup.threshold,
+      denoise: cleanup.denoise,
+      backgroundRemoval: cleanup.backgroundRemoval,
+      thickness: cleanup.thickness,
+    },
+    transform: {
+      x: transform.x,
+      y: transform.y,
+      scale: transform.scale,
+    },
+  };
 }
 
 function parseStroke(value: unknown): NativeStroke | null {
@@ -349,7 +622,7 @@ export function parseDrawingDocument(source: string): DrawingDocument {
   } catch {
     throw new Error("OpenInk 文档无法解析");
   }
-  if (!isRecord(value) || value.version !== 1) {
+  if (!isRecord(value) || (value.version !== 1 && value.version !== 2)) {
     throw new Error("OpenInk 文档版本不受支持");
   }
   const strokes = Array.isArray(value.strokes) ? value.strokes.map(parseStroke) : [];
@@ -361,8 +634,41 @@ export function parseDrawingDocument(source: string): DrawingDocument {
   ) {
     throw new Error("OpenInk 文档内容损坏");
   }
+  let material = DEFAULT_DOCUMENT_MATERIAL;
+  let importedInkLayers: readonly ImportedInkLayer[] = [];
+  if (value.version === 2) {
+    if (!isRecord(value.material) || !Array.isArray(value.importedInkLayers)) {
+      throw new Error("OpenInk 文档内容损坏");
+    }
+    const candidate = value.material;
+    if (
+      !["ink", "pencil", "chalk", "blueprint"].includes(String(candidate.preset)) ||
+      typeof candidate.foreground !== "string" ||
+      typeof candidate.background !== "string" ||
+      !isFiniteNumber(candidate.textureStrength) ||
+      !isFiniteNumber(candidate.edgeSoftness) || !isFiniteNumber(candidate.bleed)
+    ) {
+      throw new Error("OpenInk 文档内容损坏");
+    }
+    const parsedLayers = value.importedInkLayers.map(parseImportedInkLayer);
+    if (
+      parsedLayers.some((layer) => layer === null) ||
+      new Set(parsedLayers.map((layer) => layer?.id)).size !== parsedLayers.length
+    ) {
+      throw new Error("OpenInk 文档内容损坏");
+    }
+    material = {
+      preset: candidate.preset as MaterialPreset,
+      foreground: candidate.foreground,
+      background: candidate.background,
+      textureStrength: candidate.textureStrength,
+      edgeSoftness: candidate.edgeSoftness,
+      bleed: candidate.bleed,
+    };
+    importedInkLayers = parsedLayers as ImportedInkLayer[];
+  }
   return {
-    version: 1,
+    version: 2,
     id: value.id,
     title: value.title,
     width: value.width,
@@ -370,5 +676,7 @@ export function parseDrawingDocument(source: string): DrawingDocument {
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
     strokes: strokes as NativeStroke[],
+    importedInkLayers,
+    material,
   };
 }
