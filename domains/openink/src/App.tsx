@@ -1,12 +1,16 @@
 import {
   ArrowClockwise,
   ArrowCounterClockwise,
+  Check,
+  Copy,
   CursorClick,
   DownloadSimple,
   Eraser,
   FilePlus,
   PencilSimple,
+  Stack,
   Trash,
+  X,
 } from "@phosphor-icons/react";
 import {
   type PointerEvent as ReactPointerEvent,
@@ -22,22 +26,38 @@ import {
   createDrawingDocument,
   createHistory,
   type DocumentHistory,
+  duplicateDrawingDocument,
   findStrokeAtPoint,
   type NativeStroke,
   parseDrawingDocument,
   redoHistory,
   removeStrokes,
+  renameDrawingDocument,
   serializeDrawingDocument,
   type StrokePoint,
   type StrokeTransform,
   undoHistory,
   updateStrokeTransform,
 } from "./drawing-document.ts";
+import {
+  activateDrawingDocument,
+  bootstrapDrawingLibrary,
+  type DrawingLibrarySnapshot,
+  persistDrawingDocument,
+} from "./drawing-library.ts";
 import { downloadPng, downloadSvg } from "./export-document.ts";
+import { createOpfsTextStore } from "./opfs-text-store.ts";
 import { getStrokeBounds, strokeToSvgPath } from "./stroke-renderer.ts";
 
 const STORAGE_KEY = "openink.document.v1";
 const DEFAULT_INK = "#18201c";
+const DRAWING_STORE = createOpfsTextStore();
+const UPDATED_AT_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
+  month: "numeric",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+});
 
 type Tool = "pen" | "select" | "eraser";
 
@@ -80,14 +100,14 @@ function createEmptyDocument() {
   });
 }
 
-function loadInitialHistory(): DocumentHistory {
+function loadLegacyDocument() {
   try {
     const stored = globalThis.localStorage?.getItem(STORAGE_KEY);
-    if (stored) return createHistory(parseDrawingDocument(stored));
+    if (stored) return parseDrawingDocument(stored);
   } catch {
-    // A damaged or blocked local store must not prevent opening a fresh canvas.
+    // A damaged or blocked legacy store must not prevent opening OpenInk.
   }
-  return createHistory(createEmptyDocument());
+  return null;
 }
 
 function pressureForEvent(event: ReactPointerEvent<SVGSVGElement>): number {
@@ -131,20 +151,63 @@ function ToolButton(
   );
 }
 
+function DrawingThumbnail(
+  props: Readonly<{ document: DocumentHistory["present"] }>,
+) {
+  return (
+    <svg
+      viewBox={`0 0 ${props.document.width} ${props.document.height}`}
+      role="img"
+      aria-label={`${props.document.title} 缩略图`}
+    >
+      <rect width="100%" height="100%" fill="#f3f0e7" />
+      {props.document.strokes.map((stroke) => (
+        <path
+          key={stroke.id}
+          d={strokeToSvgPath(stroke, true)}
+          fill={stroke.brush.color}
+          transform={`translate(${stroke.transform.x} ${stroke.transform.y}) scale(${stroke.transform.scale})`}
+        />
+      ))}
+    </svg>
+  );
+}
+
+function formatUpdatedAt(value: string): string {
+  return UPDATED_AT_FORMATTER.format(new Date(value));
+}
+
 export function App() {
-  const [history, setHistory] = useState(loadInitialHistory);
+  const [initial] = useState(() => {
+    const legacyDocument = loadLegacyDocument();
+    return {
+      legacyDocument,
+      history: createHistory(legacyDocument ?? createEmptyDocument()),
+    };
+  });
+  const [history, setHistory] = useState(initial.history);
+  const [library, setLibrary] = useState<DrawingLibrarySnapshot | null>(null);
+  const [storageMode, setStorageMode] = useState<"loading" | "opfs" | "legacy">(
+    "loading",
+  );
   const [tool, setTool] = useState<Tool>("pen");
   const [brushSize, setBrushSize] = useState(14);
   const [selectedStrokeId, setSelectedStrokeId] = useState<string | null>(null);
   const [gestureState, setGestureState] = useState<Gesture | null>(null);
-  const [revision, setRevision] = useState(0);
-  const [saveStatus, setSaveStatus] = useState(() =>
-    history.present.strokes.length > 0 ? "已从此浏览器恢复" : "尚未落笔"
-  );
+  const [saveStatus, setSaveStatus] = useState("正在打开本机画稿库");
   const [exportOpen, setExportOpen] = useState(false);
   const [exportStatus, setExportStatus] = useState("");
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
   const canvasRef = useRef<SVGSVGElement>(null);
   const gestureRef = useRef<Gesture | null>(null);
+  const libraryRef = useRef<DrawingLibrarySnapshot | null>(null);
+  const bootPromiseRef = useRef<ReturnType<typeof bootstrapDrawingLibrary> | null>(
+    null,
+  );
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const saveRequestRef = useRef(0);
   const document = history.present;
 
   function setGesture(gesture: Gesture | null) {
@@ -152,43 +215,120 @@ export function App() {
     setGestureState(gesture);
   }
 
-  function markChanged() {
-    setRevision((current) => current + 1);
-    setSaveStatus("正在保存");
+  function queueLibraryMutation(
+    operation: (
+      snapshot: DrawingLibrarySnapshot,
+    ) => Promise<DrawingLibrarySnapshot>,
+    successMessage: string,
+  ): Promise<DrawingLibrarySnapshot> {
+    const request = ++saveRequestRef.current;
+    setSaveStatus("正在保存到本机");
+    const result = saveQueueRef.current.then(async () => {
+      const current = libraryRef.current;
+      if (!current) throw new Error("OpenInk 本机画稿库尚未就绪");
+      const next = await operation(current);
+      libraryRef.current = next;
+      setLibrary(next);
+      return next;
+    });
+    saveQueueRef.current = result.then(() => undefined, () => undefined);
+    void result.then(
+      () => {
+        if (saveRequestRef.current === request) setSaveStatus(successMessage);
+      },
+      (error) => {
+        if (saveRequestRef.current === request) {
+          setSaveStatus(error instanceof Error ? error.message : "本机保存失败");
+        }
+      },
+    );
+    return result;
+  }
+
+  function saveDocument(nextDocument: typeof document) {
+    if (storageMode === "legacy") {
+      try {
+        globalThis.localStorage?.setItem(
+          STORAGE_KEY,
+          serializeDrawingDocument(nextDocument),
+        );
+        setSaveStatus("已使用兼容存储保存");
+      } catch {
+        setSaveStatus("本机保存失败");
+      }
+      return;
+    }
+    if (!libraryRef.current) return;
+    void queueLibraryMutation(
+      (snapshot) => persistDrawingDocument(DRAWING_STORE, snapshot, nextDocument),
+      "已保存在本机画稿库",
+    );
   }
 
   function commitDocument(nextDocument: typeof document) {
     if (nextDocument === document) return;
     setHistory((current) => commitHistory(current, nextDocument));
-    markChanged();
+    saveDocument(nextDocument);
   }
 
   function undo() {
     if (history.past.length === 0) return;
-    setHistory((current) => undoHistory(current));
+    const next = undoHistory(history);
+    setHistory(next);
     setSelectedStrokeId(null);
-    markChanged();
+    saveDocument(next.present);
   }
 
   function redo() {
     if (history.future.length === 0) return;
-    setHistory((current) => redoHistory(current));
+    const next = redoHistory(history);
+    setHistory(next);
     setSelectedStrokeId(null);
-    markChanged();
+    saveDocument(next.present);
   }
 
   useEffect(() => {
-    if (revision === 0) return;
-    try {
-      globalThis.localStorage?.setItem(
-        STORAGE_KEY,
-        serializeDrawingDocument(history.present),
-      );
-      setSaveStatus("已保存在此浏览器");
-    } catch {
-      setSaveStatus("本机保存失败");
-    }
-  }, [history.present, revision]);
+    let active = true;
+    bootPromiseRef.current ??= bootstrapDrawingLibrary(DRAWING_STORE, {
+      legacyDocument: initial.legacyDocument,
+      createFresh: () => initial.history.present,
+    });
+    void bootPromiseRef.current.then(
+      ({ snapshot, migratedLegacy }) => {
+        if (!active) return;
+        const activeItem = snapshot.items.find((item) =>
+          item.document.id === snapshot.activeDocumentId
+        );
+        if (!activeItem) throw new Error("OpenInk 活动画稿缺失");
+        libraryRef.current = snapshot;
+        setLibrary(snapshot);
+        setHistory(createHistory(activeItem.document));
+        setStorageMode("opfs");
+        if (migratedLegacy) {
+          try {
+            globalThis.localStorage?.removeItem(STORAGE_KEY);
+          } catch {
+            // The durable OPFS copy already exists; a stale legacy copy is harmless.
+          }
+        }
+        setSaveStatus(
+          migratedLegacy ? "旧画稿已迁移到本机画稿库" : "本机画稿库已就绪",
+        );
+      },
+      (error) => {
+        if (!active) return;
+        setStorageMode("legacy");
+        setSaveStatus(
+          error instanceof Error
+            ? `${error.message} · 使用兼容存储`
+            : "OPFS 不可用 · 使用兼容存储",
+        );
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [initial]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -218,6 +358,7 @@ export function App() {
   });
 
   function beginGesture(event: ReactPointerEvent<SVGSVGElement>) {
+    if (storageMode === "loading") return;
     if (event.pointerType === "mouse" && event.button !== 0) return;
     const svg = canvasRef.current;
     if (!svg) return;
@@ -416,15 +557,103 @@ export function App() {
     });
   }
 
+  function openDrawing(documentId: string) {
+    if (!libraryRef.current || documentId === libraryRef.current.activeDocumentId) {
+      setLibraryOpen(false);
+      return;
+    }
+    setGesture(null);
+    setSelectedStrokeId(null);
+    void queueLibraryMutation(
+      (snapshot) => activateDrawingDocument(DRAWING_STORE, snapshot, documentId),
+      "画稿已打开",
+    ).then(
+      (snapshot) => {
+        const active = snapshot.items.find((item) =>
+          item.document.id === snapshot.activeDocumentId
+        );
+        if (active) setHistory(createHistory(active.document));
+        setLibraryOpen(false);
+      },
+      () => undefined,
+    );
+  }
+
   function createNewDocument() {
-    if (
-      document.strokes.length > 0 &&
-      !globalThis.confirm("新建画稿会替换当前本机画稿，仍要继续吗？")
-    ) return;
-    setHistory(createHistory(createEmptyDocument()));
+    if (!libraryRef.current) return;
+    const fresh = createEmptyDocument();
+    setGesture(null);
     setSelectedStrokeId(null);
     setExportOpen(false);
-    markChanged();
+    void queueLibraryMutation(
+      (snapshot) => persistDrawingDocument(DRAWING_STORE, snapshot, fresh),
+      "新画稿已保存在本机",
+    ).then(
+      () => {
+        setHistory(createHistory(fresh));
+        setLibraryOpen(false);
+      },
+      () => undefined,
+    );
+  }
+
+  function duplicateDocument(documentId: string) {
+    let duplicatedId = "";
+    void queueLibraryMutation(
+      (snapshot) => {
+        const source = snapshot.items.find((item) => item.document.id === documentId);
+        if (!source) return Promise.reject(new Error("OpenInk 画稿不存在"));
+        const duplicated = duplicateDrawingDocument(source.document, {
+          id: crypto.randomUUID(),
+          now: now(),
+        });
+        duplicatedId = duplicated.id;
+        return persistDrawingDocument(DRAWING_STORE, snapshot, duplicated);
+      },
+      "画稿副本已创建",
+    ).then(
+      (snapshot) => {
+        const duplicated = snapshot.items.find((item) =>
+          item.document.id === duplicatedId
+        );
+        if (duplicated) setHistory(createHistory(duplicated.document));
+        setLibraryOpen(false);
+      },
+      () => undefined,
+    );
+  }
+
+  function startRename(documentId: string, title: string) {
+    setRenamingId(documentId);
+    setRenameValue(title);
+  }
+
+  function commitRename(documentId: string) {
+    void queueLibraryMutation(
+      (snapshot) => {
+        const source = snapshot.items.find((item) => item.document.id === documentId);
+        if (!source) return Promise.reject(new Error("OpenInk 画稿不存在"));
+        let renamed;
+        try {
+          renamed = renameDrawingDocument(source.document, renameValue, now());
+        } catch (error) {
+          return Promise.reject(error);
+        }
+        return persistDrawingDocument(DRAWING_STORE, snapshot, renamed, {
+          activate: false,
+        });
+      },
+      "画稿已重命名",
+    ).then(
+      (snapshot) => {
+        setRenamingId(null);
+        if (snapshot.activeDocumentId === documentId) {
+          const active = snapshot.items.find((item) => item.document.id === documentId);
+          if (active) setHistory(createHistory(active.document));
+        }
+      },
+      () => undefined,
+    );
   }
 
   function removeSelectedStroke() {
@@ -444,6 +673,12 @@ export function App() {
     }
   }
 
+  const libraryItems = library
+    ? library.items.toSorted((left, right) =>
+      right.document.updatedAt.localeCompare(left.document.updatedAt)
+    )
+    : [];
+
   return (
     <main className="openink-app">
       <header className="topbar">
@@ -451,7 +686,7 @@ export function App() {
           <span className="brand-mark" aria-hidden="true">OI</span>
           <div>
             <strong>OpenInk</strong>
-            <span>本地画稿 · {document.strokes.length} 笔</span>
+            <span>{document.title} · {document.strokes.length} 笔</span>
           </div>
         </div>
         <div className="document-status" aria-live="polite">
@@ -462,7 +697,19 @@ export function App() {
           <button
             type="button"
             className="topbar-button"
+            aria-label="打开画稿库"
+            aria-expanded={libraryOpen}
+            disabled={!library}
+            onClick={() => setLibraryOpen(true)}
+          >
+            <Stack aria-hidden="true" size={19} />
+            <span>画稿</span>
+          </button>
+          <button
+            type="button"
+            className="topbar-button"
             aria-label="新建画稿"
+            disabled={!library}
             onClick={createNewDocument}
           >
             <FilePlus aria-hidden="true" size={19} />
@@ -496,6 +743,124 @@ export function App() {
           </div>
         </div>
       </header>
+
+      {libraryOpen && library
+        ? (
+          <>
+            <button
+              type="button"
+              className="library-scrim"
+              aria-label="关闭画稿库"
+              onClick={() => setLibraryOpen(false)}
+            />
+            <aside className="library-panel" aria-label="本机画稿库">
+              <div className="library-heading">
+                <div>
+                  <span>本机画稿库</span>
+                  <strong>{library.items.length} 张画稿</strong>
+                </div>
+                <button
+                  type="button"
+                  aria-label="关闭画稿库"
+                  onClick={() => setLibraryOpen(false)}
+                >
+                  <X aria-hidden="true" size={20} />
+                </button>
+              </div>
+              <div className="drawing-list">
+                {libraryItems.map((item) => {
+                  const isActive = item.document.id === library.activeDocumentId;
+                  const isRenaming = item.document.id === renamingId;
+                  return (
+                    <article
+                      key={item.document.id}
+                      className={`drawing-card${isActive ? " is-active" : ""}`}
+                    >
+                      <button
+                        type="button"
+                        className="drawing-preview"
+                        aria-label={`打开${item.document.title}`}
+                        onClick={() => openDrawing(item.document.id)}
+                      >
+                        <DrawingThumbnail document={item.document} />
+                      </button>
+                      {isRenaming
+                        ? (
+                          <form
+                            className="rename-row"
+                            onSubmit={(event) => {
+                              event.preventDefault();
+                              commitRename(item.document.id);
+                            }}
+                          >
+                            <input
+                              autoFocus
+                              aria-label="画稿名称"
+                              maxLength={80}
+                              value={renameValue}
+                              onChange={(event) =>
+                                setRenameValue(event.currentTarget.value)}
+                            />
+                            <button type="submit" aria-label="确认重命名">
+                              <Check aria-hidden="true" size={17} />
+                            </button>
+                            <button
+                              type="button"
+                              aria-label="取消重命名"
+                              onClick={() => setRenamingId(null)}
+                            >
+                              <X aria-hidden="true" size={17} />
+                            </button>
+                          </form>
+                        )
+                        : (
+                          <div className="drawing-meta">
+                            <button
+                              type="button"
+                              className="drawing-name"
+                              onClick={() => openDrawing(item.document.id)}
+                            >
+                              <strong>{item.document.title}</strong>
+                              <span>{formatUpdatedAt(item.document.updatedAt)}</span>
+                            </button>
+                            <div className="drawing-actions">
+                              <button
+                                type="button"
+                                aria-label={`重命名${item.document.title}`}
+                                title="重命名"
+                                onClick={() =>
+                                  startRename(item.document.id, item.document.title)}
+                              >
+                                <PencilSimple aria-hidden="true" size={16} />
+                              </button>
+                              <button
+                                type="button"
+                                aria-label={`复制${item.document.title}`}
+                                title="复制"
+                                onClick={() => duplicateDocument(item.document.id)}
+                              >
+                                <Copy aria-hidden="true" size={16} />
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                    </article>
+                  );
+                })}
+              </div>
+              <button
+                type="button"
+                className="library-new"
+                onClick={createNewDocument}
+              >
+                <FilePlus aria-hidden="true" size={18} />
+                新建空白画稿
+              </button>
+              <p className="library-note">原稿与修订只保存在此浏览器的 OPFS 中。</p>
+            </aside>
+          </>
+        )
+        : null}
 
       <section className="studio">
         <nav className="tool-rail" aria-label="绘图工具">

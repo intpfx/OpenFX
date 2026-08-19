@@ -68,6 +68,19 @@ Deno.test("file-library and App viewer surfaces retain semantic theming", () => 
   expect(css).toContain("background: var(--surface");
 });
 
+Deno.test("embedded App viewer keeps fixed host chrome outside the iframe", () => {
+  const stage = cssRule(
+    libraryCss,
+    ".file-library-viewer.is-app .file-library-viewer-stage",
+  );
+  expect(stage).toContain(
+    "padding-top: max(68px, calc(env(safe-area-inset-top) + 60px));",
+  );
+  expect(
+    cssRule(libraryCss, ".file-library-viewer.is-app .embedded-library-app"),
+  ).toContain("padding: 0;");
+});
+
 Deno.test("homepage uses a full-bleed preview or storage HUD and borderless controls", () => {
   expect(homepage).toContain(
     'className="file-library-hud-preview"',

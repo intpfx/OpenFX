@@ -233,12 +233,13 @@
     {
       "id": "openink",
       "name": "OpenInk",
-      "description": "本地优先的压感绘图工作台，保留原始压力点并以 perfect-freehand 派生轮廓，支持画笔、橡皮、选择变换、撤销重做和 SVG/PNG 导出。",
-      "coverDescription": "压感笔迹与本地画稿",
+      "description": "本地优先的压感绘图工作台，保留原始压力点并以 perfect-freehand 派生轮廓，支持 OPFS 多画稿、原子恢复、画笔、橡皮、选择变换、撤销重做和 SVG/PNG 导出。",
+      "coverDescription": "压感笔迹与 OPFS 多画稿",
       "tech": [
         "React",
         "TypeScript",
         "SVG",
+        "OPFS",
         "perfect-freehand"
       ],
       "sourcePath": "domains/openink/",

@@ -233,7 +233,7 @@ web/              OPFS 文件库与 React + Nitro Web 产品
 | `how-much`            | 商品价格查询与地图报告                     | Web API 与内置 App       |
 | `map-poster`          | OSM 地图海报生成器                         | Web API 与内置 App       |
 | `media-player`        | OPFS 视频读取、Video.js 控件和播放引擎     | 文件能力，不重复作为 App |
-| `openink`             | 本地优先压感绘图与 SVG/PNG 导出            | 动态预览 App             |
+| `openink`             | 本地优先压感绘图、OPFS 多画稿与导出        | 动态预览 App             |
 | `openfx-macos`        | Perry macOS 壳与原生 Photos Live Photo     | 复用完整 Web 文件库      |
 | `wanone`              | 早期静态站点纪念项目                       | 动态预览 App             |
 
@@ -273,8 +273,9 @@ Web 入口的几个深 Module 分别承担稳定边界：
   `viewport.ts` 管理纯 Web Mercator/瓦片计算，Web 服务层只注入 Nominatim adapter。
 - `domains/openink/src/drawing-document.ts`
   保存版本化文档、原始压力点、不可变历史、变换纯函数与 `perfect-freehand`
-  派生轮廓命中；`stroke-renderer.ts` 复用同一轮廓并收束 SVG 导出，React 页面只处理
-  Pointer Events、渲染、本机持久化与下载。
+  派生轮廓命中；`drawing-library.ts` 以不可变正文修订和双槽目录管理多画稿、原子提交与旧
+  `localStorage` v1 迁移，`opfs-text-store.ts` 只适配同源 OPFS；`stroke-renderer.ts`
+  复用同一轮廓并收束 SVG 导出，React 页面只处理 Pointer Events、渲染、交互编排与下载。
 
 ## 开发
 
@@ -367,9 +368,11 @@ Map Poster 生产环境需要：
 - `domains/e` 的 core 必须保持运行时无关；文件系统、模型、Git、MCP 和副作用通过接口
   注入，危险动作经过 `SafetyActionGate`。
 - `domains/openink` 以原始压力点作为画稿事实，`perfect-freehand`
-  只负责生成可重算的轮廓；选择移动与缩放只修改变换。本轮持久化为同源 `localStorage`
-  中的单份 v1 文档，SVG 是 canonical 导出，PNG 由 SVG
-  本机派生；尚未实现照片清理、SDF、图层或同步。
+  只负责生成可重算的轮廓；选择移动与缩放只修改变换。画稿库在同源 OPFS
+  中保存不可变正文修订与双槽目录，支持缩略图列表、新建、重命名、复制和原子恢复；首次打开
+  会在 OPFS 成功吸收后迁移并清除旧 `localStorage` v1 单画稿；兼容存储产生的新稿也会在
+  OPFS 恢复后先并入现有画稿库。SVG 是 canonical 导出，PNG 由 SVG
+  本机派生；尚未实现照片清理、SDF、图层、删除或同步。
 - `domains/openfx-macos` 的 `bun run build` 会先构建并暂存 Web 公共资源，校验 Perry 与
   Swift/C ABI 桥，产出 ad-hoc Hardened Runtime 签名的
   `dist/OpenFX.app`；正式分发仍需单独 配置 Developer ID、notarization 或 App Store

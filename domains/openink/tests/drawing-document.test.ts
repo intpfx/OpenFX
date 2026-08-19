@@ -5,15 +5,65 @@ import {
   commitStroke,
   createDrawingDocument,
   createHistory,
+  duplicateDrawingDocument,
   findStrokeAtPoint,
   type NativeStroke,
   parseDrawingDocument,
   redoHistory,
   removeStrokes,
+  renameDrawingDocument,
   serializeDrawingDocument,
   undoHistory,
   updateStrokeTransform,
 } from "../src/drawing-document.ts";
+
+Deno.test("renaming a drawing changes only its title and update time", () => {
+  const document = createDrawingDocument({
+    id: "doc-1",
+    title: "旧名字",
+    now: "2026-08-19T00:00:00.000Z",
+    width: 1200,
+    height: 800,
+  });
+
+  const renamed = renameDrawingDocument(
+    document,
+    "  夏末速写  ",
+    "2026-08-19T00:01:00.000Z",
+  );
+
+  expect(renamed).toEqual({
+    ...document,
+    title: "夏末速写",
+    updatedAt: "2026-08-19T00:01:00.000Z",
+  });
+  expect(() => renameDrawingDocument(document, "   ", document.updatedAt)).toThrow(
+    "画稿名称不能为空",
+  );
+});
+
+Deno.test("duplicating a drawing preserves content under a new identity", () => {
+  const document = createDrawingDocument({
+    id: "doc-1",
+    title: "夏末速写",
+    now: "2026-08-19T00:00:00.000Z",
+    width: 1200,
+    height: 800,
+  });
+
+  const duplicated = duplicateDrawingDocument(document, {
+    id: "doc-2",
+    now: "2026-08-19T00:02:00.000Z",
+  });
+
+  expect(duplicated).toEqual({
+    ...document,
+    id: "doc-2",
+    title: "夏末速写 副本",
+    createdAt: "2026-08-19T00:02:00.000Z",
+    updatedAt: "2026-08-19T00:02:00.000Z",
+  });
+});
 
 Deno.test("a completed stroke preserves its raw pointer samples", () => {
   const document = createDrawingDocument({

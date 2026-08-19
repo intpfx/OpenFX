@@ -54,6 +54,11 @@ type CreateDrawingDocumentOptions = Readonly<{
   title?: string;
 }>;
 
+type DuplicateDrawingDocumentOptions = Readonly<{
+  id: string;
+  now: string;
+}>;
+
 export function createDrawingDocument(
   options: CreateDrawingDocumentOptions,
 ): DrawingDocument {
@@ -66,6 +71,30 @@ export function createDrawingDocument(
     createdAt: options.now,
     updatedAt: options.now,
     strokes: [],
+  };
+}
+
+export function renameDrawingDocument(
+  document: DrawingDocument,
+  title: string,
+  now: string,
+): DrawingDocument {
+  const normalized = title.trim();
+  if (!normalized) throw new Error("画稿名称不能为空");
+  if (normalized === document.title) return document;
+  return { ...document, title: normalized, updatedAt: now };
+}
+
+export function duplicateDrawingDocument(
+  document: DrawingDocument,
+  options: DuplicateDrawingDocumentOptions,
+): DrawingDocument {
+  return {
+    ...document,
+    id: options.id,
+    title: `${document.title} 副本`,
+    createdAt: options.now,
+    updatedAt: options.now,
   };
 }
 

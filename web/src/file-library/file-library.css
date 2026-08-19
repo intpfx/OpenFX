@@ -931,6 +931,7 @@ html[data-theme="light"] .file-library-page {
   align-items: stretch;
   justify-content: stretch;
   overflow: hidden;
+  padding-top: max(68px, calc(env(safe-area-inset-top) + 60px));
 }
 
 .file-library-viewer.is-app .domain-panel,
@@ -940,6 +941,10 @@ html[data-theme="light"] .file-library-page {
   width: 100%;
   height: 100%;
   border-radius: 14px;
+}
+
+.file-library-viewer.is-app .embedded-library-app {
+  padding: 0;
 }
 
 .file-library-viewer-stage > img {
