@@ -35,7 +35,29 @@ export type NativeStroke = Readonly<{
   transform: StrokeTransform;
 }>;
 
-export type MaterialPreset = "ink" | "pencil" | "chalk" | "blueprint";
+export const MATERIAL_PRESET_ORDER = [
+  "default",
+  "blackboard",
+  "blueprint",
+  "letterpress",
+  "paper",
+  "pixels",
+  "sketch",
+  "warhol",
+] as const;
+
+export type MaterialPreset = typeof MATERIAL_PRESET_ORDER[number];
+
+export const MATERIAL_PRESET_LABELS: Readonly<Record<MaterialPreset, string>> = {
+  default: "默认",
+  blackboard: "黑板",
+  blueprint: "蓝图",
+  letterpress: "正文",
+  paper: "纸张",
+  pixels: "像素",
+  sketch: "素描",
+  warhol: "沃霍尔",
+};
 
 export type DocumentMaterial = Readonly<{
   preset: MaterialPreset;
@@ -58,8 +80,35 @@ export type ImportedInkLayer = Readonly<{
   transform: StrokeTransform;
 }>;
 
+export type LayerContentReference = Readonly<
+  | { kind: "stroke"; id: string }
+  | { kind: "importedInk"; id: string }
+>;
+
+export type DrawingLayer = Readonly<{
+  id: string;
+  name: string;
+  visible: boolean;
+  locked: boolean;
+  content: readonly LayerContentReference[];
+}>;
+
+export const DEFAULT_DRAWING_LAYER_ID = "layer-default";
+
+function createDefaultDrawingLayer(
+  content: readonly LayerContentReference[] = [],
+): DrawingLayer {
+  return {
+    id: DEFAULT_DRAWING_LAYER_ID,
+    name: "墨迹",
+    visible: true,
+    locked: false,
+    content,
+  };
+}
+
 export const DEFAULT_DOCUMENT_MATERIAL: DocumentMaterial = {
-  preset: "ink",
+  preset: "default",
   foreground: "#18201c",
   background: "#f3f0e7",
   textureStrength: 0,
@@ -70,22 +119,14 @@ export const DEFAULT_DOCUMENT_MATERIAL: DocumentMaterial = {
 export const DOCUMENT_MATERIAL_PRESETS: Readonly<
   Record<MaterialPreset, DocumentMaterial>
 > = {
-  ink: DEFAULT_DOCUMENT_MATERIAL,
-  pencil: {
-    preset: "pencil",
-    foreground: "#303633",
-    background: "#f0ebdf",
-    textureStrength: 0.46,
-    edgeSoftness: 0.24,
-    bleed: 0.04,
-  },
-  chalk: {
-    preset: "chalk",
-    foreground: "#edf0d7",
-    background: "#202722",
-    textureStrength: 0.68,
-    edgeSoftness: 0.34,
-    bleed: 0.16,
+  default: DEFAULT_DOCUMENT_MATERIAL,
+  blackboard: {
+    preset: "blackboard",
+    foreground: "#f1edcf",
+    background: "#1d2924",
+    textureStrength: 0.72,
+    edgeSoftness: 0.28,
+    bleed: 0.12,
   },
   blueprint: {
     preset: "blueprint",
@@ -95,10 +136,57 @@ export const DOCUMENT_MATERIAL_PRESETS: Readonly<
     edgeSoftness: 0.18,
     bleed: 0.08,
   },
+  letterpress: {
+    preset: "letterpress",
+    foreground: "#4a271f",
+    background: "#efe4ce",
+    textureStrength: 0.36,
+    edgeSoftness: 0.12,
+    bleed: 0.22,
+  },
+  paper: {
+    preset: "paper",
+    foreground: "#164a62",
+    background: "#f4ead2",
+    textureStrength: 0.22,
+    edgeSoftness: 0.08,
+    bleed: 0.06,
+  },
+  pixels: {
+    preset: "pixels",
+    foreground: "#202524",
+    background: "#e8e4da",
+    textureStrength: 0,
+    edgeSoftness: 0,
+    bleed: 0,
+  },
+  sketch: {
+    preset: "sketch",
+    foreground: "#3b3b38",
+    background: "#f0ede5",
+    textureStrength: 0.54,
+    edgeSoftness: 0.22,
+    bleed: 0.03,
+  },
+  warhol: {
+    preset: "warhol",
+    foreground: "#11180f",
+    background: "#ff4f9a",
+    textureStrength: 0.34,
+    edgeSoftness: 0.06,
+    bleed: 0.1,
+  },
+};
+
+const LEGACY_MATERIAL_PRESETS: Readonly<Record<string, MaterialPreset>> = {
+  ink: "default",
+  pencil: "sketch",
+  chalk: "blackboard",
+  blueprint: "blueprint",
 };
 
 export type DrawingDocument = Readonly<{
-  version: 2;
+  version: 3;
   id: string;
   title: string;
   width: number;
@@ -107,6 +195,8 @@ export type DrawingDocument = Readonly<{
   updatedAt: string;
   strokes: readonly NativeStroke[];
   importedInkLayers: readonly ImportedInkLayer[];
+  drawingLayers: readonly DrawingLayer[];
+  activeLayerId: string;
   material: DocumentMaterial;
 }>;
 
@@ -144,7 +234,7 @@ export function createDrawingDocument(
   options: CreateDrawingDocumentOptions,
 ): DrawingDocument {
   return {
-    version: 2,
+    version: 3,
     id: options.id,
     title: options.title ?? "未命名画稿",
     width: options.width,
@@ -153,6 +243,8 @@ export function createDrawingDocument(
     updatedAt: options.now,
     strokes: [],
     importedInkLayers: [],
+    drawingLayers: [createDefaultDrawingLayer()],
+    activeLayerId: DEFAULT_DRAWING_LAYER_ID,
     material: DEFAULT_DOCUMENT_MATERIAL,
   };
 }
@@ -181,15 +273,168 @@ export function duplicateDrawingDocument(
   };
 }
 
+export function addDrawingLayer(
+  document: DrawingDocument,
+  layer: Readonly<{ id: string; name: string }>,
+  now: string,
+): DrawingDocument {
+  const name = layer.name.trim();
+  if (!name) throw new Error("图层名称不能为空");
+  if (document.drawingLayers.some((candidate) => candidate.id === layer.id)) {
+    throw new Error("OpenInk 图层标识重复");
+  }
+  return {
+    ...document,
+    updatedAt: now,
+    activeLayerId: layer.id,
+    drawingLayers: [...document.drawingLayers, {
+      id: layer.id,
+      name,
+      visible: true,
+      locked: false,
+      content: [],
+    }],
+  };
+}
+
+export function renameDrawingLayer(
+  document: DrawingDocument,
+  layerId: string,
+  name: string,
+  now: string,
+): DrawingDocument {
+  const normalized = name.trim();
+  if (!normalized) throw new Error("图层名称不能为空");
+  const layer = document.drawingLayers.find((candidate) => candidate.id === layerId);
+  if (!layer) return document;
+  if (layer.name === normalized) return document;
+  return {
+    ...document,
+    updatedAt: now,
+    drawingLayers: document.drawingLayers.map((candidate) =>
+      candidate.id === layerId ? { ...candidate, name: normalized } : candidate
+    ),
+  };
+}
+
+export function moveDrawingLayer(
+  document: DrawingDocument,
+  layerId: string,
+  targetIndex: number,
+  now: string,
+): DrawingDocument {
+  const sourceIndex = document.drawingLayers.findIndex((layer) => layer.id === layerId);
+  if (sourceIndex < 0) return document;
+  const boundedIndex = Math.max(
+    0,
+    Math.min(document.drawingLayers.length - 1, Math.trunc(targetIndex)),
+  );
+  if (boundedIndex === sourceIndex) return document;
+  const drawingLayers = [...document.drawingLayers];
+  const [layer] = drawingLayers.splice(sourceIndex, 1);
+  drawingLayers.splice(boundedIndex, 0, layer);
+  return { ...document, updatedAt: now, drawingLayers };
+}
+
+export function setDrawingLayerVisibility(
+  document: DrawingDocument,
+  layerId: string,
+  visible: boolean,
+  now: string,
+): DrawingDocument {
+  const layer = document.drawingLayers.find((candidate) => candidate.id === layerId);
+  if (!layer || layer.visible === visible) return document;
+  return {
+    ...document,
+    updatedAt: now,
+    drawingLayers: document.drawingLayers.map((candidate) =>
+      candidate.id === layerId ? { ...candidate, visible } : candidate
+    ),
+  };
+}
+
+export function setDrawingLayerLocked(
+  document: DrawingDocument,
+  layerId: string,
+  locked: boolean,
+  now: string,
+): DrawingDocument {
+  const layer = document.drawingLayers.find((candidate) => candidate.id === layerId);
+  if (!layer || layer.locked === locked) return document;
+  return {
+    ...document,
+    updatedAt: now,
+    drawingLayers: document.drawingLayers.map((candidate) =>
+      candidate.id === layerId ? { ...candidate, locked } : candidate
+    ),
+  };
+}
+
+export function setActiveDrawingLayer(
+  document: DrawingDocument,
+  layerId: string,
+): DrawingDocument {
+  if (layerId === document.activeLayerId) return document;
+  if (!document.drawingLayers.some((layer) => layer.id === layerId)) return document;
+  return { ...document, activeLayerId: layerId };
+}
+
+export function removeDrawingLayer(
+  document: DrawingDocument,
+  layerId: string,
+  now: string,
+): DrawingDocument {
+  if (document.drawingLayers.length === 1) {
+    throw new Error("OpenInk 至少需要保留一个图层");
+  }
+  const index = document.drawingLayers.findIndex((layer) => layer.id === layerId);
+  if (index < 0) return document;
+  const removed = document.drawingLayers[index];
+  const strokeIds = new Set<string>();
+  const importedInkIds = new Set<string>();
+  for (const reference of removed.content) {
+    if (reference.kind === "stroke") strokeIds.add(reference.id);
+    else importedInkIds.add(reference.id);
+  }
+  const drawingLayers = document.drawingLayers.filter((layer) => layer.id !== layerId);
+  const fallback = drawingLayers[Math.min(index, drawingLayers.length - 1)];
+  return {
+    ...document,
+    updatedAt: now,
+    activeLayerId: document.activeLayerId === layerId
+      ? fallback.id
+      : document.activeLayerId,
+    strokes: document.strokes.filter((stroke) => !strokeIds.has(stroke.id)),
+    importedInkLayers: document.importedInkLayers.filter((layer) =>
+      !importedInkIds.has(layer.id)
+    ),
+    drawingLayers,
+  };
+}
+
 export function commitStroke(
   document: DrawingDocument,
   stroke: NativeStroke,
   now: string,
 ): DrawingDocument {
+  const activeLayer = document.drawingLayers.find((layer) =>
+    layer.id === document.activeLayerId
+  );
+  if (!activeLayer) throw new Error("OpenInk 活动图层缺失");
+  if (!activeLayer.visible) throw new Error("当前图层已隐藏");
+  if (activeLayer.locked) throw new Error("当前图层已锁定");
   return {
     ...document,
     updatedAt: now,
     strokes: [...document.strokes, stroke],
+    drawingLayers: document.drawingLayers.map((layer) =>
+      layer.id === activeLayer.id
+        ? {
+          ...layer,
+          content: [...layer.content, { kind: "stroke", id: stroke.id }],
+        }
+        : layer
+    ),
   };
 }
 
@@ -201,10 +446,24 @@ export function commitImportedInkLayer(
   if (document.importedInkLayers.some((candidate) => candidate.id === layer.id)) {
     throw new Error("OpenInk 照片墨迹层标识重复");
   }
+  const activeLayer = document.drawingLayers.find((candidate) =>
+    candidate.id === document.activeLayerId
+  );
+  if (!activeLayer) throw new Error("OpenInk 活动图层缺失");
+  if (!activeLayer.visible) throw new Error("当前图层已隐藏");
+  if (activeLayer.locked) throw new Error("当前图层已锁定");
   return {
     ...document,
     updatedAt: now,
     importedInkLayers: [...document.importedInkLayers, layer],
+    drawingLayers: document.drawingLayers.map((candidate) =>
+      candidate.id === activeLayer.id
+        ? {
+          ...candidate,
+          content: [...candidate.content, { kind: "importedInk", id: layer.id }],
+        }
+        : candidate
+    ),
   };
 }
 
@@ -392,9 +651,57 @@ export function findStrokeAtPoint(
   document: DrawingDocument,
   point: Point,
 ): NativeStroke | null {
-  for (let index = document.strokes.length - 1; index >= 0; index -= 1) {
-    const stroke = document.strokes[index];
-    if (strokeContainsPoint(stroke, point)) return stroke;
+  const strokesById = new Map(document.strokes.map((stroke) => [stroke.id, stroke]));
+  for (
+    let layerIndex = document.drawingLayers.length - 1;
+    layerIndex >= 0;
+    layerIndex--
+  ) {
+    const layer = document.drawingLayers[layerIndex];
+    if (!layer.visible || layer.locked) continue;
+    for (let index = layer.content.length - 1; index >= 0; index--) {
+      const reference = layer.content[index];
+      if (reference.kind !== "stroke") continue;
+      const stroke = strokesById.get(reference.id);
+      if (stroke && strokeContainsPoint(stroke, point)) return stroke;
+    }
+  }
+  return null;
+}
+
+export function findContentAtPoint(
+  document: DrawingDocument,
+  point: Point,
+): LayerContentReference | null {
+  const strokesById = new Map(document.strokes.map((stroke) => [stroke.id, stroke]));
+  const importedById = new Map(
+    document.importedInkLayers.map((layer) => [layer.id, layer]),
+  );
+  for (
+    let layerIndex = document.drawingLayers.length - 1;
+    layerIndex >= 0;
+    layerIndex--
+  ) {
+    const layer = document.drawingLayers[layerIndex];
+    if (!layer.visible || layer.locked) continue;
+    for (let index = layer.content.length - 1; index >= 0; index--) {
+      const reference = layer.content[index];
+      if (reference.kind === "stroke") {
+        const stroke = strokesById.get(reference.id);
+        if (stroke && strokeContainsPoint(stroke, point)) return reference;
+        continue;
+      }
+      const imported = importedById.get(reference.id);
+      if (!imported) continue;
+      const right = imported.transform.x + imported.width * imported.transform.scale;
+      const bottom = imported.transform.y + imported.height * imported.transform.scale;
+      if (
+        point.x >= imported.transform.x && point.x <= right &&
+        point.y >= imported.transform.y && point.y <= bottom
+      ) {
+        return reference;
+      }
+    }
   }
   return null;
 }
@@ -437,14 +744,47 @@ function applyContentTransform(
   };
 }
 
+function editableContentIds(document: DrawingDocument): Readonly<{
+  strokeIds: ReadonlySet<string>;
+  importedInkIds: ReadonlySet<string>;
+}> {
+  const strokeIds = new Set<string>();
+  const importedInkIds = new Set<string>();
+  for (const layer of document.drawingLayers) {
+    if (!layer.visible || layer.locked) continue;
+    for (const reference of layer.content) {
+      if (reference.kind === "stroke") strokeIds.add(reference.id);
+      else importedInkIds.add(reference.id);
+    }
+  }
+  return { strokeIds, importedInkIds };
+}
+
+export function isDrawingContentEditable(
+  document: DrawingDocument,
+  reference: LayerContentReference,
+): boolean {
+  return document.drawingLayers.some((layer) =>
+    layer.visible && !layer.locked &&
+    layer.content.some((candidate) =>
+      candidate.kind === reference.kind && candidate.id === reference.id
+    )
+  );
+}
+
 export function transformContentSelection(
   document: DrawingDocument,
   selection: ContentSelection,
   change: ContentTransform,
   now: string,
 ): DrawingDocument {
-  const strokeIds = new Set(selection.strokeIds);
-  const layerIds = new Set(selection.layerIds);
+  const editable = editableContentIds(document);
+  const strokeIds = new Set(
+    selection.strokeIds.filter((id) => editable.strokeIds.has(id)),
+  );
+  const layerIds = new Set(
+    selection.layerIds.filter((id) => editable.importedInkIds.has(id)),
+  );
   if (strokeIds.size === 0 && layerIds.size === 0) return document;
   return {
     ...document,
@@ -468,9 +808,25 @@ export function removeStrokes(
   now: string,
 ): DrawingDocument {
   if (strokeIds.size === 0) return document;
-  const strokes = document.strokes.filter((stroke) => !strokeIds.has(stroke.id));
+  const editable = editableContentIds(document);
+  const removableIds = new Set<string>();
+  for (const strokeId of strokeIds) {
+    if (editable.strokeIds.has(strokeId)) removableIds.add(strokeId);
+  }
+  if (removableIds.size === 0) return document;
+  const strokes = document.strokes.filter((stroke) => !removableIds.has(stroke.id));
   if (strokes.length === document.strokes.length) return document;
-  return { ...document, updatedAt: now, strokes };
+  return {
+    ...document,
+    updatedAt: now,
+    strokes,
+    drawingLayers: document.drawingLayers.map((layer) => ({
+      ...layer,
+      content: layer.content.filter((reference) =>
+        reference.kind !== "stroke" || !removableIds.has(reference.id)
+      ),
+    })),
+  };
 }
 
 export function removeContentSelection(
@@ -478,8 +834,13 @@ export function removeContentSelection(
   selection: ContentSelection,
   now: string,
 ): DrawingDocument {
-  const strokeIds = new Set(selection.strokeIds);
-  const layerIds = new Set(selection.layerIds);
+  const editable = editableContentIds(document);
+  const strokeIds = new Set(
+    selection.strokeIds.filter((id) => editable.strokeIds.has(id)),
+  );
+  const layerIds = new Set(
+    selection.layerIds.filter((id) => editable.importedInkIds.has(id)),
+  );
   if (strokeIds.size === 0 && layerIds.size === 0) return document;
   const strokes = document.strokes.filter((stroke) => !strokeIds.has(stroke.id));
   const importedInkLayers = document.importedInkLayers.filter((layer) =>
@@ -489,7 +850,20 @@ export function removeContentSelection(
     strokes.length === document.strokes.length &&
     importedInkLayers.length === document.importedInkLayers.length
   ) return document;
-  return { ...document, updatedAt: now, strokes, importedInkLayers };
+  return {
+    ...document,
+    updatedAt: now,
+    strokes,
+    importedInkLayers,
+    drawingLayers: document.drawingLayers.map((layer) => ({
+      ...layer,
+      content: layer.content.filter((reference) =>
+        reference.kind === "stroke"
+          ? !strokeIds.has(reference.id)
+          : !layerIds.has(reference.id)
+      ),
+    })),
+  };
 }
 
 export function serializeDrawingDocument(document: DrawingDocument): string {
@@ -615,6 +989,71 @@ function parseStroke(value: unknown): NativeStroke | null {
   };
 }
 
+function parseDrawingLayer(value: unknown): DrawingLayer | null {
+  if (
+    !isRecord(value) || typeof value.id !== "string" ||
+    typeof value.name !== "string" || !value.name.trim() ||
+    typeof value.visible !== "boolean" || typeof value.locked !== "boolean" ||
+    !Array.isArray(value.content)
+  ) {
+    return null;
+  }
+  const content = value.content.flatMap((reference) => {
+    if (
+      !isRecord(reference) || typeof reference.id !== "string" ||
+      (reference.kind !== "stroke" && reference.kind !== "importedInk")
+    ) {
+      return [];
+    }
+    return [{ kind: reference.kind, id: reference.id } as LayerContentReference];
+  });
+  if (content.length !== value.content.length) return null;
+  return {
+    id: value.id,
+    name: value.name.trim(),
+    visible: value.visible,
+    locked: value.locked,
+    content,
+  };
+}
+
+function migratedDrawingLayer(
+  strokes: readonly NativeStroke[],
+  importedInkLayers: readonly ImportedInkLayer[],
+): DrawingLayer {
+  return createDefaultDrawingLayer([
+    ...importedInkLayers.map((layer) => ({
+      kind: "importedInk" as const,
+      id: layer.id,
+    })),
+    ...strokes.map((stroke) => ({ kind: "stroke" as const, id: stroke.id })),
+  ]);
+}
+
+function validateDrawingLayers(
+  layers: readonly DrawingLayer[],
+  activeLayerId: string,
+  strokes: readonly NativeStroke[],
+  importedInkLayers: readonly ImportedInkLayer[],
+): boolean {
+  if (
+    layers.length === 0 ||
+    new Set(layers.map((layer) => layer.id)).size !== layers.length ||
+    !layers.some((layer) => layer.id === activeLayerId)
+  ) {
+    return false;
+  }
+  const expected = new Set([
+    ...strokes.map((stroke) => `stroke:${stroke.id}`),
+    ...importedInkLayers.map((layer) => `importedInk:${layer.id}`),
+  ]);
+  const actual = layers.flatMap((layer) =>
+    layer.content.map((reference) => `${reference.kind}:${reference.id}`)
+  );
+  return actual.length === expected.size && new Set(actual).size === actual.length &&
+    actual.every((reference) => expected.has(reference));
+}
+
 export function parseDrawingDocument(source: string): DrawingDocument {
   let value: unknown;
   try {
@@ -622,7 +1061,10 @@ export function parseDrawingDocument(source: string): DrawingDocument {
   } catch {
     throw new Error("OpenInk 文档无法解析");
   }
-  if (!isRecord(value) || (value.version !== 1 && value.version !== 2)) {
+  if (
+    !isRecord(value) ||
+    (value.version !== 1 && value.version !== 2 && value.version !== 3)
+  ) {
     throw new Error("OpenInk 文档版本不受支持");
   }
   const strokes = Array.isArray(value.strokes) ? value.strokes.map(parseStroke) : [];
@@ -636,13 +1078,16 @@ export function parseDrawingDocument(source: string): DrawingDocument {
   }
   let material = DEFAULT_DOCUMENT_MATERIAL;
   let importedInkLayers: readonly ImportedInkLayer[] = [];
-  if (value.version === 2) {
+  if (value.version === 2 || value.version === 3) {
     if (!isRecord(value.material) || !Array.isArray(value.importedInkLayers)) {
       throw new Error("OpenInk 文档内容损坏");
     }
     const candidate = value.material;
+    const preset = value.version === 2
+      ? LEGACY_MATERIAL_PRESETS[String(candidate.preset)]
+      : MATERIAL_PRESET_ORDER.find((value) => value === candidate.preset);
     if (
-      !["ink", "pencil", "chalk", "blueprint"].includes(String(candidate.preset)) ||
+      !preset ||
       typeof candidate.foreground !== "string" ||
       typeof candidate.background !== "string" ||
       !isFiniteNumber(candidate.textureStrength) ||
@@ -658,7 +1103,7 @@ export function parseDrawingDocument(source: string): DrawingDocument {
       throw new Error("OpenInk 文档内容损坏");
     }
     material = {
-      preset: candidate.preset as MaterialPreset,
+      preset,
       foreground: candidate.foreground,
       background: candidate.background,
       textureStrength: candidate.textureStrength,
@@ -667,16 +1112,46 @@ export function parseDrawingDocument(source: string): DrawingDocument {
     };
     importedInkLayers = parsedLayers as ImportedInkLayer[];
   }
+  const parsedStrokes = strokes as NativeStroke[];
+  let drawingLayers: readonly DrawingLayer[] = [
+    migratedDrawingLayer(parsedStrokes, importedInkLayers),
+  ];
+  let activeLayerId = DEFAULT_DRAWING_LAYER_ID;
+  if (value.version === 3) {
+    if (
+      !Array.isArray(value.drawingLayers) || typeof value.activeLayerId !== "string"
+    ) {
+      throw new Error("OpenInk 文档内容损坏");
+    }
+    const parsedLayers = value.drawingLayers.map(parseDrawingLayer);
+    if (parsedLayers.some((layer) => layer === null)) {
+      throw new Error("OpenInk 文档内容损坏");
+    }
+    drawingLayers = parsedLayers as DrawingLayer[];
+    activeLayerId = value.activeLayerId;
+    if (
+      !validateDrawingLayers(
+        drawingLayers,
+        activeLayerId,
+        parsedStrokes,
+        importedInkLayers,
+      )
+    ) {
+      throw new Error("OpenInk 文档内容损坏");
+    }
+  }
   return {
-    version: 2,
+    version: 3,
     id: value.id,
     title: value.title,
     width: value.width,
     height: value.height,
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
-    strokes: strokes as NativeStroke[],
+    strokes: parsedStrokes,
     importedInkLayers,
+    drawingLayers,
+    activeLayerId,
     material,
   };
 }

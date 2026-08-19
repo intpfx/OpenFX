@@ -206,7 +206,8 @@ button {
   font-size: 12px;
 }
 
-.library-scrim {
+.library-scrim,
+.layer-scrim {
   position: fixed;
   z-index: 40;
   inset: 0;
@@ -429,6 +430,222 @@ button {
 }
 
 .library-note {
+  margin: 0;
+  padding: 10px 18px 15px;
+  color: #767a75;
+  font-size: 10px;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.layer-panel {
+  position: fixed;
+  z-index: 50;
+  top: 68px;
+  right: 0;
+  bottom: 0;
+  width: min(360px, calc(100vw - 28px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  color: #232724;
+  background: #e8e4da;
+  border-left: 1px solid #aaa69d;
+  box-shadow: -20px 0 60px rgb(20 23 21 / 24%);
+  animation: layer-enter 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.layer-panel-heading {
+  min-height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 13px 18px;
+  border-bottom: 1px solid #cbc6ba;
+}
+
+.layer-panel-heading div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.layer-panel-heading span {
+  color: #737771;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.layer-panel-heading strong {
+  overflow: hidden;
+  font-size: 19px;
+  letter-spacing: -0.03em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layer-panel-heading button,
+.layer-actions button,
+.layer-rename-row button {
+  display: grid;
+  place-items: center;
+  border: 0;
+  color: #5f645f;
+  background: transparent;
+  cursor: pointer;
+}
+
+.layer-panel-heading button {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+}
+
+.layer-panel-heading button:hover,
+.layer-actions button:hover:not(:disabled),
+.layer-rename-row button:hover {
+  color: #171a18;
+  background: #d2cec4;
+}
+
+.layer-list {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 16px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.layer-row {
+  overflow: hidden;
+  border: 1px solid #c1bdb3;
+  border-radius: 12px;
+  background: #d8d4ca;
+}
+
+.layer-row.is-active {
+  border-color: #171a18;
+  box-shadow: 0 0 0 2px #d8ff43;
+}
+
+.layer-row.is-hidden .layer-swatch,
+.layer-row.is-hidden .layer-activate {
+  opacity: 0.52;
+}
+
+.layer-activate {
+  width: 100%;
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 0;
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+}
+
+.layer-activate > span:last-child {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.layer-activate strong,
+.layer-activate small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layer-activate strong {
+  font-size: 13px;
+}
+
+.layer-activate small {
+  color: #777b76;
+  font-size: 10px;
+}
+
+.layer-swatch {
+  width: 34px;
+  height: 34px;
+  border: 1px solid #b8b3a8;
+  border-radius: 8px;
+  background: linear-gradient(145deg, #f6f3eb 0 72%, #d8ff43 72% 100%);
+  box-shadow: 0 1px 0 rgb(255 255 255 / 50%) inset;
+}
+
+.layer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 2px;
+  padding: 5px 7px;
+  border-top: 1px solid #c6c1b6;
+}
+
+.layer-actions button,
+.layer-rename-row button {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
+
+.layer-actions button:disabled {
+  opacity: 0.28;
+  cursor: not-allowed;
+}
+
+.layer-rename-row {
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px 34px;
+  align-items: center;
+  gap: 3px;
+  padding: 8px;
+  border: 1px solid #171a18;
+  border-radius: 12px;
+  background: #d8d4ca;
+  box-shadow: 0 0 0 2px #d8ff43;
+}
+
+.layer-rename-row input {
+  min-width: 0;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid #8b8e88;
+  border-radius: 8px;
+  color: #171a18;
+  background: #f3f0e7;
+}
+
+.layer-new {
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 10px 16px 0;
+  border: 0;
+  border-radius: 10px;
+  color: #171a18;
+  background: #d8ff43;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.layer-new:hover {
+  background: #e3ff78;
+}
+
+.layer-note {
   margin: 0;
   padding: 10px 18px 15px;
   color: #767a75;
@@ -1079,6 +1296,17 @@ input:focus-visible,
   }
 }
 
+@keyframes layer-enter {
+  from {
+    opacity: 0;
+    transform: translateX(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
 @keyframes selection-dash {
   to {
     stroke-dashoffset: -26;
@@ -1167,6 +1395,18 @@ input:focus-visible,
     animation-name: library-sheet-enter;
   }
 
+  .layer-panel {
+    top: auto;
+    left: 0;
+    width: 100%;
+    height: min(72vh, 660px);
+    padding-bottom: env(safe-area-inset-bottom);
+    border: 0;
+    border-radius: 18px 18px 0 0;
+    box-shadow: 0 -18px 60px rgb(20 23 21 / 26%);
+    animation-name: layer-sheet-enter;
+  }
+
   .drawing-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
@@ -1195,7 +1435,7 @@ input:focus-visible,
   .canvas-stage {
     width: 100%;
     height: 100%;
-    padding: 132px 8px 78px;
+    padding: 172px 8px 78px;
   }
 
   .canvas-caption {
@@ -1246,10 +1486,10 @@ input:focus-visible,
     top: 8px;
     right: 10px;
     left: 10px;
-    height: 116px;
+    height: 156px;
     display: grid;
     grid-template-columns: auto minmax(100px, 1fr) 44px;
-    grid-template-rows: 32px 68px;
+    grid-template-rows: 32px 108px;
     align-items: center;
     gap: 10px;
     padding: 0 12px;
@@ -1275,7 +1515,7 @@ input:focus-visible,
     grid-column: 1 / -1;
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    grid-template-rows: 28px 32px;
+    grid-template-rows: 61px 32px;
     gap: 4px 6px;
     padding: 0;
     border: 0;
@@ -1322,6 +1562,17 @@ input:focus-visible,
 }
 
 @keyframes library-sheet-enter {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes layer-sheet-enter {
   from {
     opacity: 0;
     transform: translateY(24px);

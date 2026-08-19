@@ -38,6 +38,27 @@ function escapeXml(value: string): string {
     .replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
+function materialPatternId(document: DrawingDocument): string | null {
+  switch (document.material.preset) {
+    case "blackboard":
+      return "openink-blackboard-dust";
+    case "blueprint":
+      return "openink-blueprint-grid";
+    case "letterpress":
+      return "openink-letterpress-fibers";
+    case "paper":
+      return "openink-paper-rule";
+    case "pixels":
+      return "openink-pixels-grid";
+    case "sketch":
+      return "openink-sketch-hatch";
+    case "warhol":
+      return "openink-warhol-dots";
+    default:
+      return null;
+  }
+}
+
 export function renderStrokeSvg(
   stroke: NativeStroke,
   complete = true,
@@ -63,12 +84,35 @@ function renderMaterialDefinitions(document: DrawingDocument): string {
       material.bleed > 0
     ? `<filter id="openink-ink-texture" x="-8%" y="-8%" width="116%" height="116%"><feTurbulence type="fractalNoise" baseFrequency="0.72" numOctaves="2" seed="23" result="openink-noise" /><feDisplacementMap in="SourceGraphic" in2="openink-noise" scale="${displacement}" xChannelSelector="R" yChannelSelector="G" result="openink-displaced" /><feGaussianBlur in="openink-displaced" stdDeviation="${softness}" result="openink-softened" /><feComposite in="openink-noise" in2="openink-softened" operator="in" result="openink-grain" /><feComponentTransfer in="openink-grain" result="openink-grain-strength"><feFuncA type="linear" slope="${textureStrength}" /></feComponentTransfer><feBlend in="openink-softened" in2="openink-grain-strength" mode="multiply" /></filter>`
     : "";
-  const blueprintGrid = material.preset === "blueprint"
-    ? `<pattern id="openink-blueprint-grid" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M32 0H0V32" fill="none" stroke="${
-      escapeXml(material.foreground)
-    }" stroke-opacity="0.09" stroke-width="1" /></pattern>`
-    : "";
-  return texture || blueprintGrid ? `<defs>${texture}${blueprintGrid}</defs>` : "";
+  const pattern = (() => {
+    switch (material.preset) {
+      case "blackboard":
+        return `<pattern id="openink-blackboard-dust" width="42" height="42" patternUnits="userSpaceOnUse"><circle cx="8" cy="11" r="1.2" fill="${
+          escapeXml(material.foreground)
+        }" fill-opacity="0.07" /><circle cx="31" cy="28" r="0.8" fill="${
+          escapeXml(material.foreground)
+        }" fill-opacity="0.05" /></pattern>`;
+      case "blueprint":
+        return `<pattern id="openink-blueprint-grid" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M32 0H0V32" fill="none" stroke="${
+          escapeXml(material.foreground)
+        }" stroke-opacity="0.09" stroke-width="1" /></pattern>`;
+      case "letterpress":
+        return `<pattern id="openink-letterpress-fibers" width="24" height="24" patternUnits="userSpaceOnUse"><path d="M-4 7L9 -2M3 26L26 3M18 29L29 18" stroke="${
+          escapeXml(material.foreground)
+        }" stroke-opacity="0.035" stroke-width="1" /></pattern>`;
+      case "paper":
+        return '<pattern id="openink-paper-rule" width="100" height="36" patternUnits="userSpaceOnUse"><path d="M0 35.5H100" stroke="#6c9aab" stroke-opacity="0.18" stroke-width="1" /></pattern>';
+      case "pixels":
+        return '<pattern id="openink-pixels-grid" width="16" height="16" patternUnits="userSpaceOnUse"><path d="M16 0H0V16" fill="none" stroke="#202524" stroke-opacity="0.08" stroke-width="1" shape-rendering="crispEdges" /></pattern>';
+      case "sketch":
+        return '<pattern id="openink-sketch-hatch" width="18" height="18" patternUnits="userSpaceOnUse" patternTransform="rotate(18)"><path d="M0 0V18M9 0V18" stroke="#3b3b38" stroke-opacity="0.035" stroke-width="1" /></pattern>';
+      case "warhol":
+        return '<pattern id="openink-warhol-dots" width="28" height="28" patternUnits="userSpaceOnUse"><circle cx="7" cy="7" r="4.5" fill="#ffe447" fill-opacity="0.78" /><circle cx="21" cy="21" r="4.5" fill="#52e5ca" fill-opacity="0.58" /></pattern>';
+      default:
+        return "";
+    }
+  })();
+  return texture || pattern ? `<defs>${texture}${pattern}</defs>` : "";
 }
 
 export function renderDocumentSvg(
@@ -76,30 +120,43 @@ export function renderDocumentSvg(
   renderedInkLayers: readonly RenderedInkLayer[] = [],
 ): string {
   const renderedById = new Map(renderedInkLayers.map((layer) => [layer.id, layer]));
-  const importedInk = document.importedInkLayers.map((layer) => {
-    const rendered = renderedById.get(layer.id);
-    return rendered
-      ? `<image href="${
-        escapeXml(rendered.dataUrl)
-      }" width="${layer.width}" height="${layer.height}" transform="translate(${layer.transform.x} ${layer.transform.y}) scale(${layer.transform.scale})" />`
-      : "";
+  const importedById = new Map(document.importedInkLayers.map((layer) => [
+    layer.id,
+    layer,
+  ]));
+  const strokesById = new Map(document.strokes.map((stroke) => [stroke.id, stroke]));
+  const ink = document.drawingLayers.map((layer) => {
+    if (!layer.visible) return "";
+    const content = layer.content.map((reference) => {
+      if (reference.kind === "stroke") {
+        const stroke = strokesById.get(reference.id);
+        return stroke
+          ? renderStrokeSvg(stroke, true, document.material.foreground)
+          : "";
+      }
+      const imported = importedById.get(reference.id);
+      const rendered = renderedById.get(reference.id);
+      return imported && rendered
+        ? `<image href="${
+          escapeXml(rendered.dataUrl)
+        }" width="${imported.width}" height="${imported.height}" transform="translate(${imported.transform.x} ${imported.transform.y}) scale(${imported.transform.scale})" />`
+        : "";
+    }).join("");
+    return `<g data-openink-layer="${escapeXml(layer.id)}">${content}</g>`;
   }).join("");
-  const strokes = document.strokes.map((stroke) =>
-    renderStrokeSvg(stroke, true, document.material.foreground)
-  ).join("");
-  const ink = `${importedInk}${strokes}`;
   const filteredInk = document.material.textureStrength > 0 ||
       document.material.edgeSoftness > 0 || document.material.bleed > 0
     ? `<g filter="url(#openink-ink-texture)">${ink}</g>`
     : ink;
-  const grid = document.material.preset === "blueprint"
-    ? `<rect width="100%" height="100%" fill="url(#openink-blueprint-grid)" />`
+  const patternId = materialPatternId(document);
+  const presetBackdrop = patternId
+    ? `<rect width="100%" height="100%" fill="url(#${patternId})" />`
     : "";
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${document.width}" height="${document.height}" viewBox="0 0 ${document.width} ${document.height}" role="img" data-openink-material="${document.material.preset}" aria-label="${
     escapeXml(document.title)
   }">${renderMaterialDefinitions(document)}<rect width="100%" height="100%" fill="${
     escapeXml(document.material.background)
-  }" />${grid}${filteredInk}</svg>`;
+  }" />${presetBackdrop}${filteredInk}</svg>`;
 }
 
 export type StrokeBounds = Readonly<{

@@ -3,10 +3,11 @@ import {
   loadInkMaskAsset,
   storeInkDerivatives,
 } from "./drawing-assets.ts";
-import type {
+import {
   ContentSelection,
   DrawingDocument,
   ImportedInkLayer,
+  isDrawingContentEditable,
 } from "./drawing-document.ts";
 import { createInkSdf } from "./ink-sdf.ts";
 import { findStrokeIdsInLasso, splitInkMaskByLasso } from "./lasso-selection.ts";
@@ -25,8 +26,15 @@ export async function applyLassoSelection(
   const strokeIds = findStrokeIdsInLasso(document, lasso);
   const selectedLayerIds: string[] = [];
   const layers: ImportedInkLayer[] = [];
+  const splitLayerIds = new Map<string, string>();
   let changed = false;
   for (const layer of document.importedInkLayers) {
+    if (
+      !isDrawingContentEditable(document, { kind: "importedInk", id: layer.id })
+    ) {
+      layers.push(layer);
+      continue;
+    }
     const sourceMask = await loadInkMaskAsset(store, layer.maskAssetId);
     const split = splitInkMaskByLasso(sourceMask, layer.transform, lasso);
     if (!hasInk(split.selected)) {
@@ -49,6 +57,7 @@ export async function applyLassoSelection(
       }),
     ]);
     const selectedId = options.createLayerId();
+    splitLayerIds.set(layer.id, selectedId);
     layers.push(
       { ...layer, ...remainingAssets },
       { ...layer, id: selectedId, ...selectedAssets },
@@ -58,7 +67,22 @@ export async function applyLassoSelection(
   }
   return {
     document: changed
-      ? { ...document, updatedAt: options.now, importedInkLayers: layers }
+      ? {
+        ...document,
+        updatedAt: options.now,
+        importedInkLayers: layers,
+        drawingLayers: document.drawingLayers.map((drawingLayer) => ({
+          ...drawingLayer,
+          content: drawingLayer.content.flatMap((reference) => {
+            const selectedId = reference.kind === "importedInk"
+              ? splitLayerIds.get(reference.id)
+              : undefined;
+            return selectedId
+              ? [reference, { kind: "importedInk" as const, id: selectedId }]
+              : [reference];
+          }),
+        })),
+      }
       : document,
     selection: { strokeIds, layerIds: selectedLayerIds },
   };

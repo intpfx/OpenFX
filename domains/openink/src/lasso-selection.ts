@@ -2,6 +2,7 @@ import {
   type ContentSelection,
   type DrawingDocument,
   getStrokeOutline,
+  isDrawingContentEditable,
   type NativeStroke,
   type StrokeTransform,
 } from "./drawing-document.ts";
@@ -73,9 +74,16 @@ export function findStrokeIdsInLasso(
   lasso: readonly Point[],
 ): readonly string[] {
   if (lasso.length < 3) return [];
-  return document.strokes
-    .filter((stroke) => polygonsOverlap(transformedOutline(stroke), lasso))
-    .map((stroke) => stroke.id);
+  const selected: string[] = [];
+  for (const stroke of document.strokes) {
+    if (
+      isDrawingContentEditable(document, { kind: "stroke", id: stroke.id }) &&
+      polygonsOverlap(transformedOutline(stroke), lasso)
+    ) {
+      selected.push(stroke.id);
+    }
+  }
+  return selected;
 }
 
 export function splitInkMaskByLasso(
@@ -116,9 +124,10 @@ export function getContentSelectionBounds(
 ): StrokeBounds | null {
   const strokeIds = new Set(selection.strokeIds);
   const layerIds = new Set(selection.layerIds);
-  const bounds: StrokeBounds[] = document.strokes
-    .filter((stroke) => strokeIds.has(stroke.id))
-    .map(getStrokeBounds);
+  const bounds: StrokeBounds[] = [];
+  for (const stroke of document.strokes) {
+    if (strokeIds.has(stroke.id)) bounds.push(getStrokeBounds(stroke));
+  }
   for (const layer of document.importedInkLayers) {
     if (!layerIds.has(layer.id)) continue;
     bounds.push({

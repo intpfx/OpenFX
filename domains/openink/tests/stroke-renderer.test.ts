@@ -1,11 +1,14 @@
 import { expect } from "@std/expect";
 
 import {
+  addDrawingLayer,
   applyMaterialPreset,
   commitImportedInkLayer,
+  commitStroke,
   createDrawingDocument,
   type ImportedInkLayer,
   type NativeStroke,
+  setDrawingLayerVisibility,
 } from "../src/drawing-document.ts";
 import { renderDocumentSvg, strokeToSvgPath } from "../src/stroke-renderer.ts";
 
@@ -27,16 +30,14 @@ Deno.test("perfect-freehand output becomes a deterministic exportable SVG", () =
     },
     transform: { x: 12, y: -8, scale: 1.4 },
   };
-  const document = {
-    ...createDrawingDocument({
-      id: "doc-1",
-      title: "雨夜手稿",
-      width: 1200,
-      height: 800,
-      now: "2026-08-19T00:00:00.000Z",
-    }),
-    strokes: [stroke],
-  };
+  const empty = createDrawingDocument({
+    id: "doc-1",
+    title: "雨夜手稿",
+    width: 1200,
+    height: 800,
+    now: "2026-08-19T00:00:00.000Z",
+  });
+  const document = commitStroke(empty, stroke, empty.updatedAt);
 
   const path = strokeToSvgPath(stroke, true);
   const svg = renderDocumentSvg(document);
@@ -66,15 +67,13 @@ Deno.test("blueprint material is encoded in canonical SVG without changing geome
     },
     transform: { x: 0, y: 0, scale: 1 },
   };
-  const base = {
-    ...createDrawingDocument({
-      id: "doc-blueprint",
-      now: "2026-08-19T00:00:00.000Z",
-      width: 400,
-      height: 300,
-    }),
-    strokes: [stroke],
-  };
+  const empty = createDrawingDocument({
+    id: "doc-blueprint",
+    now: "2026-08-19T00:00:00.000Z",
+    width: 400,
+    height: 300,
+  });
+  const base = commitStroke(empty, stroke, empty.updatedAt);
   const document = applyMaterialPreset(base, "blueprint", base.updatedAt);
 
   const svg = renderDocumentSvg(document);
@@ -132,4 +131,96 @@ Deno.test("canonical SVG embeds locally derived photo ink without the source pho
   expect(svg).toContain('width="200" height="150"');
   expect(svg).toContain('transform="translate(25 30) scale(1.5)"');
   expect(svg).not.toContain(layer.source.assetId);
+});
+
+Deno.test("canonical SVG follows drawing layer order and visibility", () => {
+  const makeStroke = (id: string, x: number): NativeStroke => ({
+    id,
+    points: [
+      { x: 20, y: 30, pressure: 0.5, time: 0 },
+      { x: 100, y: 80, pressure: 0.5, time: 16 },
+    ],
+    brush: {
+      color: "#18201c",
+      size: 16,
+      thinning: 0.5,
+      smoothing: 0.7,
+      streamline: 0.6,
+      simulatePressure: true,
+    },
+    transform: { x, y: 0, scale: 1 },
+  });
+  const base = createDrawingDocument({
+    id: "doc-layer-export",
+    now: "2026-08-19T00:00:00.000Z",
+    width: 400,
+    height: 300,
+  });
+  const lower = commitStroke(base, makeStroke("lower", 11), base.updatedAt);
+  const layered = addDrawingLayer(
+    lower,
+    { id: "layer-upper", name: "上层" },
+    lower.updatedAt,
+  );
+  const upper = commitStroke(
+    layered,
+    makeStroke("upper", 22),
+    layered.updatedAt,
+  );
+  const hidden = setDrawingLayerVisibility(
+    upper,
+    "layer-upper",
+    false,
+    upper.updatedAt,
+  );
+
+  const svg = renderDocumentSvg(hidden);
+
+  expect(svg).toContain('data-openink-layer="layer-default"');
+  expect(svg).toContain('transform="translate(11 0) scale(1)"');
+  expect(svg).not.toContain('data-openink-layer="layer-upper"');
+  expect(svg).not.toContain('transform="translate(22 0) scale(1)"');
+});
+
+Deno.test("Warhol material exports a pop-art halftone backdrop", () => {
+  const base = createDrawingDocument({
+    id: "doc-warhol",
+    now: "2026-08-19T00:00:00.000Z",
+    width: 400,
+    height: 300,
+  });
+  const document = applyMaterialPreset(base, "warhol", base.updatedAt);
+
+  const svg = renderDocumentSvg(document);
+
+  expect(svg).toContain('data-openink-material="warhol"');
+  expect(svg).toContain('id="openink-warhol-dots"');
+  expect(svg).toContain('fill="#ff4f9a"');
+  expect(svg).toContain('fill="url(#openink-warhol-dots)"');
+});
+
+Deno.test("each handcrafted material exports its own deterministic backdrop", () => {
+  const base = createDrawingDocument({
+    id: "doc-material-effects",
+    now: "2026-08-19T00:00:00.000Z",
+    width: 400,
+    height: 300,
+  });
+  const effects = [
+    ["blackboard", "openink-blackboard-dust"],
+    ["blueprint", "openink-blueprint-grid"],
+    ["letterpress", "openink-letterpress-fibers"],
+    ["paper", "openink-paper-rule"],
+    ["pixels", "openink-pixels-grid"],
+    ["sketch", "openink-sketch-hatch"],
+    ["warhol", "openink-warhol-dots"],
+  ] as const;
+
+  for (const [preset, definitionId] of effects) {
+    const svg = renderDocumentSvg(
+      applyMaterialPreset(base, preset, base.updatedAt),
+    );
+    expect(svg).toContain(`id="${definitionId}"`);
+    expect(svg).toContain(`fill="url(#${definitionId})"`);
+  }
 });

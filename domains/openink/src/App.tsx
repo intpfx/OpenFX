@@ -1,14 +1,21 @@
 import {
   ArrowClockwise,
   ArrowCounterClockwise,
+  CaretDown,
+  CaretUp,
   Check,
   Copy,
   CursorClick,
   DownloadSimple,
   Eraser,
+  Eye,
+  EyeSlash,
   FilePlus,
   ImageSquare,
+  Lock,
+  LockOpen,
   PencilSimple,
+  Plus,
   Selection,
   Stack,
   Trash,
@@ -23,6 +30,7 @@ import {
 } from "react";
 
 import {
+  addDrawingLayer,
   applyMaterialPreset,
   commitHistory,
   commitImportedInkLayer,
@@ -34,14 +42,23 @@ import {
   type DocumentMaterial,
   type DrawingDocument,
   duplicateDrawingDocument,
+  findContentAtPoint,
   findStrokeAtPoint,
+  MATERIAL_PRESET_LABELS,
+  MATERIAL_PRESET_ORDER,
+  moveDrawingLayer,
   type NativeStroke,
   parseDrawingDocument,
   redoHistory,
   removeContentSelection,
+  removeDrawingLayer,
   removeStrokes,
   renameDrawingDocument,
+  renameDrawingLayer,
   serializeDrawingDocument,
+  setActiveDrawingLayer,
+  setDrawingLayerLocked,
+  setDrawingLayerVisibility,
   type StrokePoint,
   transformContentSelection,
   undoHistory,
@@ -174,22 +191,6 @@ function selectionHasContent(selection: ContentSelection): boolean {
   return selection.strokeIds.length > 0 || selection.layerIds.length > 0;
 }
 
-function findImportedInkLayerAtPoint(
-  document: DrawingDocument,
-  point: Readonly<{ x: number; y: number }>,
-) {
-  for (let index = document.importedInkLayers.length - 1; index >= 0; index -= 1) {
-    const layer = document.importedInkLayers[index];
-    const right = layer.transform.x + layer.width * layer.transform.scale;
-    const bottom = layer.transform.y + layer.height * layer.transform.scale;
-    if (
-      point.x >= layer.transform.x && point.x <= right &&
-      point.y >= layer.transform.y && point.y <= bottom
-    ) return layer;
-  }
-  return null;
-}
-
 function ToolButton(
   props: Readonly<{
     active?: boolean;
@@ -213,6 +214,141 @@ function ToolButton(
       <span>{props.label}</span>
     </button>
   );
+}
+
+const MATERIAL_PATTERN_IDS: Readonly<
+  Partial<Record<DocumentMaterial["preset"], string>>
+> = {
+  blackboard: "openink-blackboard-dust",
+  blueprint: "openink-blueprint-grid",
+  letterpress: "openink-letterpress-fibers",
+  paper: "openink-paper-rule",
+  pixels: "openink-pixels-grid",
+  sketch: "openink-sketch-hatch",
+  warhol: "openink-warhol-dots",
+};
+
+function MaterialPatternDefinitions(
+  props: Readonly<{ material: DocumentMaterial }>,
+) {
+  const material = props.material;
+  switch (material.preset) {
+    case "blackboard":
+      return (
+        <pattern
+          id="openink-blackboard-dust"
+          width="42"
+          height="42"
+          patternUnits="userSpaceOnUse"
+        >
+          <circle cx="8" cy="11" r="1.2" fill={material.foreground} opacity="0.07" />
+          <circle cx="31" cy="28" r="0.8" fill={material.foreground} opacity="0.05" />
+        </pattern>
+      );
+    case "blueprint":
+      return (
+        <pattern
+          id="openink-blueprint-grid"
+          width="32"
+          height="32"
+          patternUnits="userSpaceOnUse"
+        >
+          <path
+            d="M32 0H0V32"
+            fill="none"
+            stroke={material.foreground}
+            strokeOpacity="0.09"
+            strokeWidth="1"
+          />
+        </pattern>
+      );
+    case "letterpress":
+      return (
+        <pattern
+          id="openink-letterpress-fibers"
+          width="24"
+          height="24"
+          patternUnits="userSpaceOnUse"
+        >
+          <path
+            d="M-4 7L9 -2M3 26L26 3M18 29L29 18"
+            stroke={material.foreground}
+            strokeOpacity="0.035"
+            strokeWidth="1"
+          />
+        </pattern>
+      );
+    case "paper":
+      return (
+        <pattern
+          id="openink-paper-rule"
+          width="100"
+          height="36"
+          patternUnits="userSpaceOnUse"
+        >
+          <path
+            d="M0 35.5H100"
+            stroke="#6c9aab"
+            strokeOpacity="0.18"
+            strokeWidth="1"
+          />
+        </pattern>
+      );
+    case "pixels":
+      return (
+        <pattern
+          id="openink-pixels-grid"
+          width="16"
+          height="16"
+          patternUnits="userSpaceOnUse"
+        >
+          <path
+            d="M16 0H0V16"
+            fill="none"
+            stroke="#202524"
+            strokeOpacity="0.08"
+            strokeWidth="1"
+            shapeRendering="crispEdges"
+          />
+        </pattern>
+      );
+    case "sketch":
+      return (
+        <pattern
+          id="openink-sketch-hatch"
+          width="18"
+          height="18"
+          patternUnits="userSpaceOnUse"
+          patternTransform="rotate(18)"
+        >
+          <path
+            d="M0 0V18M9 0V18"
+            stroke="#3b3b38"
+            strokeOpacity="0.035"
+            strokeWidth="1"
+          />
+        </pattern>
+      );
+    case "warhol":
+      return (
+        <pattern
+          id="openink-warhol-dots"
+          width="28"
+          height="28"
+          patternUnits="userSpaceOnUse"
+        >
+          <circle cx="7" cy="7" r="4.5" fill="#ffe447" opacity="0.78" />
+          <circle cx="21" cy="21" r="4.5" fill="#52e5ca" opacity="0.58" />
+        </pattern>
+      );
+    default:
+      return null;
+  }
+}
+
+function MaterialBackdrop(props: Readonly<{ material: DocumentMaterial }>) {
+  const id = MATERIAL_PATTERN_IDS[props.material.preset];
+  return id ? <rect width="100%" height="100%" fill={`url(#${id})`} /> : null;
 }
 
 function MaterialSlider(
@@ -274,34 +410,58 @@ function DrawingThumbnail(
       for (const url of urls) URL.revokeObjectURL(url);
     };
   }, [props.document]);
+  const strokesById = new Map(
+    props.document.strokes.map((stroke) => [stroke.id, stroke]),
+  );
+  const importedById = new Map(
+    props.document.importedInkLayers.map((layer) => [layer.id, layer]),
+  );
   return (
     <svg
       viewBox={`0 0 ${props.document.width} ${props.document.height}`}
       role="img"
       aria-label={`${props.document.title} 缩略图`}
     >
+      <defs>
+        <MaterialPatternDefinitions material={props.document.material} />
+      </defs>
       <rect width="100%" height="100%" fill={props.document.material.background} />
-      {props.document.importedInkLayers.map((layer) =>
-        visuals[layer.id]
+      <MaterialBackdrop material={props.document.material} />
+      {props.document.drawingLayers.map((layer) =>
+        layer.visible
           ? (
-            <image
-              key={layer.id}
-              href={visuals[layer.id]}
-              width={layer.width}
-              height={layer.height}
-              transform={`translate(${layer.transform.x} ${layer.transform.y}) scale(${layer.transform.scale})`}
-            />
+            <g key={layer.id} data-openink-layer={layer.id}>
+              {layer.content.map((reference) => {
+                if (reference.kind === "stroke") {
+                  const stroke = strokesById.get(reference.id);
+                  return stroke
+                    ? (
+                      <path
+                        key={reference.id}
+                        d={strokeToSvgPath(stroke, true)}
+                        fill={props.document.material.foreground}
+                        transform={`translate(${stroke.transform.x} ${stroke.transform.y}) scale(${stroke.transform.scale})`}
+                      />
+                    )
+                    : null;
+                }
+                const imported = importedById.get(reference.id);
+                return imported && visuals[reference.id]
+                  ? (
+                    <image
+                      key={reference.id}
+                      href={visuals[reference.id]}
+                      width={imported.width}
+                      height={imported.height}
+                      transform={`translate(${imported.transform.x} ${imported.transform.y}) scale(${imported.transform.scale})`}
+                    />
+                  )
+                  : null;
+              })}
+            </g>
           )
           : null
       )}
-      {props.document.strokes.map((stroke) => (
-        <path
-          key={stroke.id}
-          d={strokeToSvgPath(stroke, true)}
-          fill={props.document.material.foreground}
-          transform={`translate(${stroke.transform.x} ${stroke.transform.y}) scale(${stroke.transform.scale})`}
-        />
-      ))}
     </svg>
   );
 }
@@ -334,8 +494,11 @@ export function App() {
   const [exportOpen, setExportOpen] = useState(false);
   const [exportStatus, setExportStatus] = useState("");
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const [layersOpen, setLayersOpen] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [renamingLayerId, setRenamingLayerId] = useState<string | null>(null);
+  const [layerRenameValue, setLayerRenameValue] = useState("");
   const [photoSession, setPhotoSession] = useState<PhotoImportSession | null>(null);
   const [inkLayerVisuals, setInkLayerVisuals] = useState<
     Readonly<Record<string, InkLayerVisual>>
@@ -352,6 +515,9 @@ export function App() {
   const saveRequestRef = useRef(0);
   const document = history.present;
   const displayMaterial = materialPreview ?? document.material;
+  const activeDrawingLayer =
+    document.drawingLayers.find((layer) => layer.id === document.activeLayerId) ??
+      document.drawingLayers[0];
   const selectedStrokeIds = new Set(selection.strokeIds);
   const selectedLayerIds = new Set(selection.layerIds);
 
@@ -413,6 +579,12 @@ export function App() {
   function commitDocument(nextDocument: typeof document) {
     if (nextDocument === document) return;
     setHistory((current) => commitHistory(current, nextDocument));
+    saveDocument(nextDocument);
+  }
+
+  function persistDocumentViewState(nextDocument: typeof document) {
+    if (nextDocument === document) return;
+    setHistory((current) => ({ ...current, present: nextDocument }));
     saveDocument(nextDocument);
   }
 
@@ -557,6 +729,12 @@ export function App() {
     const point = pointForEvent(svg, event);
 
     if (tool === "pen") {
+      if (!activeDrawingLayer?.visible || activeDrawingLayer.locked) {
+        setSaveStatus(
+          activeDrawingLayer?.locked ? "当前图层已锁定" : "当前图层已隐藏",
+        );
+        return;
+      }
       const sample: StrokePoint = {
         ...point,
         pressure: pressureForEvent(event),
@@ -597,11 +775,10 @@ export function App() {
       return;
     }
 
-    const hitStroke = findStrokeAtPoint(document, point);
-    const hitLayer = hitStroke ? null : findImportedInkLayerAtPoint(document, point);
+    const hit = findContentAtPoint(document, point);
     const nextSelection: ContentSelection = {
-      strokeIds: hitStroke ? [hitStroke.id] : [],
-      layerIds: hitLayer ? [hitLayer.id] : [],
+      strokeIds: hit?.kind === "stroke" ? [hit.id] : [],
+      layerIds: hit?.kind === "importedInk" ? [hit.id] : [],
     };
     setSelection(nextSelection);
     if (selectionHasContent(nextSelection)) {
@@ -761,6 +938,15 @@ export function App() {
     }
     displayStrokes.push(stroke);
   }
+  const displayStrokesById = new Map(
+    displayStrokes.map((stroke) => [stroke.id, stroke]),
+  );
+  const displayImportedById = new Map(
+    displayDocument.importedInkLayers.map((layer) => [layer.id, layer]),
+  );
+  const visibleContentCount = displayDocument.drawingLayers
+    .filter((layer) => layer.visible)
+    .reduce((total, layer) => total + layer.content.length, 0);
   const selectedBounds = getContentSelectionBounds(displayDocument, selection);
 
   function beginScale(event: ReactPointerEvent<SVGCircleElement>) {
@@ -887,9 +1073,80 @@ export function App() {
     );
   }
 
+  function createLayer() {
+    commitDocument(
+      addDrawingLayer(
+        document,
+        {
+          id: crypto.randomUUID(),
+          name: `图层 ${document.drawingLayers.length + 1}`,
+        },
+        now(),
+      ),
+    );
+    setSelection({ strokeIds: [], layerIds: [] });
+  }
+
+  function activateLayer(layerId: string) {
+    const next = setActiveDrawingLayer(document, layerId);
+    persistDocumentViewState(next);
+    setSelection({ strokeIds: [], layerIds: [] });
+  }
+
+  function startLayerRename(layerId: string, name: string) {
+    setRenamingLayerId(layerId);
+    setLayerRenameValue(name);
+  }
+
+  function commitLayerRename(layerId: string) {
+    try {
+      commitDocument(renameDrawingLayer(document, layerId, layerRenameValue, now()));
+      setRenamingLayerId(null);
+    } catch (error) {
+      setSaveStatus(error instanceof Error ? error.message : "图层重命名失败");
+    }
+  }
+
+  function reorderLayer(layerId: string, targetIndex: number) {
+    commitDocument(moveDrawingLayer(document, layerId, targetIndex, now()));
+  }
+
+  function toggleLayerVisibility(layerId: string, visible: boolean) {
+    commitDocument(setDrawingLayerVisibility(document, layerId, visible, now()));
+    setSelection({ strokeIds: [], layerIds: [] });
+  }
+
+  function toggleLayerLock(layerId: string, locked: boolean) {
+    commitDocument(setDrawingLayerLocked(document, layerId, locked, now()));
+    setSelection({ strokeIds: [], layerIds: [] });
+  }
+
+  function deleteLayer(layerId: string) {
+    const layer = document.drawingLayers.find((candidate) => candidate.id === layerId);
+    if (!layer || document.drawingLayers.length === 1) return;
+    if (
+      layer.content.length > 0 &&
+      !globalThis.confirm(`删除“${layer.name}”及其中 ${layer.content.length} 项内容？`)
+    ) {
+      return;
+    }
+    try {
+      commitDocument(removeDrawingLayer(document, layerId, now()));
+      setSelection({ strokeIds: [], layerIds: [] });
+    } catch (error) {
+      setSaveStatus(error instanceof Error ? error.message : "图层删除失败");
+    }
+  }
+
   async function beginPhotoImport(file: File) {
     if (storageMode !== "opfs") {
       setSaveStatus("照片原图需要 OPFS，本机画稿库尚不可用");
+      return;
+    }
+    if (!activeDrawingLayer?.visible || activeDrawingLayer.locked) {
+      setSaveStatus(
+        activeDrawingLayer?.locked ? "当前图层已锁定" : "当前图层已隐藏",
+      );
       return;
     }
     setSaveStatus("正在读取照片，仅在本机处理");
@@ -981,17 +1238,29 @@ export function App() {
   }
 
   async function renderInkLayersForExport(): Promise<readonly RenderedInkLayer[]> {
-    return await Promise.all(document.importedInkLayers.map(async (layer) => {
-      const sdf = await loadInkSdfAsset(DRAWING_STORE, layer.sdfAssetId);
-      const mask = renderInkSdf(sdf, {
-        thickness: layer.cleanup.thickness,
-        softness: 0.35,
-      });
-      return {
-        id: layer.id,
-        dataUrl: createInkMaskDataUrl(mask, document.material.foreground),
-      };
-    }));
+    const visibleIds = new Set<string>();
+    for (const layer of document.drawingLayers) {
+      if (!layer.visible) continue;
+      for (const reference of layer.content) {
+        if (reference.kind === "importedInk") visibleIds.add(reference.id);
+      }
+    }
+    const renderTasks: Promise<RenderedInkLayer>[] = [];
+    for (const layer of document.importedInkLayers) {
+      if (!visibleIds.has(layer.id)) continue;
+      renderTasks.push((async () => {
+        const sdf = await loadInkSdfAsset(DRAWING_STORE, layer.sdfAssetId);
+        const mask = renderInkSdf(sdf, {
+          thickness: layer.cleanup.thickness,
+          softness: 0.35,
+        });
+        return {
+          id: layer.id,
+          dataUrl: createInkMaskDataUrl(mask, document.material.foreground),
+        };
+      })());
+    }
+    return await Promise.all(renderTasks);
   }
 
   async function exportSvg() {
@@ -1032,7 +1301,7 @@ export function App() {
             <span>
               {document.title} · {document.strokes.length} 笔 ·{" "}
               {document.importedInkLayers.length}
-              张照片墨迹
+              张照片墨迹 · {document.drawingLayers.length} 层
             </span>
           </div>
         </div>
@@ -1045,7 +1314,8 @@ export function App() {
             type="button"
             className="topbar-button"
             aria-label="导入纸张照片"
-            disabled={storageMode !== "opfs"}
+            disabled={storageMode !== "opfs" || !activeDrawingLayer?.visible ||
+              activeDrawingLayer.locked}
             onClick={() => photoInputRef.current?.click()}
           >
             <ImageSquare aria-hidden="true" size={19} />
@@ -1065,10 +1335,26 @@ export function App() {
           <button
             type="button"
             className="topbar-button"
+            aria-label="打开图层面板"
+            aria-expanded={layersOpen}
+            onClick={() => {
+              setLibraryOpen(false);
+              setLayersOpen(true);
+            }}
+          >
+            <Stack aria-hidden="true" size={19} />
+            <span>图层</span>
+          </button>
+          <button
+            type="button"
+            className="topbar-button"
             aria-label="打开画稿库"
             aria-expanded={libraryOpen}
             disabled={!library}
-            onClick={() => setLibraryOpen(true)}
+            onClick={() => {
+              setLayersOpen(false);
+              setLibraryOpen(true);
+            }}
           >
             <Stack aria-hidden="true" size={19} />
             <span>画稿</span>
@@ -1242,6 +1528,163 @@ export function App() {
         )
         : null}
 
+      {layersOpen
+        ? (
+          <>
+            <button
+              type="button"
+              className="layer-scrim"
+              aria-label="关闭图层面板"
+              onClick={() => setLayersOpen(false)}
+            />
+            <aside className="layer-panel" aria-label="画稿图层">
+              <div className="layer-panel-heading">
+                <div>
+                  <span>画稿图层</span>
+                  <strong>{activeDrawingLayer?.name ?? "墨迹"}</strong>
+                </div>
+                <button
+                  type="button"
+                  aria-label="关闭图层面板"
+                  onClick={() => setLayersOpen(false)}
+                >
+                  <X aria-hidden="true" size={20} />
+                </button>
+              </div>
+              <div className="layer-list">
+                {[...document.drawingLayers].reverse().map((layer) => {
+                  const index = document.drawingLayers.findIndex((candidate) =>
+                    candidate.id === layer.id
+                  );
+                  const active = layer.id === document.activeLayerId;
+                  if (renamingLayerId === layer.id) {
+                    return (
+                      <form
+                        key={layer.id}
+                        className="layer-rename-row"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          commitLayerRename(layer.id);
+                        }}
+                      >
+                        <input
+                          autoFocus
+                          aria-label="图层名称"
+                          maxLength={40}
+                          value={layerRenameValue}
+                          onChange={(event) =>
+                            setLayerRenameValue(event.currentTarget.value)}
+                        />
+                        <button type="submit" aria-label="确认图层名称">
+                          <Check aria-hidden="true" size={17} />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label="取消图层重命名"
+                          onClick={() => setRenamingLayerId(null)}
+                        >
+                          <X aria-hidden="true" size={17} />
+                        </button>
+                      </form>
+                    );
+                  }
+                  return (
+                    <article
+                      key={layer.id}
+                      className={`layer-row${active ? " is-active" : ""}${
+                        !layer.visible ? " is-hidden" : ""
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        className="layer-activate"
+                        aria-pressed={active}
+                        onClick={() => activateLayer(layer.id)}
+                      >
+                        <span className="layer-swatch" aria-hidden="true" />
+                        <span>
+                          <strong>{layer.name}</strong>
+                          <small>{layer.content.length} 项内容</small>
+                        </span>
+                      </button>
+                      <div className="layer-actions">
+                        <button
+                          type="button"
+                          aria-label={layer.visible
+                            ? `隐藏${layer.name}`
+                            : `显示${layer.name}`}
+                          title={layer.visible ? "隐藏" : "显示"}
+                          onClick={() =>
+                            toggleLayerVisibility(layer.id, !layer.visible)}
+                        >
+                          {layer.visible
+                            ? <Eye aria-hidden="true" size={16} />
+                            : <EyeSlash aria-hidden="true" size={16} />}
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={layer.locked
+                            ? `解锁${layer.name}`
+                            : `锁定${layer.name}`}
+                          title={layer.locked ? "解锁" : "锁定"}
+                          onClick={() => toggleLayerLock(layer.id, !layer.locked)}
+                        >
+                          {layer.locked
+                            ? <Lock aria-hidden="true" size={16} />
+                            : <LockOpen aria-hidden="true" size={16} />}
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`上移${layer.name}`}
+                          title="上移"
+                          disabled={index === document.drawingLayers.length - 1}
+                          onClick={() => reorderLayer(layer.id, index + 1)}
+                        >
+                          <CaretUp aria-hidden="true" size={16} />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`下移${layer.name}`}
+                          title="下移"
+                          disabled={index === 0}
+                          onClick={() => reorderLayer(layer.id, index - 1)}
+                        >
+                          <CaretDown aria-hidden="true" size={16} />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`重命名${layer.name}`}
+                          title="重命名"
+                          onClick={() => startLayerRename(layer.id, layer.name)}
+                        >
+                          <PencilSimple aria-hidden="true" size={16} />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`删除${layer.name}`}
+                          title="删除"
+                          disabled={document.drawingLayers.length === 1}
+                          onClick={() => deleteLayer(layer.id)}
+                        >
+                          <Trash aria-hidden="true" size={16} />
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+              <button type="button" className="layer-new" onClick={createLayer}>
+                <Plus aria-hidden="true" size={18} />
+                新建图层
+              </button>
+              <p className="layer-note">
+                隐藏层不会显示或导出；锁定层不可选择、套索或擦除。
+              </p>
+            </aside>
+          </>
+        )
+        : null}
+
       <section className="studio">
         <nav className="tool-rail" aria-label="绘图工具">
           <ToolButton
@@ -1357,20 +1800,7 @@ export function App() {
                     mode="multiply"
                   />
                 </filter>
-                <pattern
-                  id="openink-live-grid"
-                  width="32"
-                  height="32"
-                  patternUnits="userSpaceOnUse"
-                >
-                  <path
-                    d="M32 0H0V32"
-                    fill="none"
-                    stroke={displayMaterial.foreground}
-                    strokeOpacity="0.09"
-                    strokeWidth="1"
-                  />
-                </pattern>
+                <MaterialPatternDefinitions material={displayMaterial} />
               </defs>
               <rect
                 className="paper-background"
@@ -1378,52 +1808,68 @@ export function App() {
                 height="100%"
                 fill={displayMaterial.background}
               />
-              {displayMaterial.preset === "blueprint"
-                ? <rect width="100%" height="100%" fill="url(#openink-live-grid)" />
-                : null}
+              <MaterialBackdrop material={displayMaterial} />
               <g
                 className="ink-content"
+                shapeRendering={displayMaterial.preset === "pixels"
+                  ? "crispEdges"
+                  : undefined}
                 filter={displayMaterial.textureStrength > 0 ||
                     displayMaterial.edgeSoftness > 0 || displayMaterial.bleed > 0
                   ? "url(#openink-live-material)"
                   : undefined}
               >
-                {displayDocument.importedInkLayers.map((layer) => {
-                  const visual = inkLayerVisuals[layer.id];
-                  return visual
+                {displayDocument.drawingLayers.map((layer) =>
+                  layer.visible
                     ? (
-                      <image
-                        key={layer.id}
-                        className={selectedLayerIds.has(layer.id)
-                          ? "is-selected"
-                          : undefined}
-                        href={visual.url}
-                        width={layer.width}
-                        height={layer.height}
-                        transform={`translate(${layer.transform.x} ${layer.transform.y}) scale(${layer.transform.scale})`}
-                      />
+                      <g key={layer.id} data-openink-layer={layer.id}>
+                        {layer.content.map((reference) => {
+                          if (reference.kind === "stroke") {
+                            const stroke = displayStrokesById.get(reference.id);
+                            return stroke
+                              ? (
+                                <path
+                                  key={reference.id}
+                                  className={selectedStrokeIds.has(reference.id)
+                                    ? "is-selected"
+                                    : undefined}
+                                  d={strokeToSvgPath(stroke, true)}
+                                  fill={displayMaterial.foreground}
+                                  transform={`translate(${stroke.transform.x} ${stroke.transform.y}) scale(${stroke.transform.scale})`}
+                                />
+                              )
+                              : null;
+                          }
+                          const imported = displayImportedById.get(reference.id);
+                          const visual = inkLayerVisuals[reference.id];
+                          return imported && visual
+                            ? (
+                              <image
+                                key={reference.id}
+                                className={selectedLayerIds.has(reference.id)
+                                  ? "is-selected"
+                                  : undefined}
+                                href={visual.url}
+                                width={imported.width}
+                                height={imported.height}
+                                transform={`translate(${imported.transform.x} ${imported.transform.y}) scale(${imported.transform.scale})`}
+                              />
+                            )
+                            : null;
+                        })}
+                        {layer.id === displayDocument.activeLayerId &&
+                            gestureState?.kind === "draw"
+                          ? (
+                            <path
+                              d={strokeToSvgPath(gestureState.stroke, false)}
+                              fill={displayMaterial.foreground}
+                            />
+                          )
+                          : null}
+                      </g>
                     )
-                    : null;
-                })}
-                {displayStrokes.map((stroke) => (
-                  <path
-                    key={stroke.id}
-                    className={selectedStrokeIds.has(stroke.id)
-                      ? "is-selected"
-                      : undefined}
-                    d={strokeToSvgPath(stroke, true)}
-                    fill={displayMaterial.foreground}
-                    transform={`translate(${stroke.transform.x} ${stroke.transform.y}) scale(${stroke.transform.scale})`}
-                  />
-                ))}
-                {gestureState?.kind === "draw"
-                  ? (
-                    <path
-                      d={strokeToSvgPath(gestureState.stroke, false)}
-                      fill={displayMaterial.foreground}
-                    />
-                  )
-                  : null}
+                    : null
+                )}
               </g>
               {gestureState?.kind === "lasso" && gestureState.points.length > 1
                 ? (
@@ -1453,8 +1899,7 @@ export function App() {
                 )
                 : null}
             </svg>
-            {document.strokes.length === 0 && document.importedInkLayers.length === 0 &&
-                gestureState?.kind !== "draw"
+            {visibleContentCount === 0 && gestureState?.kind !== "draw"
               ? (
                 <div className="empty-hint" aria-hidden="true">
                   <span>落笔即保存</span>
@@ -1471,7 +1916,7 @@ export function App() {
                 ? "选择"
                 : tool === "lasso"
                 ? "套索"
-                : "橡皮"}
+                : "橡皮"} · {activeDrawingLayer?.name ?? "墨迹"}
             </span>
             <span>{exportStatus}</span>
           </div>
@@ -1505,31 +1950,17 @@ export function App() {
           <section className="material-controls" aria-label="画稿材质">
             <div className="material-heading">
               <span>统一材质</span>
-              <strong>
-                {displayMaterial.preset === "ink"
-                  ? "墨水"
-                  : displayMaterial.preset === "pencil"
-                  ? "铅笔"
-                  : displayMaterial.preset === "chalk"
-                  ? "粉笔"
-                  : "蓝图"}
-              </strong>
+              <strong>{MATERIAL_PRESET_LABELS[displayMaterial.preset]}</strong>
             </div>
             <div className="material-presets">
-              {(["ink", "pencil", "chalk", "blueprint"] as const).map((preset) => (
+              {MATERIAL_PRESET_ORDER.map((preset) => (
                 <button
                   key={preset}
                   type="button"
                   aria-pressed={displayMaterial.preset === preset}
                   onClick={() => selectMaterialPreset(preset)}
                 >
-                  {preset === "ink"
-                    ? "墨"
-                    : preset === "pencil"
-                    ? "铅"
-                    : preset === "chalk"
-                    ? "粉"
-                    : "蓝"}
+                  {MATERIAL_PRESET_LABELS[preset]}
                 </button>
               ))}
             </div>

@@ -105,6 +105,10 @@ Deno.test("lasso splitting creates a selected ink fragment without duplicating t
     "original-layer",
     "selected-fragment",
   ]);
+  expect(result.document.drawingLayers[0].content).toEqual([
+    { kind: "importedInk", id: "original-layer" },
+    { kind: "importedInk", id: "selected-fragment" },
+  ]);
   expect(result.document.importedInkLayers[0].source).toBe(layer.source);
   expect(result.document.importedInkLayers[1].source).toBe(layer.source);
   expect([
