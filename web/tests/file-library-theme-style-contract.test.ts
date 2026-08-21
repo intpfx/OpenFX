@@ -87,20 +87,32 @@ Deno.test("homepage uses a full-bleed preview or storage HUD and borderless cont
   );
   expect(homepage).toContain('className="file-library-storage-overview"');
   expect(homepage).toContain('aria-label="文件库存储空间"');
-  expect(homepage).toContain("summarizeFileLibraryStorageHeatmap(props.items");
-  expect(homepage).toContain('className="file-library-storage-heatmap"');
-  expect(homepage).toContain('className="file-library-storage-tile-copy"');
-  expect(homepage).toContain("data-storage-kind={tile.id}");
+  expect(homepage).toContain("summarizeFileLibraryStorageCloud(props.items");
+  expect(homepage).toContain('className="file-library-storage-pixel-field"');
+  expect(homepage).toContain("buildFileLibraryStorageCloudPoints(");
+  expect(homepage).toContain("getFileLibraryStorageCloudPointMotion(");
+  expect(homepage).toContain("(prefers-reduced-motion: reduce)");
+  expect(homepage).toContain("requestAnimationFrame(");
+  expect(libraryCss).toContain("--storage-dot-available: #ffffff;");
+  expect(libraryCss).not.toContain("--storage-dot-available-light");
+  expect(homepage).toContain('className="file-library-calendar"');
+  expect(homepage).toContain("buildFileLibraryCalendarMonth(");
+  expect(homepage).toContain('className="file-library-calendar-day-weather"');
+  expect(homepage).toContain('className="file-library-storage-device-control"');
+  expect(homepage).toContain("props.privateMesh.memberCount");
   expect(homepage).not.toContain(
     'items.find((item) => item.app?.id === "finlyzer")',
   );
   expect(homepage).toContain(
     'className="file-library-search file-library-hud-search"',
   );
-  expect(homepage).toContain('className="file-library-import-tile"');
-  expect(homepage).toContain('aria-label="从 Photos 选择照片或实况原片"');
-  expect(homepage).toContain('aria-label="从文件导入"');
-  expect(homepage).toContain("ref={photosInputRef}");
+  expect(homepage).toContain('className="file-library-hud-import-trigger"');
+  expect(homepage).not.toContain('className="file-library-hud-import-menu"');
+  expect(homepage).not.toContain('className="file-library-import-tile"');
+  expect(homepage).toContain("<BloubGlyph");
+  expect(homepage).toContain("session.toggleLocalDirectory()");
+  expect(homepage).toContain("inputRef.current?.click()");
+  expect(homepage).not.toContain("ref={photosInputRef}");
   expect(homepage).toContain("createNativePhotoImporter");
   expect(homepage).toContain("nativePhotosAvailable");
   expect(homepage).toContain("session.importFromPhotos()");
@@ -121,10 +133,9 @@ Deno.test("homepage uses a full-bleed preview or storage HUD and borderless cont
   expect(homepage).toContain("canOpenLibraryItem(selected)");
   expect(homepage).toContain("isLibraryAppOpenable(item.app.id)");
   expect(homepage).toContain("props.item.app?.description");
-  expect(homepage).toContain("placeholder={`搜索 ${props.resultCount} 项`}");
-  expect(homepage.indexOf('className="file-library-import-tile"')).toBeLessThan(
-    homepage.indexOf("{visibleEntries.map((entry) =>"),
-  );
+  expect(homepage).toContain("placeholder={`搜索 ${props.resultCount} 项文件`}");
+  expect(homepage).toContain("<FolderSimplePlus");
+  expect(homepage).not.toContain("<UploadSimple");
   expect(homepage).toContain("buildSimilarityGridEntries(items)");
   expect(homepage).toContain('className="file-library-group-hud"');
   expect(homepage).toContain('className="file-library-group-hud-members"');
@@ -181,12 +192,46 @@ Deno.test("homepage uses a full-bleed preview or storage HUD and borderless cont
   expect(cssRule(libraryCss, ".file-library-storage-overview")).toContain(
     "isolation: isolate",
   );
-  expect(cssRule(libraryCss, ".file-library-storage-heatmap")).toContain(
-    "position: absolute",
+  expect(cssRule(libraryCss, ".file-library-storage-overview")).toContain(
+    "background: #e7edf1",
   );
-  expect(cssRule(libraryCss, ".file-library-storage-tile")).toContain(
-    "position: absolute",
+  expect(cssRule(libraryCss, ".file-library-storage-pixel-field")).toContain(
+    "inset: 0",
   );
+  expect(cssRule(libraryCss, ".file-library-storage-pixel-field")).toContain(
+    "width: 100%",
+  );
+  expect(libraryCss).toContain(
+    ".file-library-calendar-day {\n  aspect-ratio: 1",
+  );
+  expect(cssRule(libraryCss, ".file-library-calendar-grid")).toContain(
+    "repeat(6, var(--file-library-calendar-cell))",
+  );
+  expect(cssRule(libraryCss, ".file-library-calendar-grid")).toContain(
+    "--file-library-calendar-weekday-height",
+  );
+  expect(homepage).toContain('className="file-library-current-weather-glyph"');
+  expect(homepage).not.toContain("<strong>—°</strong>");
+  expect(
+    cssRule(
+      libraryCss,
+      ".file-library-calendar-stage::before,\n.file-library-calendar-stage::after",
+    ),
+  ).toContain(
+    "backdrop-filter: blur",
+  );
+  expect(cssRule(libraryCss, ".file-library-hud-search")).toContain("border: 0");
+  expect(cssRule(libraryCss, ".file-library-hud-search")).toContain(
+    "border-radius: 0",
+  );
+  expect(cssRule(libraryCss, ".file-library-hud-import-trigger")).toContain(
+    "min-width: 48px",
+  );
+  expect(cssRule(libraryCss, ".file-library-hud-import-trigger")).toContain(
+    "background: transparent",
+  );
+  expect(libraryCss).not.toContain(".file-library-storage-heatmap");
+  expect(libraryCss).not.toContain(".file-library-storage-tile");
   expect(libraryCss).not.toContain(".file-library-storage-meter-track");
   expect(libraryCss).not.toContain(".file-library-storage-meter-details");
   const operationHover = cssRule(
@@ -196,13 +241,6 @@ Deno.test("homepage uses a full-bleed preview or storage HUD and borderless cont
   expect(operationHover).toContain("background: transparent");
   expect(operationHover).toContain("box-shadow: none");
   expect(operationHover).toContain("color: #9ebddd");
-});
-
-Deno.test("App composes independent floating visual plugins outside the file library", () => {
-  expect(app).toContain("<FloatingVisualDock plugins={FLOATING_VISUAL_PLUGINS}");
-  expect(app).not.toContain("renderStorageVisual");
-  expect(homepage).not.toContain("FileLibraryStorageVisualProps");
-  expect(homepage).not.toContain("renderStorageVisual");
 });
 
 Deno.test("selected video and Live Photo HUD previews autoplay silently without a duplicate LIVE tag", () => {
@@ -282,7 +320,7 @@ Deno.test("music without artwork uses a solid title tile and exposes embedded pl
   );
 });
 
-Deno.test("portrait mobile keeps HUD search above the scrolling grid", () => {
+Deno.test("portrait mobile keeps the touch calendar and HUD search above the scrolling grid", () => {
   const portraitRule = "@media (max-width: 900px) and (orientation: portrait)";
   expect(libraryCss).toContain(portraitRule);
   expect(libraryCss.lastIndexOf(portraitRule)).toBeGreaterThan(
@@ -291,12 +329,12 @@ Deno.test("portrait mobile keeps HUD search above the scrolling grid", () => {
   expect(libraryCss.slice(libraryCss.lastIndexOf(portraitRule))).toContain(
     "position: fixed",
   );
-  expect(libraryCss).toContain("height: 40svh");
-  expect(libraryCss).toContain("inset: 40svh 0 0");
-  expect(libraryCss).not.toContain("inset: calc(40svh + 60px) 0 0");
+  expect(libraryCss).toContain("height: 58svh");
+  expect(libraryCss).toContain("inset: 58svh 0 0");
+  expect(libraryCss).not.toContain("inset: calc(58svh + 60px) 0 0");
   expect(libraryCss).toContain("overflow-y: auto");
   expect(libraryCss).toContain("overscroll-behavior: contain");
-  expect(libraryCss).not.toContain("margin-top: calc(40svh + 60px)");
+  expect(libraryCss).not.toContain("margin-top: calc(58svh + 60px)");
   expect(libraryCss).not.toContain(".file-library-head.is-collapsed");
 });
 
@@ -306,11 +344,9 @@ Deno.test("landscape and wide desktop share a split HUD and scrolling matrix", (
 
   expect(libraryCss).toContain(wideRule);
   expect(wideLayout).toContain(
-    "--file-library-hud-width: clamp(360px, 42vw, 640px)",
+    "grid-template-columns: minmax(0, 2fr) minmax(0, 3fr)",
   );
-  expect(wideLayout).toContain(
-    "grid-template-columns: var(--file-library-hud-width) minmax(0, 1fr)",
-  );
+  expect(wideLayout).not.toContain("--file-library-hud-width");
   expect(wideLayout).toContain(
     "grid-template-rows: minmax(0, 1fr)",
   );
@@ -358,6 +394,47 @@ Deno.test("the file viewer uses media-style floating controls and an index-backe
   expect(cssRule(libraryCss, ".file-library-live-export")).toContain(
     "border-radius: 24px",
   );
+});
+
+Deno.test("file grid distinguishes local and remote resources by source dots", () => {
+  expect(homepage).toContain('className="file-library-resource-origin is-local"');
+  expect(homepage).toContain('className="file-library-resource-origin is-remote"');
+  expect(homepage).toContain("privateMesh.remoteFiles");
+  expect(homepage).toContain("<PrivateMeshRemoteCard");
+  expect(homepage).toContain('aria-label="文件存储于本机"');
+  expect(homepage).toContain(
+    "aria-label={`文件存储于其他设备：${props.entry.nodeName}`}",
+  );
+
+  const originDot = cssRule(libraryCss, ".file-library-resource-origin");
+  expect(originDot).toContain("right: clamp(9px, 2vw, 16px)");
+  expect(originDot).toContain("bottom: clamp(9px, 2vw, 16px)");
+  expect(originDot).toContain("border-radius: 50%");
+  expect(cssRule(libraryCss, ".file-library-resource-origin.is-local")).toContain(
+    "background: #4ade80",
+  );
+  expect(cssRule(libraryCss, ".file-library-resource-origin.is-remote")).toContain(
+    "background: #60a5fa",
+  );
+});
+
+Deno.test("Nebula and Bloub expose semantic search, source, and per-file import states", () => {
+  expect(homepage).toContain("<NebulaOrbGlyph");
+  expect(homepage).toContain("resolveNebulaSearchState(");
+  expect(homepage).toContain("<BloubGlyph");
+  expect(homepage).toContain("resolveBloubControlState(");
+  expect(homepage).toContain("<LocalDirectoryCard");
+  expect(homepage).toContain("session.importLocalDirectoryEntry(entry.id)");
+  expect(homepage).toContain(
+    "className={`file-library-directory-import is-${props.entry.importState}`}",
+  );
+
+  const importTarget = cssRule(libraryCss, ".file-library-directory-import");
+  expect(importTarget).toContain("width: 44px");
+  expect(importTarget).toContain("height: 44px");
+  expect(
+    cssRule(libraryCss, ".file-library-directory-import.is-imported > span"),
+  ).toContain("background: #4ade80");
 });
 
 Deno.test("video playback progress cannot replace the active player iframe", () => {

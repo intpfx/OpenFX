@@ -373,7 +373,7 @@ export function parseLibraryMediaMetadata(name: string): LibraryMediaMetadata {
 
 export function classifyFile(
   input: Pick<File, "name" | "type">,
-): Exclude<LibraryItemKind, "live-photo" | "link"> {
+): Exclude<LibraryItemKind, "app" | "live-photo" | "link"> {
   const extension = getFileExtension(input.name);
   const mime = input.type.toLowerCase();
 

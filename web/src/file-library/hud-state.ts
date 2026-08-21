@@ -24,56 +24,79 @@ export type FileLibraryStorageSummary = {
   persisted: boolean;
 };
 
-export type FileLibraryStorageTileId =
+export type FileLibraryStorageCloudSegmentId =
   | "available"
-  | "video"
   | "image"
-  | "live-photo"
-  | "document"
+  | "video"
   | "audio"
+  | "document"
   | "other";
 
-export type FileLibraryStorageTile = {
-  id: FileLibraryStorageTileId;
+export type FileLibraryStorageCloudSegment = {
+  id: FileLibraryStorageCloudSegmentId;
   label: string;
   bytes: number;
   valueLabel: string;
-  rect: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  };
-  emphasis: "large" | "medium" | "small";
+  ratio: number;
 };
 
-export type FileLibraryStorageHeatmap = {
+export type FileLibraryStorageCloud = {
   summary: FileLibraryStorageSummary | null;
-  tiles: FileLibraryStorageTile[];
+  segments: FileLibraryStorageCloudSegment[];
 };
 
-type FileLibraryStorageCategory = Exclude<FileLibraryStorageTileId, "available">;
+export type FileLibraryStorageCloudPoint = {
+  column: number;
+  row: number;
+  kind: FileLibraryStorageCloudSegmentId;
+  tone: number;
+  scale: number;
+};
 
-type WeightedStorageTile = {
-  id: FileLibraryStorageCategory;
-  label: string;
+export type FileLibraryStorageCloudPointMotion = {
+  offsetX: number;
+  offsetY: number;
+  scale: number;
+  alpha: number;
+};
+
+export type FileLibraryHudDeviceSource = {
+  localNodeId: string;
+  members: readonly { nodeId: string; nodeName: string }[];
+  connections: readonly {
+    nodeId: string;
+    status: "connecting" | "connected" | "error";
+  }[];
+  remoteFiles: readonly {
+    nodeId: string;
+    size: number;
+    availability: "online" | "cached";
+  }[];
+};
+
+export type FileLibraryHudDevice = {
+  nodeId: string;
+  nodeName: string;
+  status: "local" | "online" | "offline";
   bytes: number;
+  valueLabel: string;
+  detail: string;
 };
 
-type StorageRect = FileLibraryStorageTile["rect"];
-
-const STORAGE_CATEGORY_LABELS: Record<FileLibraryStorageCategory, string> = {
-  video: "视频",
+const STORAGE_CLOUD_CATEGORY_LABELS: Record<
+  Exclude<FileLibraryStorageCloudSegmentId, "available">,
+  string
+> = {
   image: "照片",
-  "live-photo": "实况照片",
+  video: "视频",
+  audio: "音乐",
   document: "文档",
-  audio: "音频",
   other: "其他",
 };
 
-const STORAGE_CATEGORY_ORDER = Object.keys(
-  STORAGE_CATEGORY_LABELS,
-) as FileLibraryStorageCategory[];
+const STORAGE_CLOUD_CATEGORY_ORDER = Object.keys(
+  STORAGE_CLOUD_CATEGORY_LABELS,
+) as Exclude<FileLibraryStorageCloudSegmentId, "available">[];
 
 export function toggleFileLibraryEntrySelection(
   selectedItemId: string | null,
@@ -110,118 +133,44 @@ export function summarizeFileLibraryStorage(
   };
 }
 
-function getStorageCategory(
+function getStorageCloudCategory(
   kind: LibraryItem["kind"],
-): FileLibraryStorageCategory | null {
+): Exclude<FileLibraryStorageCloudSegmentId, "available"> | null {
   if (kind === "app") return null;
+  if (kind === "image" || kind === "live-photo") return "image";
   if (kind === "video") return "video";
-  if (kind === "image") return "image";
-  if (kind === "live-photo") return "live-photo";
-  if (kind === "pdf" || kind === "text") return "document";
   if (kind === "audio") return "audio";
+  if (kind === "pdf" || kind === "text") return "document";
   return "other";
 }
 
-function splitStorageTiles(
-  tiles: readonly WeightedStorageTile[],
-): [WeightedStorageTile[], WeightedStorageTile[]] {
-  const total = tiles.reduce((sum, tile) => sum + tile.bytes, 0);
-  let running = 0;
-  let bestIndex = 1;
-  let bestDistance = Number.POSITIVE_INFINITY;
-
-  for (let index = 1; index < tiles.length; index += 1) {
-    running += tiles[index - 1].bytes;
-    const distance = Math.abs(total / 2 - running);
-    if (distance < bestDistance) {
-      bestIndex = index;
-      bestDistance = distance;
-    }
-  }
-
-  return [tiles.slice(0, bestIndex), tiles.slice(bestIndex)];
-}
-
-function layoutStorageTiles(
-  tiles: readonly WeightedStorageTile[],
-  rect: StorageRect,
-): Array<WeightedStorageTile & { rect: StorageRect }> {
-  if (tiles.length === 0) return [];
-  if (tiles.length === 1) return [{ ...tiles[0], rect }];
-
-  const [first, second] = splitStorageTiles(tiles);
-  const firstBytes = first.reduce((sum, tile) => sum + tile.bytes, 0);
-  const totalBytes = firstBytes + second.reduce((sum, tile) => sum + tile.bytes, 0);
-  const ratio = totalBytes > 0 ? firstBytes / totalBytes : 0.5;
-  const splitVertically = rect.width >= rect.height;
-
-  if (splitVertically) {
-    const firstWidth = rect.width * ratio;
-    return [
-      ...layoutStorageTiles(first, { ...rect, width: firstWidth }),
-      ...layoutStorageTiles(second, {
-        x: rect.x + firstWidth,
-        y: rect.y,
-        width: rect.width - firstWidth,
-        height: rect.height,
-      }),
-    ];
-  }
-
-  const firstHeight = rect.height * ratio;
-  return [
-    ...layoutStorageTiles(first, { ...rect, height: firstHeight }),
-    ...layoutStorageTiles(second, {
-      x: rect.x,
-      y: rect.y + firstHeight,
-      width: rect.width,
-      height: rect.height - firstHeight,
-    }),
-  ];
-}
-
-function getStorageTileEmphasis(rect: StorageRect): FileLibraryStorageTile["emphasis"] {
-  const area = rect.width * rect.height / 10_000;
-  if (area >= 0.16) return "large";
-  if (area >= 0.035) return "medium";
-  return "small";
-}
-
-function getStorageHeatmapUsageRatio(usage: number, quota: number): number {
-  if (quota <= 0 || usage <= 0) return 0;
-  if (usage >= quota) return 1;
-  return Math.min(0.84, Math.max(0.32, usage / quota));
-}
-
-export function summarizeFileLibraryStorageHeatmap(
+export function summarizeFileLibraryStorageCloud(
   items: readonly Pick<LibraryItem, "kind" | "size">[],
   storage: StorageEstimate | null,
-): FileLibraryStorageHeatmap {
+): FileLibraryStorageCloud {
   const summary = summarizeFileLibraryStorage(storage);
-  if (!summary || !storage || normalizeStorageBytes(storage.quota) === 0) {
-    const rect = { x: 0, y: 0, width: 100, height: 100 };
+  const quota = normalizeStorageBytes(storage?.quota ?? 0);
+  if (!summary || quota === 0) {
     return {
       summary,
-      tiles: [{
+      segments: [{
         id: "available",
         label: "可用空间",
         bytes: 0,
         valueLabel: "读取中",
-        rect,
-        emphasis: "large",
+        ratio: 1,
       }],
     };
   }
 
-  const quota = normalizeStorageBytes(storage.quota);
-  const usage = Math.min(normalizeStorageBytes(storage.usage), quota);
-  const available = Math.max(0, quota - usage);
-  const categoryBytes = new Map<FileLibraryStorageCategory, number>(
-    STORAGE_CATEGORY_ORDER.map((category) => [category, 0]),
-  );
+  const usage = Math.min(normalizeStorageBytes(storage?.usage ?? 0), quota);
+  const categoryBytes = new Map<
+    Exclude<FileLibraryStorageCloudSegmentId, "available">,
+    number
+  >(STORAGE_CLOUD_CATEGORY_ORDER.map((category) => [category, 0]));
 
   for (const item of items) {
-    const category = getStorageCategory(item.kind);
+    const category = getStorageCloudCategory(item.kind);
     if (!category) continue;
     categoryBytes.set(
       category,
@@ -240,51 +189,198 @@ export function summarizeFileLibraryStorageHeatmap(
     );
   } else if (trackedBytes > usage && trackedBytes > 0) {
     const scale = usage / trackedBytes;
-    for (const category of STORAGE_CATEGORY_ORDER) {
+    for (const category of STORAGE_CLOUD_CATEGORY_ORDER) {
       categoryBytes.set(category, (categoryBytes.get(category) ?? 0) * scale);
     }
   }
 
-  const weightedCategories = STORAGE_CATEGORY_ORDER
-    .map((id) => ({
-      id,
-      label: STORAGE_CATEGORY_LABELS[id],
-      bytes: categoryBytes.get(id) ?? 0,
-    }))
-    .filter((tile) => tile.bytes > 0);
-  const heatmapUsageRatio = getStorageHeatmapUsageRatio(usage, quota);
-  const availableWidth = (1 - heatmapUsageRatio) * 100;
-  const availableRect = {
-    x: 0,
-    y: 0,
-    width: availableWidth,
-    height: 100,
-  };
-  const categoryRects = layoutStorageTiles(weightedCategories, {
-    x: availableWidth,
-    y: 0,
-    width: 100 - availableWidth,
-    height: 100,
-  });
-  const tiles: FileLibraryStorageTile[] = [];
-
+  const segments: FileLibraryStorageCloudSegment[] = [];
+  const available = Math.max(0, quota - usage);
   if (available > 0) {
-    tiles.push({
+    segments.push({
       id: "available",
       label: "可用空间",
       bytes: available,
       valueLabel: formatLibraryBytes(available),
-      rect: availableRect,
-      emphasis: getStorageTileEmphasis(availableRect),
+      ratio: available / quota,
     });
   }
-  tiles.push(...categoryRects.map((tile) => ({
-    ...tile,
-    valueLabel: formatLibraryBytes(tile.bytes),
-    emphasis: getStorageTileEmphasis(tile.rect),
-  })));
+  segments.push(...STORAGE_CLOUD_CATEGORY_ORDER.flatMap((id) => {
+    const bytes = categoryBytes.get(id) ?? 0;
+    return bytes > 0
+      ? [{
+        id,
+        label: STORAGE_CLOUD_CATEGORY_LABELS[id],
+        bytes,
+        valueLabel: formatLibraryBytes(bytes),
+        ratio: bytes / quota,
+      }]
+      : [];
+  }));
 
-  return { summary, tiles };
+  return { summary, segments };
+}
+
+function storageCloudNoise(value: number): number {
+  const noise = Math.sin(value * 12.9898 + 78.233) * 43_758.5453;
+  return noise - Math.floor(noise);
+}
+
+export function getFileLibraryStorageCloudPointMotion(
+  point: FileLibraryStorageCloudPoint,
+  elapsedMs: number,
+  reducedMotion: boolean,
+): FileLibraryStorageCloudPointMotion {
+  if (reducedMotion) {
+    return { offsetX: 0, offsetY: 0, scale: 1, alpha: 0.92 };
+  }
+
+  const elapsed = Number.isFinite(elapsedMs) ? Math.max(0, elapsedMs) : 0;
+  const phase = point.column * 0.61 + point.row * 0.37 + point.tone * Math.PI * 2;
+  const horizontalWave = Math.cos(elapsed / 1_700 + phase * 1.23);
+  const verticalWave = Math.sin(elapsed / 1_250 + phase);
+  const alpha = 0.89 + horizontalWave * 0.04 + verticalWave * 0.07;
+
+  return {
+    offsetX: horizontalWave * 0.85,
+    offsetY: verticalWave * 1.45,
+    scale: 0.96 + horizontalWave * 0.04 + verticalWave * 0.05,
+    alpha: Math.max(0.78, Math.min(1, alpha)),
+  };
+}
+
+export function buildFileLibraryStorageCloudPoints(
+  segments: readonly FileLibraryStorageCloudSegment[],
+  columns: number,
+  rows: number,
+): FileLibraryStorageCloudPoint[] {
+  const safeColumns = Math.max(1, Math.floor(columns));
+  const safeRows = Math.max(1, Math.floor(rows));
+  const pointCount = safeColumns * safeRows;
+  const weighted = segments
+    .map((segment, index) => ({
+      segment,
+      index,
+      ratio: Number.isFinite(segment.ratio) && segment.ratio > 0 ? segment.ratio : 0,
+    }))
+    .filter((entry) => entry.ratio > 0);
+  const source = weighted.length > 0 ? weighted : [{
+    segment: {
+      id: "available" as const,
+      label: "可用空间",
+      bytes: 0,
+      valueLabel: "读取中",
+      ratio: 1,
+    },
+    index: 0,
+    ratio: 1,
+  }];
+  const totalRatio = source.reduce((sum, entry) => sum + entry.ratio, 0);
+  const allocations = source.map((entry) => {
+    const exact = pointCount * entry.ratio / totalRatio;
+    return {
+      ...entry,
+      count: Math.floor(exact),
+      remainder: exact - Math.floor(exact),
+    };
+  });
+  let remaining = pointCount - allocations.reduce(
+    (sum, entry) => sum + entry.count,
+    0,
+  );
+  for (
+    const allocation of [...allocations].sort((a, b) =>
+      b.remainder - a.remainder || a.index - b.index
+    )
+  ) {
+    if (remaining <= 0) break;
+    allocation.count += 1;
+    remaining -= 1;
+  }
+  const cells = Array.from({ length: pointCount }, (_, index) => {
+    const column = index % safeColumns;
+    const row = Math.floor(index / safeColumns);
+    const x = (column + 0.5) / safeColumns;
+    const y = (row + 0.5) / safeRows;
+    const wave = Math.sin(x * Math.PI * 3.1) * 0.075 +
+      Math.cos(x * Math.PI * 6.4) * 0.035;
+    const grain = (storageCloudNoise(index + safeColumns * 17) - 0.5) * 0.05;
+    return { column, row, index, rank: y + wave + grain };
+  }).sort((a, b) => a.rank - b.rank || a.index - b.index);
+
+  let cursor = 0;
+  const points: FileLibraryStorageCloudPoint[] = [];
+  for (const allocation of allocations) {
+    for (let index = 0; index < allocation.count; index += 1) {
+      const cell = cells[cursor];
+      cursor += 1;
+      points.push({
+        column: cell.column,
+        row: cell.row,
+        kind: allocation.segment.id,
+        tone: storageCloudNoise(cell.index * 5 + 11),
+        scale: 0.58 + storageCloudNoise(cell.index * 7 + 23) * 0.42,
+      });
+    }
+  }
+
+  return points;
+}
+
+export function summarizeFileLibraryHudDevices(
+  items: readonly Pick<LibraryItem, "kind" | "size">[],
+  source: FileLibraryHudDeviceSource | null,
+): FileLibraryHudDevice[] {
+  if (!source) return [];
+
+  const localBytes = items.reduce(
+    (sum, item) => item.kind === "app" ? sum : sum + normalizeStorageBytes(item.size),
+    0,
+  );
+  const connectedNodeIds = new Set(
+    source.connections.filter((connection) => connection.status === "connected")
+      .map((connection) => connection.nodeId),
+  );
+  const onlineCatalogNodeIds = new Set(
+    source.remoteFiles.filter((file) => file.availability === "online")
+      .map((file) => file.nodeId),
+  );
+  const remoteBytes = new Map<string, number>();
+  for (const file of source.remoteFiles) {
+    remoteBytes.set(
+      file.nodeId,
+      (remoteBytes.get(file.nodeId) ?? 0) + normalizeStorageBytes(file.size),
+    );
+  }
+
+  return [...source.members]
+    .sort((a, b) =>
+      Number(b.nodeId === source.localNodeId) -
+      Number(a.nodeId === source.localNodeId)
+    )
+    .map((member) => {
+      const local = member.nodeId === source.localNodeId;
+      const bytes = local ? localBytes : remoteBytes.get(member.nodeId) ?? 0;
+      const status: FileLibraryHudDevice["status"] = local
+        ? "local"
+        : connectedNodeIds.has(member.nodeId) ||
+            onlineCatalogNodeIds.has(member.nodeId)
+        ? "online"
+        : "offline";
+      const valueLabel = formatLibraryBytes(bytes);
+      return {
+        nodeId: member.nodeId,
+        nodeName: member.nodeName,
+        status,
+        bytes,
+        valueLabel,
+        detail: status === "local"
+          ? `本机 · ${valueLabel}`
+          : status === "online"
+          ? `在线 · ${valueLabel} 可见`
+          : `离线 · ${valueLabel} 缓存`,
+      };
+    });
 }
 
 export function summarizeFileLibraryHudProgress(

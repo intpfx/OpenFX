@@ -26,8 +26,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-The floating visual plug-in dock includes adapted source and rendering behavior
-from Bloub and Nebula-Orb. The two projects remain independent plug-ins.
+The file-library search and source controls include adapted rendering behavior
+from Bloub and Nebula-Orb. The two projects remain independent renderers.
 
 Bloub — https://github.com/jeremy-prt/bloub
 Copyright (c) 2026 Jérémy Perret

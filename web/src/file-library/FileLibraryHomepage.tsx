@@ -3,10 +3,15 @@ import {
   ArrowLeft,
   ArrowSquareOut,
   Check,
+  Cloud,
+  CloudFog,
+  CloudLightning,
+  CloudRain,
+  CloudSun,
   DownloadSimple,
   FileZip,
   FilmStrip,
-  FolderOpen,
+  FolderSimplePlus,
   GithubLogo,
   Heart,
   HeartStraight,
@@ -17,11 +22,12 @@ import {
   MapPin,
   PencilSimple,
   PlayCircle,
+  Snowflake,
   SpeakerHigh,
   SpeakerSlash,
   StackSimple,
+  Sun,
   Trash,
-  UploadSimple,
   X,
 } from "@phosphor-icons/react";
 import {
@@ -71,13 +77,33 @@ import {
 import { createPrivateMeshThumbnail } from "./private-mesh-thumbnail.ts";
 import { createIndexedDbPrivateMeshKeyVault } from "./private-mesh-key-vault.ts";
 import { createNativePhotoImporter } from "./native-photo-import.ts";
+import {
+  createBrowserLocalDirectorySource,
+  type LocalDirectoryEntrySnapshot,
+  type LocalDirectorySourceSnapshot,
+} from "./local-directory-source.ts";
+import { BloubGlyph, NebulaOrbGlyph } from "./FileLibraryVisualGlyphs.tsx";
+import {
+  resolveBloubControlState,
+  resolveNebulaSearchState,
+} from "./source-control-state.ts";
 import { getLibraryAppTileColor, getLibraryAudioTileColor } from "./app-tile.ts";
 import { LibraryAudioPlayer } from "./library-audio-player.tsx";
 import {
+  buildFileLibraryStorageCloudPoints,
+  type FileLibraryStorageCloudSegment,
+  getFileLibraryStorageCloudPointMotion,
   summarizeFileLibraryHudProgress,
-  summarizeFileLibraryStorageHeatmap,
+  summarizeFileLibraryStorageCloud,
   toggleFileLibraryEntrySelection,
 } from "./hud-state.ts";
+import {
+  buildFileLibraryCalendarMonth,
+  classifyFileLibraryWeatherCode,
+  fetchOpenMeteoHudWeather,
+  type FileLibraryHudWeather,
+  type FileLibraryWeatherKind,
+} from "./hud-weather.ts";
 import {
   type LibraryGridColumns,
   parseLibraryGridColumns,
@@ -203,6 +229,7 @@ function useStoredObjectUrl(
 function PrivateMeshRemoteThumbnail(props: {
   session: FileLibrarySession;
   entry: PrivateMeshRemoteFileSnapshot;
+  variant?: "grid" | "list";
 }) {
   const [url, setUrl] = useState("");
 
@@ -231,7 +258,11 @@ function PrivateMeshRemoteThumbnail(props: {
   ]);
 
   return (
-    <span className="file-library-private-mesh-remote-thumbnail">
+    <span
+      className={`file-library-private-mesh-remote-thumbnail${
+        props.variant === "grid" ? " is-grid" : ""
+      }`}
+    >
       {url
         ? <img alt="" src={url} />
         : getFileExtension(props.entry.name).toUpperCase() || "FILE"}
@@ -539,7 +570,9 @@ function LibraryCard(props: {
         appPreview ? " has-live-app-preview" : ""
       }${showsAppColor ? " has-color-app-preview" : ""}${
         showsAudioTitleFallback ? " has-audio-title-fallback" : ""
-      }${props.selected ? " is-selected" : ""}`}
+      }${props.item.kind === "app" ? "" : " has-resource-origin"}${
+        props.selected ? " is-selected" : ""
+      }`}
       data-library-item={props.item.id}
       style={{
         "--audio-fallback-color": getAudioFallbackColor(props.item),
@@ -668,14 +701,161 @@ function LibraryCard(props: {
           </span>
         )
         : null}
+      {props.item.kind !== "app"
+        ? (
+          <span
+            aria-label="文件存储于本机"
+            className="file-library-resource-origin is-local"
+            role="img"
+            title="存储于本机"
+          />
+        )
+        : null}
       <button
-        aria-label={`${props.item.name} ${KIND_LABELS[props.item.kind]}`}
+        aria-label={`${props.item.name} ${KIND_LABELS[props.item.kind]}${
+          props.item.kind === "app" ? "" : "，存储于本机"
+        }`}
         aria-pressed={props.selected}
         className="file-library-card-open"
         type="button"
         onClick={props.onSelect}
       />
     </article>
+  );
+}
+
+function useLocalDirectoryObjectUrl(
+  session: FileLibrarySession,
+  entry: LocalDirectoryEntrySnapshot | null,
+) {
+  const [url, setUrl] = useState("");
+  useEffect(() => {
+    if (!entry || (entry.kind !== "image" && entry.kind !== "video")) {
+      setUrl("");
+      return;
+    }
+    let active = true;
+    let nextUrl = "";
+    void session.getLocalDirectoryFile(entry.id).then((file) => {
+      if (!active) return;
+      nextUrl = URL.createObjectURL(file);
+      setUrl(nextUrl);
+    }).catch(() => {
+      if (active) setUrl("");
+    });
+    return () => {
+      active = false;
+      if (nextUrl) URL.revokeObjectURL(nextUrl);
+    };
+  }, [entry, session]);
+  return url;
+}
+
+function LocalDirectoryCard(props: {
+  entry: LocalDirectoryEntrySnapshot;
+  session: FileLibrarySession;
+  selected: boolean;
+  onSelect: () => void;
+  onImport: () => void;
+}) {
+  const url = useLocalDirectoryObjectUrl(props.session, props.entry);
+  const extension = getFileExtension(props.entry.name).toUpperCase() || "FILE";
+  const canImport = props.entry.importState === "available" ||
+    props.entry.importState === "failed";
+  const importLabel = props.entry.importState === "imported"
+    ? `${props.entry.name} 已存入 OPFS`
+    : props.entry.importState === "importing"
+    ? `正在将 ${props.entry.name} 导入 OPFS`
+    : props.entry.importState === "failed"
+    ? `重试将 ${props.entry.name} 导入 OPFS`
+    : `将 ${props.entry.name} 导入 OPFS`;
+
+  return (
+    <article
+      className={`file-library-card file-library-directory-card is-${props.entry.kind} has-resource-origin is-${props.entry.importState}${
+        props.selected ? " is-selected" : ""
+      }`}
+      data-local-directory-item={props.entry.id}
+    >
+      <span className="file-library-card-media">
+        {url && props.entry.kind === "image"
+          ? <img alt="" decoding="async" draggable={false} src={url} />
+          : null}
+        {url && props.entry.kind === "video"
+          ? <video aria-hidden="true" muted playsInline preload="metadata" src={url} />
+          : null}
+        {!url
+          ? (
+            <span className="file-library-card-file-preview" aria-hidden="true">
+              <span>{extension.slice(0, 6)}</span>
+            </span>
+          )
+          : null}
+      </span>
+      <span className="file-library-card-shade" />
+      <span className="file-library-card-copy">
+        <strong>{props.entry.name}</strong>
+        <span>{props.entry.relativePath} · {formatLibraryBytes(props.entry.size)}</span>
+      </span>
+      <button
+        aria-label={`预览本地文件 ${props.entry.name}`}
+        aria-pressed={props.selected}
+        className="file-library-card-open"
+        type="button"
+        onClick={props.onSelect}
+      />
+      <button
+        aria-label={importLabel}
+        className={`file-library-directory-import is-${props.entry.importState}`}
+        disabled={!canImport}
+        title={props.entry.error ? `${importLabel}：${props.entry.error}` : importLabel}
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          props.onImport();
+        }}
+      >
+        <span aria-hidden="true" />
+      </button>
+    </article>
+  );
+}
+
+function LocalDirectoryHudPreview(props: {
+  entry: LocalDirectoryEntrySnapshot;
+  session: FileLibrarySession;
+}) {
+  const url = useLocalDirectoryObjectUrl(props.session, props.entry);
+  return (
+    <section
+      aria-label={`${props.entry.name} 本地文件预览`}
+      className={`file-library-hud-preview-surface file-library-directory-hud-preview is-${props.entry.kind}`}
+    >
+      {url && props.entry.kind === "image"
+        ? <img alt={props.entry.name} src={url} />
+        : null}
+      {url && props.entry.kind === "video"
+        ? <video autoPlay loop muted playsInline src={url} />
+        : null}
+      {!url
+        ? (
+          <span className="file-library-hud-preview-file">
+            {getFileExtension(props.entry.name).toUpperCase() || "FILE"}
+          </span>
+        )
+        : null}
+      <span className="file-library-directory-hud-copy">
+        <strong>{props.entry.name}</strong>
+        <small>
+          {props.entry.relativePath} · {formatLibraryBytes(props.entry.size)}
+        </small>
+        <span>
+          {props.entry.importState === "imported"
+            ? "已复制到 OpenFX OPFS"
+            : "只读本地文件；点按格子右下角圆点可复制到 OPFS"}
+        </span>
+      </span>
+    </section>
   );
 }
 
@@ -749,7 +929,7 @@ function LibrarySimilarityCard(props: {
 
   return (
     <article
-      className={`file-library-card file-library-group-card${
+      className={`file-library-card file-library-group-card has-resource-origin${
         props.selected ? " is-selected" : ""
       }`}
       data-library-group={props.entry.group.id}
@@ -781,12 +961,63 @@ function LibrarySimilarityCard(props: {
         <StackSimple size={15} weight="fill" />
         {props.entry.items.length}
       </span>
+      <span
+        aria-label="文件存储于本机"
+        className="file-library-resource-origin is-local"
+        role="img"
+        title="存储于本机"
+      />
       <button
-        aria-label={`${relationLabel}组，${props.entry.items.length} 个文件`}
+        aria-label={`${relationLabel}组，${props.entry.items.length} 个文件，存储于本机`}
         aria-pressed={props.selected}
         className="file-library-card-open"
         type="button"
         onClick={props.onSelect}
+      />
+    </article>
+  );
+}
+
+function PrivateMeshRemoteCard(props: {
+  entry: PrivateMeshRemoteFileSnapshot;
+  session: FileLibrarySession;
+  onOpenPrivateMesh: () => void;
+}) {
+  const availabilityLabel = props.entry.availability === "online"
+    ? "设备在线"
+    : "离线缓存";
+
+  return (
+    <article
+      className={`file-library-card file-library-remote-card is-${props.entry.kind} has-resource-origin is-${props.entry.availability}`}
+      data-private-mesh-item={`${props.entry.nodeId}:${props.entry.itemId}`}
+    >
+      <span className="file-library-card-media">
+        <PrivateMeshRemoteThumbnail
+          entry={props.entry}
+          session={props.session}
+          variant="grid"
+        />
+      </span>
+      <span className="file-library-card-shade" />
+      <span className="file-library-card-copy">
+        <strong>{props.entry.name}</strong>
+        <span>
+          {props.entry.nodeName} · {formatLibraryBytes(props.entry.size)} ·{" "}
+          {availabilityLabel}
+        </span>
+      </span>
+      <span
+        aria-label={`文件存储于其他设备：${props.entry.nodeName}`}
+        className="file-library-resource-origin is-remote"
+        role="img"
+        title={`存储于其他设备：${props.entry.nodeName}`}
+      />
+      <button
+        aria-label={`查看 ${props.entry.name}，存储于其他设备 ${props.entry.nodeName}，${availabilityLabel}`}
+        className="file-library-card-open"
+        type="button"
+        onClick={props.onOpenPrivateMesh}
       />
     </article>
   );
@@ -1011,105 +1242,502 @@ function LibraryHudPreview(props: {
   );
 }
 
+function LibraryStoragePixelField(props: {
+  segments: readonly FileLibraryStorageCloudSegment[];
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    const motionPreference = globalThis.matchMedia?.(
+      "(prefers-reduced-motion: reduce)",
+    );
+    let reducedMotion = motionPreference?.matches ?? false;
+    let width = 1;
+    let height = 1;
+    let pixelRatio = 1;
+    let cellWidth = 1;
+    let cellHeight = 1;
+    let baseSize = 1;
+    let points = buildFileLibraryStorageCloudPoints(props.segments, 1, 1);
+    let colors: Record<FileLibraryStorageCloudSegment["id"], string> = {
+      available: "#ffffff",
+      image: "#2382f4",
+      video: "#f03f67",
+      audio: "#7b42df",
+      document: "#f0a51f",
+      other: "#788895",
+    };
+    let animationFrame: number | null = null;
+    let lastRenderedAt = Number.NEGATIVE_INFINITY;
+    const startedAt = globalThis.performance.now();
+
+    const refreshLayout = () => {
+      width = Math.max(1, canvas.clientWidth);
+      height = Math.max(1, canvas.clientHeight);
+      pixelRatio = Math.min(globalThis.devicePixelRatio || 1, 2);
+      const physicalWidth = Math.round(width * pixelRatio);
+      const physicalHeight = Math.round(height * pixelRatio);
+      if (canvas.width !== physicalWidth) canvas.width = physicalWidth;
+      if (canvas.height !== physicalHeight) canvas.height = physicalHeight;
+      context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+
+      const columns = Math.max(36, Math.min(78, Math.round(width / 8)));
+      const rows = Math.max(48, Math.min(128, Math.round(height / 8)));
+      points = buildFileLibraryStorageCloudPoints(
+        props.segments,
+        columns,
+        rows,
+      );
+      cellWidth = width / columns;
+      cellHeight = height / rows;
+      baseSize = Math.max(
+        1.1,
+        Math.min(3.4, Math.min(cellWidth, cellHeight) * 0.48),
+      );
+
+      const styles = getComputedStyle(canvas);
+      colors = {
+        available: styles.getPropertyValue("--storage-dot-available").trim(),
+        image: styles.getPropertyValue("--storage-dot-image").trim(),
+        video: styles.getPropertyValue("--storage-dot-video").trim(),
+        audio: styles.getPropertyValue("--storage-dot-audio").trim(),
+        document: styles.getPropertyValue("--storage-dot-document").trim(),
+        other: styles.getPropertyValue("--storage-dot-other").trim(),
+      };
+    };
+
+    const draw = (elapsedMs: number) => {
+      context.clearRect(0, 0, width, height);
+      for (const point of points) {
+        const motion = getFileLibraryStorageCloudPointMotion(
+          point,
+          elapsedMs,
+          reducedMotion,
+        );
+        const size = baseSize * point.scale * motion.scale;
+        const x = (point.column + 0.5) * cellWidth - size / 2 +
+          motion.offsetX;
+        const y = (point.row + 0.5) * cellHeight - size / 2 +
+          motion.offsetY;
+        context.globalAlpha = motion.alpha *
+          (point.kind === "available" ? 0.44 : 0.9);
+        context.fillStyle = colors[point.kind];
+        context.fillRect(x, y, size, size);
+      }
+      context.globalAlpha = 1;
+    };
+
+    const animate = (now: number) => {
+      if (now - lastRenderedAt >= 1_000 / 30) {
+        draw(now - startedAt);
+        lastRenderedAt = now;
+      }
+      animationFrame = globalThis.requestAnimationFrame(animate);
+    };
+
+    const stopAnimation = () => {
+      if (animationFrame === null) return;
+      globalThis.cancelAnimationFrame(animationFrame);
+      animationFrame = null;
+    };
+
+    const syncMotionPreference = () => {
+      reducedMotion = motionPreference?.matches ?? false;
+      stopAnimation();
+      draw(globalThis.performance.now() - startedAt);
+      if (!reducedMotion) {
+        animationFrame = globalThis.requestAnimationFrame(animate);
+      }
+    };
+
+    const redraw = () => {
+      refreshLayout();
+      draw(globalThis.performance.now() - startedAt);
+    };
+
+    redraw();
+    syncMotionPreference();
+    const resizeObserver = new ResizeObserver(redraw);
+    resizeObserver.observe(canvas);
+    const themeObserver = new MutationObserver(redraw);
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+    motionPreference?.addEventListener("change", syncMotionPreference);
+    return () => {
+      stopAnimation();
+      resizeObserver.disconnect();
+      themeObserver.disconnect();
+      motionPreference?.removeEventListener("change", syncMotionPreference);
+    };
+  }, [props.segments]);
+
+  return (
+    <canvas
+      aria-hidden="true"
+      className="file-library-storage-pixel-field"
+      ref={canvasRef}
+    />
+  );
+}
+
+const FILE_LIBRARY_CALENDAR_WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"];
+
+type FileLibraryHudWeatherState = {
+  status: "loading" | "ready" | "unavailable";
+  weather: FileLibraryHudWeather | null;
+};
+
+let fileLibraryHudWeatherCache: {
+  expiresAt: number;
+  weather: FileLibraryHudWeather;
+} | null = null;
+let fileLibraryHudWeatherRequest: Promise<FileLibraryHudWeather> | null = null;
+
+function loadLocalFileLibraryHudWeather(): Promise<FileLibraryHudWeather> {
+  if (
+    fileLibraryHudWeatherCache &&
+    fileLibraryHudWeatherCache.expiresAt > Date.now()
+  ) {
+    return Promise.resolve(fileLibraryHudWeatherCache.weather);
+  }
+  if (fileLibraryHudWeatherRequest) return fileLibraryHudWeatherRequest;
+  if (typeof navigator === "undefined" || !navigator.geolocation) {
+    return Promise.reject(new Error("当前浏览器不支持定位"));
+  }
+
+  const request = new Promise<FileLibraryHudWeather>((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        void fetchOpenMeteoHudWeather(
+          position.coords.latitude,
+          position.coords.longitude,
+        ).then(resolve, reject);
+      },
+      () => reject(new Error("需要定位权限才能显示本地天气")),
+      {
+        enableHighAccuracy: false,
+        maximumAge: 30 * 60 * 1_000,
+        timeout: 10_000,
+      },
+    );
+  });
+  fileLibraryHudWeatherRequest = request.then(
+    (weather) => {
+      fileLibraryHudWeatherCache = {
+        expiresAt: Date.now() + 15 * 60 * 1_000,
+        weather,
+      };
+      fileLibraryHudWeatherRequest = null;
+      return weather;
+    },
+    (error: unknown) => {
+      fileLibraryHudWeatherRequest = null;
+      throw error;
+    },
+  );
+  return fileLibraryHudWeatherRequest;
+}
+
+function LibraryWeatherGlyph(props: {
+  kind: FileLibraryWeatherKind;
+  size: number;
+}) {
+  const iconProps = {
+    "aria-hidden": true,
+    className: `is-${props.kind}`,
+    size: props.size,
+    weight: "regular" as const,
+  };
+  if (props.kind === "clear") return <Sun {...iconProps} />;
+  if (props.kind === "partly-cloudy") return <CloudSun {...iconProps} />;
+  if (props.kind === "fog") return <CloudFog {...iconProps} />;
+  if (props.kind === "rain") return <CloudRain {...iconProps} />;
+  if (props.kind === "snow") return <Snowflake {...iconProps} />;
+  if (props.kind === "storm") return <CloudLightning {...iconProps} />;
+  return <Cloud {...iconProps} />;
+}
+
 function LibraryStorageOverview(props: {
   storage: StorageEstimate | null;
   items: readonly LibraryItem[];
-  fileCount: number;
+  busy: boolean;
   query: string;
   resultCount: number;
   privateMesh: PrivateMeshSessionSnapshot;
+  sourceMode: "opfs" | "directory";
+  localDirectory: LocalDirectorySourceSnapshot;
+  onFallbackImport: () => void;
+  onToggleLocalDirectory: () => void;
   onQueryChange: (query: string) => void;
   onOpenPrivateMesh: () => void;
 }) {
-  const heatmap = summarizeFileLibraryStorageHeatmap(props.items, props.storage);
-  const summary = heatmap.summary;
-  const availableTile = heatmap.tiles.find((tile) => tile.id === "available");
-  const storageOverlayWidth = Math.max(58, availableTile?.rect.width ?? 100);
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [monthOffset, setMonthOffset] = useState(0);
+  const [weatherState, setWeatherState] = useState<FileLibraryHudWeatherState>({
+    status: "loading",
+    weather: null,
+  });
+  const today = useMemo(() => new Date(), []);
+  const calendar = useMemo(
+    () => buildFileLibraryCalendarMonth(today, monthOffset),
+    [monthOffset, today],
+  );
+  const weatherRequest = useRef(0);
+  const swipeStartY = useRef<number | null>(null);
+  const lastWheelShiftAt = useRef(0);
+  const cloud = summarizeFileLibraryStorageCloud(props.items, props.storage);
+  const summary = cloud.summary;
+  const deviceCount = props.privateMesh.status === "ready"
+    ? Math.max(1, props.privateMesh.memberCount)
+    : 1;
+  const currentWeather = weatherState.weather?.current ?? null;
+  const currentCondition = classifyFileLibraryWeatherCode(
+    currentWeather?.weatherCode,
+  );
+  const bloub = resolveBloubControlState({
+    busy: props.busy,
+    sourceMode: props.sourceMode,
+    localDirectoryStatus: props.localDirectory.status,
+  });
+  const nebula = resolveNebulaSearchState({
+    focused: searchFocused,
+    query: props.query,
+    resultCount: props.resultCount,
+  });
+
+  const retryWeather = () => {
+    const requestId = ++weatherRequest.current;
+    setWeatherState({ status: "loading", weather: null });
+    void loadLocalFileLibraryHudWeather().then(
+      (weather) => {
+        if (weatherRequest.current === requestId) {
+          setWeatherState({ status: "ready", weather });
+        }
+      },
+      () => {
+        if (weatherRequest.current === requestId) {
+          setWeatherState({ status: "unavailable", weather: null });
+        }
+      },
+    );
+  };
+
+  useEffect(() => {
+    const requestId = ++weatherRequest.current;
+    void loadLocalFileLibraryHudWeather().then(
+      (weather) => {
+        if (weatherRequest.current === requestId) {
+          setWeatherState({ status: "ready", weather });
+        }
+      },
+      () => {
+        if (weatherRequest.current === requestId) {
+          setWeatherState({ status: "unavailable", weather: null });
+        }
+      },
+    );
+    return () => {
+      if (weatherRequest.current === requestId) weatherRequest.current += 1;
+    };
+  }, []);
+
+  const shiftCalendarMonth = (direction: -1 | 1) => {
+    setMonthOffset((offset) => offset + direction);
+  };
 
   return (
     <section
       aria-label="文件库存储空间"
       className="file-library-storage-overview"
-      style={{
-        "--file-library-storage-overlay-width": `${storageOverlayWidth}%`,
-      } as CSSProperties}
     >
-      <div
-        aria-label="按文件类型显示的存储空间热力图"
-        className="file-library-storage-heatmap"
-        role="list"
-      >
-        {heatmap.tiles.map((tile) => (
-          <div
-            aria-label={`${tile.label} ${tile.valueLabel}`}
-            className="file-library-storage-tile"
-            data-emphasis={tile.emphasis}
-            data-storage-kind={tile.id}
-            key={tile.id}
-            role="listitem"
-            style={{
-              left: `${tile.rect.x}%`,
-              top: `${tile.rect.y}%`,
-              width: `${tile.rect.width}%`,
-              height: `${tile.rect.height}%`,
-            }}
-          >
-            <span className="file-library-storage-tile-copy">
-              <strong>{tile.label}</strong>
-              <span>{tile.valueLabel}</span>
-            </span>
-          </div>
-        ))}
-      </div>
+      <LibraryStoragePixelField segments={cloud.segments} />
 
-      <div className="file-library-storage-overview-copy">
-        <span>OPFS · {props.fileCount} 项</span>
-        <strong>{summary?.usageLabel ?? "—"}</strong>
-        <div className="file-library-storage-overview-meta">
-          <p>
-            {summary
-              ? `已使用 · ${props.fileCount} 项`
-              : "正在读取当前浏览器的存储空间"}
-          </p>
-          <p>{summary ? `共 ${summary.quotaLabel}` : "OPFS 本地存储"}</p>
+      <div className="file-library-calendar">
+        <header className="file-library-calendar-header">
+          <h2 aria-live="polite">{calendar.label}</h2>
+          <div className={`file-library-current-weather is-${weatherState.status}`}>
+            {weatherState.status === "ready" && currentWeather
+              ? (
+                <>
+                  <strong>{Math.round(currentWeather.temperature)}°</strong>
+                  <span>{currentCondition.label}</span>
+                  <small>体感 {Math.round(currentWeather.apparentTemperature)}°</small>
+                  <a
+                    href="https://open-meteo.com/"
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    Open-Meteo
+                  </a>
+                </>
+              )
+              : weatherState.status === "loading"
+              ? (
+                <>
+                  <span className="file-library-current-weather-glyph">
+                    <CloudSun aria-hidden="true" size={30} weight="regular" />
+                  </span>
+                  <span>定位天气</span>
+                  <small>正在读取</small>
+                </>
+              )
+              : (
+                <button type="button" onClick={retryWeather}>
+                  <span className="file-library-current-weather-glyph">
+                    <CloudSun aria-hidden="true" size={30} weight="regular" />
+                  </span>
+                  <span>本地天气</span>
+                  <small>点按开启</small>
+                </button>
+              )}
+          </div>
+        </header>
+
+        <div
+          aria-label={`${calendar.label}，上下滑动切换月份`}
+          className="file-library-calendar-stage"
+          role="group"
+          tabIndex={0}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowUp" || event.key === "PageUp") {
+              event.preventDefault();
+              shiftCalendarMonth(-1);
+            } else if (event.key === "ArrowDown" || event.key === "PageDown") {
+              event.preventDefault();
+              shiftCalendarMonth(1);
+            }
+          }}
+          onPointerDown={(event) => {
+            swipeStartY.current = event.clientY;
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onPointerUp={(event) => {
+            const startY = swipeStartY.current;
+            swipeStartY.current = null;
+            if (startY === null) return;
+            const distance = event.clientY - startY;
+            if (Math.abs(distance) >= 36) {
+              shiftCalendarMonth(distance < 0 ? 1 : -1);
+            }
+          }}
+          onWheel={(event) => {
+            const now = Date.now();
+            if (
+              Math.abs(event.deltaY) < 24 ||
+              now - lastWheelShiftAt.current < 420
+            ) return;
+            event.preventDefault();
+            lastWheelShiftAt.current = now;
+            shiftCalendarMonth(event.deltaY > 0 ? 1 : -1);
+          }}
+        >
+          <div className="file-library-calendar-grid" key={calendar.label}>
+            {FILE_LIBRARY_CALENDAR_WEEKDAYS.map((weekday) => (
+              <span className="file-library-calendar-weekday" key={weekday}>
+                {weekday}
+              </span>
+            ))}
+            {calendar.days.map((day, index) => {
+              if (!day) {
+                return (
+                  <span
+                    aria-hidden="true"
+                    className="file-library-calendar-day is-empty"
+                    key={`empty-${index}`}
+                  />
+                );
+              }
+              const weatherCode = weatherState.weather?.dailyWeatherCodes[day.dateKey];
+              const condition = classifyFileLibraryWeatherCode(weatherCode);
+              return (
+                <div
+                  aria-current={day.isToday ? "date" : undefined}
+                  aria-label={`${day.dateKey}，${condition.label}`}
+                  className={`file-library-calendar-day${
+                    day.isToday ? " is-today" : ""
+                  }`}
+                  key={day.dateKey}
+                >
+                  <strong>{day.day}</strong>
+                  <span className="file-library-calendar-day-weather">
+                    <LibraryWeatherGlyph kind={condition.kind} size={19} />
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
 
       <div className="file-library-storage-overview-foot">
-        <p className="file-library-storage-persistence">
-          {summary
-            ? summary.persisted ? "持久存储已启用" : "未启用持久存储"
-            : "存储状态将在文件库打开后显示"}
-        </p>
-        <button
-          className="file-library-private-mesh-trigger"
-          type="button"
-          onClick={props.onOpenPrivateMesh}
-        >
-          <LinkSimple aria-hidden="true" size={18} />
-          {props.privateMesh.status === "ready"
-            ? `${props.privateMesh.meshName} · ${props.privateMesh.memberCount} 台设备`
-            : props.privateMesh.status === "loading"
-            ? "正在读取私有网络"
-            : props.privateMesh.status === "error"
-            ? "私有网络需要处理"
-            : props.privateMesh.pendingPairing
-            ? "继续设备配对"
-            : "创建或加入私有网络"}
-        </button>
-        <label className="file-library-search file-library-hud-search">
-          <MagnifyingGlass aria-hidden="true" size={21} />
-          <input
-            aria-label={`搜索文件，当前 ${props.resultCount} 项`}
-            placeholder={`搜索 ${props.resultCount} 项`}
-            type="search"
-            value={props.query}
-            onChange={(event) => props.onQueryChange(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") props.onQueryChange("");
-            }}
-          />
-        </label>
+        <div className="file-library-storage-edge-info">
+          <span>
+            {props.sourceMode === "directory"
+              ? `文件夹 ${props.localDirectory.directoryName ?? "本地"}`
+              : `OPFS ${summary?.usageLabel ?? "读取中"}`}
+          </span>
+          <span>
+            {props.sourceMode === "directory"
+              ? "只读"
+              : summary
+              ? summary.persisted ? "已持久" : "未持久"
+              : "读取中"}
+          </span>
+          <span>{summary?.availableLabel ?? "—"} 可用</span>
+          <button
+            aria-label={`连接设备，当前 ${deviceCount} 台设备、${props.resultCount} 项文件`}
+            className="file-library-storage-device-control"
+            type="button"
+            onClick={props.onOpenPrivateMesh}
+          >
+            <LinkSimple aria-hidden="true" size={18} />
+            {deviceCount} 台设备 · {props.resultCount} 项文件
+          </button>
+        </div>
+        <div className="file-library-hud-command-bar">
+          <label className="file-library-search file-library-hud-search">
+            <NebulaOrbGlyph
+              label={`Nebula-Orb：${nebula}`}
+              state={nebula}
+            />
+            <input
+              aria-label={`搜索文件，当前 ${props.resultCount} 项`}
+              placeholder={`搜索 ${props.resultCount} 项文件`}
+              type="search"
+              value={props.query}
+              onBlur={() => setSearchFocused(false)}
+              onChange={(event) => props.onQueryChange(event.target.value)}
+              onFocus={() => setSearchFocused(true)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") props.onQueryChange("");
+              }}
+            />
+          </label>
+          <div className="file-library-hud-import">
+            <button
+              aria-label={bloub.label}
+              aria-pressed={props.localDirectory.supported
+                ? props.sourceMode === "directory"
+                : undefined}
+              className="file-library-hud-import-trigger"
+              data-action={bloub.action}
+              disabled={bloub.action === "wait"}
+              title={bloub.label}
+              type="button"
+              onClick={bloub.action === "import"
+                ? props.onFallbackImport
+                : props.onToggleLocalDirectory}
+            >
+              <BloubGlyph label={`Bloub：${bloub.label}`} state={bloub.glyph} />
+            </button>
+          </div>
+        </div>
       </div>
     </section>
   );
@@ -2507,6 +3135,7 @@ export function FileLibraryHomepage(props: {
   renderApp: (appId: LibraryAppId) => ReactNode;
 }) {
   const [library] = useState(createOpfsFileLibrary);
+  const [localDirectorySource] = useState(createBrowserLocalDirectorySource);
   const [privateMeshKeyVault] = useState(createIndexedDbPrivateMeshKeyVault);
   const [privateMeshStore] = useState(() =>
     createOpfsPrivateMeshStore(privateMeshKeyVault)
@@ -2523,6 +3152,7 @@ export function FileLibraryHomepage(props: {
       defaultAppCount: LIBRARY_APP_COUNT,
       isVisible: () => document.visibilityState !== "hidden",
       nativePhotoImporter,
+      localDirectorySource,
       privateMeshStore,
       privateMeshCatalogStore,
       privateMeshThumbnailStore,
@@ -2531,9 +3161,20 @@ export function FileLibraryHomepage(props: {
     })
   );
   const [sessionSnapshot, setSessionSnapshot] = useState(session.getSnapshot);
-  const { items, busy, message, nativePhotosAvailable, storage, privateMesh } =
-    sessionSnapshot;
+  const {
+    items,
+    busy,
+    message,
+    nativePhotosAvailable,
+    storage,
+    privateMesh,
+    sourceMode,
+    localDirectory,
+  } = sessionSnapshot;
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedLocalDirectoryId, setSelectedLocalDirectoryId] = useState<
+    string | null
+  >(null);
   const [viewerItemId, setViewerItemId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [gridColumns, setGridColumns] = useState<LibraryGridColumns>(() => {
@@ -2548,7 +3189,6 @@ export function FileLibraryHomepage(props: {
   const [dragging, setDragging] = useState(false);
   const [showPrivateMesh, setShowPrivateMesh] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const photosInputRef = useRef<HTMLInputElement>(null);
   const pinchGesture = useRef<PinchGesture | null>(null);
   const gridEntries = useMemo(
     () => buildSimilarityGridEntries(items),
@@ -2565,11 +3205,34 @@ export function FileLibraryHomepage(props: {
       ),
     [gridEntries, matchingIds],
   );
+  const visibleRemoteFiles = useMemo(() => {
+    if (privateMesh.status !== "ready") return [];
+    const normalizedQuery = query.trim().toLocaleLowerCase("zh-CN");
+    if (!normalizedQuery) return privateMesh.remoteFiles;
+    return privateMesh.remoteFiles.filter((entry) =>
+      [entry.name, entry.nodeName, entry.type, KIND_LABELS[entry.kind]].some(
+        (value) => value.toLocaleLowerCase("zh-CN").includes(normalizedQuery),
+      )
+    );
+  }, [privateMesh, query]);
+  const visibleLocalDirectoryEntries = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase("zh-CN");
+    if (!normalizedQuery) return localDirectory.entries;
+    return localDirectory.entries.filter((entry) =>
+      [entry.name, entry.relativePath, entry.type, KIND_LABELS[entry.kind]].some(
+        (value) => value.toLocaleLowerCase("zh-CN").includes(normalizedQuery),
+      )
+    );
+  }, [localDirectory.entries, query]);
   const selectedEntry = selectedId
     ? gridEntries.find((entry) => entry.items.some((item) => item.id === selectedId)) ??
       null
     : null;
   const selected = selectedEntry?.kind === "item" ? selectedEntry.items[0] : null;
+  const selectedLocalDirectoryEntry = selectedLocalDirectoryId
+    ? localDirectory.entries.find((entry) => entry.id === selectedLocalDirectoryId) ??
+      null
+    : null;
   const selectedGitHubLinks = selected?.kind === "app" && selected.app &&
       isLibraryAppId(selected.app.id)
     ? getLibraryApp(selected.app.id).links?.filter((link) => isGitHubHref(link.href)) ??
@@ -2607,6 +3270,12 @@ export function FileLibraryHomepage(props: {
       // A blocked preference store must not disable pinch-to-zoom.
     }
   }, [gridColumns]);
+
+  useEffect(() => {
+    setSelectedId(null);
+    setSelectedLocalDirectoryId(null);
+    setViewerItemId(null);
+  }, [sourceMode]);
 
   async function importSelected(files: FileList | readonly File[]) {
     await session.importFiles(files);
@@ -2698,7 +3367,14 @@ export function FileLibraryHomepage(props: {
     >
       <header className="file-library-head">
         <div className="file-library-hud-preview">
-          {selectedEntry?.kind === "group"
+          {selectedLocalDirectoryEntry
+            ? (
+              <LocalDirectoryHudPreview
+                entry={selectedLocalDirectoryEntry}
+                session={session}
+              />
+            )
+            : selectedEntry?.kind === "group"
             ? (
               <LibrarySimilarityHud
                 entry={selectedEntry}
@@ -2710,17 +3386,31 @@ export function FileLibraryHomepage(props: {
             ? <LibraryHudPreview item={selected} library={library} />
             : (
               <LibraryStorageOverview
-                fileCount={hudProgress.total}
+                busy={busy}
                 items={items}
                 query={query}
-                resultCount={visibleEntries.length}
+                resultCount={sourceMode === "directory"
+                  ? visibleLocalDirectoryEntries.length
+                  : visibleEntries.length + visibleRemoteFiles.length}
                 storage={storage}
                 privateMesh={privateMesh}
+                sourceMode={sourceMode}
+                localDirectory={localDirectory}
+                onFallbackImport={() => {
+                  if (nativePhotosAvailable) {
+                    void session.importFromPhotos();
+                  } else {
+                    inputRef.current?.click();
+                  }
+                }}
+                onToggleLocalDirectory={() => {
+                  void session.toggleLocalDirectory();
+                }}
                 onQueryChange={setQuery}
                 onOpenPrivateMesh={() => setShowPrivateMesh(true)}
               />
             )}
-          {selected
+          {selected && !selectedLocalDirectoryEntry
             ? canOpenLibraryItem(selected)
               ? (
                 <button
@@ -2732,7 +3422,7 @@ export function FileLibraryHomepage(props: {
               )
               : null
             : null}
-          {selected
+          {selected && !selectedLocalDirectoryEntry
             ? (
               <nav className="file-library-selection-actions" aria-label="所选文件操作">
                 {selectedGitHubLinks.map((link) => (
@@ -2781,66 +3471,64 @@ export function FileLibraryHomepage(props: {
         onPointerUp={(event) => removePinchPointer(event.pointerId)}
         onPointerCancel={(event) => removePinchPointer(event.pointerId)}
       >
-        <article
-          aria-label="导入照片或文件"
-          className="file-library-import-tile"
-          role="group"
-        >
-          <span className="file-library-import-tile-kicker">OPFS INPUT</span>
-          <ImagesSquare aria-hidden="true" size={42} weight="thin" />
-          <span className="file-library-import-tile-copy">
-            <strong>{busy ? "正在导入…" : "导入内容"}</strong>
-            <span>从照片图库选取，或导入任意文件</span>
-          </span>
-          <span className="file-library-import-actions">
-            <button
-              aria-label="从 Photos 选择照片或实况原片"
-              disabled={busy}
-              type="button"
-              onClick={() => {
-                if (nativePhotosAvailable) {
-                  void session.importFromPhotos();
-                } else {
-                  photosInputRef.current?.click();
-                }
+        {sourceMode === "directory"
+          ? visibleLocalDirectoryEntries.map((entry) => (
+            <LocalDirectoryCard
+              entry={entry}
+              key={entry.id}
+              selected={selectedLocalDirectoryId === entry.id}
+              session={session}
+              onImport={() => {
+                void session.importLocalDirectoryEntry(entry.id);
               }}
-            >
-              <ImagesSquare aria-hidden="true" size={19} />
-              Photos
-            </button>
-            <button
-              aria-label="从文件导入"
-              disabled={busy}
-              type="button"
-              onClick={() => inputRef.current?.click()}
-            >
-              <FolderOpen aria-hidden="true" size={19} />
-              文件
-            </button>
-          </span>
-        </article>
-        {visibleEntries.map((entry) =>
-          entry.kind === "group"
-            ? (
-              <LibrarySimilarityCard
-                entry={entry}
-                key={entry.id}
-                library={library}
-                selected={selectedEntry?.id === entry.id}
-                onSelect={() => toggleEntrySelection(entry)}
-              />
-            )
-            : (
-              <LibraryCard
-                item={entry.items[0]}
-                key={entry.id}
-                library={library}
-                selected={selectedEntry?.id === entry.id}
-                onSelect={() => toggleEntrySelection(entry)}
-              />
-            )
-        )}
-        {query.trim() && visibleEntries.length === 0
+              onSelect={() => {
+                setSelectedLocalDirectoryId((current) =>
+                  current === entry.id ? null : entry.id
+                );
+              }}
+            />
+          ))
+          : (
+            <>
+              {visibleEntries.map((entry) =>
+                entry.kind === "group"
+                  ? (
+                    <LibrarySimilarityCard
+                      entry={entry}
+                      key={entry.id}
+                      library={library}
+                      selected={selectedEntry?.id === entry.id}
+                      onSelect={() => toggleEntrySelection(entry)}
+                    />
+                  )
+                  : (
+                    <LibraryCard
+                      item={entry.items[0]}
+                      key={entry.id}
+                      library={library}
+                      selected={selectedEntry?.id === entry.id}
+                      onSelect={() => toggleEntrySelection(entry)}
+                    />
+                  )
+              )}
+              {visibleRemoteFiles.map((entry) => (
+                <PrivateMeshRemoteCard
+                  entry={entry}
+                  key={`remote:${entry.nodeId}:${entry.itemId}`}
+                  session={session}
+                  onOpenPrivateMesh={() => {
+                    setSelectedId(null);
+                    setViewerItemId(null);
+                    setShowPrivateMesh(true);
+                  }}
+                />
+              ))}
+            </>
+          )}
+        {query.trim() &&
+            (sourceMode === "directory"
+              ? visibleLocalDirectoryEntries.length === 0
+              : visibleEntries.length + visibleRemoteFiles.length === 0)
           ? (
             <div className="file-library-empty-tile is-result">
               <MagnifyingGlass aria-hidden="true" size={32} />
@@ -2860,22 +3548,11 @@ export function FileLibraryHomepage(props: {
           if (event.target.files) void importSelected(event.target.files);
         }}
       />
-      <input
-        accept=".heic,.heif,.jpg,.jpeg,.mov,.mp4,image/heic,image/heif,image/jpeg,video/quicktime,video/mp4"
-        hidden
-        multiple
-        ref={photosInputRef}
-        type="file"
-        onChange={(event) => {
-          if (event.target.files) void importSelected(event.target.files);
-          event.currentTarget.value = "";
-        }}
-      />
 
       {dragging
         ? (
           <div className="file-library-drop-layer">
-            <UploadSimple aria-hidden="true" size={48} weight="thin" />
+            <FolderSimplePlus aria-hidden="true" size={48} weight="thin" />
             <strong>松开以导入文件</strong>
             <span>同名图片与 MOV / MP4 会自动识别为 Live Photo</span>
           </div>

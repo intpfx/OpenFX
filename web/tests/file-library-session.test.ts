@@ -18,6 +18,10 @@ import {
 } from "../src/file-library/private-mesh-store.ts";
 import { createMemoryPrivateMeshKeyVault } from "../src/file-library/private-mesh-key-vault.ts";
 import type { PrivateMeshCatalogRecord } from "../src/file-library/private-mesh-catalog.ts";
+import {
+  createLocalDirectorySource,
+  type LocalDirectoryHandle,
+} from "../src/file-library/local-directory-source.ts";
 
 const NOW = "2026-08-11T00:00:00.000Z";
 
@@ -554,6 +558,91 @@ Deno.test("file library session serializes user mutations through busy state", a
   expect(await first).toBe(true);
   expect(session.getSnapshot().busy).toBe(false);
   expect(session.getSnapshot().message).toBe("已导入 1 个文件");
+  session.stop();
+});
+
+Deno.test("file library session switches to a chosen directory and imports one grid entry into OPFS", async () => {
+  const sourceFile = new File(["cover"], "cover.jpg", {
+    type: "image/jpeg",
+    lastModified: 12,
+  });
+  const fileHandle: LocalDirectoryHandle = {
+    kind: "file",
+    name: sourceFile.name,
+    getFile: () => Promise.resolve(sourceFile),
+  };
+  const sourceHandles: LocalDirectoryHandle[] = [fileHandle];
+  const directoryHandle: LocalDirectoryHandle = {
+    kind: "directory",
+    name: "Pictures",
+    queryPermission: () => Promise.resolve("granted"),
+    requestPermission: () => Promise.resolve("granted"),
+    async *values() {
+      yield* sourceHandles;
+    },
+  };
+  const localDirectorySource = createLocalDirectorySource({
+    runtime: {
+      isSecureContext: true,
+      showDirectoryPicker: () => Promise.resolve(directoryHandle),
+    },
+    store: {
+      load: () => Promise.resolve(null),
+      save: () => Promise.resolve(),
+    },
+  });
+  const fake = createStore([]);
+  fake.store.importFiles = (files) => {
+    const file = files[0];
+    const imported = libraryItem("imported-cover", "image", {
+      name: file.name,
+      size: file.size,
+      source: {
+        path: "/imported-cover/source",
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        lastModified: file.lastModified,
+      },
+    });
+    fake.setItems([imported]);
+    return Promise.resolve(fake.getItems());
+  };
+  const session = createFileLibrarySession({
+    store: fake.store,
+    defaultAppCount: 19,
+    createVideoThumbnail: () => Promise.reject(new Error("unused")),
+    localDirectorySource,
+  });
+
+  await session.start();
+  expect(session.getSnapshot().sourceMode).toBe("opfs");
+  expect(await session.toggleLocalDirectory()).toBe(true);
+  expect(session.getSnapshot()).toMatchObject({
+    sourceMode: "directory",
+    localDirectory: {
+      status: "ready",
+      directoryName: "Pictures",
+      entries: [{ id: "cover.jpg", importState: "available" }],
+    },
+  });
+
+  expect(await session.importLocalDirectoryEntry("cover.jpg")).toBe(true);
+  expect(session.getSnapshot().items[0]?.id).toBe("imported-cover");
+  expect(session.getSnapshot().localDirectory.entries[0]?.importState).toBe(
+    "imported",
+  );
+  expect(await session.toggleLocalDirectory()).toBe(true);
+  expect(session.getSnapshot().sourceMode).toBe("opfs");
+
+  sourceHandles.push({
+    kind: "file",
+    name: "new.txt",
+    getFile: () => Promise.resolve(new File(["new"], "new.txt")),
+  });
+  expect(await session.toggleLocalDirectory()).toBe(true);
+  expect(session.getSnapshot().localDirectory.entries.map((entry) => entry.id))
+    .toEqual(["cover.jpg", "new.txt"]);
   session.stop();
 });
 

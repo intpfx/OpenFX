@@ -64,6 +64,10 @@ import {
   describePrivateMeshThumbnail,
   getPrivateMeshThumbnailSource,
 } from "./private-mesh-thumbnail.ts";
+import type {
+  LocalDirectorySource,
+  LocalDirectorySourceSnapshot,
+} from "./local-directory-source.ts";
 
 const MAX_PRIVATE_MESH_REMOTE_THUMBNAIL_REQUESTS = 32;
 
@@ -127,6 +131,8 @@ export type FileLibrarySessionSnapshot = Readonly<{
   message: string;
   storage: StorageEstimate | null;
   nativePhotosAvailable: boolean;
+  sourceMode: "opfs" | "directory";
+  localDirectory: LocalDirectorySourceSnapshot;
   privateMesh: PrivateMeshSessionSnapshot;
 }>;
 
@@ -165,6 +171,7 @@ type SessionDependencies = {
     "load" | "save" | "remove"
   >;
   createPrivateMeshThumbnail?: (source: File) => Promise<Blob>;
+  localDirectorySource?: LocalDirectorySource;
   privateMeshKeyVault?: PrivateMeshKeyVault;
   createPeerConnection?: () => RTCPeerConnection;
   now?: () => string;
@@ -185,6 +192,13 @@ const INITIAL_SNAPSHOT: FileLibrarySessionSnapshot = {
   message: "正在打开本地文件库…",
   storage: null,
   nativePhotosAvailable: false,
+  sourceMode: "opfs",
+  localDirectory: {
+    supported: false,
+    status: "unsupported",
+    directoryName: null,
+    entries: [],
+  },
   privateMesh: { status: "loading" },
 };
 
@@ -253,6 +267,7 @@ function isPendingAudio(item: LibraryItem): boolean {
 }
 
 export function createFileLibrarySession(dependencies: SessionDependencies) {
+  const localDirectorySource = dependencies.localDirectorySource;
   const privateMeshKeyVault = dependencies.privateMeshKeyVault ??
     createMemoryPrivateMeshKeyVault();
   const listeners = new Set<SessionListener>();
@@ -261,7 +276,11 @@ export function createFileLibrarySession(dependencies: SessionDependencies) {
   const audioFailures = new Set<string>();
   const fingerprintFailures = new Set<string>();
   const activeControllers = new Set<AbortController>();
-  let snapshot = INITIAL_SNAPSHOT;
+  let snapshot: FileLibrarySessionSnapshot = {
+    ...INITIAL_SNAPSHOT,
+    localDirectory: localDirectorySource?.getSnapshot() ??
+      INITIAL_SNAPSHOT.localDirectory,
+  };
   let generation = 0;
   let active = false;
   let photoRun: Promise<void> | null = null;
@@ -588,6 +607,10 @@ export function createFileLibrarySession(dependencies: SessionDependencies) {
     for (const listener of listeners) listener(snapshot);
   }
 
+  localDirectorySource?.subscribe((localDirectory) => {
+    if (active) publish({ localDirectory });
+  });
+
   function belongsToCurrentRun(run: number): boolean {
     return active && run === generation;
   }
@@ -598,6 +621,7 @@ export function createFileLibrarySession(dependencies: SessionDependencies) {
       localPrivateMeshCatalogSignature;
     localPrivateMeshCatalogSignature = nextCatalogSignature;
     publish({ items });
+    void localDirectorySource?.reconcile(items);
     startBackgroundWork();
     if (active && catalogChanged) broadcastLocalPrivateMeshCatalogChange();
   }
@@ -864,7 +888,11 @@ export function createFileLibrarySession(dependencies: SessionDependencies) {
     const run = ++generation;
     attemptedPrivateMeshThumbnails.clear();
     privateMeshThumbnailRequests.clear();
-    publish(INITIAL_SNAPSHOT);
+    publish({
+      ...INITIAL_SNAPSHOT,
+      localDirectory: localDirectorySource?.getSnapshot() ??
+        INITIAL_SNAPSHOT.localDirectory,
+    });
     try {
       const loadedItems = await dependencies.store.load();
       if (!belongsToCurrentRun(run)) return;
@@ -883,6 +911,10 @@ export function createFileLibrarySession(dependencies: SessionDependencies) {
           ? "导入内容仅保存在当前浏览器"
           : `${dependencies.defaultAppCount} 个默认 App 已就绪`,
       });
+      await localDirectorySource?.restore();
+      if (!belongsToCurrentRun(run)) return;
+      await localDirectorySource?.reconcile(items);
+      if (!belongsToCurrentRun(run)) return;
       startBackgroundWork();
       await refreshStorage(run);
       await refreshNativePhotoAvailability(run);
@@ -903,6 +935,7 @@ export function createFileLibrarySession(dependencies: SessionDependencies) {
     for (const controller of activeControllers) controller.abort();
     activeControllers.clear();
     privateMeshCatalogRefreshQueue.clear();
+    localDirectorySource?.stop();
     for (const nodeId of [...privateMeshConnections.keys()]) {
       closeRuntimeConnection(nodeId);
     }
@@ -928,6 +961,81 @@ export function createFileLibrarySession(dependencies: SessionDependencies) {
     } finally {
       if (belongsToCurrentRun(run)) publish({ busy: false });
     }
+  }
+
+  async function toggleLocalDirectory(): Promise<boolean> {
+    if (
+      !active || snapshot.busy || !localDirectorySource ||
+      !snapshot.localDirectory.supported
+    ) return false;
+    if (snapshot.sourceMode === "directory") {
+      publish({
+        sourceMode: "opfs",
+        message: "正在查看 OpenFX OPFS",
+      });
+      return true;
+    }
+    const connected = await localDirectorySource.connect();
+    if (!active || !connected) return false;
+    publish({
+      sourceMode: "directory",
+      message: `正在查看“${localDirectorySource.getSnapshot().directoryName}”`,
+    });
+    return true;
+  }
+
+  async function importLocalDirectoryEntry(id: string): Promise<boolean> {
+    if (
+      !active || snapshot.busy || snapshot.sourceMode !== "directory" ||
+      !localDirectorySource
+    ) return false;
+    const entry = snapshot.localDirectory.entries.find((candidate) =>
+      candidate.id === id
+    );
+    if (
+      !entry || entry.importState === "imported" || entry.importState === "importing"
+    ) {
+      return false;
+    }
+    const itemIdsBeforeImport = new Set(snapshot.items.map((item) => item.id));
+    await localDirectorySource.markImporting(id);
+    try {
+      const file = await localDirectorySource.getFile(id);
+      const imported = await importFiles([file]);
+      if (!imported || !active) {
+        await localDirectorySource.markFailed(id, "没有完成导入");
+        return false;
+      }
+      const item = snapshot.items.find((candidate) =>
+        !itemIdsBeforeImport.has(candidate.id) &&
+        candidate.source.name === file.name &&
+        candidate.source.size === file.size &&
+        candidate.source.lastModified === file.lastModified
+      ) ?? snapshot.items.find((candidate) =>
+        candidate.source.name === file.name &&
+        candidate.source.size === file.size &&
+        candidate.source.lastModified === file.lastModified
+      );
+      if (!item) {
+        await localDirectorySource.markFailed(id, "文件已复制，但无法确认 OPFS 条目");
+        return false;
+      }
+      await localDirectorySource.markImported(id, item.id);
+      publish({ message: `已将“${entry.name}”复制到 OPFS` });
+      return true;
+    } catch (error) {
+      await localDirectorySource.markFailed(
+        id,
+        errorMessage(error, "无法读取本地文件"),
+      );
+      publish({ message: errorMessage(error, "无法导入本地文件") });
+      return false;
+    }
+  }
+
+  async function getLocalDirectoryFile(id: string): Promise<File> {
+    if (!localDirectorySource) throw new Error("当前环境不支持本地文件夹");
+    return await localDirectorySource.getFile(id);
   }
 
   async function importFromPhotos(): Promise<boolean> {
@@ -1521,6 +1629,9 @@ export function createFileLibrarySession(dependencies: SessionDependencies) {
     start,
     stop,
     importFiles,
+    toggleLocalDirectory,
+    importLocalDirectoryEntry,
+    getLocalDirectoryFile,
     importFromPhotos,
     removeItem,
     setFavorite,
