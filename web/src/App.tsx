@@ -7,6 +7,8 @@ import {
 } from "../library-app-catalog.ts";
 import { MapPosterPanelContent } from "./MapPosterPanel.tsx";
 import { FileLibraryHomepage } from "./file-library/FileLibraryHomepage.tsx";
+import { FloatingVisualDock } from "./floating-visuals/FloatingVisualDock.tsx";
+import { FLOATING_VISUAL_PLUGINS } from "./floating-visuals/floating-visual-plugins.ts";
 
 function EmbeddedLibraryApp(props: {
   appId: LibraryAppId;
@@ -133,8 +135,11 @@ function HowMuchPanel() {
 
 export function App() {
   return (
-    <FileLibraryHomepage
-      renderApp={(appId) => <LibraryAppPanel appId={appId} />}
-    />
+    <>
+      <FileLibraryHomepage
+        renderApp={(appId) => <LibraryAppPanel appId={appId} />}
+      />
+      <FloatingVisualDock plugins={FLOATING_VISUAL_PLUGINS} />
+    </>
   );
 }

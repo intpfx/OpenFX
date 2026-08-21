@@ -198,6 +198,13 @@ Deno.test("homepage uses a full-bleed preview or storage HUD and borderless cont
   expect(operationHover).toContain("color: #9ebddd");
 });
 
+Deno.test("App composes independent floating visual plugins outside the file library", () => {
+  expect(app).toContain("<FloatingVisualDock plugins={FLOATING_VISUAL_PLUGINS}");
+  expect(app).not.toContain("renderStorageVisual");
+  expect(homepage).not.toContain("FileLibraryStorageVisualProps");
+  expect(homepage).not.toContain("renderStorageVisual");
+});
+
 Deno.test("selected video and Live Photo HUD previews autoplay silently without a duplicate LIVE tag", () => {
   expect(homepage).toContain('"live-photo": "实况照片"');
   expect(homepage).toContain(
